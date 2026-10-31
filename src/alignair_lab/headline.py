@@ -123,9 +123,8 @@ def suite_z_cell(found: Mapping, suite: str) -> str:
     test = found["suite_z"].get(suite)
     if test is None:
         return "-"
-    if test["z"] is None:
-        return "n/a"
-    return f"{test['z']:+.1f}{'!' if suite in found['regressions'] else ''}{'~' if test['limited'] else ''}"
+    z = "n/a" if test["z"] is None else f"{test['z']:+.1f}"
+    return f"{z}{'!' if suite in found['regressions'] else ''}{'~' if test['limited'] else ''}"
 
 
 def p_text(p: float | None) -> str:
@@ -142,10 +141,20 @@ def regressions_line(decisions: Mapping[str, Mapping]) -> str:
     suite, diff (pp) and z, whatever the metric's verdict; none; or not measured without a calibration."""
     if not any(decisions[metric]["suite_z"] for metric, _ in HEADLINE):
         return f"{REGRESSIONS} not measured, uncalibrated."
-    found = [f"{label} {suite} {100 * test['diff']:+.1f} pp z {test['z']:+.1f}"
-             for metric, label in HEADLINE for suite in decisions[metric]["regressions"]
-             for test in [decisions[metric]["suite_z"][suite]]]
-    return f"{REGRESSIONS} {'; '.join(found) if found else 'none'}."
+
+    def item(label: str, suite: str, test: Mapping) -> str:
+        text = f"{label} {suite} {100 * test['diff']:+.1f} pp"
+        if test["regresses"]:
+            text += " (read-level verdict worse)" if test["z"] is None else f" z {test['z']:+.1f}"
+        return text
+
+    def listed(field: str) -> list[str]:
+        return [item(label, suite, decisions[metric]["suite_z"][suite])
+                for metric, label in HEADLINE for suite in decisions[metric][field]]
+
+    counted, unmeasured = listed("regressions"), listed("unmeasured")
+    line = f"{REGRESSIONS} {'; '.join(counted) if counted else 'none'}."
+    return line + (f" Spread unmeasured: {'; '.join(unmeasured)}." if unmeasured else "")
 
 
 def _noise_rows(decisions: Mapping[str, Mapping], metrics: Sequence[tuple[str, str]]) -> list:

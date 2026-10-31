@@ -19,7 +19,11 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
   ``FAMILY_ALPHA`` over the metric's suites that have a p, finds its fall significant and the fall is
   ``MIN_REGRESSION`` (1 pp) or more. A limited suite, with too few pairs or clusters for the assay's verdict on the
   metric (``too_few_pairs``, ``too_few_clusters``) in some seed's comparison, is reported and flagged but stays out of
-  the family and never regresses. The p is t's, not the normal's: from 1–3 candidate seeds and 6 baseline seeds,
+  the family and never regresses. A suite whose z is undefined (its baseline seeds have no spread, or it has one
+  baseline value) is out of the family: its fall of ``MIN_REGRESSION`` or more regresses when the assay's own paired
+  verdict on the suite's reads is worse (``WORSE_READS``) in a majority of the candidate seeds' comparisons, and is
+  listed as unmeasured (``unmeasured``) otherwise. The p is t's, not the normal's: from 1–3 candidate seeds and 6
+  baseline seeds,
   Welch's z has heavy tails, and the normal's p would let Holm call some suite of eleven a regression in about a
   quarter of the screens without one. The pooled z is read from Student's t at its df as well (``pooled_test``),
   two-sided at ``POOLED_ALPHA``: z ≥ 2 alone would call about 1 in 20 candidates without an effect better. The
@@ -53,6 +57,7 @@ FAMILY_ALPHA = 0.05                       # Holm's family-wise level over a metr
 MIN_REGRESSION = 0.01                     # the smallest fall of a suite that counts as a regression: 1 pp
 # The assay's tests when a metric's pairs in a suite are too few, or fall in too few clusters, for a verdict.
 FEW_CLUSTERS, FEW_PAIRS = "too_few_clusters", "too_few_pairs"
+WORSE_READS = "a_better"                  # the assay's paired verdict on a suite's reads: the baseline (a) is better
 
 
 def suite_deltas(comparison: Mapping, metric: str) -> dict[str, dict]:
@@ -64,7 +69,8 @@ def suite_deltas(comparison: Mapping, metric: str) -> dict[str, dict]:
         entry = (suite.get("headline") or {}).get(metric)
         if entry and entry.get("delta") is not None and entry.get("n_paired"):
             found[name] = {"delta": entry["delta"], "n_paired": entry["n_paired"],
-                           "clustered": entry.get("test") not in (FEW_CLUSTERS, FEW_PAIRS)}
+                           "clustered": entry.get("test") not in (FEW_CLUSTERS, FEW_PAIRS),
+                           "verdict": entry.get("verdict")}
     return found
 
 
@@ -238,6 +244,7 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
                                                                        metric, direction)
         found["suite_z"] = suite_tests(comparisons, baseline, metric) if calibrated else {}
         found["regressions"] = [name for name, test in found["suite_z"].items() if test["regresses"]]
+        found["unmeasured"] = [name for name, test in found["suite_z"].items() if test["unmeasured_fall"]]
         if not candidate:
             decision = None
         elif not calibrated:
@@ -281,17 +288,28 @@ def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping],
         values = seed_distribution(baseline, metric, name)
         candidate = [suite["delta"] for suite in suites]
         test = {"diff": None, "z": None, "df": None, "p": None, "k": len(candidate), "n": len(values)}
+        if values:
+            test["diff"] = statistics.fmean(candidate) - statistics.fmean(values)
         if len(values) >= 2:
             numbers = welch(candidate, values)
             test.update(diff=numbers["diff"], z=numbers["z"], df=numbers["df"])
             if numbers["z"] is not None:
                 test["p"] = float(stats.t.cdf(numbers["z"], numbers["df"]))
-        tests[name] = {**test, "limited": not all(suite["clustered"] for suite in suites), "significant": False,
-                       "regresses": False}
+        limited = not all(suite["clustered"] for suite in suites)
+        unmeasured = test["z"] is None and test["diff"] is not None
+        falls = unmeasured and not limited and _falls(test["diff"])
+        worse_reads = 2 * sum(suite["verdict"] == WORSE_READS for suite in suites) > len(suites)
+        tests[name] = {**test, "limited": limited, "spread_unmeasured": unmeasured, "significant": False,
+                       "regresses": falls and worse_reads, "unmeasured_fall": falls and not worse_reads}
     family = sorted((test["p"], name) for name, test in tests.items() if test["p"] is not None and not test["limited"])
     for step, (p, name) in enumerate(family):
         if p > FAMILY_ALPHA / (len(family) - step):
             break
         tests[name]["significant"] = True
-        tests[name]["regresses"] = tests[name]["diff"] <= -MIN_REGRESSION + 1e-12
+        tests[name]["regresses"] = _falls(tests[name]["diff"])
     return tests
+
+
+def _falls(diff: float) -> bool:
+    """Whether a suite's diff is a fall of ``MIN_REGRESSION`` or more."""
+    return diff <= -MIN_REGRESSION + 1e-12

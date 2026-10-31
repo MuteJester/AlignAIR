@@ -169,6 +169,19 @@ def test_the_regressions_are_reported_whatever_the_verdict():
     assert f"{REGRESSIONS} not measured, uncalibrated." in single(comparison()).splitlines()
 
 
+def test_a_fall_where_the_baseline_seeds_have_no_spread_is_listed_or_counted_on_the_read_level_verdict():
+    """J top-1's baseline seeds never differ on S7, so its z is undefined there: a −5 pp fall is listed as unmeasured,
+    or counted when the assay's own paired verdict on the suite's reads is worse."""
+    flat = calibration()
+    for seed in flat["seeds"].values():
+        seed["suites"]["S7"]["j.top1_in_set"] = 0.
+    found = comparison()
+    found["suites"]["S7"]["headline"]["j.top1_in_set"] = entry(-0.05)
+    assert f"{REGRESSIONS} none. Spread unmeasured: J top-1 S7 -5.0 pp." in single(found, flat).splitlines()
+    found["suites"]["S7"]["headline"]["j.top1_in_set"] = entry(-0.05, verdict="a_better")
+    assert f"{REGRESSIONS} J top-1 S7 -5.0 pp (read-level verdict worse)." in single(found, flat).splitlines()
+
+
 def test_signs_counted_over_every_suite_for_want_of_clusters_are_marked():
     found = comparison()
     for suite in found["suites"].values():

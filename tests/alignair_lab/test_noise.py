@@ -26,9 +26,9 @@ pytestmark = pytest.mark.component
 METRIC = "junction.nt_exact"
 
 
-def entry(delta, n_paired=100, ci=True, test="clustered_mcnemar"):
+def entry(delta, n_paired=100, ci=True, test="clustered_mcnemar", verdict="tie_or_inconclusive"):
     return {"delta": delta, "n_paired": n_paired, "ci95": [delta - .01, delta + .01] if ci else None,
-            "verdict": "tie_or_inconclusive", "test": test}
+            "verdict": verdict, "test": test}
 
 
 FEW = "too_few_clusters"                    # the assay's verdict threshold: fewer than MIN_CLUSTERS clusters
@@ -290,15 +290,46 @@ def test_several_candidate_seeds_are_compared_by_their_mean_and_spread_pooled_an
     assert (mixed["decision"], mixed["regressions"]) == ("mixed", ["S2"])
 
 
-def test_a_suite_without_spread_or_two_baseline_values_has_no_z_and_never_regresses():
+WORSE_READS = "a_better"                       # the assay's paired verdict: the baseline (a) better on the reads
+
+
+def unmeasured():
+    """BASE, but every baseline seed at the baseline screen's value in S4, and only its own seed has S3."""
     flat = seeds()
     for found in flat.values():
-        found["suites"]["S4"] = {METRIC: 0.}                    # every baseline seed at the baseline screen's value
-    del flat["1"]["suites"]["S3"], flat["2"]["suites"]["S3"], flat["3"]["suites"]["S3"], flat["4"]["suites"]["S3"]
-    del flat["5"]["suites"]["S3"]                                # only the baseline screen's own seed has S3
-    found = decision([entry(.12), entry(.06), entry(-.30), entry(0.)], baseline=flat)
-    assert found["suite_z"]["S4"]["z"] is None and found["suite_z"]["S3"]["z"] is None
-    assert found["regressions"] == []
+        found["suites"]["S4"] = {METRIC: 0.}
+    for seed in ("1", "2", "3", "4", "5"):
+        del flat[seed]["suites"]["S3"]
+    return flat
+
+
+def test_a_fall_where_the_baseline_seeds_have_no_spread_counts_on_the_assays_read_level_verdict():
+    """S4's baseline seeds never differ, so its z is undefined: its −3 pp fall counts when the assay's own paired
+    verdict on the suite's reads is worse, and is listed as unmeasured otherwise. S3 has one baseline value: a −30 pp
+    fall there is never left unreported."""
+    worse = decision([entry(.12), entry(.06), entry(.06), entry(-.03, verdict=WORSE_READS)], baseline=unmeasured())
+    s4 = worse["suite_z"]["S4"]
+    assert (s4["z"], s4["diff"], s4["spread_unmeasured"], s4["regresses"]) == (None, pytest.approx(-.03), True, True)
+    assert (worse["decision"], worse["regressions"], worse["unmeasured"]) == ("mixed", ["S4"], [])
+    tied = decision([entry(.12), entry(.06), entry(.06), entry(-.03)], baseline=unmeasured())
+    assert (tied["decision"], tied["regressions"], tied["unmeasured"]) == ("beyond noise (better)", [], ["S4"])
+    small = decision([entry(.12), entry(.06), entry(.06), entry(-.005, verdict=WORSE_READS)], baseline=unmeasured())
+    assert (small["regressions"], small["unmeasured"]) == ([], [])                        # under 1 pp
+    lone = decision([entry(.12), entry(.06), entry(-.30), entry(.06)], baseline=unmeasured())
+    s3 = lone["suite_z"]["S3"]
+    assert (s3["n"], s3["z"], s3["diff"], s3["spread_unmeasured"]) == (1, None, pytest.approx(-.30), True)
+    assert lone["unmeasured"] == ["S3"]
+    counted = decision([entry(.12), entry(.06), entry(-.30, verdict=WORSE_READS), entry(.06)], baseline=unmeasured())
+    assert counted["regressions"] == ["S3"]
+
+
+def test_several_seeds_count_an_unmeasured_fall_on_a_majority_of_their_read_level_verdicts():
+    def seeds_with(*verdicts):
+        return decision(*[[entry(.12), entry(.06), entry(.06), entry(-.03, verdict=verdict)] for verdict in verdicts],
+                        baseline=unmeasured())
+    assert seeds_with(WORSE_READS, WORSE_READS, "tie_or_inconclusive")["regressions"] == ["S4"]
+    assert seeds_with(WORSE_READS, "tie_or_inconclusive", "tie_or_inconclusive")["unmeasured"] == ["S4"]
+    assert seeds_with(WORSE_READS, "tie_or_inconclusive")["regressions"] == []               # 1 of 2: no majority
 
 
 def test_the_signs_are_kept_as_information_over_the_suites_with_enough_clusters():
