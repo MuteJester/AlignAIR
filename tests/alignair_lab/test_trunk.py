@@ -499,6 +499,36 @@ def test_a_lab_trunk_model_file_round_trips(reference, tmp_path, monkeypatch, ar
 
 
 @pytest.mark.integration
+def test_the_assay_scores_a_d_presence_model_on_its_gated_rows(reference):
+    """On a model with a D presence head the assay's replay is the product's prediction, gated D included, its head
+    metrics run, and every ablation variant runs: each row carries the head's class, and only a callable D keeps a
+    call. A D the head calls absent has no coordinates."""
+    from alignair_assay.core.reference import Reference
+    from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS, run_variants
+    from alignair_assay.diagnostics.heads import head_scores
+    from alignair_assay.diagnostics.replay import replay
+    from alignair_assay.truth.build import truth_from_genairr_record
+    model = build(reference, 'lab-trunk-v2', boundary_mode='half_open', **SMALL, d_presence_head=True)
+    truth_reference = Reference.from_dataconfig('HUMAN_IGH_OGRDB')
+    found = records(4, seed=13)
+    cases = [{'case_id': f'c{k}', 'sequence': record['sequence'].upper()} for k, record in enumerate(found)]
+    truths = [truth_from_genairr_record(record, truth_reference, case_id=case['case_id'], stratum='s')
+              for record, case in zip(found, cases)]
+    sequences, ids = [case['sequence'] for case in cases], [case['case_id'] for case in cases]
+    outputs = replay(model, reference, sequences, ids, device='cpu', batch_size=2)
+    assert outputs.airr_rows == api.predict_sequences(model, reference, sequences, device='cpu', batch_size=2)
+    assert head_scores(outputs, truths)
+    results = run_variants(model, reference, cases, truths, reference=truth_reference, device='cpu', batch_size=2,
+                           variants=DEFAULT_VARIANTS)
+    assert list(results) == list(DEFAULT_VARIANTS)
+    for result in results.values():
+        for row in result.rows:
+            assert row['d_presence'] in ('absent', 'short', 'callable')
+            assert bool(row['d_call']) <= (row['d_presence'] == 'callable')
+            assert row['d_presence'] != 'absent' or row.get('d_sequence_start') is None
+
+
+@pytest.mark.integration
 def test_the_assay_scores_an_anchor_model_from_its_anchors(reference):
     """On a model with anchor heads the assay's replay is the product's prediction, its head metrics run without a
     productive head (head.productive.correct is not scored), and every ablation variant runs: each row's junction and

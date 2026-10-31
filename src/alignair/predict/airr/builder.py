@@ -17,6 +17,8 @@ from .alignment import (build_germline_alignment, build_sequence_alignment,
                         compute_alignment_positions, compute_np_regions,
                         extract_segment_alignments, translate_alignment)
 from ...core.anchors import ANCHOR_GENES, ANCHOR_KEYS
+from ...core.d_presence import ABSENT, D_CLASSES, D_PRESENCE, SHORT
+from .constants import SHORT_D_SENTINEL
 from ..junction import derive_junction
 from .regions import (anchor_junction_fields, cdr3_in_read, cigar_has_indel, compute_junction, compute_junction_cigar,
                       extract_regions)
@@ -89,6 +91,12 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     seq = rec["sequence"]
     out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", "IGH")
+    # a D the D presence head gated (predict.pipeline._gate_d): an absent one is assembled as a read without a D (the
+    # light-chain path: one NP region between V and J); a short one keeps its span and takes the Short-D path for its
+    # germline alignment (the read's bases between V and J), as it has no call
+    presence = rec.get(D_PRESENCE)
+    chain = "light" if presence == D_CLASSES[ABSENT] else chain
+    d_call = SHORT_D_SENTINEL if presence == D_CLASSES[SHORT] else rec.get("d_call")
     anchored = all(key in rec for key in ANCHOR_KEYS.values())
     if anchored:
         # a model with anchor heads: the junction, frame, stop codon and productivity come from its predicted V and J
@@ -132,7 +140,7 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     seq_alignment = build_sequence_alignment(seq, v_ref_gapped, vss, vse, vgs, vge, jse)
     np1, np2 = compute_np_regions(seq, vse, jss, dss, dse, chain)
     germ_alignment = build_germline_alignment(seq, v_gapped, j_ung, d_ung, v_call,
-                                              rec.get("j_call", ""), rec.get("d_call"), vge, jgs,
+                                              rec.get("j_call", ""), d_call, vge, jgs,
                                               jge, dgs, dge, np1, np2, vse, jss, chain)
     positions = compute_alignment_positions(v_ref_gapped, vge, vss, dss, dse, jss, jse, chain)
     seq_aa = translate_alignment(seq_alignment)

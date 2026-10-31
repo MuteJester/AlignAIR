@@ -7,6 +7,7 @@ assembly (sequence_alignment, junction, regions, quality).
 from __future__ import annotations
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS
+from ..core.d_presence import ABSENT, CALLABLE, D_CLASSES, D_PRESENCE
 from ..errors import ConfigurationError, NumericalError
 from ..data.inputs import prepare_nucleotide_inputs
 
@@ -195,5 +196,21 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
                 rec[f"{g}_germline_start"] = aln.germ_start
                 rec[f"{g}_germline_end"] = aln.germ_end
                 rec[f"{g}_cigar"] = aln.cigar
+        d_presence = getattr(preds, "d_presence", None)
+        if d_presence is not None and "d" in genes:
+            _gate_d(rec, int(d_presence[i]))
         records.append(rec)
     return records
+
+
+def _gate_d(rec: dict, klass: int) -> None:
+    """Gate a record's D on the D presence head's class (``core.d_presence``) and record the class: an absent D is
+    dropped (no call, no coordinates: the AIRR assembly then treats the read as one without a D), a short one keeps
+    its span and alignment without a call (an abstention), a callable one is left as it is."""
+    rec[D_PRESENCE] = D_CLASSES[klass]
+    if klass == CALLABLE:
+        return
+    rec["d_call"], rec["d_calls"], rec["d_likelihoods"] = "", [], []
+    if klass == ABSENT:
+        for key in ("d_sequence_start", "d_sequence_end", "d_germline_start", "d_germline_end", "d_cigar"):
+            rec.pop(key, None)

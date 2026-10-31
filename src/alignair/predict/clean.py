@@ -10,6 +10,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
+from ..core.d_presence import D_PRESENCE_LOGITS
 from .decode import decoded_anchors, decoded_boundaries
 from .state import Predictions
 
@@ -47,6 +48,13 @@ def _anchors(batches) -> dict[str, np.ndarray] | None:
     return anchors
 
 
+def _d_presence(batches) -> np.ndarray | None:
+    """The D presence head's class per read (the argmax of its logits), or None without the head."""
+    if not batches or not all(D_PRESENCE_LOGITS in b for b in batches):
+        return None
+    return np.vstack([np.asarray(b[D_PRESENCE_LOGITS]) for b in batches]).argmax(-1)
+
+
 def clean(raw_batches: list, genes) -> Predictions:
     allele, start, end = {}, {}, {}
     for g in genes:
@@ -69,5 +77,5 @@ def clean(raw_batches: list, genes) -> Predictions:
         mutation_rate=_flat(raw_batches, "mutation_rate"),
         indel_count=_flat(raw_batches, "indel_count"),
         productive=productive, orientation=orientation, chain_type=chain_type,
-        state_logits=state_logits, anchors=anchors,
+        state_logits=state_logits, anchors=anchors, d_presence=_d_presence(raw_batches),
     )

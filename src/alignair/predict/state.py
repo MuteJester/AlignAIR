@@ -35,6 +35,8 @@ class Predictions:
     # {"v"/"j": [N] int} the decoded anchors (anchor heads only): the forward-frame read position of the V Cys / J
     # Trp-Phe codon's first base, -1 when the anchor is not observed
     anchors: Optional[dict[str, np.ndarray]] = None
+    # [N] int: the D presence head's class (core.d_presence: absent, short, callable), which gates the D call
+    d_presence: Optional[np.ndarray] = None
 
 
 @dataclass
