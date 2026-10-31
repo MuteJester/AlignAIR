@@ -100,7 +100,7 @@ from alignair_assay.diagnostics.ablation import (
     stage_contributions,
     swap_effects,
 )
-from alignair_assay.diagnostics.heads import METRIC_NAMES, calibration_table, head_scores
+from alignair_assay.diagnostics.heads import METRIC_NAMES, calibration_table, d_presence_confusion, head_scores
 from alignair_assay.diagnostics.identity import (
     ALIGNAIR_DIR,
     KEY_DIGITS,
@@ -226,7 +226,8 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     clusters of two or more diagnosed reads, their ``keys`` of ``scoring.clusters.CLUSTER_KEYS``, and how many
     ``clusters`` and ``cases``);
     ``heads`` and each variant's ``scores`` (metric -> ``mean``, ``n``, ``n_applicable``, ``coverage``);
-    ``calibration`` (gene -> ``heads.calibration_table``); ``metrics`` (the compared family, ``compared_metrics``);
+    ``calibration`` (gene -> ``heads.calibration_table``); ``d_presence`` (``heads.d_presence_confusion``, None for a
+    model without a D presence head); ``metrics`` (the compared family, ``compared_metrics``);
     ``variants`` (name -> ``scores``, ``fallbacks``, per-stage ``seconds``, ``substituted``); ``contributions``
     (``ablation.stage_contributions``) and ``swaps`` (``ablation.swap_effects``), clustered by
     ``scoring.clusters.cluster_ids`` of the suite's truths; the ``seconds`` it took; and ``case_scores``, its per-case
@@ -537,7 +538,8 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
                   "cropped": sum(bool(record.get("length_cropped")) for record in baseline.records),
                   "misoriented": int(sum(case.get("head.misoriented", 0.0) for case in heads.values()))},
         "clusters": cluster_counts(truths, clusters),
-        "heads": _summary(heads), "calibration": calibration, "metrics": family,
+        "heads": _summary(heads), "calibration": calibration, "d_presence": d_presence_confusion(baseline, truths),
+        "metrics": family,
         "variants": {variant: {"scores": _summary(found.scores), "fallbacks": found.fallbacks,
                                "seconds": found.seconds, "substituted": list(found.substituted)}
                      for variant, found in results.items()},

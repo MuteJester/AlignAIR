@@ -39,7 +39,7 @@ INFORMATIONAL: frozenset[str] = frozenset({".set_size", ".top1_generative", "jun
 # genotype and of calls of its deleted genes, and the real-data ones (``real.metrics``) of calls no donor allele
 # supports. A head-level error names its decoder or its truth source after the ``_err``
 # (``head.v.start_abs_err.soft``, ``head.mutation_rate_abs_err.read``).
-_LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".germline_errors", ".mutation_count_err",
+_LOWER_IS_BETTER = ("_err", ".no_call", ".spurious_call", ".callable_gated", ".germline_errors", ".mutation_count_err",
                     ".indel_false", ".outside_genotype", ".deleted_gene_call",
                     "_err.soft", "_err.argmax", "_err.read", "_err.record",
                     ".unsupported", ".unsupported_allele", ".unsupported_gene", "real.v.unsupported_observable")

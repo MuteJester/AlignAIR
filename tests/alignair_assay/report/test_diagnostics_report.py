@@ -278,6 +278,31 @@ def test_the_suite_report_renders_every_section_in_order():
     assert "Result reused from the cache (computed in 12.3 s)." in suite_markdown(_report(), "S3")
 
 
+def test_a_d_presence_head_shows_its_accuracy_its_gated_callable_ds_and_its_confusion():
+    """A model with a D presence head: the summary's metadata table adds its accuracy and the share of truth-callable
+    Ds it gated away (columns shown only when a suite has the head), and the suite's head metrics add both and the
+    truth × head confusion, with the count of callable reads gated."""
+    with_head = _suite()
+    with_head["heads"].update({"head.d_presence.correct": _cell(0.9), "head.d_presence.callable_gated": _cell(0.05)})
+    with_head["d_presence"] = {"classes": ["absent", "short", "callable"], "n": 30, "callable_gated": 2,
+                               "counts": [[3, 1, 0], [0, 4, 2], [1, 1, 18]]}
+    report = _report({"S1": with_head, "S3": _suite("S3")})
+    metadata = _section(diagnostics_markdown(report), "Metadata heads")
+    assert ("| Suite | Orientation | Productive | Mutation rate abs. err | Indel count abs. err | D presence | "
+            "Callable D gated |") in metadata
+    assert "| S1 | 99.7% | 90.6% | 0.083 | — | 90.0% | 5.0% |" in metadata
+    assert "| S3 | 99.7% | 90.6% | 0.083 | — | — | — |" in metadata
+    heads = _section(suite_markdown(report, "S1"), "Head metrics")
+    assert "| head.d_presence.correct | 90.0% (n=10, 100%) |" in heads
+    assert "| head.d_presence.callable_gated | 5.0% (n=10, 100%) |" in heads
+    assert "| Truth \\ head | absent | short | callable |" in heads
+    assert "| callable | 1 | 1 | 18 |" in heads
+    assert "2 of the 20 truth-callable reads were gated away" in heads
+    plain = diagnostics_markdown(_report())
+    assert "D presence" not in _section(plain, "Metadata heads")
+    assert "Truth \\ head" not in _section(suite_markdown(_report(), "S1"), "Head metrics")
+
+
 def test_heads_show_soft_and_argmax_side_by_side():
     heads = _section(suite_markdown(_report(), "S1"), "Head metrics")
     assert ("| Edge | Exact (soft) | Exact (argmax) | Abs. error, nt (soft) | Abs. error, nt (argmax) | "

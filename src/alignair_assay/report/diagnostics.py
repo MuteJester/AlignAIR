@@ -57,6 +57,9 @@ STAGE_LABELS = {"orientation": "orientation", "segmentation": "segmentation", "a
 METADATA_HEADS = {"Orientation": "head.orientation.correct", "Productive": "head.productive.correct",
                   "Mutation rate abs. err": "head.mutation_rate_abs_err.read",
                   "Indel count abs. err": "head.indel_count_abs_err"}
+# A D presence head's columns of the summary's metadata table, shown when a suite's model has the head: its accuracy
+# against the truth's D class, and the share of truth-callable Ds it gated away (their D call dropped).
+D_PRESENCE_HEADS = {"D presence": "head.d_presence.correct", "Callable D gated": "head.d_presence.callable_gated"}
 # Flags: a baseline coverage below this, a fallback reason above this share of a suite's reads; at most this many.
 COVERAGE_FLAG = 0.95
 FALLBACK_FLAG = 0.05
@@ -73,7 +76,8 @@ _BOUNDARY_COLUMNS = (("exact", "soft"), ("exact", "argmax"), ("abs_err", "soft")
                      ("err", "soft"), ("err", "argmax"))
 _ALLELE_METRICS = ("allele_top1", "allele_top3", "allele_top5", "allele_top1_generative", "n_above_threshold")
 _META_METRICS = ("head.mutation_rate_abs_err.read", "head.mutation_rate_abs_err.record", "head.indel_count_abs_err",
-                 "head.productive.correct", "head.orientation.correct", "head.d.short_d_prob_ok", "head.cropped")
+                 "head.productive.correct", "head.orientation.correct", "head.d.short_d_prob_ok",
+                 "head.d_presence.correct", "head.d_presence.callable_gated", "head.cropped")
 _READS = ("built", "diagnosed", "scored", "excluded", "cropped")
 
 _ERRORS_NOTE = ("Each Δ is the change when the truth of one more stage is fed in (in percentage points), given "
@@ -164,7 +168,8 @@ def diagnostics_summary(report: dict) -> dict:
                    for metric in SUMMARY_METRICS},
         "calls": {name: calls for name, suite in suites.items() if (calls := _calls(suite))},
         "boundaries": {name: _boundaries(suite) for name, suite in suites.items()},
-        "metadata": {name: {head: _mean((suite.get("heads") or {}).get(head)) for head in METADATA_HEADS.values()}
+        "metadata": {name: {head: _mean((suite.get("heads") or {}).get(head))
+                            for head in (*METADATA_HEADS.values(), *D_PRESENCE_HEADS.values())}
                      for name, suite in suites.items()},
         "speed": _speed(report.get("profile")),
     }
@@ -481,14 +486,17 @@ def _jump(rates: dict) -> str:
 
 
 def _metadata_section(summary: dict) -> list[str]:
+    columns = dict(METADATA_HEADS)
+    if any(heads.get(head) is not None for heads in summary["metadata"].values() for head in D_PRESENCE_HEADS.values()):
+        columns.update(D_PRESENCE_HEADS)
     rows = []
     for name, heads in summary["metadata"].items():
         cells = []
-        for head in METADATA_HEADS.values():
+        for head in columns.values():
             value = heads.get(head)
             cells.append(MISSING if value is None else f"{value:.3f}" if "_err" in head else _percent(value))
         rows.append([name, *cells])
-    return markdown_table(["Suite", *METADATA_HEADS], rows)
+    return markdown_table(["Suite", *columns], rows)
 
 
 def _speed_section(summary: dict) -> list[str]:
@@ -585,6 +593,16 @@ def _suite_heads(suite: dict) -> list[str]:
     rows = [[name, format_cell(name, heads[name])] for name in _META_METRICS if name in heads]
     if rows:
         lines += ["Metadata heads:", "", *markdown_table(["Head metric", "Value"], rows)]
+    confusion = suite.get("d_presence")
+    if confusion:
+        classes = confusion["classes"]
+        callable_reads = sum(confusion["counts"][classes.index("callable")])
+        lines += ["", "D presence, truth class (rows) × the head's class (columns), in reads:", "",
+                  *markdown_table(["Truth \\ head", *classes],
+                                  [[truth, *(str(count) for count in row)]
+                                   for truth, row in zip(classes, confusion["counts"])]),
+                  "", f"{confusion['callable_gated']} of the {callable_reads} truth-callable reads were gated away "
+                      "(called absent or short: their D call dropped)."]
     return lines or ["No head metric applies to these reads."]
 
 

@@ -48,13 +48,20 @@ truth set), ``head.{g}.allele_top1_generative`` (informational: the top-1 is in 
 boundaries. ``head.d.short_d_prob_ok`` applies only to a model whose D head has a Short-D output (the released IGH
 model has none): P(Short-D) >= 0.5 exactly when the read's D is absent or shorter than ``MIN_OBSERVED["d"]``.
 
+**D presence** (a model with a D presence head, ``d_presence_logits``; the product gates the D call on its argmax):
+``head.d_presence.correct``, the head's class is the truth's (``d_class``: absent, short below ``MIN_OBSERVED["d"]``
+observed germline bases, callable), on every read whose D truth was built and that the window does not crop; and
+``head.d_presence.callable_gated``, on the truth-callable reads, 1.0 when the head called them absent or short, so the
+gate dropped a D call the assay scores (its sum counts them). ``d_presence_confusion`` gives the truth × head counts.
+
 **Metadata.** ``head.mutation_rate_abs_err.read``: against the truth V mismatches over the observed V germline bases
 (V observed with at least ``MIN_OBSERVED["v"]`` bases). ``head.mutation_rate_abs_err.record`` (informational, only
 with ``cases``): against the GenAIRR record's ``mutation_rate``, the training target. ``head.indel_count_abs_err``:
 against the inserted plus deleted bases of the truth's observed V, D and J CIGARs (GenAIRR's indels are single
 bases), when every gene's truth was built. ``head.productive.correct``: probability >= 0.5 matches the truth, where
 it is defined (not for a model with anchor heads, which has no productive head: its productivity is derived from the
-anchors and scored on the AIRR row as ``productive.correct``). ``head.orientation.correct``: the orientation logits' argmax is the truth orientation (0 or 1).
+anchors and scored on the AIRR row as ``productive.correct``). ``head.orientation.correct``: the orientation logits'
+argmax is the truth orientation (0 or 1).
 ``head.cropped`` (informational): 1.0 for a read longer than the window, so its sum counts the crops;
 ``head.misoriented`` (informational): 1.0 for a read in another frame than the truth's, whose boundaries are not
 scored.
@@ -66,6 +73,7 @@ from collections.abc import Iterable
 import numpy as np
 import torch
 from alignair.core.boundaries import read_window as model_window
+from alignair.core.d_presence import ABSENT, CALLABLE, D_CLASSES, D_PRESENCE_LOGITS, SHORT
 from alignair.predict.airr.constants import SHORT_D_SENTINEL
 from alignair.predict.decode import boundary_slots, decode_boundaries as product_decode
 
@@ -89,7 +97,7 @@ METRIC_NAMES: tuple[str, ...] = (
       for decoder in DECODERS),
     *(f"head.{g}.allele_top{k}" for g in GENES for k in TOP_K),
     *(f"head.{g}.{name}" for g in GENES for name in ("allele_top1_generative", "n_above_threshold")),
-    "head.d.short_d_prob_ok",
+    "head.d.short_d_prob_ok", "head.d_presence.correct", "head.d_presence.callable_gated",
     "head.mutation_rate_abs_err.read", "head.mutation_rate_abs_err.record", "head.indel_count_abs_err",
     "head.productive.correct", "head.orientation.correct", "head.cropped", "head.misoriented",
 )
@@ -145,6 +153,7 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
     ranking = {g: allele_ranking(outputs, g) for g in alleles}
     probs = {g: np.asarray(outputs.predictions.allele[g]) for g in alleles}
     short_d = _short_d_index(outputs)
+    presence = _d_presence(outputs)
     frames = model_frames(outputs)
 
     scores: dict[str, CaseScores] = {}
@@ -164,6 +173,12 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
             d = truth.segments.get("d")
             short = d is None or d.observed_length < MIN_OBSERVED["d"]
             case["head.d.short_d_prob_ok"] = float((probs["d"][i, short_d] >= THRESHOLD) == short)
+        want = None if presence is None else d_class(truth, width)
+        if want is not None:
+            got = int(presence[i])
+            case["head.d_presence.correct"] = float(got == want)
+            if want == CALLABLE:
+                case["head.d_presence.callable_gated"] = float(got != CALLABLE)
         v = _scored_segment(truth, "v")
         if v is not None and truth.v_mismatches is not None:
             case["head.mutation_rate_abs_err.read"] = abs(float(raw["mutation_rate"][i])
@@ -181,6 +196,42 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
         case["head.orientation.correct"] = float(orientation == truth.orientation)
         scores[truth.case_id] = case
     return scores
+
+
+def d_class(truth: ObservableTruth, width: int) -> int | None:
+    """The truth's D class in AlignAIR's terms (``alignair.core.d_presence``): absent without an observed D, short
+    below ``MIN_OBSERVED["d"]`` observed germline bases, callable otherwise. None when the D truth was not built, or
+    when the read is longer than the window ``width``, whose crop may cut its D."""
+    if "d" in truth.unscorable or len(truth.sequence) > width:
+        return None
+    segment = truth.segments.get("d")
+    if segment is None:
+        return ABSENT
+    return SHORT if segment.observed_length < MIN_OBSERVED["d"] else CALLABLE
+
+
+def d_presence_confusion(outputs: StageOutputs, truths: list[ObservableTruth]) -> dict | None:
+    """For a model with a D presence head, the counts of truth class (rows) × the head's class (columns) over the
+    reads ``d_class`` scores, in ``D_CLASSES`` order: ``classes``, ``counts`` (3 × 3), ``n`` and ``callable_gated``
+    (truth callable, called absent or short: the reads whose D call the gate drops). None for a model without the
+    head."""
+    presence = _d_presence(outputs)
+    if presence is None:
+        return None
+    width = _width(outputs)
+    counts = [[0] * len(D_CLASSES) for _ in D_CLASSES]
+    for truth, i in _pairs(outputs, truths):
+        want = d_class(truth, width)
+        if want is not None:
+            counts[want][int(presence[i])] += 1
+    return {"classes": list(D_CLASSES), "counts": counts, "n": sum(map(sum, counts)),
+            "callable_gated": sum(counts[CALLABLE][k] for k in (ABSENT, SHORT))}
+
+
+def _d_presence(outputs: StageOutputs) -> np.ndarray | None:
+    """The D presence head's class per read (the argmax of its logits, the class the product gates on), or None."""
+    logits = outputs.raw.get(D_PRESENCE_LOGITS)
+    return None if logits is None else np.asarray(logits).argmax(-1)
 
 
 def calibration_table(outputs: StageOutputs, truths: list[ObservableTruth], gene: str, bins: int = 10) -> dict:

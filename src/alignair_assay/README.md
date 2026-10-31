@@ -1494,6 +1494,15 @@ with ties going to the lower index. They apply to the same segments as the bound
 - `head.d.short_d_prob_ok`: P(Short-D) >= 0.5 exactly when the D is absent or shorter than `MIN_OBSERVED["d"]`. It
   applies only to a model whose D head has a `Short-D` output. The released IGH model has none: its 33 D outputs are
   the 33 reference D alleles.
+- `head.d_presence.correct` and `head.d_presence.callable_gated` apply only to a model with a D presence head
+  (`d_presence_logits`; the product gates the D call on its argmax).
+  - The truth's class (`heads.d_class`) is absent without an observed D, short below `MIN_OBSERVED["d"]` observed
+    germline bases, and callable otherwise. It is scored where the D truth was built and the window crops nothing.
+  - `correct`: the head's class is the truth's.
+  - `callable_gated` (lower is better): on the truth-callable reads, 1.0 when the head called them absent or short,
+    so the gate dropped a D call the assay scores. Its sum counts those reads, the risk of a D presence model.
+  - `heads.d_presence_confusion` counts truth × head classes. The suite result keeps it (`d_presence`) and the suite
+    page shows it; the summary's metadata table adds both metrics for such a model.
 
 **Metadata heads.**
 

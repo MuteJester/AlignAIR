@@ -149,7 +149,15 @@ def _oracle(truths, names, *, width=WIDTH):
             out.raw["mutation_rate"][i, 0] = t.v_mismatches / t.segments["v"].observed_length
         out.raw["indel_count"][i, 0] = sum(_indel_bases(seg.observed.cigar) for seg in t.segments.values())
         out.raw["productive"][i, 0] = float(bool(t.productive))
+    # a D presence head that gives the truth's D class
+    out.raw["d_presence_logits"] = np.eye(3, dtype=np.float32)[[_d_class(t) for t in truths]] * 5
     return out
+
+
+def _d_class(truth):
+    """The truth's D class: 0 absent, 1 below MIN_OBSERVED["d"] observed bases, 2 callable."""
+    d = truth.segments.get("d")
+    return 0 if d is None else 1 if d.observed_length < MIN_OBSERVED["d"] else 2
 
 
 def _assert_perfect(scores):
@@ -277,6 +285,42 @@ def test_short_d_probability_only_for_a_model_with_the_sentinel():
     # The released IGH model has no Short-D output: the metric does not apply.
     plain = _blank(truths)
     assert not any("head.d.short_d_prob_ok" in case for case in head_scores(plain, truths).values())
+
+
+def test_the_d_presence_head_is_scored_against_the_truths_d_class():
+    """A model with a D presence head (``d_presence_logits``: absent, short, callable) is scored per read against the
+    truth's D class (absent; observed length below ``MIN_OBSERVED["d"]``: short; else callable):
+    ``head.d_presence.correct`` on every read whose D truth was built and whose D the window cannot hide, and
+    ``head.d_presence.callable_gated`` on the truth-callable reads, 1.0 when the head called them absent or short (the
+    gate then drops their D call). ``d_presence_confusion`` counts truth × predicted classes."""
+    from alignair_assay.diagnostics.heads import d_presence_confusion
+    d_short, d_long = _seg(30, 35, "D1*01"), _seg(30, 42, "D1*01")  # 5 and 12 observed bases (minimum 8)
+    v = _seg(0, 25, "V1*01")
+    cases = {"callable_kept": ({"v": v, "d": d_long}, 2), "callable_short": ({"v": v, "d": d_long}, 1),
+             "callable_absent": ({"v": v, "d": d_long}, 0), "short_short": ({"v": v, "d": d_short}, 1),
+             "short_callable": ({"v": v, "d": d_short}, 2), "absent_absent": ({"v": v}, 0),
+             "absent_callable": ({"v": v}, 2), "unscorable": ({"v": v}, 0)}
+    truths = [_truth(cid, 60, segments, unscorable={"d"} if cid == "unscorable" else ())
+              for cid, (segments, _) in cases.items()]
+    truths.append(_truth("cropped", 70, {"v": v, "d": d_long}))          # longer than the window: its D may be cut
+    out = _blank(truths)
+    predicted = [klass for _, klass in cases.values()] + [2]
+    out.raw["d_presence_logits"] = np.eye(3, dtype=np.float32)[predicted] * 5
+    scores = head_scores(out, truths)
+    assert {cid: case.get("head.d_presence.correct") for cid, case in scores.items()} == {
+        "callable_kept": 1.0, "callable_short": 0.0, "callable_absent": 0.0, "short_short": 1.0,
+        "short_callable": 0.0, "absent_absent": 1.0, "absent_callable": 0.0, "unscorable": None, "cropped": None}
+    assert {cid: case.get("head.d_presence.callable_gated") for cid, case in scores.items()} == {
+        "callable_kept": 0.0, "callable_short": 1.0, "callable_absent": 1.0, "short_short": None,
+        "short_callable": None, "absent_absent": None, "absent_callable": None, "unscorable": None, "cropped": None}
+    assert {"head.d_presence.correct", "head.d_presence.callable_gated"} <= set(METRIC_NAMES)
+    assert d_presence_confusion(out, truths) == {
+        "classes": ["absent", "short", "callable"],
+        "counts": [[1, 0, 1], [0, 1, 1], [1, 1, 1]],     # rows: truth; columns: predicted
+        "n": 7, "callable_gated": 2}
+    plain = _blank(truths)
+    assert d_presence_confusion(plain, truths) is None
+    assert not any("head.d_presence.correct" in case for case in head_scores(plain, truths).values())
 
 
 # --- metadata heads -----------------------------------------------------------------------------------------------
@@ -491,14 +535,15 @@ def test_registry_classifies_every_head_metric():
     informational |= {f"head.{g}.{m}" for g in GENES for m in ("allele_top1_generative", "n_above_threshold")}
     informational |= {"head.mutation_rate_abs_err.record", "head.cropped", "head.misoriented"}
     errors = {name for name in METRIC_NAMES if "_abs_err" in name} - informational
-    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 59 and len(informational) == 21 and len(errors) == 14
+    errors |= {"head.d_presence.callable_gated"}                       # a failure rate: callable Ds gated away
+    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 61 and len(informational) == 21 and len(errors) == 15
     for name in METRIC_NAMES:
         assert name.startswith("head."), name
         if name in informational:
             assert is_informational(name), name
         elif name in errors:
             assert lower_is_better(name) and not is_informational(name), name
-        else:  # accuracies: exact edges, top-k, Short-D, productive, orientation
+        else:  # accuracies: exact edges, top-k, Short-D, D presence, productive, orientation
             assert not lower_is_better(name) and not is_informational(name), name
 
 
