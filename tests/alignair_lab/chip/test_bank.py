@@ -51,3 +51,11 @@ def test_row_mask_maps_alleles_to_both_d_rows():
 def test_no_parameters_and_no_saved_state():
     bank = BankCompiler(_reference())
     assert list(bank.parameters()) == [] and bank.state_dict() == {}
+
+
+def test_v_and_j_rows_also_hold_their_ungapped_germline_and_anchor_base():
+    bank = BankCompiler(_reference())
+    assert bank.sequence_v.tolist() == [[1, 4, 3, 2], [1, 4, 3, 1]]     # ACGT, ACGA as tokens (A 1, T 2, G 3, C 4)
+    assert bank.sequence_j.tolist() == [[2, 2, 3, 3]]                    # TTGG
+    assert bank.anchor_base_v.tolist() == [-1, -1]                       # no annotated anchor
+    assert bank.anchor_base_j.tolist() == [1]

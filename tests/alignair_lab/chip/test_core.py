@@ -96,3 +96,19 @@ def test_no_per_allele_parameters(chip):
     counts = {2}
     assert not any(set(p.shape) & counts for name, p in model.named_parameters() if "core" in name and p.ndim)
     assert not any("bank" in key for key in model.state_dict())
+
+
+def test_the_chip_refines_its_v_end_and_j_start_with_its_bank(chip, monkeypatch):
+    model, batch, _ = chip
+    model.eval()
+    seen = []
+
+    def marked(out, tokens, mask, end_mask, bank):
+        seen.append((bank, torch.equal(tokens, batch.inputs["tokenized_sequence"])))
+        out["v_end_logits"] = out["v_end_logits"] + 1000.
+    monkeypatch.setattr(chip_core, "refine_boundaries", lambda *args: None)
+    plain = model(batch.inputs)["v_end_logits"]
+    monkeypatch.setattr(chip_core, "refine_boundaries", marked)
+    refined = model(batch.inputs)["v_end_logits"]
+    assert seen == [(model.core.bank, True)]
+    assert torch.allclose(refined - plain, torch.full_like(plain, 1000.))

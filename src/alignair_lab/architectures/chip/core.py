@@ -8,7 +8,8 @@ weights each base by its soft region weight (through a gradient valve: the scans
 ``ROUTE_VALVE`` of their full pull) and by 1 - P(inserted), and the bank scan scores every row of the bound bank
 (``bind_reference``) that the batch's genotype (``bank_mask_{gene}``, every allele when absent) allows.
 
-Outputs, under the product's keys: the parser's boundary logits and their expectations; ``{gene}_allele``, the
+Outputs, under the product's keys: the parser's boundary logits and their expectations, the V end and J start refined
+by the called alleles' germlines from the anchors (``refiner``, with the anchor heads); ``{gene}_allele``, the
 allele's likelihood relative to the best (1 for the best, 0 out of the bank) so the product's set thresholds keep
 near ties; the anchor logits; ``d_presence_logits`` from detached evidence (how much of the read the parser puts in
 D, how concentrated the D posterior is), so presence reads the evidence without reshaping it; ``mutation_rate`` and
@@ -33,6 +34,7 @@ from ..trunk import TRUNK_CHANNELS, AnchorHead, DilatedTrunk
 from .bank import BankCompiler
 from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser
 from .reader import ShmReader, top_coordinates
+from .refiner import refine_boundaries
 from .scan import BankScan, allele_log_posterior
 
 ROUTE_VALVE = 0.1
@@ -153,6 +155,8 @@ class ChipCore(nn.Module):
         in_vdj = sum(parsed.marginals[..., STATE_OF[gene]] for gene in self.genes)
         out["mutation_rate"] = (reading.m * in_vdj).sum(1, keepdim=True) / in_vdj.sum(1, keepdim=True).clamp_min(1.)
         out["indel_count"] = (reading.inserted * in_vdj).sum(1, keepdim=True)
+        if self.anchors is not None:                  # the V end and J start, counted along the bank from the anchors
+            refine_boundaries(out, tokens, mask, end_mask, self.bank)
 
         if chip_batch:
             out["chip_emissions"], out["chip_transitions"] = parsed.emissions, parsed.transitions
