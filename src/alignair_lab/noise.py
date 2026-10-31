@@ -19,7 +19,8 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
   ``FAMILY_ALPHA`` over the metric's suites that have a p, finds its fall significant and the fall is
   ``MIN_REGRESSION`` (1 pp) or more. A limited suite, with too few pairs or clusters for the assay's verdict on the
   metric (``too_few_pairs``, ``too_few_clusters``) in some seed's comparison, is reported and flagged but stays out of
-  the family and never regresses. A suite whose baseline seeds have no spread there (an SD of 0, or one value) has
+  the family and never regresses; where its spread is unmeasured too (below), its fall of ``MIN_REGRESSION`` or more is
+  listed (``unmeasured_limited``), never counted. A suite whose baseline seeds have no spread there (an SD of 0, or one value) has
   its spread unmeasured, whatever the candidate seeds' spread: the trigger is the baseline's. It has no z and is out
   of the family: its fall of ``MIN_REGRESSION`` or more regresses when the assay's own paired verdict on the suite's
   reads is worse (``WORSE_READS``) in a majority of the candidate seeds' comparisons, and is listed as unmeasured
@@ -222,10 +223,11 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
     each against the baseline screen) and their mean (``pooled``), ``welch``'s numbers against the ``baseline``
     seeds' pooled values (each seed's Δ against the same baseline screen, ``seed_values``; None without a
     calibration), the reference ``band`` (None without one), each suite's own Welch test (``suite_z``,
-    ``suite_tests``; empty without a calibration) and the suites that regress (``regressions``), the suites counted for
-    the signs (``suites``, of ``basis`` ``clusters`` or ``all``) and how many ``agree`` with the diff's sign, kept as
-    information, and the ``decision`` (see the module docstring; None, and no basis, when no suite compares the
-    metric)."""
+    ``suite_tests``; empty without a calibration), the suites that regress (``regressions``) and those whose fall is
+    listed with their spread unmeasured (``unmeasured``; ``unmeasured_limited`` with too few pairs or clusters), the
+    suites counted for the signs (``suites``, of ``basis`` ``clusters`` or ``all``) and how many ``agree`` with the
+    diff's sign, kept as information, and the ``decision`` (see the module docstring; None, and no basis, when no suite
+    compares the metric)."""
     decisions = {}
     for metric in metrics:
         candidate = [value for value in (pooled(comparison, metric) for comparison in comparisons) if value is not None]
@@ -246,6 +248,7 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
         found["suite_z"] = suite_tests(comparisons, baseline, metric) if calibrated else {}
         found["regressions"] = [name for name, test in found["suite_z"].items() if test["regresses"]]
         found["unmeasured"] = [name for name, test in found["suite_z"].items() if test["unmeasured_fall"]]
+        found["unmeasured_limited"] = [name for name, test in found["suite_z"].items() if test["limited_fall"]]
         if not candidate:
             decision = None
         elif not calibrated:
@@ -281,7 +284,8 @@ def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping],
     for the assay's verdict in some seed's comparison); whether it is ``significant`` by Holm's step-down at family α
     ``FAMILY_ALPHA`` over the suites with a p that are not limited; and whether it ``regresses``: significant and down
     by ``MIN_REGRESSION`` or more, or, with its spread unmeasured, down by that much with the assay's read-level
-    verdict worse in a majority of the seeds' comparisons (``unmeasured_fall`` otherwise)."""
+    verdict worse in a majority of the seeds' comparisons (``unmeasured_fall`` otherwise); a limited suite with its
+    spread unmeasured and down by that much is a ``limited_fall``, never a regression."""
     found: dict[str, list[dict]] = {}
     for comparison in comparisons:
         for name, suite in suite_deltas(comparison, metric).items():
@@ -299,10 +303,11 @@ def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping],
             test.update(diff=numbers["diff"], z=numbers["z"], df=numbers["df"],
                         p=float(stats.t.cdf(numbers["z"], numbers["df"])))
         limited = not all(suite["clustered"] for suite in suites)
-        falls = unmeasured and not limited and _falls(test["diff"])
+        falls = unmeasured and _falls(test["diff"])
         worse_reads = 2 * sum(suite["verdict"] == WORSE_READS for suite in suites) > len(suites)
         tests[name] = {**test, "limited": limited, "spread_unmeasured": unmeasured, "significant": False,
-                       "regresses": falls and worse_reads, "unmeasured_fall": falls and not worse_reads}
+                       "regresses": falls and not limited and worse_reads,
+                       "unmeasured_fall": falls and not limited and not worse_reads, "limited_fall": falls and limited}
     family = sorted((test["p"], name) for name, test in tests.items() if test["p"] is not None and not test["limited"])
     for step, (p, name) in enumerate(family):
         if p > FAMILY_ALPHA / (len(family) - step):

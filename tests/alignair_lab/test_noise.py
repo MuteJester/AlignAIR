@@ -345,6 +345,23 @@ def test_several_seeds_count_a_fall_where_the_baseline_seeds_have_no_spread_on_t
     assert (two["regressions"], two["unmeasured"]) == ([], ["S4"])
 
 
+def test_a_cluster_limited_fall_where_the_baseline_seeds_have_no_spread_is_listed_and_never_counted():
+    """S4 has too few pairs or clusters for the assay's verdict and its baseline seeds have no spread: a fall of 1 pp or
+    more there is listed (``unmeasured_limited``), whatever the read-level verdicts, and never counted."""
+    for test in ("too_few_clusters", "too_few_pairs"):
+        found = decision(*[[entry(.12), entry(.06), entry(.06), entry(-.03, verdict=WORSE_READS, test=test)]] * 3,
+                         baseline=unmeasured())
+        s4 = found["suite_z"]["S4"]
+        assert (s4["limited"], s4["spread_unmeasured"], s4["limited_fall"], s4["regresses"]) == (True, True, True,
+                                                                                                 False)
+        assert (found["regressions"], found["unmeasured"], found["unmeasured_limited"]) == ([], [], ["S4"])
+        assert found["decision"] == "beyond noise (better)"
+    small = decision([entry(.12), entry(.06), entry(.06), entry(-.005, test=FEW)], baseline=unmeasured())
+    assert small["unmeasured_limited"] == [] and not small["suite_z"]["S4"]["limited_fall"]          # under 1 pp
+    spread = decision([entry(.12), entry(.06), entry(.06), entry(-.09, test=FEW)])        # a z: limited, as before
+    assert spread["unmeasured_limited"] == [] and not spread["suite_z"]["S4"]["limited_fall"]
+
+
 def test_the_signs_are_kept_as_information_over_the_suites_with_enough_clusters():
     """Enough clusters is the assay's own threshold for a verdict, in every seed's comparison of the suite."""
     clustered = decision([entry(.09), entry(.09), entry(-.03, test=FEW), entry(-.03, test=FEW)])

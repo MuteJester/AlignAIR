@@ -282,6 +282,17 @@ def test_a_fall_where_the_baseline_seeds_have_no_spread_is_listed_or_counted_on_
     assert f"{REGRESSIONS} J top-1 S7 -5.0 pp (read-level verdict worse)." in single(found, flat).splitlines()
 
 
+def test_a_cluster_limited_fall_where_the_baseline_seeds_have_no_spread_is_listed_never_counted():
+    """J top-1's S9 has too few clusters, and its baseline seeds never differ there: a −3 pp fall is listed apart."""
+    flat = calibration()
+    for seed in flat["seeds"].values():
+        seed["suites"]["S9"]["j.top1_in_set"] = 0.
+    found = comparison()
+    found["suites"]["S9"]["headline"]["j.top1_in_set"] = entry(-0.03, verdict="a_better", test="too_few_clusters")
+    assert (f"{REGRESSIONS} none. Spread unmeasured (cluster-limited): J top-1 S9 -3.0 pp."
+            in single(found, flat).splitlines())
+
+
 def test_signs_counted_over_every_suite_for_want_of_clusters_are_marked():
     found = comparison()
     for suite in found["suites"].values():

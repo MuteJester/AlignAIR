@@ -154,7 +154,8 @@ def band_text(found: Mapping) -> str:
 
 def regressions_line(decisions: Mapping[str, Mapping]) -> str:
     """The ``REGRESSIONS`` line of the headline metrics' decisions (``noise.decide``): each regression's metric,
-    suite, diff (pp) and z, whatever the metric's verdict; none; or not measured without a calibration."""
+    suite, diff (pp) and z, whatever the metric's verdict; none; or not measured without a calibration. Then the falls
+    listed with their spread unmeasured, never counted, those with too few pairs or clusters apart."""
     if not any(decisions[metric]["suite_z"] for metric, _ in HEADLINE):
         return f"{REGRESSIONS} not measured, uncalibrated."
 
@@ -168,9 +169,10 @@ def regressions_line(decisions: Mapping[str, Mapping]) -> str:
         return [item(label, suite, decisions[metric]["suite_z"][suite])
                 for metric, label in HEADLINE for suite in decisions[metric][field]]
 
-    counted, unmeasured = listed("regressions"), listed("unmeasured")
+    counted, unmeasured, limited = listed("regressions"), listed("unmeasured"), listed("unmeasured_limited")
     line = f"{REGRESSIONS} {'; '.join(counted) if counted else 'none'}."
-    return line + (f" Spread unmeasured: {'; '.join(unmeasured)}." if unmeasured else "")
+    line += f" Spread unmeasured: {'; '.join(unmeasured)}." if unmeasured else ""
+    return line + (f" Spread unmeasured (cluster-limited): {'; '.join(limited)}." if limited else "")
 
 
 def secondary_lines(decisions: Mapping[str, Mapping]) -> list[str]:
