@@ -77,6 +77,7 @@ REPORT_KIND, REPORT_VERSION = "alignair_lab.replicates", 1
 REQUEST_FIELDS = ("architecture", "model_options", "steps", "schedule", "protocol", "suites", "suite_builds",
                   "max_cases", "variants")
 BASELINE_FIELDS = ("kind", "checkpoint", "options")
+CODE_FIELDS = ("alignair_lab", "alignair_assay")      # the code digests replicates must share (``screen.code_digests``)
 
 
 def replicate_name(name: str, seed: int) -> str:
@@ -136,7 +137,32 @@ def check_replicates(records: Mapping[int, Mapping], expected: Mapping | None = 
                                      "differ", context={**context, "differing": differing},
                                      hint="Replicates share everything but their init seeds: move the screen away, or "
                                           "name the request it was screened with.")
+    digests = [(seed, record.get("name"), _code(record)) for seed, record in records.items() if _code(record)]
+    for seed, name, code in digests[1:]:
+        differing = [f"code.{field}" for field in CODE_FIELDS if code[field] != digests[0][2][field]]
+        if differing:
+            raise ConfigurationError(f"the replicate {name} (init seed {seed}) was screened under other code than "
+                                     f"{digests[0][1]}: {', '.join(differing)} differ",
+                                     context={"field": "replicates", "screen": name, "differing": differing},
+                                     hint="Replicates of one request are screened by one lab and one assay code.")
     return want
+
+
+def _code(record: Mapping) -> dict | None:
+    """A screen record's lab and assay code digests (``screen.code_digests``), or None when it records them not."""
+    code = record.get("code") or {}
+    return {field: code[field] for field in CODE_FIELDS} if all(code.get(field) for field in CODE_FIELDS) else None
+
+
+def code_warning(records: Mapping[int, Mapping]) -> str | None:
+    """The warning line for the replicates that record no lab or assay code digest (screened before they were kept),
+    so their code cannot be checked to be the others'; None when every one records them."""
+    unknown = [record.get("name") or str(seed) for seed, record in records.items() if _code(record) is None]
+    if not unknown:
+        return None
+    records_them = "it records" if len(unknown) == 1 else "they record"
+    return (f"Warning: code digest unknown for {', '.join(unknown)}: {records_them} no alignair_lab or alignair_assay "
+            "code digest, so the lab's and the assay's code cannot be checked to be the same.")
 
 
 def check_calibration(records: Mapping[int, Mapping], band: Mapping | None, init_seed: int | None) -> None:
@@ -331,4 +357,7 @@ def _title(name: str, request: Mapping, seeds: Sequence[int], records: Mapping[i
         lines.append(f"Warning: the calibration was measured under other AlignAIR code "
                      f"({(band.get('code_sha256') or 'unrecorded')[:12]}) than the replicates "
                      f"({(codes[0] or 'unknown')[:12]}).")
+    unknown = code_warning(records)
+    if unknown:
+        lines.append(unknown)
     return [*lines, ""]

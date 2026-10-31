@@ -8,6 +8,7 @@ rig (``rig``), whose registered baseline screen is ``base0``.
 """
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 
@@ -51,6 +52,13 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
     assert record['protocol'] == json.loads((baseline / 'screen.json').read_text())['protocol']
     assert (record['role'], record['init_seed'], record['schedule']) == ('candidate', 0, 'cosine')
     assert record['comparison']['code']['same'] is True                     # one process, one AlignAIR code
+    # the code of the product, the lab and the assay that screened it, by content
+    import alignair_assay
+    import alignair_lab
+    from alignair_assay.core.provenance import code_identity
+    assert record['code'] == {'alignair': record['comparison']['code']['this'],
+                              'alignair_lab': code_identity(Path(alignair_lab.__file__).parent)['code_sha256'],
+                              'alignair_assay': code_identity(Path(alignair_assay.__file__).parent)['code_sha256']}
     assert record['null_band'] is None and set(record['decisions']) >= {'clone_key.exact', 'junction.nt_exact'}
     headline = (screen / 'headline.txt').read_text()
     assert 'against the baseline screen base0 (lab-null-v1, init seed 0) at step 2' in headline

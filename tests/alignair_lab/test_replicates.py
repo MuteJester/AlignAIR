@@ -10,7 +10,7 @@ from alignair.errors import ConfigurationError
 from alignair_lab.cli import main
 from alignair_lab.headline import POOLED_HEADING
 from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE, pooled
-from alignair_lab.replicates import check_replicates, replicate_name, report_name, request_of
+from alignair_lab.replicates import check_replicates, code_warning, replicate_name, report_name, request_of
 from tests.alignair_lab.rig import candidate_arguments, common, options, write_null_band
 
 
@@ -66,6 +66,31 @@ def test_replicates_of_different_requests_are_refused_naming_the_screen_and_what
     assert replicate_name("cand", seed) in str(caught.value)
 
 
+CODE = {"alignair": "a" * 64, "alignair_lab": "b" * 64, "alignair_assay": "c" * 64}
+
+
+@pytest.mark.component
+def test_replicates_of_other_lab_or_assay_code_are_refused():
+    records = {seed: record(seed, code=dict(CODE)) for seed in (0, 1, 2)}
+    assert check_replicates(records) == request_of(records[0]) and code_warning(records) is None
+    for field in ("alignair_lab", "alignair_assay"):
+        records[2] = record(2, code={**CODE, field: "d" * 64})
+        with pytest.raises(ConfigurationError, match=f"code.{field}") as caught:
+            check_replicates(records)
+        assert "cand-init2" in str(caught.value)
+
+
+@pytest.mark.component
+def test_replicates_without_code_digests_are_pooled_with_a_warning():
+    """Screens recorded before the lab's and the assay's code digests were cannot be checked: they are pooled with a
+    warning naming them."""
+    records = {0: record(0, code=dict(CODE)), 1: record(1), 2: record(2)}
+    assert check_replicates(records) == request_of(records[0])
+    assert code_warning(records) == ("Warning: code digest unknown for cand-init1, cand-init2: they record no "
+                                     "alignair_lab or alignair_assay code digest, so the lab's and the assay's code "
+                                     "cannot be checked to be the same.")
+
+
 @pytest.mark.component
 def test_replicates_of_another_request_than_the_one_asked_for_are_refused():
     records = {seed: record(seed) for seed in (0, 1)}
@@ -109,7 +134,7 @@ def replicate_arguments(rig, root, *extra, seeds="0,1,2"):
 @pytest.mark.integration
 def test_replicates_pool_finished_screens_into_a_report_without_training(rig, replicate_root, capsys):
     copy_replicate(replicate_root, 1, .01)
-    copy_replicate(replicate_root, 2, -.02)
+    copy_replicate(replicate_root, 2, -.02, code=None)                  # screened before the code digests were kept
     capsys.readouterr()
     assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 0
     report = replicate_root / "report-rep-seeds012"
@@ -128,6 +153,7 @@ def test_replicates_pool_finished_screens_into_a_report_without_training(rig, re
     headline = (report / "headline.txt").read_text()
     assert headline.strip() in capsys.readouterr().out
     assert POOLED_HEADING in headline and "init seed 0 alone (rep)" in headline
+    assert "Warning: code digest unknown for rep-init2:" in headline
     assert sorted(path.name for path in replicate_root.iterdir()) == \
         ["base0", "calibration", "rep", "rep-init1", "rep-init2", "report-rep-seeds012"]          # nothing trained
     assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 2                      # a report is kept

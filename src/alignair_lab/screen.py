@@ -48,7 +48,8 @@ failure is recorded before it is raised), the model keys, the report path, the t
 noise ``decisions``. It also holds each model's size (``sizes.checkpoint_size``: its parameters and Conv1d layers,
 in total and per component) and training steps/s: the candidate's under ``candidate``, the baseline's under
 ``baseline`` (the steps/s its baseline screen recorded; None for a milestone). The headline gives each model's on one
-line (``sizes.size_line``). Screens running at once share only inputs they read: the record cache, the dev build, the
+line (``sizes.size_line``). ``code`` holds the digests of the code that screened (``code_digests``: alignair, the lab,
+the assay), which replicates of one request must share. Screens running at once share only inputs they read: the record cache, the dev build, the
 baselines and the null bands.
 """
 from __future__ import annotations
@@ -199,6 +200,7 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
         raise FileExistsError(f"a screen named {name!r} exists ({screen}); choose another --name") from None
 
     record = {"name": name, "status": "preparing", "started": now(), "role": role, "steps": steps,
+              "code": code_digests(),
               "architecture": architecture, "model_options": model_options, "init_seed": init_seed,
               "schedule": schedule, "protocol": wanted, "suites": names, "suite_builds": builds,
               "variants": list(variants),
@@ -282,6 +284,20 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
         record.update(error=f"{type(error).__name__}: {error}", finished=now())
         stage("failed")
         raise
+
+
+def code_digests() -> dict[str, str]:
+    """The code that screens, by content: the ``alignair`` package this process runs (the assay's
+    ``diagnostics.identity.alignair_code``, the code half of its model keys), and the ``alignair_lab`` and
+    ``alignair_assay`` packages (``alignair_assay.core.provenance.code_identity``, the same tree digest of their source
+    files)."""
+    import alignair_assay
+    import alignair_lab
+    from alignair_assay.core.provenance import code_identity
+    from alignair_assay.diagnostics.identity import alignair_code
+    return {"alignair": alignair_code()["code_sha256"],
+            "alignair_lab": code_identity(Path(alignair_lab.__file__).parent)["code_sha256"],
+            "alignair_assay": code_identity(Path(alignair_assay.__file__).parent)["code_sha256"]}
 
 
 def prepare_candidate(config) -> None:
