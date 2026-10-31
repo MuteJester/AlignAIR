@@ -24,6 +24,7 @@ from pathlib import Path
 from alignair.errors import ConfigurationError
 from alignair.train.trainer import RECIPE
 from alignair_lab.noise import recentred, seed_values
+from alignair_lab.secondary import METRIC, cached_seed_values
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, DATACONFIGS, recipe_train_args
 
 NULL_ARCHITECTURE = "lab-null-v1"         # ``architectures.null``: its screens are the baseline screens
@@ -341,7 +342,7 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
     if not found:
         return None
     path, record = found[0]
-    relative_to, seeds = calibration_seeds(record)
+    relative_to, seeds = calibration_seeds(record, path.parent)
     screens = {seed: {"model_key": (entry or {}).get("model_key")}
                for seed, entry in (record.get("screens") or {}).items()}
     return {"path": str(path), "init_seeds": record["init_seeds"], "band": record["band"],
@@ -374,15 +375,31 @@ def against_calibration(band: Mapping | None, init_seed: int | None) -> dict | N
     return {"band": band["band"], "seeds": found}
 
 
-def calibration_seeds(record: Mapping) -> tuple[int, dict]:
+def calibration_seeds(record: Mapping, directory: Path | None = None) -> tuple[int, dict]:
     """A null band record's baseline seeds: the seed their values are relative to and each seed's values
     (``noise.seed_values``), as written, or, for a record that predates them, derived from its pairs relative to the
-    registered seed (``BASELINE_INIT_SEED``), or to its first seed when it has not that one."""
+    registered seed (``BASELINE_INIT_SEED``), or to its first seed when it has not that one. A secondary metric
+    (``secondary.METRIC``) its pairs predate is valued from the calibration's own cached diagnostics under
+    ``directory`` (its directory) when every seed's are there (``secondary.cached_seed_values``), and left out
+    otherwise."""
     if "seeds" in record:
-        return record["relative_to"], record["seeds"]
-    seeds = record["init_seeds"]
-    relative_to = BASELINE_INIT_SEED if BASELINE_INIT_SEED in seeds else seeds[0]
-    return relative_to, seed_values(record["pairs"], seeds, relative_to=relative_to)
+        relative_to, seeds = record["relative_to"], record["seeds"]
+    else:
+        relative_to = BASELINE_INIT_SEED if BASELINE_INIT_SEED in record["init_seeds"] else record["init_seeds"][0]
+        seeds = seed_values(record["pairs"], record["init_seeds"], relative_to=relative_to)
+    if directory is None or any(METRIC in found["pooled"] for found in seeds.values()):
+        return relative_to, seeds
+    keys = {seed: (entry or {}).get("model_key") for seed, entry in (record.get("screens") or {}).items()}
+    cached = cached_seed_values(Path(directory) / "assay" / "diagnostics", keys, record["init_seeds"],
+                                relative_to=relative_to, metric=METRIC)
+    if cached is None:
+        return relative_to, seeds
+    seeds = json.loads(json.dumps(seeds))
+    for seed, found in cached.items():
+        seeds[seed]["pooled"].update(found["pooled"])
+        for suite, values in found["suites"].items():
+            seeds[seed]["suites"].setdefault(suite, {}).update(values)
+    return relative_to, seeds
 
 
 def check_init_seed(init_seed) -> int:
