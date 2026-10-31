@@ -14,11 +14,12 @@ from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error
 from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from ..neural.heads.region import READ_REGIONS, REGION_INDEX
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, CODON
+from ..core.d_presence import D_PRESENCE
 from ..core.boundaries import read_window
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
 from .projection import frame_offset_of, project_codons, projection_segments, translated_record_usable
-from .targets import build_targets, read_anchors
+from .targets import build_targets, read_anchors, read_d_presence
 from .tokenizer import AAProteinTokenizer
 
 if TYPE_CHECKING:
@@ -135,6 +136,10 @@ class NucleotideBatchAdapter:
                     targets["region_labels"] = PositionLabels(bundle["region_labels"] - REGION_INDEX[READ_REGIONS[0]])
                 if getattr(self.config, "anchor_heads", False):
                     targets.update(_anchor_targets(read_anchors(record, self.reference), self.config))   # forward frame
+                if getattr(self.config, "d_presence_head", False):
+                    # the D the model's window shows (the crop below cuts the read to it)
+                    width = read_window(self.config.max_seq_length, getattr(self.config, "boundary_mode", "residue"))
+                    targets[D_PRESENCE] = torch.tensor(read_d_presence(record, width), dtype=torch.long)
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length,

@@ -6,12 +6,32 @@ from ..errors import AlignAIRError, TrainingDataError, error_context
 
 from .tokenizer import TOKEN_DICT
 from ..core.anchors import ANCHOR_GENES, CODON
+from ..core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
 from ..neural.heads.region import REGION_INDEX
 from ..neural.heads.state import STATE_INDEX
 from .coordinates import segment_spans
 from .alignment import parse_cigar, query_reference_map
 
 _GENES = ("v", "d", "j")
+
+
+def read_d_presence(record: dict, width: int | None = None) -> int:
+    """The read's D class (``core.d_presence``): ``ABSENT`` when no D base inside the first ``width`` read bases (the
+    window the model sees; the whole read for None) is aligned to the D germline, else ``SHORT`` or ``CALLABLE`` by
+    its observed germline length: from the first to the last aligned germline base, so an internal deletion counts
+    and an edge gap or an insertion does not, as the AlignAIR assay's truth measures a segment's observed length. An
+    inverted D is a D like any other (its alignment spans the reverse-complemented germline). Only a model with a D
+    presence head needs it."""
+    with error_context(stage="build_targets", record_id=record.get("sequence_id")):
+        coords, germ = segment_spans(record)
+        if "d" not in coords:
+            return ABSENT
+        path = query_reference_map(record.get("d_cigar"), coords["d"], germ["d"])
+        aligned = [germline for offset, germline in enumerate(path.positions)
+                   if germline is not None and (width is None or path.query_start + offset < width)]
+        if not aligned:
+            return ABSENT
+        return SHORT if max(aligned) - min(aligned) + 1 < D_CALLABLE_MIN else CALLABLE
 
 
 def read_anchors(record: dict, reference_set) -> dict[str, int | None]:
