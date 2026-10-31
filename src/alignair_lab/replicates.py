@@ -78,6 +78,7 @@ REQUEST_FIELDS = ("architecture", "model_options", "steps", "schedule", "protoco
                   "max_cases", "variants")
 BASELINE_FIELDS = ("kind", "checkpoint", "options")
 CODE_FIELDS = ("alignair_lab", "alignair_assay")      # the code digests replicates must share (``screen.code_digests``)
+DECIDED = tuple(metric for metric, _ in HEADLINE)    # the metrics pooled over the replicates, paired alike in each
 
 
 def replicate_name(name: str, seed: int) -> str:
@@ -146,6 +147,34 @@ def check_replicates(records: Mapping[int, Mapping], expected: Mapping | None = 
                                      context={"field": "replicates", "screen": name, "differing": differing},
                                      hint="Replicates of one request are screened by one lab and one assay code.")
     return want
+
+
+def _pairing(comparison: Mapping, metrics: Sequence[str]) -> dict[str, dict]:
+    """Each suite of a comparison summary -> its ``cases`` and each of ``metrics``' paired reads."""
+    return {name: {"cases": suite.get("cases"),
+                   **{metric: (suite.get("headline") or {}).get(metric, {}).get("n_paired") for metric in metrics}}
+            for name, suite in comparison["suites"].items()}
+
+
+def check_pairing(records: Mapping[int, Mapping], metrics: Sequence[str]) -> None:
+    """ConfigurationError, naming the replicate and what differs, unless every replicate's comparison has the first's
+    suites, and in each suite its number of cases and, for each of ``metrics``, its number of paired reads: their Δs
+    are pooled suite by suite, on the same reads."""
+    first = next(iter(records.values()))
+    want = _pairing(first["comparison"], metrics)
+    for seed, record in records.items():
+        found = _pairing(record["comparison"], metrics)
+        what = f"the replicate {record.get('name')} (init seed {seed}) is not paired as {first.get('name')}"
+        context = {"field": "replicates", "screen": record.get("name")}
+        if set(found) != set(want):
+            differing = sorted(set(found) ^ set(want), key=lambda name: (len(name), name))
+            raise ConfigurationError(f"{what}: suites {', '.join(differing)} are not in both", context=context)
+        for suite, entries in want.items():
+            for field, expected in entries.items():
+                if found[suite][field] != expected:
+                    unit = "" if field == "cases" else " paired reads"
+                    raise ConfigurationError(f"{what}: {suite} {field}: {found[suite][field]}{unit}, not "
+                                             f"{expected}", context=context)
 
 
 def _code(record: Mapping) -> dict | None:
@@ -271,6 +300,8 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
                                                 data_workers=data_workers, eval_batch_size=eval_batch_size,
                                                 cache=cache, dev_build=dev_build, out_root=out_root)))
     check_replicates(records, expected=request)
+    if records:
+        check_pairing(records, DECIDED)
     band = null_band(out_root, request["protocol"], request["baseline"]["options"], request["suites"],
                      request["max_cases"], request["suite_builds"])
     check_calibration(records, band, provenance["init_seed"])
@@ -302,6 +333,7 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
             records[seed] = json.loads((out_root / screen / SCREEN_RECORD).read_text(encoding="utf-8"))
         records = {seed: records[seed] for seed in seeds}
         check_replicates(records, expected=request)
+        check_pairing(records, DECIDED)
         check_calibration(records, band, provenance["init_seed"])
         calibration = against_calibration(band, provenance["init_seed"])
         comparisons = {seed: records[seed]["comparison"] for seed in seeds}

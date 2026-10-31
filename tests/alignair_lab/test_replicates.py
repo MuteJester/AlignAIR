@@ -10,7 +10,14 @@ from alignair.errors import ConfigurationError
 from alignair_lab.cli import main
 from alignair_lab.headline import POOLED_HEADING
 from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE, pooled
-from alignair_lab.replicates import check_replicates, code_warning, replicate_name, report_name, request_of
+from alignair_lab.replicates import (
+    check_pairing,
+    check_replicates,
+    code_warning,
+    replicate_name,
+    report_name,
+    request_of,
+)
 from tests.alignair_lab.rig import candidate_arguments, common, options, write_null_band
 
 
@@ -89,6 +96,32 @@ def test_replicates_without_code_digests_are_pooled_with_a_warning():
     assert code_warning(records) == ("Warning: code digest unknown for cand-init1, cand-init2: they record no "
                                      "alignair_lab or alignair_assay code digest, so the lab's and the assay's code "
                                      "cannot be checked to be the same.")
+
+
+def compared(suites, cases=500):
+    """A comparison summary of ``suites``: suite -> metric -> paired reads."""
+    return {"suites": {name: {"cases": cases, "headline": {metric: {"delta": 0., "n_paired": paired}
+                                                            for metric, paired in metrics.items()}}
+                       for name, metrics in suites.items()}}
+
+
+@pytest.mark.component
+def test_replicates_must_share_their_suites_and_each_suites_pairing():
+    """Their Δs are pooled suite by suite: each replicate compares the same suites, on the same reads of each."""
+    metrics = ["clone_key.exact", "junction.nt_exact"]
+    same = {"S1": {"clone_key.exact": 100, "junction.nt_exact": 98}, "S2": {"clone_key.exact": 80}}
+    records = {seed: record(seed, comparison=compared(same)) for seed in (0, 1, 2)}
+    check_pairing(records, metrics)
+    records[2] = record(2, comparison=compared({"S1": same["S1"]}))
+    with pytest.raises(ConfigurationError, match="suites S2") as caught:
+        check_pairing(records, metrics)
+    assert "cand-init2" in str(caught.value)
+    records[2] = record(2, comparison=compared({**same, "S1": {"clone_key.exact": 100, "junction.nt_exact": 97}}))
+    with pytest.raises(ConfigurationError, match="S1 junction.nt_exact: 97 paired reads, not 98"):
+        check_pairing(records, metrics)
+    records[2] = record(2, comparison=compared(same, cases=499))
+    with pytest.raises(ConfigurationError, match="S1 cases: 499, not 500"):
+        check_pairing(records, metrics)
 
 
 @pytest.mark.component
