@@ -113,6 +113,9 @@ def generate_stratum(suite: Suite, stratum: Stratum, ctx: RecipeContext, *, spli
         records, stats = _cohort_records(suite, stratum, ctx, round_seed(0))
     else:
         records, stats = _sampled_records(suite, stratum, ctx, round_seed)
+    if stratum.flank is not None:
+        flank_rng = random.Random(derive_seed(seed, split, suite.name, stratum.name, "flank"))
+        records = [stratum.flank(record, flank_rng) for record in records]
     orientations = random.Random(derive_seed(seed, split, suite.name, stratum.name, "orientation"))
     cases = []
     for index, record in enumerate(records):

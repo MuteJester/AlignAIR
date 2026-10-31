@@ -5,6 +5,7 @@ a fresh ``Experiment.on(ctx.config)`` chain; ``suites.engine`` runs it with deri
 """
 from __future__ import annotations
 
+import random
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -36,7 +37,9 @@ class Stratum:
     ``rc_fraction`` (0 to 1) is the probability a case is presented reverse-complemented; ``both_orientations``
     instead presents every record twice (``:fwd`` and ``:rc``, grouped by ``groups["pair"]``). ``accept`` keeps
     only the records it returns True for (rejection sampling). ``cohort`` runs the recipe over the suite's donors
-    (``run_cohort``); ``clonal`` marks a recipe ending in ``clonal_lineage``, whose records are all kept.
+    (``run_cohort``); ``clonal`` marks a recipe ending in ``clonal_lineage``, whose records are all kept. ``flank``
+    (``flank(record, rng) -> record``, e.g. ``suites.flanks.Flanks``) puts non-germline sequence around each kept
+    read, drawing from the stratum's own seeded generator.
     """
 
     name: str
@@ -49,6 +52,7 @@ class Stratum:
     cohort: bool = False
     clonal: bool = False
     case_labels: Callable[[dict, RecipeContext], Mapping[str, str]] | None = None
+    flank: Callable[[dict, random.Random], dict] | None = None
 
     def __post_init__(self) -> None:
         _check_name("stratum", self.name)
