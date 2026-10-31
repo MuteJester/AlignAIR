@@ -25,36 +25,38 @@ from .scan import allele_log_posterior
 
 FLANK = 6                  # bases on each side of the V end and J start the junction keeps
 CROP = 96                  # the junction's most bases
-CHUNK = 32                 # reads aligned at a time (the (reads, rows, offsets, row width) ratios held at once)
 RATE = (0.01, 0.25)        # the mutation rate the ratios use, clamped
 TEMPERATURE = 1.0          # the scores' temperature in the alleles' log posterior
 
 
 def junction(tokens: torch.Tensor, mask: torch.Tensor, v_end: torch.Tensor, j_start: torch.Tensor) -> torch.Tensor:
-    """(B, CROP) the read's bases from ``v_end - FLANK`` to ``j_start + FLANK`` (A/C/G/T tokens; 0 elsewhere)."""
+    """(B, width) the read's bases from ``v_end - FLANK`` to ``j_start + FLANK`` (A/C/G/T tokens; 0 elsewhere): the
+    width is the batch's longest junction, at most ``CROP``."""
     length = tokens.shape[1]
     start = (v_end - FLANK).clamp(0, length - 1)
     stop = torch.minimum(j_start + FLANK, mask.sum(1))
-    position = start[:, None] + torch.arange(CROP, device=tokens.device)
+    width = int((stop - start).clamp(1, CROP).max())
+    position = start[:, None] + torch.arange(width, device=tokens.device)
     crop = tokens.gather(1, position.clamp_max(length - 1))
     return torch.where((position < stop[:, None]) & (crop >= 1) & (crop <= 4), crop, 0)
 
 
 def local_scores(crop: torch.Tensor, rows: torch.Tensor, m: torch.Tensor) -> torch.Tensor:
-    """(B, R) each row's best ungapped local alignment score against the crop; ``m`` (B, 1) the mutation rate."""
+    """(B, R) each row's best ungapped local alignment score against the crop; ``m`` (B, 1) the mutation rate.
+    Kadane along the row: every (read, row, diagonal) carries its best stretch ending at the row base reached."""
     width = rows.shape[1]
     windows = F.pad(crop, (width - 1, width - 1)).unfold(1, width, 1)                       # (B, offsets, W)
-    match = torch.log(4 * (1 - m))[..., None, None]
-    mismatch = torch.log(4 * m / 3)[..., None, None]
-    scores = []
-    for first in range(0, crop.shape[0], CHUNK):
-        window = windows[first:first + CHUNK, None]                                         # (b, 1, offsets, W)
-        both = (window > 0) & (rows[None, :, None] > 0)
-        ratio = torch.where(both & (window == rows[None, :, None]), match[first:first + CHUNK],
-                            torch.where(both, mismatch[first:first + CHUNK], torch.zeros_like(match[:1])))
-        prefix = F.pad(ratio.cumsum(-1), (1, 0))
-        scores.append((prefix - prefix.cummin(-1).values).amax(-1).amax(-1))
-    return torch.cat(scores)
+    match = torch.log(4 * (1 - m))[..., None]                                               # (B, 1, 1)
+    mismatch = torch.log(4 * m / 3)[..., None]
+    running = torch.zeros(crop.shape[0], rows.shape[0], windows.shape[1], dtype=match.dtype, device=crop.device)
+    best = torch.zeros_like(running)
+    for k in range(width):
+        read, germline = windows[:, None, :, k], rows[None, :, k, None]                    # (B, 1, O), (1, R, 1)
+        both = (read > 0) & (germline > 0)
+        ratio = torch.where(both & (read == germline), match, torch.where(both, mismatch, 0.))
+        running = (running + ratio).clamp_min(0.)
+        best = torch.maximum(best, running)
+    return best.amax(-1)
 
 
 @torch.no_grad()

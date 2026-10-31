@@ -42,23 +42,26 @@ def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor
     """
     width = 2 * BAND + 1
     band = torch.arange(width, device=tokens.device)
-    offset = (row_anchors - anchors[:, None])[..., None] + band - BAND                    # (B, K, W)
-    match = torch.log(4 * (1 - m))[..., None]
-    mismatch = torch.log(4 * m / 3)[..., None]
-    ramp = GAP * band.to(match.dtype)
-    best = torch.zeros(offset.shape, dtype=match.dtype, device=tokens.device)          # free germline start
-    for i in range(int(starts.min()), int(ends.max())):
-        partner = offset + i
-        inside = (partner >= 0) & (partner < rows.shape[-1])
-        germline = rows.gather(-1, partner.clamp(0, rows.shape[-1] - 1))
-        base = tokens[:, i][:, None, None]
-        pair = torch.where(germline == base, match, mismatch)
-        pair = torch.where(inside & (germline > 0), pair, torch.full_like(pair, OUTSIDE))
-        pair = torch.where((base >= 1) & (base <= 4), pair, torch.zeros_like(pair))      # an N base: no evidence
+    first, last = int(starts.min()), int(ends.max())
+    positions = torch.arange(first, max(last, first + 1), device=tokens.device)          # (T,)
+    # every position's pair score at once: (B, K, T, W)
+    partner = ((row_anchors - anchors[:, None])[..., None, None] + positions[:, None] + band - BAND)
+    inside = (partner >= 0) & (partner < rows.shape[-1])
+    batch, candidates = rows.shape[:2]
+    germline = rows.gather(-1, partner.clamp(0, rows.shape[-1] - 1).reshape(batch, candidates, -1)).view(
+        partner.shape)
+    base = tokens[:, positions][:, None, :, None]
+    match = torch.log(4 * (1 - m))[..., None, None]
+    pair = torch.where(germline == base, match, torch.log(4 * m / 3)[..., None, None])
+    pair = torch.where(inside & (germline > 0), pair, torch.full_like(pair, OUTSIDE))
+    pair = torch.where((base >= 1) & (base <= 4), pair, torch.zeros_like(pair))          # an N base: no evidence
+    active = ((positions >= starts[:, None]) & (positions < ends[:, None]))[:, None, :, None]   # (B, 1, T, 1)
+    ramp = GAP * band.to(pair.dtype)
+    best = torch.zeros(batch, candidates, width, dtype=pair.dtype, device=tokens.device)  # free germline start
+    for t in range(len(positions)):
         deleted = torch.cummax(best + ramp, -1).values - ramp                            # germline bases skipped
         inserted = F.pad(best[..., 1:], (0, 1), value=_NEG) - GAP                        # this read base unaligned
-        step = torch.maximum(deleted + pair, inserted)
-        best = torch.where(((i >= starts) & (i < ends))[:, None, None], step, best)
+        best = torch.where(active[:, :, t], torch.maximum(deleted + pair[:, :, t], inserted), best)
     return best.amax(-1)                                                                  # free germline end
 
 
