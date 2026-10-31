@@ -110,3 +110,29 @@ def test_build_airr_end_to_end_produces_regions_and_junction():
     assert out["fwr1"] is not None and out["cdr1"] is not None
     assert out["junction"] is not None and out["junction_length"] > 0
     assert out["v_germline_start"] == 0
+
+
+@pytest.mark.slow
+def test_build_airr_keeps_the_aligners_v_germline_coordinates():
+    """``v_germline_start``/``end`` are positions in the germline, as the aligner gives them: the IMGT gaps of the
+    alignment strings do not move them, and a V cut at its 5' end keeps where its germline starts."""
+    import GenAIRR.data as gd
+    from alignair.reference.reference_set import ReferenceSet
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    v0 = next(name for name in ref.gene("V").names if "." in ref.gene("V").gapped[name])
+    j0 = ref.gene("J").names[0]
+    v_seq = ref.gene("V").sequences[ref.gene("V").index[v0]]
+    j_seq = ref.gene("J").sequences[ref.gene("J").index[j0]]
+    cut = 30
+    read = v_seq[cut:] + "NNNNN" + j_seq
+    v_len = len(v_seq) - cut
+    rec = {"sequence_id": "t1", "sequence": read, "v_call": v0, "d_call": "Short-D", "j_call": j0,
+           "v_sequence_start": 0, "v_sequence_end": v_len,
+           "v_germline_start": cut, "v_germline_end": len(v_seq),
+           "d_sequence_start": v_len, "d_sequence_end": v_len + 5,
+           "d_germline_start": 0, "d_germline_end": 0,
+           "j_sequence_start": v_len + 5, "j_sequence_end": len(read),
+           "j_germline_start": 0, "j_germline_end": len(j_seq),
+           "productive": True, "indel_count": 0}
+    out = build_airr([rec], ref, chain="heavy")[0]
+    assert (out["v_germline_start"], out["v_germline_end"]) == (cut, len(v_seq))

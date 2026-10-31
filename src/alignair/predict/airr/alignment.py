@@ -75,6 +75,8 @@ def build_germline_alignment(seq, v_gapped, j_ungapped, d_ungapped, v_call, j_ca
 
 def compute_alignment_positions(v_ref_gapped, v_germ_end, v_seq_start, d_seq_start, d_seq_end,
                                 j_seq_start, j_seq_end, chain) -> Dict[str, Optional[int]]:
+    """Each segment's positions in the (IMGT-gapped) alignment strings. The germline coordinates stay the aligner's:
+    they are positions in the germline, which the alignment's gaps do not move."""
     gap = _count_gaps(v_ref_gapped) if v_ref_gapped else 0
     v_end = v_germ_end + gap
     d_start_al = d_end_al = None
@@ -83,7 +85,6 @@ def compute_alignment_positions(v_ref_gapped, v_germ_end, v_seq_start, d_seq_sta
         d_end_al = d_seq_end - v_seq_start + gap
     return {
         "v_alignment_start": 0, "v_alignment_end": v_end,
-        "v_germline_start": 0, "v_germline_end": v_end,
         "d_alignment_start": d_start_al, "d_alignment_end": d_end_al,
         "j_alignment_start": j_seq_start - v_seq_start + gap,
         "j_alignment_end": j_seq_end - v_seq_start + gap,
