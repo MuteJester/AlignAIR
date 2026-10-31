@@ -72,17 +72,17 @@ from alignair_lab.baselines import (
     NAME,
     against_calibration,
     calibration_checkpoint,
+    calibrate_command,
     baseline_milestone,
     baseline_screen,
     check_init_seed,
     now,
     null_band,
-    option_arguments,
     protocol,
     same_genairr,
     write_json,
 )
-from alignair_lab.headline import HEADLINE, SECONDARY, render_headline
+from alignair_lab.headline import HEADLINE, SECONDARY, Command, render_headline
 from alignair_lab.noise import decide
 from alignair_lab.recipe import (
     BASELINE_ARCHITECTURE,
@@ -403,18 +403,19 @@ def _cache_line(cache: dict) -> str:
 
 def _band_lines(record: dict, code: str | None) -> list[str]:
     """The null band's line: its path, or why there is none (with the calibration that makes the band this screen
-    would use); and a warning when it was measured under other AlignAIR code than this comparison."""
+    would use, the command whole on its own line); and a warning when it was measured under other AlignAIR code than
+    this comparison."""
     band = record["null_band"]
     if record["baseline"]["kind"] == "milestone":
         return ["Null band: none applies, so uncalibrated (Tier 2: milestone): a null band measures the baseline "
                 "screens of a protocol, not a long run's milestone."]
     if band is None:
-        cases = "" if record["max_cases"] is None else f" --max-cases {record['max_cases']}"
-        return [f"Null band: none of this protocol, options, suite build and cases, so uncalibrated (python -m "
-                f"alignair_lab calibrate --steps {record['steps']} --init-seeds 0,1,2 --schedule {record['schedule']} "
-                f"--cache {record['cache']['path']} --out-root {record['out_root']} --dev-build "
-                f"{record['dev_build']} --suites {','.join(record['suites'])}{cases}"
-                f"{option_arguments(record['baseline']['options'])})."]
+        return ["Null band: none of this protocol, options, suite build and cases, so uncalibrated; this calibration "
+                "makes the band this screen would use:",
+                Command(calibrate_command(steps=record["steps"], schedule=record["schedule"],
+                                          cache=record["cache"]["path"], out_root=record["out_root"],
+                                          dev_build=record["dev_build"], suites=record["suites"],
+                                          max_cases=record["max_cases"], options=record["baseline"]["options"]))]
     lines = [f"Null band: {band['path']} (baseline screens of init seeds {', '.join(map(str, band['init_seeds']))})."]
     seed = record["baseline"].get("init_seed")
     if seed not in band["init_seeds"]:

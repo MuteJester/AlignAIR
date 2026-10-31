@@ -7,6 +7,7 @@ contents. The candidate's headline weighs its Δs against the protocol's null ba
 rig (``rig``), whose registered baseline screen is ``base0``.
 """
 import json
+import shlex
 import shutil
 from pathlib import Path
 
@@ -71,10 +72,15 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
     assert 'against the baseline screen base0 (lab-null-v1, init seed 0) at step 2' in flat(headline)
     noise = next(line for line in headline.splitlines() if line.startswith('noise '))
     assert 'Null band: none' in flat(headline) and noise.split()[1:] == ['uncalibrated'] * 5
-    # the calibration it suggests makes a band this screen would use: of its protocol, options, build and cases
-    assert (f"python -m alignair_lab calibrate --steps 2 --init-seeds 0,1,2 --schedule cosine --cache "
-            f"{rig.cache.resolve()} --out-root {rig.screens.resolve()} --dev-build {rig.dev.resolve()} --suites S0 "
-            "--model-option embed_dim=4 --model-option filters=4 --model-option block_out=8)") in flat(headline)
+    # the calibration it suggests makes a band this screen would use: of its protocol, options, build and cases; the
+    # command whole on its own unindented line, never wrapped, so it copies as one shell command
+    command = next(line for line in headline.splitlines() if line.startswith('python -m alignair_lab calibrate'))
+    assert shlex.join(shlex.split(command)) == command
+    assert shlex.split(command) == [
+        'python', '-m', 'alignair_lab', 'calibrate', '--steps', '2', '--init-seeds', '0,1,2', '--schedule', 'cosine',
+        '--cache', str(rig.cache.resolve()), '--out-root', str(rig.screens.resolve()), '--dev-build',
+        str(rig.dev.resolve()), '--suites', 'S0', '--model-option', 'embed_dim=4', '--model-option', 'filters=4',
+        '--model-option', 'block_out=8']
     # both models' sizes, and each one's training rate: the baseline's from its baseline screen
     base_rate = json.loads((baseline / 'screen.json').read_text())['candidate']['steps_per_second']
     assert reference['steps_per_second'] == base_rate

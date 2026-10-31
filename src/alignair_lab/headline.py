@@ -27,6 +27,9 @@ default kernels are not deterministic), and at a constant learning rate two runs
 records drift apart: a 20k-step screen of ``lab-null-v1`` against the conv-v1 milestone showed junction Δs of +6 and
 +13 pp judged significant, and boundary Δs up to 23 pp. The legend says so, and the decision rows measure a
 candidate's Δs against the null band of baseline screens (``calibrate``).
+
+A title's lines wrap at ``WIDTH`` columns (``wrapped``), except a ``Command``: a shell command the title suggests stays
+whole on its own unindented line, so it copies as one command.
 """
 from __future__ import annotations
 
@@ -227,13 +230,17 @@ def _table(suites: dict, metrics: Sequence[tuple[str, str]], *, ci: bool, extra=
     return [line("Suite", columns), *(line(name, cells) for name, cells in rows)]
 
 
+class Command(str):
+    """A title line that is a shell command: never wrapped, so it copies as one command, however long."""
+
+
 def wrapped(lines: Sequence[str], width: int = WIDTH) -> list[str]:
     """Title lines wrapped at ``width`` columns between words, never inside one (a path stays whole), each
-    continuation indented by two spaces; an empty line stays one."""
+    continuation indented by two spaces; an empty line stays one, and a ``Command`` stays whole and unindented."""
     found = []
     for line in lines:
-        found += textwrap.wrap(line, width, subsequent_indent="  ", break_long_words=False,
-                               break_on_hyphens=False) or [""]
+        found += [line] if isinstance(line, Command) else textwrap.wrap(
+            line, width, subsequent_indent="  ", break_long_words=False, break_on_hyphens=False) or [""]
     return found
 
 

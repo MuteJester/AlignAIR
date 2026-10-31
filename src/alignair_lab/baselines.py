@@ -9,7 +9,8 @@ its checkpoint, never by its file name or its screen's record.
   content identity (``cache_identity``), the steps and the schedule.
 - ``baseline_screens`` and ``baseline_screen``: the screens of ``NULL_ARCHITECTURE`` of a protocol, and the one a screen
   compares with (the registered baseline screen, of init seed ``BASELINE_INIT_SEED``, or one named).
-- ``null_band``: the null band of a protocol, written by ``calibrate``.
+- ``null_band``: the null band of a protocol, written by ``calibrate``; ``calibrate_command``, the command that writes
+  the band a screen would use, quoted for the shell.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -236,9 +238,25 @@ def screen_name(cache, steps: int, schedule: str, init_seed: int) -> str:
     return f"baseline-{Path(cache).name}-s{steps}-{schedule}-init{init_seed}"
 
 
+def option_tokens(options: Mapping) -> list[str]:
+    """``options`` as the command line's ``--model-option KEY=VALUE`` arguments, the value as JSON."""
+    return [token for key, value in options.items() for token in ("--model-option", f"{key}={json.dumps(value)}")]
+
+
 def option_arguments(options: Mapping) -> str:
-    """``options`` as the command line's ``--model-option KEY=VALUE`` arguments, each after a space."""
-    return "".join(f" --model-option {key}={json.dumps(value)}" for key, value in options.items())
+    """``options`` as the command line's ``--model-option KEY=VALUE`` arguments, each after a space, quoted for the
+    shell (a JSON list keeps its spaces in one argument)."""
+    return "".join(f" {shlex.quote(token)}" for token in option_tokens(options))
+
+
+def calibrate_command(*, steps: int, schedule: str, cache, out_root, dev_build, suites: Sequence[str],
+                      max_cases: int | None, options: Mapping) -> str:
+    """The ``calibrate`` command that writes the null band of this protocol, options, suite build and cases, as one
+    shell line (``shlex.join``: a path or an option with a space stays one argument)."""
+    cases = [] if max_cases is None else ["--max-cases", str(max_cases)]
+    return shlex.join(["python", "-m", "alignair_lab", "calibrate", "--steps", str(steps), "--init-seeds", "0,1,2",
+                       "--schedule", schedule, "--cache", str(cache), "--out-root", str(out_root), "--dev-build",
+                       str(dev_build), "--suites", ",".join(suites), *cases, *option_tokens(options)])
 
 
 def _making_hint(cache, out_root, steps: int, schedule: str, options: Mapping) -> str:

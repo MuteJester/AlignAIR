@@ -1,8 +1,11 @@
 """A screen's headline fits one screen for twelve suites and shows, per suite, each headline metric's Δ, CI, verdict
 and reads fixed / broken, and each boundary's Δ, verdict and reads fixed / broken under both decoders (their CIs are
 in the assay's suite detail, as on its own summary page)."""
+import shlex
+
 import pytest
 
+from alignair_lab.baselines import calibrate_command
 from alignair_lab.headline import (
     BOUNDARIES,
     DECODERS,
@@ -12,6 +15,7 @@ from alignair_lab.headline import (
     SECONDARY,
     SEEDS_HEADING,
     SUITES_HEADING,
+    Command,
     render_headline,
     render_pooled_headline,
 )
@@ -148,6 +152,38 @@ def test_long_title_lines_wrap_at_132_columns_without_breaking_a_word():
         words = " ".join(text.split())
         assert all(" ".join(line.split()) in words for line in LONG_TITLE)          # every word, in order
         assert any(line.startswith("  ") for line in lines[:6])                    # a continuation is indented
+
+
+COMMAND = Command(shlex.join([
+    "python", "-m", "alignair_lab", "calibrate", "--steps", "20000", "--init-seeds", "0,1,2", "--schedule", "cosine",
+    "--cache", "/media/thomas/NVMe_Data/alignair_arch/cache/igh-v3-seed0-40k", "--out-root",
+    "/media/thomas/NVMe_Data/alignair_arch/screens", "--dev-build", "/media/thomas/NVMe_Data/alignair_arch/dev",
+    "--suites", "S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,S11,S12", "--model-option", 'boundary_mode="half_open"']))
+
+
+def test_a_suggested_command_stays_whole_on_its_own_unindented_line():
+    """A command the title suggests is never wrapped: it copies as one shell command, however long."""
+    assert len(COMMAND) > 132
+    for text in (single(comparison(), calibration(), title=[*LONG_TITLE, COMMAND]),
+                 pooled_text(replicates(), calibration(), title=[*LONG_TITLE, COMMAND], boundaries=(0, "wide"))):
+        lines = text.splitlines()
+        assert COMMAND in lines                                            # whole, on its own line, unindented
+        assert max(len(line) for line in lines if line != COMMAND) <= 132  # the rest still wraps
+
+
+def test_the_suggested_calibration_parses_as_one_shell_line_whatever_its_paths_and_options():
+    """A path with a space, and an option whose JSON value has one, each stay one argument."""
+    command = calibrate_command(steps=2, schedule="cosine", cache="/data/my cache", out_root="/data/my screens",
+                                dev_build="/data/dev build", suites=["S0", "S1"], max_cases=3,
+                                options={"kernel_sizes": [3, 5], "boundary_mode": "half_open"})
+    tokens = shlex.split(command)
+    assert shlex.join(tokens) == command
+    assert tokens == ["python", "-m", "alignair_lab", "calibrate", "--steps", "2", "--init-seeds", "0,1,2",
+                      "--schedule", "cosine", "--cache", "/data/my cache", "--out-root", "/data/my screens",
+                      "--dev-build", "/data/dev build", "--suites", "S0,S1", "--max-cases", "3",
+                      "--model-option", "kernel_sizes=[3, 5]", "--model-option", 'boundary_mode="half_open"']
+    assert "--max-cases" not in shlex.split(calibrate_command(
+        steps=2, schedule="cosine", cache="c", out_root="o", dev_build="d", suites=["S0"], max_cases=None, options={}))
 
 
 def test_the_legends_say_holm_is_per_metric_and_what_one_seeds_spread_assumes():
