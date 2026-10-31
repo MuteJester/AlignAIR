@@ -25,7 +25,7 @@ SMALL = {'embed_dim': 4, 'filters': 4, 'block_out': 8}
 SPACES = (('nucleotide', 'alleles'), ('protein', 'protein_classes'))
 # Candidates of one boundary mode, which refuse the other. A protein model's boundaries are half-open; a nucleotide
 # model's are residue unless its options say half_open, as a half-open candidate's do.
-BOUNDARY_MODES = {'lab-trunk-v1': 'residue', 'lab-trunk-v2': 'half_open'}
+BOUNDARY_MODES = {'lab-trunk-v1': 'residue', 'lab-trunk-v2': 'half_open', 'lab-trunk-crop-v1': 'half_open'}
 CONTRACTS = [(name, space, labels) for name in architectures.registered() for space, labels in SPACES
              if space == 'nucleotide' or BOUNDARY_MODES.get(name) != 'residue']
 # (candidate, space, labels, what its refusal names) for a space whose boundaries the candidate refuses

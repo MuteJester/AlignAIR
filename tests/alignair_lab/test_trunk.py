@@ -22,7 +22,15 @@ from alignair.core.components import architecture_components
 from alignair.reference.reference_set import ReferenceSet
 from alignair.tasks.functional import soft_cross_entropy_rows, soft_gaussian_target
 from alignair_lab import architectures  # noqa: F401  (registers lab-trunk-v1)
-from alignair_lab.architectures.trunk import TRUNK_CHANNELS, DilatedTrunk, TrunkGeneBranch, build_trunk_heads
+from alignair_lab.architectures.trunk import (
+    CROP_MARGIN,
+    CROP_WINDOWS,
+    TRUNK_CHANNELS,
+    DilatedTrunk,
+    TrunkGeneBranch,
+    build_trunk_heads,
+    crop_window,
+)
 from tests.alignair_lab.rig import SMALL, candidate_arguments, flat
 
 GENES = ('v', 'd', 'j')
@@ -462,13 +470,173 @@ def test_lab_trunk_v2_with_d_presence_learns_one_batch(reference):
     assert accuracy() > 0.9 > before
 
 
+# --- lab-trunk-crop-v1: each gene's classifier on a crop of the trunk's features ----------------------------------
+
+def crop_model(reference, seed=0, **options):
+    return build(reference, 'lab-trunk-crop-v1', seed=seed, boundary_mode='half_open', **SMALL, **options)
+
+
+def positions(lengths=(LENGTH,), channels=3):
+    """Features whose every channel holds the position's index + 1 (0 marks nothing gathered), and the read mask of
+    reads of ``lengths``, each starting at position 0."""
+    batch = len(lengths)
+    features = (torch.arange(LENGTH, dtype=torch.float32) + 1).repeat(batch, 1).unsqueeze(-1).repeat(1, 1, channels)
+    mask = torch.arange(LENGTH).expand(batch, LENGTH) < torch.tensor(lengths).unsqueeze(-1)
+    return features * mask.unsqueeze(-1), mask
+
+
+@pytest.mark.component
+def test_the_crop_gathers_its_span_with_a_margin_on_each_side_and_marks_the_span():
+    """A window of W gathers the positions [s - 4, s + W + 4): the span's own, marked by the indicator channel, and
+    the flanking ones on each side as context, unmarked."""
+    features, mask = positions()
+    crop, keep = crop_window(features, mask, torch.tensor([100]), torch.tensor([130]), 48)
+    assert crop.shape == (1, 48 + 2 * CROP_MARGIN, 3 + 1) and keep.shape == (1, 48 + 2 * CROP_MARGIN)
+    assert crop[0, :, 0].tolist() == [float(p + 1) for p in range(96, 152)]       # positions 96 .. 151, in order
+    assert crop[0, :, :3].eq(crop[0, :, :1]).all() and keep.all()
+    marked = crop[0, :, 3]
+    assert marked.tolist() == [0.] * 4 + [1.] * 30 + [0.] * 22                    # [100, 130) of [96, 152)
+    assert CROP_WINDOWS == {'v': 320, 'd': 48, 'j': 80} and CROP_MARGIN == 4
+
+
+@pytest.mark.component
+def test_a_span_longer_than_its_window_is_truncated_at_its_end():
+    """A V span of 400 positions in a window of 320: the window holds its first 320 + 4 positions, all marked, and
+    nothing of the rest."""
+    features, mask = positions()
+    crop, keep = crop_window(features, mask, torch.tensor([50]), torch.tensor([450]), CROP_WINDOWS['v'])
+    assert crop.shape[1] == 320 + 8 and keep.all()
+    assert crop[0, 0, 0] == 46 + 1 and crop[0, -1, 0] == 373 + 1                   # positions 46 .. 373
+    assert crop[0, :, 3].tolist() == [0.] * 4 + [1.] * 324
+
+
+@pytest.mark.component
+def test_window_positions_beyond_the_read_are_zero_and_left_out():
+    """Positions before the window's array start, past the read's end and past the window array's end hold zero
+    features and no mark, and are not kept: the classifier never reads them."""
+    features, mask = positions(lengths=(LENGTH, 200, LENGTH))
+    starts, ends = torch.tensor([2, 180, LENGTH - 30]), torch.tensor([20, 200, LENGTH])
+    crop, keep = crop_window(features, mask, starts, ends, 48)
+    # read 0: the window [-2, 54) starts before position 0
+    assert keep[0].tolist() == [False] * 2 + [True] * 54 and crop[0, :2].eq(0).all()
+    assert crop[0, 2, 0] == 0 + 1 and crop[0, 2:, 3].tolist() == [0.] * 2 + [1.] * 18 + [0.] * 34
+    # read 1: 200 bases; the window [176, 232) runs 32 positions past its end
+    assert keep[1].tolist() == [True] * 24 + [False] * 32 and crop[1, 24:].eq(0).all()
+    assert crop[1, 23, 0] == 199 + 1 and crop[1, :24, 3].tolist() == [0.] * 4 + [1.] * 20
+    # read 2: the window [542, 598) runs past the array's last position, 575
+    assert keep[2].tolist() == [True] * 34 + [False] * 22 and crop[2, 34:].eq(0).all()
+    assert crop[2, 33, 0] == 575 + 1
+
+
+@pytest.mark.component
+def test_lab_trunk_crop_v1_refuses_residue_boundaries(reference):
+    from alignair.errors import ConfigurationError
+    with pytest.raises(ConfigurationError, match='residue') as caught:
+        build(reference, 'lab-trunk-crop-v1', **SMALL)
+    assert caught.value.context['field'] == 'boundary_mode'
+
+
+@pytest.mark.component
+def test_the_crop_reads_the_decoded_spans_and_no_gradient_reaches_the_boundaries(reference, monkeypatch):
+    """Each gene's classifier crops the spans the product decodes (the argmax of its masked boundary logits,
+    ``decoded_boundaries``), so training crops what inference crops. The allele scores' gradient reaches the trunk's
+    features but not the boundary logits, nor the boundary convolution."""
+    from alignair.predict.decode import decoded_boundaries
+    from alignair_lab.architectures import trunk
+    model = crop_model(reference).train()
+    cropped = {}
+    original = trunk.crop_window
+
+    def spy(features, mask, starts, ends, window):
+        cropped[window] = (starts.clone(), ends.clone())
+        return original(features, mask, starts, ends, window)
+    monkeypatch.setattr(trunk, 'crop_window', spy)
+    features = []
+    model.trunk.register_forward_hook(lambda module, inputs, output: features.append(output))
+    out = model(tokens((LENGTH - 1, 380, 250)))
+    for g in GENES:
+        starts, ends = decoded_boundaries(out, g)
+        assert torch.equal(cropped[CROP_WINDOWS[g]][0], starts) and torch.equal(cropped[CROP_WINDOWS[g]][1], ends)
+    scores = sum(out[f'{g}_allele'].sum() for g in GENES)
+    logits = [out[f'{g}_{edge}_logits'] for g in GENES for edge in ('start', 'end')]
+    assert all(gradient is None for gradient in torch.autograd.grad(scores, logits, retain_graph=True,
+                                                                    allow_unused=True))
+    assert torch.autograd.grad(scores, features[0], retain_graph=True)[0].abs().sum() > 0
+    scores.backward()
+    assert all(model.branches[g].boundary.weight.grad is None for g in GENES)
+
+
+@pytest.mark.component
+def test_given_spans_are_cropped_as_given_and_the_forward_passs_own_as_decoded(reference, monkeypatch):
+    """The assay's replay calls the classifier on spans of its own (``true_spans``), and on copies of the forward
+    pass's expectations for the reads it has none for: a read's given span is cropped at its rounded positions, a
+    read's own expectations at the spans the forward pass decoded."""
+    from alignair.predict.decode import decoded_boundaries
+    from alignair_lab.architectures import trunk
+    model = crop_model(reference)
+    batch = tokens((LENGTH - 1, 380, 250))
+    with torch.no_grad():
+        out = model(batch)
+        features = model.trunk(model.embedding(batch['tokenized_sequence']), out['start_mask'])
+    decoded = decoded_boundaries(out, 'v')
+    starts, ends = out['v_start'].clone(), out['v_end'].clone()
+    starts[1, 0], ends[1, 0] = 40.4, 300.6
+    cropped = []
+    original = trunk.crop_window
+
+    def spy(features, mask, starts, ends, window):
+        cropped.append((starts.clone(), ends.clone()))
+        return original(features, mask, starts, ends, window)
+    monkeypatch.setattr(trunk, 'crop_window', spy)
+    with torch.no_grad():
+        model.branches['v'].classify(None, starts, ends, features=features)
+    assert cropped[0][0].tolist() == [int(decoded[0][0]), 40, int(decoded[0][2])]
+    assert cropped[0][1].tolist() == [int(decoded[1][0]), 301, int(decoded[1][2])]
+
+
+@pytest.mark.component
+def test_the_cropped_classifiers_hold_a_fraction_of_conv_v1s(reference):
+    """With the default options, the three cropped classifiers (a 1x1 projection, 4 dilated blocks of 128 channels,
+    a mid layer and a head each) hold under a third of the parameters of lab-trunk-v2's, which are conv-v1's."""
+    from alignair_lab.sizes import model_size
+    crop = model_size(build(reference, 'lab-trunk-crop-v1', boundary_mode='half_open'))
+    v2 = model_size(build(reference, 'lab-trunk-v2', boundary_mode='half_open'))
+    assert crop['groups']['classification'] < v2['groups']['classification'] / 3
+    assert (crop['groups']['segmentation'], crop['groups']['trunk']) == (v2['groups']['segmentation'],
+                                                                         v2['groups']['trunk'])
+    assert 'unattributed' not in crop['components']
+    for g in GENES:                  # the projection and the 4 blocks' convolutions
+        assert crop['components'][f'{g}.classification']['conv1d'] == 5
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_lab_trunk_crop_v1_learns_one_batch(reference):
+    """Updated 200 times on one batch of 8 GenAIRR reads, its V call (the top-scored allele) is one of the read's V
+    alleles for more than 90% of them, though its crops start from the spans of untrained boundaries."""
+    from alignair.train import overfit_one_batch
+    from alignair.train.trainer import build_batch
+    model = crop_model(reference)
+    batch, targets = build_batch(records(8), reference, model.cfg)
+
+    def v_top1():
+        with torch.no_grad():
+            called = model.eval()(batch)['v_allele'].argmax(-1)
+        return float(targets['v_allele'].gather(1, called.unsqueeze(-1)).gt(0).float().mean())
+
+    before = v_top1()
+    overfit_one_batch(model, batch, targets, steps=200, lr=1e-3)
+    assert v_top1() > 0.9 > before
+
+
 # --- the model file, the replay and the screen -------------------------------------------------------------------
 
 @pytest.mark.integration
 @pytest.mark.parametrize('architecture,options', [
     ('lab-trunk-v1', {}), ('lab-trunk-v2', {'boundary_mode': 'half_open'}),
-    ('lab-trunk-v2', {'boundary_mode': 'half_open', 'region_head': True, 'anchor_heads': True})],
-    ids=['v1', 'v2', 'v2-regions-anchors'])
+    ('lab-trunk-v2', {'boundary_mode': 'half_open', 'region_head': True, 'anchor_heads': True}),
+    ('lab-trunk-crop-v1', {'boundary_mode': 'half_open', 'anchor_heads': True, 'd_presence_head': True})],
+    ids=['v1', 'v2', 'v2-regions-anchors', 'crop-anchors-d-presence'])
 def test_a_lab_trunk_model_file_round_trips(reference, tmp_path, monkeypatch, architecture, options):
     """Written as a training run writes its model.alignair, it loads back (in a process that registered the lab's
     candidates) and predicts what it predicted, the junction fields included (from the anchors, with anchor heads);

@@ -29,6 +29,11 @@ The model option ``d_presence_head=true`` gives either architecture a D presence
 short to call or callable, from the read's pooled trunk features, trained by the product's ``d_presence`` term; the
 product gates the D call on it. Built last, it leaves the rest of the model as it is with the flag off.
 
+``lab-trunk-crop-v1`` segments as lab-trunk-v2 (half-open) and classifies each gene from the trunk's features instead
+of the embedding: a window of them cropped at the span the product decodes, with a few flanking positions and a
+channel marking the span, through a small dilated tower (``CroppedTrunkGeneBranch``). The region, anchor and D presence
+heads come with the same flags.
+
 Shapes: B = batch, L = ``cfg.max_seq_length``, E = ``cfg.embed_dim``, C = ``TRUNK_CHANNELS``.
 """
 from __future__ import annotations
@@ -45,6 +50,7 @@ from alignair.core.gene_branch import GeneBranch, build_tower
 from alignair.core.layers import SoftCutoutLayer
 from alignair.errors import ConfigurationError
 from alignair.neural.heads.region import READ_REGIONS
+from alignair.predict.decode import decode_boundaries
 
 from . import register
 
@@ -270,3 +276,108 @@ register("lab-trunk-v1", ModelComponents(trunk=build_trunk, gene_branch=TrunkGen
                                          meta_tower=embedding_meta_tower, trunk_heads=build_trunk_heads))
 register("lab-trunk-v2", ModelComponents(trunk=build_trunk, gene_branch=TrunkGeneBranchV2,
                                          meta_tower=embedding_meta_tower, trunk_heads=build_trunk_heads))
+
+
+# --- lab-trunk-crop-v1: each gene's classifier on a crop of the trunk's features ------------------------------------
+
+CROP_WINDOWS = {"v": 320, "d": 48, "j": 80}       # the positions of a gene's span its classifier reads
+CROP_MARGIN = 4                                   # flanking positions gathered on each side of the window
+CROP_DILATIONS = (1, 2, 4, 8)                     # the crop tower's blocks: each position sees 1 + 4 x 15 = 61
+
+
+def crop_window(features: torch.Tensor, mask: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor,
+                window: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """One gene's crop of the trunk's features: ``(features (B, L, C), mask (B, L), starts (B,), ends (B,), window W)
+    -> (crop (B, W + 2M, C + 1), keep (B, W + 2M))``, M = ``CROP_MARGIN``. Row b gathers the positions
+    [s - M, s + W + M) of read b, s its start: the span's own and M flanking positions on each side, kept as context.
+    The last channel marks the span, 1.0 at the positions in [s, e) and 0.0 elsewhere. A span longer than W is
+    truncated at its end: the window holds its first W + M positions. A position outside the read (``mask`` False,
+    or before position 0 or past position L - 1) holds zero features and no mark, and is not kept."""
+    _, length, channels = features.shape
+    offsets = torch.arange(window + 2 * CROP_MARGIN, device=features.device) - CROP_MARGIN
+    start, end = starts.reshape(-1, 1), ends.reshape(-1, 1)
+    index = start + offsets
+    clamped = index.clamp(0, length - 1)
+    keep = (index >= 0) & (index < length) & mask.gather(1, clamped)
+    gathered = features.gather(1, clamped.unsqueeze(-1).expand(-1, -1, channels)) * keep.unsqueeze(-1)
+    span = (index >= start) & (index < end) & keep
+    return torch.cat([gathered, span.unsqueeze(-1).to(features.dtype)], -1), keep
+
+
+class CroppedTrunkGeneBranch(TrunkGeneBranchV2):
+    """lab-trunk-crop-v1's branch: lab-trunk-v2's segmentation, and a classifier on a crop of the trunk's features.
+
+    ``classify`` crops the gene's window (``CROP_WINDOWS``, ``crop_window``) at the span the product decodes: the
+    argmax of the masked boundary logits (``alignair.predict.decode.decode_boundaries``) of this forward pass's
+    ``segment`` call, detached, so training crops what inference crops and no gradient reaches the boundaries through
+    the crop. Called on other spans than the expectations ``segment`` returned (the assay's replay with spans of its
+    own), it crops a read's given span at its rounded positions, and a read's own expectations at its decoded span.
+    The crop tower (``cls_tower``) is a ``DilatedTrunk`` on the crop's C + 1 channels: a 1x1 projection to 128
+    channels, then 4 pre-norm residual blocks (kernel 5, dilations ``CROP_DILATIONS``), positions not kept zeroed
+    after the projection, each norm and each block. The kept positions' mean and max features go through
+    Linear(256, latent) (``cls_mid``, latent sized as conv-v1 sizes it, ``cfg.cls_spec``), SiLU and Linear(latent, A)
+    (``cls_head``), then the sigmoid for allele probabilities (logits for class labels)."""
+
+    def __init__(self, spec: GeneSpec, cfg: AlignAIRConfig):
+        nn.Module.__init__(self)
+        self._check_boundary_mode(cfg)
+        self.classification_mode = cfg.classification_mode
+        self.window = CROP_WINDOWS[spec.name]
+        _, _, latent = cfg.cls_spec(spec)
+        self.boundary = nn.Conv1d(TRUNK_CHANNELS, 2, 1)                  # channel 0: start logits, 1: end logits
+        self.cls_tower = DilatedTrunk(TRUNK_CHANNELS + 1, TRUNK_CHANNELS, dilations=CROP_DILATIONS)
+        self.cls_mid = nn.Linear(2 * TRUNK_CHANNELS, latent)
+        self.cls_head = nn.Linear(latent, spec.allele_count)
+        self.register_buffer("_pos", torch.arange(cfg.max_seq_length, dtype=torch.float32), persistent=False)
+        self._segmented: dict | None = None
+
+    @staticmethod
+    def _check_boundary_mode(cfg: AlignAIRConfig) -> None:
+        if cfg.boundary_mode != "half_open":
+            raise ConfigurationError(
+                f"lab-trunk-crop-v1 segments half-open boundaries only, not {cfg.boundary_mode!r} ones: it segments "
+                "as lab-trunk-v2 and crops [start, end) spans", context={"field": "boundary_mode"},
+                hint="Set the model option boundary_mode=half_open.")
+
+    def segment(self, emb: torch.Tensor, mask: torch.Tensor | None = None, end_mask: torch.Tensor | None = None, *,
+                features: torch.Tensor):
+        """lab-trunk-v2's segmentation; keeps this call's boundary logits, masks and expectations, detached, for
+        ``classify`` to decode the spans it crops."""
+        s_log, e_log, s_exp, e_exp = super().segment(emb, mask, end_mask, features=features)
+        read = torch.ones_like(s_log, dtype=torch.bool) if mask is None else mask
+        self._segmented = {"logits": (s_log.detach(), e_log.detach()),
+                           "masks": (read, read if end_mask is None else end_mask),
+                           "expectations": (s_exp.detach(), e_exp.detach())}
+        return s_log, e_log, s_exp, e_exp
+
+    def crop_spans(self, s_exp: torch.Tensor, e_exp: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """The (starts, ends) (B,) to crop, and the read mask (B, L), of the reads ``segment`` last saw: the decoded
+        span of a read whose expectations are the ones ``segment`` returned, and the rounded given one otherwise.
+        ConfigurationError without a ``segment`` call on these reads."""
+        found = self._segmented
+        if found is None or found["expectations"][0].shape != s_exp.shape:
+            raise ConfigurationError("lab-trunk-crop-v1 classifies the reads of its last segment call: run the "
+                                     "model's forward pass on them first", context={"field": "classify"})
+        (s_log, e_log), (read, end_mask), (s_own, e_own) = found["logits"], found["masks"], found["expectations"]
+        decoded = decode_boundaries(s_log, e_log, read, end_mask)
+        s, e = s_exp.detach(), e_exp.detach()
+        own = ((s == s_own) & (e == e_own)).reshape(-1)
+        length = read.shape[-1]
+        given = (s.round().long().reshape(-1).clamp(0, length - 1), e.round().long().reshape(-1).clamp(0, length))
+        return torch.where(own, decoded[0], given[0]), torch.where(own, decoded[1], given[1]), read
+
+    def classify(self, emb: torch.Tensor, s_exp: torch.Tensor, e_exp: torch.Tensor, *,
+                 features: torch.Tensor) -> torch.Tensor:
+        """The allele scores (B, A) from the crop of ``features`` at the spans of ``crop_spans``; ``emb`` is not
+        read."""
+        starts, ends, read = self.crop_spans(s_exp, e_exp)
+        crop, keep = crop_window(features, read, starts, ends, self.window)
+        logits = self.cls_head(F.silu(self.cls_mid(_pooled(self.cls_tower(crop, keep), keep))))
+        return torch.sigmoid(logits) if self.classification_mode == "multilabel" else logits
+
+    def component_modules(self) -> dict[str, nn.Module]:
+        return {name: getattr(self, name) for name in ("boundary", "cls_tower", "cls_mid", "cls_head")}
+
+
+register("lab-trunk-crop-v1", ModelComponents(trunk=build_trunk, gene_branch=CroppedTrunkGeneBranch,
+                                              meta_tower=embedding_meta_tower, trunk_heads=build_trunk_heads))
