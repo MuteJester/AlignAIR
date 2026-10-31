@@ -49,6 +49,10 @@ def register(sub) -> None:
     p.add_argument("--genotype", default=None,
                    help="genotype JSON/YAML {gene: [alleles]} (a subset of the trained reference) to "
                         "constrain the allele calls to")
+    p.add_argument("--reference", default=None,
+                   help="germline FASTA (V, D and J alleles) to call from, novel alleles included; a "
+                        "reference-agnostic model only. Missing IMGT gaps and anchors are taken from the "
+                        "model's own reference (the same allele, or a close same-length variant)")
     p.add_argument("--genotype-method", choices=["mask", "softmax", "renormalize", "redistribute"],
                    default="mask", help="how to apply the genotype constraint (default: mask)")
     p.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
@@ -237,6 +241,20 @@ def run(args) -> int:
                                           trust_pickle=args.trust_pickle)
     except ValueError as e:
         return fail(e, error_type=ModelError, context={"path": model_path})
+    if args.reference:
+        if not getattr(aligner.model, "reference_agnostic", False):
+            return report_error(ConfigurationError(
+                "--reference needs a reference-agnostic model: this model's alleles are the reference it was "
+                "trained on (use --genotype to restrict the calls to a subset of it)",
+                context={"model": model_path, "reference": args.reference}))
+        from ..reference.complete import complete_reference
+        from ..reference.reference_set import ReferenceSet
+        try:              # the FASTA's alleles become the model's bank, completed against its own reference
+            bound = complete_reference(ReferenceSet.from_fasta(args.reference), aligner.reference)
+            aligner = Aligner.from_pretrained(model_path, device=device, dataconfigs=args.dataconfig,
+                                              trust_pickle=args.trust_pickle, reference=bound)
+        except (ValueError, OSError) as e:
+            return fail(e, context={"stage": "reference_binding", "path": args.reference})
     reference = aligner.reference
 
     # locus: don't silently default to IGH when the model declares its locus
