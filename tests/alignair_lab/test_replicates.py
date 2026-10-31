@@ -202,7 +202,8 @@ def test_finished_replicates_are_pooled_from_their_records_alone(rig, replicate_
     assert main(replicate_arguments(rig, replicate_root, "--reuse", "--report", "full")) == 0
     missing = tmp_path / "nowhere"
     assert main(["replicates", "--name", "rep", "--init-seeds", "0,1,2", "--reuse", "--from-records", "--report",
-                 "records", "--out-root", str(replicate_root), "--cache", str(missing), "--dev-build", str(missing)]) == 0
+                 "records", "--out-root", str(replicate_root), "--cache", str(missing),
+                 "--dev-build", str(missing)]) == 0
     full, records = (json.loads((replicate_root / name / "report.json").read_text()) for name in ("full", "records"))
     assert records["decisions"] == full["decisions"] and records["request"] == full["request"]
     assert records["baseline"] == full["baseline"] and records["from_records"] and not full["from_records"]

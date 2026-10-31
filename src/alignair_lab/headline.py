@@ -30,6 +30,7 @@ candidate's Δs against the null band of baseline screens (``calibrate``).
 """
 from __future__ import annotations
 
+import textwrap
 from collections.abc import Mapping, Sequence
 
 from alignair_lab.noise import MIN_SEEDS, MIXED, UNCALIBRATED, pooled
@@ -43,7 +44,11 @@ MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
 LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ better, - worse, = tie, ? few clusters), reads fixed/broken. "
           "These omit",
           "run-to-run training noise, weighed below: pooled/band (lab-null-v1), seeds mean±SD n, diff z agree. Better: "
-          "t p<=.025, none regress.")
+          "t p<=.025, none regress.",
+          "One seed: its spread is assumed the baseline seeds' (sc = sb), so a noisier candidate makes z "
+          "anti-conservative (too large).",
+          "Regressions: Holm per metric over its suites (family α 0.05), falls of 1 pp or more, for all 5 metrics "
+          "whatever their verdicts.")
 POOLED_LEGEND = (
     "candidate: each init seed's Δ against the baseline screen (read-weighted over the suites), mean±SD k; "
     "baseline seeds: the",
@@ -55,12 +60,17 @@ POOLED_LEGEND = (
     "a gain's",
     "one-sided p <= .025 and no regression (below), else mixed, naming the suites; worse: a loss's <= .025. A suite "
     "with too few",
-    "pairs or clusters is reported (~) but never counted. Uncalibrated without 3 seeds.")
+    "pairs or clusters is reported (~) but never counted. Uncalibrated without 3 seeds. Regressions: Holm per metric "
+    "over its suites",
+    "(family α 0.05), falls of 1 pp or more, listed for all 5 metrics whatever their verdicts. With one seed (k1) its "
+    "spread is assumed",
+    "the baseline seeds' (sc = sb): a noisier candidate makes z anti-conservative (too large).")
 REGRESSIONS = "Regressions (Holm over each metric's suites, family α 0.05, falls of 1 pp or more):"
 POOLED_HEADING = "The candidate's init seeds against the calibration's baseline seeds (pp):"
 SEEDS_HEADING = "Each init seed's pooled Δ against the baseline screen (pp):"
 SUITES_HEADING = ("Per-suite z, the candidate's seeds against the baseline seeds in each suite (! a regression above; ~ "
                   "too few pairs or clusters):")
+WIDTH = 132                               # the columns a headline line fits in
 TALLY = "+/-/="
 POOLED, SEEDS, DIFF, NOISE = "pooled", "seeds", "diff", "noise"
 _SEPARATOR = "  "
@@ -187,6 +197,16 @@ def _table(suites: dict, metrics: Sequence[tuple[str, str]], *, ci: bool, extra=
     return [line("Suite", columns), *(line(name, cells) for name, cells in rows)]
 
 
+def wrapped(lines: Sequence[str], width: int = WIDTH) -> list[str]:
+    """Title lines wrapped at ``width`` columns between words, never inside one (a path stays whole), each
+    continuation indented by two spaces; an empty line stays one."""
+    found = []
+    for line in lines:
+        found += textwrap.wrap(line, width, subsequent_indent="  ", break_long_words=False,
+                               break_on_hyphens=False) or [""]
+    return found
+
+
 def _grid(header: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:
     widths = [max(len(row[i]) for row in (header, *rows)) for i in range(len(header))]
     return [_SEPARATOR.join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip() for row in (header, *rows)]
@@ -235,7 +255,7 @@ def render_pooled_headline(comparisons: Mapping[int, Mapping], *, decisions: Map
                      p_text(found["p"]), signs, band_text(found), verdict_text(found)])
     per_seed = [[label, *(_percent(pooled(comparisons[seed], metric)) for seed in seeds)] for metric, label in HEADLINE]
     seed, screen = boundaries
-    lines = [*title, *POOLED_LEGEND, "", POOLED_HEADING,
+    lines = [*wrapped(title), *POOLED_LEGEND, "", POOLED_HEADING,
              *_grid(["Metric", "candidate", "baseline seeds", "diff", "z", "df", "p", "agree", "band", "noise"],
                     rows),
              regressions_line(decisions), "", SEEDS_HEADING,
@@ -253,7 +273,7 @@ def render_headline(comparison: dict, *, decisions: Mapping[str, Mapping], title
     """The headline of a comparison summary (see the module docstring), after the lines of ``title``. ``decisions``:
     the comparison's decisions (``noise.decide([comparison], ...)``, made once by the caller, against the calibration's
     baseline seeds or uncalibrated)."""
-    lines = [*title, *LEGEND]
+    lines = [*wrapped(title), *LEGEND]
     if comparison.get("same_model"):
         lines.append("The candidate and the baseline are the same model: every Δ is 0.")
     if (comparison.get("code") or {}).get("same") is False:

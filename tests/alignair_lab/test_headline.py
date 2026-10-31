@@ -90,7 +90,34 @@ def test_twelve_suites_fit_one_screen():
     text = single(comparison(), calibration(), title=["Screen wide: lab-wide-v1 at 20000 steps."])
     lines = text.splitlines()
     assert lines[0] == "Screen wide: lab-wide-v1 at 20000 steps."
-    assert len(lines) <= 55 and max(map(len, lines)) <= 132, (len(lines), max(map(len, lines)))
+    assert len(lines) <= 57 and max(map(len, lines)) <= 132, (len(lines), max(map(len, lines)))
+
+
+# A screen's and a report's title lines as they are written, the longest over 132 columns.
+LONG_TITLE = [
+    'Replicates trunk-v2-s20000: lab-trunk-v2 with {"boundary_mode": "half_open"}, 20000 steps (cosine schedule), init '
+    'seeds 0, 1, 2, each against the baseline screen baseline-igh-v3-seed0-40k-s20000-cosine-init0 (lab-null-v1, '
+    'init seed 0).',
+    'Candidate 84c55a76557c-98ec631407e5 (/media/thomas/NVMe_Data/alignair_arch/screens/trunk-v2-s20000/train/'
+    'model.alignair); baseline f4175bf24847-98ec631407e5 (/media/thomas/NVMe_Data/alignair_arch/screens/'
+    'baseline-igh-v3-seed0-40k-s20000-cosine-init0/train/model.alignair).']
+
+
+def test_long_title_lines_wrap_at_132_columns_without_breaking_a_word():
+    for text in (single(comparison(), calibration(), title=LONG_TITLE),
+                 pooled_text(replicates(), calibration(), title=LONG_TITLE, boundaries=(0, "wide"))):
+        lines = text.splitlines()
+        assert max(map(len, lines)) <= 132, max(map(len, lines))
+        words = " ".join(text.split())
+        assert all(" ".join(line.split()) in words for line in LONG_TITLE)          # every word, in order
+        assert any(line.startswith("  ") for line in lines[:6])                    # a continuation is indented
+
+
+def test_the_legends_say_holm_is_per_metric_and_what_one_seeds_spread_assumes():
+    for text in (single(comparison(), calibration()), pooled_text(replicates(), calibration(), boundaries=(0, "wide"))):
+        flat = " ".join(text.split())
+        assert "Holm per metric" in flat and "all 5 metrics" in flat
+        assert "sc = sb" in flat and "anti-conservative" in flat
 
 
 def test_each_headline_metric_shows_its_delta_ci_verdict_and_reads_fixed_and_broken():
