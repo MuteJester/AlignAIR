@@ -35,7 +35,7 @@ from .reader import EDIT_STATES
 from .scan import OUT
 
 IGNORE = -100
-LOSS_WEIGHTS = {name: 1.0 for name in ("orientation", "parse", "v_anchor", "j_anchor", "shm", "coord", "scan_v",
+LOSS_WEIGHTS = {name: 1.0 for name in ("orientation", "parse", *ANCHOR_KEYS.values(), "shm", "coord", "scan_v",
                                        "scan_d", "scan_j", "d_presence")}
 
 

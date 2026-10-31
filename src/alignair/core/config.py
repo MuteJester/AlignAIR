@@ -107,6 +107,9 @@ class AlignAIRConfig:
     # trained it as non-productive. Reference-bound constructors select "masked" when the metadata
     # heads are on; serialized configs without the field keep "negative".
     productive_unknown: Literal["negative", "masked"] = "negative"
+    # The chip's training inputs (``data.chip_inputs``): per-base germline columns and identifiable regions, and per
+    # batch the bank masks and teacher inputs. The chip reads half-open boundaries.
+    chip_inputs: bool = False
     # The heads read from a trunk's per-position features: only an architecture with a trunk builds them
     # (``core.model.TRUNK_HEAD_FLAGS``). New ones are appended here, so positional construction never shifts.
     # The per-position recombination-region head (pre/V/N1/D/N2/J/post).
@@ -118,9 +121,6 @@ class AlignAIRConfig:
     # The 3-state D presence head (absent / too short to call / callable, ``core.d_presence``), which gates the D call
     # at prediction. Only a heavy-chain configuration (``has_d``) has a D to gate.
     d_presence_head: bool = False
-    # The chip's training inputs (``data.chip_inputs``): per-base germline columns and identifiable regions, and per
-    # batch the bank masks and teacher inputs. The chip reads half-open boundaries.
-    chip_inputs: bool = False
 
     def __post_init__(self):
         for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head", "chip_inputs"):
