@@ -21,10 +21,11 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
   metric (``too_few_pairs``, ``too_few_clusters``) in some seed's comparison, is reported and flagged but stays out of
   the family and never regresses. The p is t's, not the normal's: from 1–3 candidate seeds and 6 baseline seeds,
   Welch's z has heavy tails, and the normal's p would let Holm call some suite of eleven a regression in about a
-  quarter of the screens without one. The decision:
-  ``beyond noise (better)`` at z ≥ ``Z_LIMIT`` with no suite regressing, ``mixed`` at z ≥ ``Z_LIMIT`` with some
-  (``regressions`` names them), ``beyond noise (worse)`` at z ≤ −``Z_LIMIT``, and ``within noise`` otherwise; the
-  ``regressions`` are reported whatever the decision;
+  quarter of the screens without one. The pooled z is read from Student's t at its df as well (``pooled_test``),
+  two-sided at ``POOLED_ALPHA``: z ≥ 2 alone would call about 1 in 20 candidates without an effect better. The
+  decision: ``beyond noise (better)`` when the one-sided p of a gain is .025 or less and no suite regresses, ``mixed``
+  when it is and some suite does (``regressions`` names them), ``beyond noise (worse)`` when the one-sided p of a
+  loss is .025 or less, and ``within noise`` otherwise; the ``regressions`` are reported whatever the decision;
   ``uncalibrated`` with fewer than ``MIN_SEEDS`` baseline seeds of the metric, and ``uncalibrated: spread 0`` when the
   standard error is 0: baseline seeds that never differed on it bound nothing. A gain on the hard suites while the
   easy ones sit saturated at Δ 0 is a gain; what the suites guard against is one suite traded for another.
@@ -47,7 +48,7 @@ BETTER, WORSE = "beyond noise (better)", "beyond noise (worse)"
 WITHIN, MIXED, UNCALIBRATED = "within noise", "mixed", "uncalibrated"
 ZERO_SPREAD = "uncalibrated: spread 0"
 MIN_SEEDS = 3                             # baseline seeds a calibration needs for a decision
-Z_LIMIT = 2.0                             # |z| from which a pooled diff is beyond noise
+POOLED_ALPHA = 0.05                       # the pooled verdict's two-sided level: .025 in each tail of Student's t
 FAMILY_ALPHA = 0.05                       # Holm's family-wise level over a metric's suites, for their falls
 MIN_REGRESSION = 0.01                     # the smallest fall of a suite that counts as a regression: 1 pp
 # The assay's tests when a metric's pairs in a suite are too few, or fall in too few clusters, for a verdict.
@@ -225,10 +226,12 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
         found = {"candidate": candidate, "pooled": statistics.fmean(candidate) if candidate else None,
                  "candidate_sd": statistics.stdev(candidate) if len(candidate) > 1 else None,
                  "baseline_mean": None, "baseline_sd": None, "k": len(candidate),
-                 "n": len(values), "diff": None, "se": None, "z": None, "band": (band or {}).get(metric)}
+                 "n": len(values), "diff": None, "se": None, "z": None, "df": None,
+                 "band": (band or {}).get(metric)}
         calibrated = bool(candidate) and len(values) >= MIN_SEEDS
+        found.update(p=None, p_better=None, p_worse=None)
         if calibrated:
-            found.update(welch(candidate, values))
+            found.update(pooled_test(candidate, values))
             del found["candidate_mean"]
         direction = found["diff"] if calibrated else found["pooled"]
         found["agree"], found["suites"], found["basis"] = _suite_signs(comparisons, baseline if calibrated else None,
@@ -241,14 +244,24 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
             decision = UNCALIBRATED
         elif found["z"] is None:
             decision = ZERO_SPREAD
-        elif found["z"] >= Z_LIMIT:
+        elif found["p_better"] <= POOLED_ALPHA / 2:
             decision = MIXED if found["regressions"] else BETTER
-        elif found["z"] <= -Z_LIMIT:
+        elif found["p_worse"] <= POOLED_ALPHA / 2:
             decision = WORSE
         else:
             decision = WITHIN
         decisions[metric] = {**found, "decision": decision}
     return decisions
+
+
+def pooled_test(candidate: Sequence[float], baseline: Sequence[float]) -> dict:
+    """``welch`` of the candidate's values against the baseline's, with the one-sided p of a gain (``p_better``) and of
+    a loss (``p_worse``) from Student's t at its df, and their two-sided ``p``; the three None when z is."""
+    found = welch(candidate, baseline)
+    if found["z"] is None:
+        return {**found, "p": None, "p_better": None, "p_worse": None}
+    better, worse = float(stats.t.sf(found["z"], found["df"])), float(stats.t.cdf(found["z"], found["df"]))
+    return {**found, "p": min(1., 2 * min(better, worse)), "p_better": better, "p_worse": worse}
 
 
 def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping], metric: str) -> dict[str, dict]:

@@ -43,7 +43,7 @@ MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
 LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ better, - worse, = tie, ? few clusters), reads fixed/broken. "
           "These omit",
           "run-to-run training noise, weighed below: pooled/band (lab-null-v1), seeds mean±SD n, diff z agree. Better: "
-          "z>=2, no regression.")
+          "t p<=.025, none regress.")
 POOLED_LEGEND = (
     "candidate: each init seed's Δ against the baseline screen (read-weighted over the suites), mean±SD k; "
     "baseline seeds: the",
@@ -51,10 +51,11 @@ POOLED_LEGEND = (
     "sqrt(sc²/k + sb²/n), with",
     "sc = sb for one seed; agree: suites whose diff has its sign (*: none has enough clusters, so all; information); "
     "band: the",
-    "largest Δ between baseline screens, a reference. Better beyond noise: z >= 2 and no regression (below), else "
-    "mixed, naming",
-    "the suites; worse: z <= -2. A suite with too few pairs or clusters is reported (~) but never counted. "
-    "Uncalibrated without 3 seeds.")
+    "largest Δ between baseline screens, a reference. p: two-sided, Student's t at the Welch df. Better beyond noise: "
+    "a gain's",
+    "one-sided p <= .025 and no regression (below), else mixed, naming the suites; worse: a loss's <= .025. A suite "
+    "with too few",
+    "pairs or clusters is reported (~) but never counted. Uncalibrated without 3 seeds.")
 REGRESSIONS = "Regressions (Holm over each metric's suites, family α 0.05, falls of 1 pp or more):"
 POOLED_HEADING = "The candidate's init seeds against the calibration's baseline seeds (pp):"
 SEEDS_HEADING = "Each init seed's pooled Δ against the baseline screen (pp):"
@@ -125,6 +126,11 @@ def suite_z_cell(found: Mapping, suite: str) -> str:
     if test["z"] is None:
         return "n/a"
     return f"{test['z']:+.1f}{'!' if suite in found['regressions'] else ''}{'~' if test['limited'] else ''}"
+
+
+def p_text(p: float | None) -> str:
+    """A p-value to three decimals, ``<0.001`` below that, ``n/a`` without one."""
+    return "n/a" if p is None else "<0.001" if p < .001 else f"{p:.3f}"
 
 
 def band_text(found: Mapping) -> str:
@@ -217,16 +223,18 @@ def render_pooled_headline(comparisons: Mapping[int, Mapping], *, calibration: M
     for metric, label in HEADLINE:
         found = decisions[metric]
         if found["pooled"] is None:
-            rows.append([label, *["n/a"] * 7])
+            rows.append([label, *["n/a"] * 9])
             continue
         signs = f"{found['agree']}/{found['suites']}{'*' if found['basis'] == 'all' else ''}"
         z = "n/a" if found["z"] is None else f"{found['z']:+.1f}"
-        rows.append([label, candidate_cell(found), seeds_cell(found), _percent(found["diff"]), z, signs,
-                     band_text(found), verdict_text(found)])
+        df = "n/a" if found["df"] is None else f"{found['df']:.1f}"
+        rows.append([label, candidate_cell(found), seeds_cell(found), _percent(found["diff"]), z, df,
+                     p_text(found["p"]), signs, band_text(found), verdict_text(found)])
     per_seed = [[label, *(_percent(pooled(comparisons[seed], metric)) for seed in seeds)] for metric, label in HEADLINE]
     seed, screen = boundaries
     lines = [*title, *POOLED_LEGEND, "", POOLED_HEADING,
-             *_grid(["Metric", "candidate", "baseline seeds", "diff", "z", "agree", "band", "noise"], rows),
+             *_grid(["Metric", "candidate", "baseline seeds", "diff", "z", "df", "p", "agree", "band", "noise"],
+                    rows),
              regressions_line(decisions), "", SEEDS_HEADING, *_grid(["Metric", *(f"init {found}" for found in seeds)], per_seed), "",
              *_suite_z_block(comparisons, decisions), "",
              f"Boundary exact rates of init seed {seed} alone ({screen}): one seed against the baseline screen, "

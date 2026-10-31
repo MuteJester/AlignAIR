@@ -108,20 +108,20 @@ def test_each_headline_metric_weighs_its_pooled_delta_against_the_baseline_seeds
     suites +1.2, 500 reads each), beside the null band as a reference. The baseline seeds' values against the same
     baseline screen (mean −1.0, SD 1.4, n 6) give the diff (+3.1 for clone_key.exact) and Welch's z with the candidate's
     spread the baseline's, with the suites, of those with enough clusters for a verdict (J top-1: not S9), whose diff
-    has its sign (information); better beyond noise at z ≥ 2 with no suite regressing."""
+    has its sign (information). One seed's z of 2.0 is Student's t at 5 df, two-sided p .10: within noise."""
     found = rows(render_headline(comparison(), calibration=calibration()))
     assert cells(found["pooled"]) == ["+2.1 / 1.0", "+1.2 / 5.0", "+1.2 / 0.5", "+1.2 / 2.0", "+1.3 / 3.0"]
     assert cells(found["seeds"]) == ["-1.0±1.4 n6"] * 5
     assert cells(found["diff"]) == ["+3.1 z+2.0 12/12", "+2.2 z+1.4 11/11", "+2.2 z+1.4 12/12", "+2.2 z+1.4 11/11",
                                     "+2.3 z+1.5 11/11"]
-    assert cells(found["noise"]) == ["beyond noise (better)"] + ["within noise"] * 4
+    assert cells(found["noise"]) == ["within noise"] * 5
 
 
 def test_a_pooled_gain_with_a_regressing_suite_is_mixed_and_names_it():
-    """S1 gains 30 pp on clone_key.exact while S5 loses 8: the pooled z is 2.5, S5's own z −4.6 (p .003 at 5 df, under
-    Holm's first step over twelve suites, .05/12)."""
+    """S1 gains 40 pp on clone_key.exact while S5 loses 8: the pooled z is 3.1 (t at 5 df, one-sided p .014), S5's
+    own z −4.6 (p .003, under Holm's first step over twelve suites, .05/12)."""
     found = comparison()
-    found["suites"]["S1"]["headline"]["clone_key.exact"] = entry(0.30)
+    found["suites"]["S1"]["headline"]["clone_key.exact"] = entry(0.40)
     found["suites"]["S5"]["headline"]["clone_key.exact"] = entry(-0.08)
     text = render_headline(found, calibration=calibration())
     assert cells(rows(text)["noise"])[0] == "mixed: S5"
@@ -197,10 +197,11 @@ def test_the_pooled_headline_sets_the_candidates_seeds_against_the_baseline_seed
                                   boundaries=(0, "wide"))
     assert text.splitlines()[0] == "Replicates wide: lab-wide-v1."
     table = pooled_rows(text, POOLED_HEADING)
-    assert table["Metric"] == ["candidate", "baseline seeds", "diff", "z", "agree", "band", "noise"]
+    assert table["Metric"] == ["candidate", "baseline seeds", "diff", "z", "df", "p", "agree", "band", "noise"]
     better = "beyond noise (better)"
-    assert table["clone_key.exact"] == ["+3.1±1.0 k3", "-1.0±1.4 n6", "+4.1", "+5.1", "12/12", "1.0", better]
-    assert table["J top-1"][4:] == ["11/11", "3.0", better]                             # S9: too few clusters
+    assert table["clone_key.exact"] == ["+3.1±1.0 k3", "-1.0±1.4 n6", "+4.1", "+5.1", "5.7", "0.003", "12/12", "1.0",
+                                        better]                         # t at the Welch df 4/0.7: p .0027
+    assert table["J top-1"][4:] == ["5.7", "0.008", "11/11", "3.0", better]             # S9: too few clusters
     seeds = pooled_rows(text, SEEDS_HEADING)
     assert seeds["Metric"] == ["init 0", "init 1", "init 2"] and seeds["clone_key.exact"] == ["+2.1", "+3.1", "+4.1"]
     # each suite's z: its seeds' Δs against the baseline seeds there; S9's J top-1 has too few clusters (~)
@@ -228,8 +229,10 @@ def test_the_pooled_headline_names_the_suites_a_mixed_gain_regresses_on():
 def test_one_seed_is_given_the_baselines_spread_and_no_calibration_marks_nothing():
     one = pooled_rows(render_pooled_headline(replicates((0.,)), calibration=calibration(), boundaries=(0, "wide")),
                       POOLED_HEADING)
-    assert one["clone_key.exact"][:4] == ["+2.1 k1", "-1.0±1.4 n6", "+3.1", "+2.0"]
+    assert one["clone_key.exact"] == ["+2.1 k1", "-1.0±1.4 n6", "+3.1", "+2.0", "5.0", "0.096", "12/12", "1.0",
+                                      "within noise"]
     none_text = render_pooled_headline(replicates(), calibration=None, boundaries=(0, "wide"))
     none = pooled_rows(none_text, POOLED_HEADING)
-    assert none["clone_key.exact"] == ["+3.1±1.0 k3", "none", "n/a", "n/a", "12/12", "none", "uncalibrated"]
+    assert none["clone_key.exact"] == ["+3.1±1.0 k3", "none", "n/a", "n/a", "n/a", "n/a", "12/12", "none",
+                                       "uncalibrated"]
     assert SUITES_HEADING not in none_text and "Per-suite z: none, uncalibrated." in none_text

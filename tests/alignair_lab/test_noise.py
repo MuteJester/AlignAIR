@@ -14,6 +14,7 @@ from alignair_lab.noise import (
     null_band,
     pair,
     pooled,
+    pooled_test,
     recentred,
     seed_values,
     suite_tests,
@@ -152,6 +153,7 @@ def test_better_needs_a_pooled_z_of_two_and_no_suite_regressing():
     assert found["pooled"] == pytest.approx(.03125) and found["candidate"] == [pytest.approx(.03125)]
     assert found["baseline_mean"] == pytest.approx(-.01) and found["baseline_sd"] == pytest.approx(SB)
     assert found["diff"] == pytest.approx(.04125) and found["z"] == pytest.approx(.04125 / SE1)
+    assert found["df"] == 5 and found["p"] == pytest.approx(2 * stats.t.sf(.04125 / SE1, 5))       # p .043
     assert found["band"] == .05                     # above the pooled Δ: the band is a reference, not the rule
     assert {suite: entry["z"] for suite, entry in found["suite_z"].items()} == \
         {"S1": pytest.approx(.07 / SE1), "S2": pytest.approx(.05 / SE1), "S3": pytest.approx(.04 / SE1),
@@ -246,8 +248,32 @@ def test_a_suite_with_too_few_clusters_or_pairs_is_reported_but_never_counted_as
 
 def test_a_pooled_loss_is_worse_whatever_the_suites():
     assert decision([entry(-.06)] * 4)["decision"] == "beyond noise (worse)"                # diff −.05: z −3.3
-    found = decision([entry(.10), entry(-.09), entry(-.09), entry(-.09)])                   # S1 gains alone
+    found = decision([entry(.10), entry(-.12), entry(-.12), entry(-.12)])                   # S1 gains alone
     assert found["z"] <= -2 and found["decision"] == "beyond noise (worse)"
+
+
+def test_the_pooled_verdict_is_students_t_at_the_welch_df_two_sided():
+    """z 2.03 from one candidate seed against six baseline seeds is t at 5 df: two-sided p .098, within noise; a
+    better or worse verdict needs its one-sided p at .025 or below."""
+    found = decision([entry(.021)] * 4)
+    assert found["z"] == pytest.approx(.031 / SE1) and found["z"] >= 2
+    assert (found["df"], found["decision"]) == (5, "within noise")
+    assert found["p"] == pytest.approx(2 * stats.t.sf(.031 / SE1, 5))
+    assert pooled_test([.03], BASE)["p_better"] == pytest.approx(stats.t.sf(.04 / SE1, 5))
+    assert pooled_test([-.05], BASE)["p_worse"] == pytest.approx(stats.t.cdf(-.04 / SE1, 5))
+
+
+@pytest.mark.parametrize("k", [1, 3])
+def test_with_no_effect_the_pooled_rule_rarely_calls_a_candidate_better(k):
+    """Candidate and baseline seeds drawn alike: z ≥ 2 calls about 1 in 20 better; t at the Welch df, one-sided .025,
+    about 1 in 40."""
+    rng = random.Random(11)
+    trials, better, naive = 4000, 0, 0
+    for _ in range(trials):
+        found = pooled_test([rng.gauss(0, 1) for _ in range(k)], [rng.gauss(0, 1) for _ in range(6)])
+        better += found["p_better"] <= .025
+        naive += found["z"] >= 2
+    assert better / trials <= .035 and better < naive, (better / trials, naive / trials)
 
 
 def test_several_candidate_seeds_are_compared_by_their_mean_and_spread_pooled_and_per_suite():
