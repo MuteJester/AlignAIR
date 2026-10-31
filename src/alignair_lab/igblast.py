@@ -37,8 +37,8 @@ IGBLAST_DIR = Path("/home/thomas/Desktop/AlignAIR/.private/tools/ncbi-igblast-1.
 TOOL, ARM = "igblast", "shared"
 # The paired metrics: the headline, the junction-side boundaries (read and germline), productivity.
 METRICS = ("clone_key.exact", "junction.nt_exact", "v.top1_in_set", "d.top1_in_set", "j.top1_in_set",
-           "v.seq_end_exact", "d.seq_start_exact", "d.seq_end_exact", "j.seq_start_exact", "v.germ_end_exact",
-           "j.germ_start_exact", "productive.correct")
+           "v.seq_start_exact", "v.seq_end_exact", "d.seq_start_exact", "d.seq_end_exact", "j.seq_start_exact",
+           "j.seq_end_exact", "v.germ_start_exact", "v.germ_end_exact", "j.germ_start_exact", "productive.correct")
 CHAIN = VARIANTS[1:]           # the truth-substitution steps after the product pipeline itself
 _SETTINGS = ("split", "seed", "scale", "reference")
 VERDICTS = {"a_better": "IgBLAST better", "b_better": "checkpoint better", "tie_or_inconclusive": "tie"}

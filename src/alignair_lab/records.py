@@ -124,8 +124,11 @@ def dataconfig_names(dataconfigs) -> list[str]:
 
 
 def policy_fields(policy: CurriculumStreamPolicy) -> dict:
-    """Every field of a stream policy, encoded as the manifest stores it (``encode_parameters``)."""
-    return encode_parameters({field.name: getattr(policy, field.name) for field in dataclasses.fields(policy)})
+    """Every field of a stream policy that shapes its providers' records, encoded as the manifest stores it
+    (``encode_parameters``): all but ``flanks``, which ``training_records`` draws after the provider, so a cache of the
+    provider's records serves a flanked run too."""
+    return encode_parameters({field.name: getattr(policy, field.name) for field in dataclasses.fields(policy)
+                              if field.name != "flanks"})
 
 
 def reference_sha256(reference) -> str | None:

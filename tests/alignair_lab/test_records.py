@@ -109,6 +109,15 @@ def test_the_recipe_is_the_curriculum_run_training_trains_on():
     assert DATACONFIGS == ('HUMAN_IGH_OGRDB',) and (SEED, BATCH_SIZE) == (0, 64)
 
 
+def test_a_flank_policy_is_no_part_of_a_caches_identity():
+    """Flanks are drawn after the provider (``training_records``), so a cache of the provider's records serves a
+    flanked run as it serves a bare one."""
+    from alignair.data.flanks import FlankPolicy
+    from alignair_lab.records import policy_fields
+    assert policy_fields(dataclasses.replace(POLICY, flanks=FlankPolicy())) == policy_fields(POLICY)
+    assert 'flanks' not in policy_fields(POLICY)
+
+
 def test_component_counts_are_what_the_zipped_stream_draws():
     assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE) == (3,) * RECIPE_STREAMS
     assert component_counts(DATACONFIGS, policy=POLICY, seed=SEED, records=28) == (1,) * RECIPE_STREAMS
