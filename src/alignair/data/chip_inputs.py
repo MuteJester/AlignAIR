@@ -7,10 +7,12 @@ Per record (``chip_record_targets``):
   to its primary allele; ``IGNORE`` for every other base (insertions, other regions, an alignment that cannot be
   mapped, an inverted D, whose germline the forward frame does not hold).
 - ``region``: each base's recombination region as a ``READ_REGIONS`` index.
-- ``region_allowed``: a bitmask over ``READ_REGIONS`` per base: its region, plus the neighbouring gene where the read
-  cannot place the boundary. A V or D end may move right over the bases that continue its germline (N bases that
+- ``region_allowed``: a bitmask over ``READ_REGIONS`` per base: its region, plus the neighbouring region where the
+  read cannot place the boundary. A V or D end may move right over the bases that continue its germline (N bases that
   happen to equal the trimmed germline), and a D or J start may move left over the bases that precede its germline,
-  up to the neighbouring gene: the boundary the read can identify is any of those.
+  up to the neighbouring gene; and each edge may move inward over its run of bases that mismatch the germline (a
+  mutated edge base reads like an N base). The boundary the read can identify is any of those: the assay's boundary
+  intervals (``alignair_assay.truth.boundaries``).
 
 Per batch (``chip_batch_inputs``), into the model's inputs:
 
@@ -34,6 +36,9 @@ from .coordinates import segment_spans
 IGNORE = -100
 GENES = ("v", "d", "j")
 _BIT = {gene: 1 << READ_REGIONS.index(gene.upper()) for gene in GENES}
+# The N region a gene's edge base may be read as once its boundary moves inward: after a V or D, before a D or J.
+_NP_AFTER = {"v": 1 << READ_REGIONS.index("N1"), "d": 1 << READ_REGIONS.index("N2")}
+_NP_BEFORE = {"d": 1 << READ_REGIONS.index("N1"), "j": 1 << READ_REGIONS.index("N2")}
 
 
 def _primary(record, gene: str) -> str:
@@ -93,6 +98,36 @@ def _movable_boundaries(allowed, sequence, record, reference, coords, germ, inve
             while start - t >= preceding and g_start - t >= 0 and sequence[start - t] == germline[g_start - t]:
                 allowed[start - t] |= _BIT[gene]
                 t += 1
+        _shrinkable_edges(allowed, sequence, germline, gene,
+                          query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene]))
+
+
+def _mismatch_run(pairs, sequence, germline) -> int:
+    """The leading run of (read, germline) positions whose bases differ (an N read base counts); a base the germline
+    does not hold (an insertion) or a match stops it."""
+    run = 0
+    for read_position, germline_position in pairs:
+        if germline_position is None or (sequence[read_position] != "N"
+                                         and sequence[read_position] == germline[germline_position]):
+            break
+        run += 1
+    return run
+
+
+def _shrinkable_edges(allowed, sequence, germline, gene, path) -> None:
+    """Add the neighbouring N region's bit on the gene's edge bases that mismatch its germline: a mutated edge base
+    reads like an N base, so the boundary may move inward over that run. At least one aligned base stays, and the
+    end gets the shrink first (the assay's boundary intervals, ``alignair_assay.truth.boundaries``)."""
+    if path.reason is not None:
+        return
+    pairs = [(path.query_start + offset, base) for offset, base in enumerate(path.positions)]
+    budget = max(sum(base is not None for _, base in pairs) - 1, 0)
+    at_end = min(_mismatch_run(pairs[::-1], sequence, germline), budget) if gene in _NP_AFTER else 0
+    at_start = min(_mismatch_run(pairs, sequence, germline), budget - at_end) if gene in _NP_BEFORE else 0
+    for read_position, _ in pairs[len(pairs) - at_end:]:
+        allowed[read_position] |= _NP_AFTER[gene]
+    for read_position, _ in pairs[:at_start]:
+        allowed[read_position] |= _NP_BEFORE[gene]
 
 
 def chip_batch_inputs(targets: dict, reference, generator: torch.Generator | None = None) -> dict:

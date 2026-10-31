@@ -32,8 +32,8 @@ def _reference():
     return ReferenceSet({"V": v, "D": d, "J": j}, has_d=True)
 
 
-def _record(v_cigar="8M", v_germline_end=8):
-    record = {"sequence": SEQUENCE, "sequence_id": "chip-read", "productive": None, "mutation_rate": 0.,
+def _record(v_cigar="8M", v_germline_end=8, sequence=SEQUENCE):
+    record = {"sequence": sequence, "sequence_id": "chip-read", "productive": None, "mutation_rate": 0.,
               "n_indels": 0, "n_quality_errors": 0, "v_call": "V*01", "d_call": "D*01", "j_call": "J*01"}
     for gene, (start, end, gs, ge) in SPANS.items():
         record.update({f"{gene}_sequence_start": start, f"{gene}_sequence_end": end, f"{gene}_germline_start": gs,
@@ -78,6 +78,37 @@ def test_v_end_may_move_right_while_np_bases_match_the_germline():
 def test_j_start_may_move_left_while_np_bases_match_the_germline():
     allowed = _targets()["region_allowed"].values
     assert allowed[15] == _bits("N2", "J")         # T == J germline base 1
+
+
+def _substituted(**bases):
+    """SEQUENCE with the bases at the given positions (``p7="G"``) replaced."""
+    read = list(SEQUENCE)
+    for position, base in bases.items():
+        read[int(position[1:])] = base
+    return "".join(read)
+
+
+def test_a_gene_may_shrink_over_its_mismatching_edge_bases():
+    """A mutated edge base reads like an N base: the boundary may move inward over the run of edge bases that
+    mismatch the germline (as the assay's boundary intervals allow), and no further than the first match."""
+    allowed = _targets(_record(sequence=_substituted(p6="T", p7="A", p10="A", p13="A", p16="C")))["region_allowed"].values
+    assert allowed[6] == allowed[7] == _bits("V", "N1")       # V's last two bases mismatch (germline G, T)
+    assert allowed[5] == _bits("V")                            # base 5 matches: the run stops
+    assert allowed[10] == _bits("D", "N1") and allowed[13] == _bits("D", "N2")
+    assert allowed[11] == allowed[12] == _bits("D")
+    assert allowed[16] == _bits("J", "N2") and allowed[17] == _bits("J")
+
+
+def test_an_n_base_at_the_edge_counts_as_a_mismatch():
+    allowed = _targets(_record(sequence=_substituted(p7="N")))["region_allowed"].values
+    assert allowed[7] == _bits("V", "N1")
+
+
+def test_a_gene_keeps_at_least_one_aligned_base():
+    """D's 4 bases all mismatch: its end shrinks over 3 of them and its start not at all."""
+    allowed = _targets(_record(sequence=_substituted(p10="A", p11="A", p12="T", p13="T")))["region_allowed"].values
+    assert allowed[10] == _bits("D")
+    assert allowed[11] == allowed[12] == allowed[13] == _bits("D", "N2")
     assert allowed[14] == _bits("N2", "D")         # C != J germline base 0 (T), but continues the D germline
 
 
