@@ -21,7 +21,7 @@ from .boundaries import boundary_masks
 from .components import _build_component, architecture_components
 from ..errors import ConfigurationError, InputError, error_context
 from .runtime import restore_model_state
-from ..neural.heads.orientation import apply_orientation
+from ..neural.heads.orientation import BankOrientation, apply_orientation
 
 # The configuration flags whose heads read the trunk's per-position features (``ModelComponents.trunk_heads``): an
 # architecture without a trunk refuses each of them.
@@ -38,6 +38,7 @@ class AlignAIR(nn.Module):
         self.embedding = _build_component(components.embedding, cfg, component="embedding")
         self.orientation_head = (_build_component(components.orientation_head, cfg, component="orientation_head")
                                  if cfg.use_orientation else None)
+        self.bank_orientation = BankOrientation() if cfg.bank_orientation else None
         if components.core is not None:
             # the core replaces everything after orientation correction (and reads the trunk-head flags itself)
             self.core = _build_component(components.core, cfg, component="core")
@@ -121,9 +122,13 @@ class AlignAIR(nn.Module):
         if self.orientation_head is not None:
             orient_logits = self.orientation_head(emb0, mask)
             out["orientation_logits"] = orient_logits
-            out["orientation"] = orient_logits.argmax(-1)
+            called = orient_logits.argmax(-1)
+            if self.bank_orientation is not None and "orientation" not in batch:
+                voted, won = self.bank_orientation.vote(tokens, mask)        # the reference's reading, where it wins
+                called = torch.where(won, voted, called)
+            out["orientation"] = called
             correct = (batch["orientation"] if "orientation" in batch   # teacher-forced during training
-                       else orient_logits.argmax(-1).detach())          # self-corrected at inference
+                       else called.detach())                            # self-corrected at inference
             corrected = apply_orientation(tokens, mask, correct)
             emb = self.embedding(corrected)
 
@@ -199,7 +204,10 @@ class AlignAIR(nn.Module):
         return modules
 
     def bind_reference(self, reference) -> None:
-        """Give the core the reference it reads (a core's bank is an input, not weights); a no-op otherwise."""
+        """Give the parts that read the reference their bank (an input, not weights): the bank orientation's k-mer
+        index and the core's bank; a no-op for a model with neither."""
+        if self.bank_orientation is not None:
+            self.bank_orientation.bind(reference)
         bind = getattr(self.core, "bind_reference", None)
         if bind is not None:
             bind(reference)

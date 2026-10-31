@@ -110,6 +110,9 @@ class AlignAIRConfig:
     # The chip's training inputs (``data.chip_inputs``): per-base germline columns and identifiable regions, and per
     # batch the bank masks and teacher inputs. The chip reads half-open boundaries.
     chip_inputs: bool = False
+    # At inference, orient each read by the bound reference (``neural.heads.orientation.BankOrientation``): the
+    # transform under which most of its 12-mers are germline 12-mers; the orientation head decides when none wins.
+    bank_orientation: bool = False
     # The heads read from a trunk's per-position features: only an architecture with a trunk builds them
     # (``core.model.TRUNK_HEAD_FLAGS``). New ones are appended here, so positional construction never shifts.
     # The per-position recombination-region head (pre/V/N1/D/N2/J/post).
@@ -123,7 +126,8 @@ class AlignAIRConfig:
     d_presence_head: bool = False
 
     def __post_init__(self):
-        for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head", "chip_inputs"):
+        for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head", "chip_inputs",
+                     "bank_orientation"):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be a boolean", context={"field": name})
         if self.d_presence_head and not self.has_d:
@@ -133,6 +137,9 @@ class AlignAIRConfig:
         if self.chip_inputs and self.boundary_mode != "half_open":
             raise ConfigurationError("chip_inputs needs half-open boundaries", context={"field": "chip_inputs"},
                                      hint="Set boundary_mode='half_open'.")
+        if self.bank_orientation and not self.use_orientation:
+            raise ConfigurationError("bank_orientation orients reads in place of the orientation head: it needs one",
+                                     context={"field": "bank_orientation"}, hint="Set use_orientation=True.")
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
                               ("boundary_mode", ("residue", "half_open")),
                               ("input_space", ("nucleotide", "protein")),
