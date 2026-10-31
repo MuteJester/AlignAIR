@@ -94,11 +94,13 @@ class ChipCore(nn.Module):
         self.bank = None
 
     def bind_reference(self, reference) -> None:
-        for gene in self.genes:
-            if len(reference.gene(gene.upper())) != self.counts[gene]:
-                raise ConfigurationError("the bound reference's alleles differ from the model's allele outputs",
-                                         context={"gene": gene, "reference": len(reference.gene(gene.upper())),
-                                                  "model": self.counts[gene]})
+        """Bind the bank: any reference with the chip's genes, alleles it never trained on included (the bank is an
+        input, not weights); the chip's allele outputs are then the bound reference's alleles, in its order."""
+        missing = [gene.upper() for gene in self.genes if gene.upper() not in reference.genes]
+        if missing:
+            raise ConfigurationError(f"the bound reference has no {', '.join(missing)} alleles for the chip's genes",
+                                     context={"missing": missing, "genes": list(self.genes)})
+        self.counts = {gene: len(reference.gene(gene.upper())) for gene in self.genes}
         device = next(self.parameters()).device
         self.bank = BankCompiler(reference).to(device)
 

@@ -6,8 +6,12 @@ import torch
 
 from alignair.core.anchors import ANCHOR_LOGITS
 from alignair.core.d_presence import D_PRESENCE_LOGITS
+from alignair.errors import ConfigurationError
+from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 from alignair_lab.architectures.chip import core as chip_core
+
+from .conftest import toy_reference
 
 pytestmark = pytest.mark.component
 
@@ -138,3 +142,33 @@ def test_the_chip_rescores_its_v_call_with_its_bank_at_inference_only(chip, monk
     model.eval()
     model(batch.inputs)
     assert seen == [model.core.bank]
+
+
+def _with_a_novel_v():
+    """The toy reference plus V*03, a novel allele (V*01 with its last base changed), gapped and anchored like V*01."""
+    toy = toy_reference()
+    v = GeneReference(["V*01", "V*02", "V*03"], ["ACGTACGTAC", "TTTTTTTTTT", "ACGTACGTAA"],
+                      {"V*01": 0, "V*02": 1, "V*03": 2}, anchors={"V*01": 4, "V*02": 4, "V*03": 4},
+                      gapped={"V*01": "ACGT..ACGTAC", "V*02": "TTTT..TTTTTT", "V*03": "ACGT..ACGTAA"})
+    return ReferenceSet({"V": v, "D": toy.gene("D"), "J": toy.gene("J")}, has_d=True)
+
+
+def test_any_reference_binds_and_the_calls_follow_its_alleles(chip):
+    """The bank is an input: a reference with an allele the chip never trained on binds, and the V call is over its
+    three alleles (no per-allele weights to resize)."""
+    model, batch, _ = chip
+    model.eval()
+    model.bind_reference(_with_a_novel_v())
+    inputs = {key: value for key, value in batch.inputs.items() if not key.startswith(("bank_mask", "teacher"))}
+    out = model(inputs)
+    assert model.core.bank.rows("v") == 3
+    assert out["v_allele"].shape[-1] == 3 and out["v_log_posterior"].shape[-1] == 3
+    assert out["d_allele"].shape[-1] == 2
+
+
+def test_a_reference_without_one_of_the_chips_genes_is_refused(chip):
+    model, _, _ = chip
+    toy = toy_reference()
+    light = ReferenceSet({"V": toy.gene("V"), "J": toy.gene("J")}, has_d=False)
+    with pytest.raises(ConfigurationError, match="D"):
+        model.bind_reference(light)
