@@ -121,7 +121,9 @@ class AlignAIR(nn.Module):
         # shared per-position features: computed once from the corrected embedding when the architecture has a trunk
         features = self.trunk(emb, mask) if self.trunk is not None else None
         extra = {} if features is None else {"features": features}
-        meta = self.meta_tower(emb, **extra) if self.meta_tower is not None else None
+        # with a trunk the meta tower may pool the trunk's features, so it is told which positions are the read's
+        meta = (self.meta_tower(emb, **extra, **({} if features is None else {"mask": mask}))
+                if self.meta_tower is not None else None)
         if self.cfg.boundary_mode == "half_open":
             out["start_mask"], out["end_mask"] = mask, end_mask
         else:

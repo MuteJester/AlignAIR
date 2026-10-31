@@ -184,13 +184,15 @@ class TrunkGeneBranchV2(TrunkGeneBranch):
 
 
 class EmbeddingMetaTower(nn.Module):
-    """conv-v1's meta tower behind the trunk's call: ``forward(emb, features=...)`` is ``tower(emb)`` (B, block_out)."""
+    """conv-v1's meta tower behind the trunk's call: ``forward(emb, features=..., mask=...)`` is ``tower(emb)``
+    (B, block_out)."""
 
     def __init__(self, tower: nn.Module):
         super().__init__()
         self.tower = tower
 
-    def forward(self, emb: torch.Tensor, *, features: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(self, emb: torch.Tensor, *, features: torch.Tensor | None = None,
+                mask: torch.Tensor | None = None) -> torch.Tensor:
         return self.tower(emb)
 
 

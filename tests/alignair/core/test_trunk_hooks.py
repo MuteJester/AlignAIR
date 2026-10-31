@@ -74,8 +74,9 @@ class SeenMetaTower(nn.Module):
         self.inner = components._meta_tower(cfg)
         self.seen = None
 
-    def forward(self, emb, *, features=None):
+    def forward(self, emb, *, features=None, mask=None):
         self.seen = features
+        self.seen_mask = mask
         return self.inner(emb)
 
 
@@ -119,6 +120,12 @@ def test_a_trunk_runs_once_and_reaches_branches_and_meta_tower(architecture):
     for branch in model.branches.values():
         assert branch.seen["segment"] is features and branch.seen["classify"] is features
     assert model.component_modules()["trunk"] is model.trunk
+
+
+def test_with_a_trunk_the_meta_tower_is_given_the_read_mask(architecture):
+    model = AlignAIR(config(architecture=trunk_architecture(architecture))).eval()
+    run(model)
+    assert torch.equal(model.meta_tower.seen_mask, torch.arange(128).expand(2, -1) < 40)
 
 
 def test_trunk_heads_write_their_outputs(architecture):
