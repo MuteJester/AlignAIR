@@ -7,7 +7,8 @@
   python -m alignair_lab calibrate [--steps 20000] [--init-seeds 0,1,2] [--parallel 1] [--model-option KEY=VALUE ...]
       [--name NAME] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N] [--device cuda] [--data-workers 2]
       [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--out-root DIR]
-  python -m alignair_lab replicates --name NAME [--init-seeds 0,1,2] [--parallel 1] [--reuse] [--report NAME]
+  python -m alignair_lab replicates --name NAME [--init-seeds 0,1,2] [--parallel 1] [--reuse [--from-records]]
+      [--report NAME]
       [--steps 20000] [--architecture ARCH] [--model-option KEY=VALUE ...] [--against-screen NAME]
       [--baseline-model-option KEY=VALUE ...] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N]
       [--variants baseline] [--device cuda] [--data-workers 2] [--eval-batch-size 256] [--cache DIR] [--dev-build DIR]
@@ -110,6 +111,10 @@ def build_parser() -> argparse.ArgumentParser:
                            help=f"replicates trained at once, at most {replicates.MAX_PARALLEL} (default %(default)s)")
     replicate.add_argument("--reuse", action="store_true",
                            help="train nothing: pool the finished replicates, refusing a missing one")
+    replicate.add_argument("--from-records", action="store_true",
+                           help="with --reuse: take the request and the baseline from the replicates' own records and "
+                                "read nothing else but the calibration (no cache, dev build or checkpoint; the "
+                                "request's arguments are not used)")
     replicate.add_argument("--report", help="the report's directory under --out-root (default "
                                             "report-<name>-seeds<init seeds>)")
     replicate.add_argument("--steps", type=int, default=screen.DEFAULT_STEPS,
@@ -228,7 +233,8 @@ def run_replicates(args) -> int:
                               data_workers=args.data_workers, eval_batch_size=args.eval_batch_size, cache=args.cache,
                               dev_build=args.dev_build, out_root=args.out_root, schedule=args.schedule,
                               against_screen=args.against_screen,
-                              baseline_options=model_options(args.baseline_model_option))
+                              baseline_options=model_options(args.baseline_model_option),
+                              from_records=args.from_records)
     return 0
 
 

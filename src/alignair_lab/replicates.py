@@ -24,6 +24,14 @@ screen like any other (``screen.run_screen``).
    (``headline.render_pooled_headline``, with the boundary tables of the first init seed's screen), and prints the
    headline.
 
+``from_records`` (``--reuse --from-records``) pools finished replicates from their records alone: the request is the
+first replicate's (checked alike in all), the baseline is the one it records, and nothing else is read but the
+calibration, so a report can be made where the cache, the dev build or the checkpoints are not at hand.
+
+The replicates must also compare the same suites on the same cases and paired reads (``check_pairing``), against the
+calibration's own seed-0 checkpoint (``check_calibration``), under the same lab and assay code (``code_digests`` of
+``screen``; those that record none are pooled with a warning, ``code_warning``).
+
 A request is what the replicates share (``request_of``): the architecture and its model options, the steps and the
 schedule, the protocol (recipe, cache, steps, schedule), the suites and their builds, the cases, the variants and the
 baseline (its kind, checkpoint and options).
@@ -194,6 +202,19 @@ def code_warning(records: Mapping[int, Mapping]) -> str | None:
             "code digest, so the lab's and the assay's code cannot be checked to be the same.")
 
 
+def _recorded_baseline(records: Mapping[int, Mapping]) -> dict:
+    """The baseline screen the replicates compared with, as their first's record names it (the request, checked alike
+    in all of them, holds its checkpoint): its ``name``, ``init_seed`` and ``checkpoint``. ConfigurationError for a
+    milestone, which no calibration weighs."""
+    baseline = next(iter(records.values()))["baseline"]
+    if baseline.get("kind") != "screen":
+        raise ConfigurationError(f"the replicates compared with a {baseline.get('kind')}, not a baseline screen: "
+                                 "their seeds can be set against a calibration's only as Δs against its seed screen",
+                                 context={"field": "replicates"})
+    return {"name": baseline.get("name"), "init_seed": baseline.get("init_seed"),
+            "checkpoint": baseline.get("checkpoint")}
+
+
 def check_calibration(records: Mapping[int, Mapping], band: Mapping | None, init_seed: int | None) -> None:
     """ConfigurationError, naming the replicate and both model keys, when the calibration of ``band`` (None: there is
     none, nothing to check) cannot weigh a replicate's comparison: its seed-``init_seed`` screen is not the replicate's
@@ -258,10 +279,12 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
                    data_workers: int = DEFAULT_DATA_WORKERS, eval_batch_size: int = 256, cache=CACHE,
                    dev_build=DEV_BUILD, out_root=SCREENS, schedule: str = DEFAULT_SCHEDULE,
                    against_screen: str | None = None, baseline_options: Mapping | None = None,
-                   echo: Callable[[str], None] | None = None) -> dict:
+                   from_records: bool = False, echo: Callable[[str], None] | None = None) -> dict:
     """Screen ``architecture`` with ``model_options`` from each of ``init_seeds`` and pool the replicates (see the
     module docstring); returns the report record (``report.json``) with its printed ``headline``. ``reuse``: train
-    nothing, pool the finished replicates only. ``echo`` receives the progress lines and the headline (default:
+    nothing, pool the finished replicates only. ``from_records`` (with ``reuse``): read the request and the baseline
+    from the replicates' own records, and nothing else but the calibration: no record cache, dev build or baseline
+    checkpoint, and none of the request's arguments. ``echo`` receives the progress lines and the headline (default:
     printed)."""
     if echo is None:
         def echo(line: str) -> None:
@@ -269,6 +292,8 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
     if not isinstance(name, str) or not NAME.fullmatch(name):
         raise ValueError(f"a replicates name is 1 to 64 letters, digits, '.', '_' or '-', starting with a letter or "
                          f"digit; got {name!r}")
+    if from_records and not reuse:
+        raise ValueError("--from-records pools finished replicates only: give --reuse too")
     seeds = _seeds(init_seeds)
     if isinstance(parallel, bool) or not isinstance(parallel, int) or not 1 <= parallel <= MAX_PARALLEL:
         raise ValueError(f"parallel is 1 to {MAX_PARALLEL} replicates trained at once, got {parallel!r}")
@@ -279,11 +304,15 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
     directory = out_root / report
     if directory.exists():
         raise FileExistsError(f"a report named {report!r} exists ({directory}); choose another --report")
-    request, provenance = expected_request(steps=steps, architecture=architecture,
-                                           model_options=_canonical(dict(model_options or {})), suites=suites,
-                                           max_cases=max_cases, variants=variants, cache=cache, dev_build=dev_build,
-                                           out_root=out_root, schedule=schedule, against_screen=against_screen,
-                                           baseline_options=dict(baseline_options or {}))
+    if from_records:
+        request, provenance = None, None
+    else:
+        request, provenance = expected_request(steps=steps, architecture=architecture,
+                                               model_options=_canonical(dict(model_options or {})), suites=suites,
+                                               max_cases=max_cases, variants=variants, cache=cache,
+                                               dev_build=dev_build, out_root=out_root, schedule=schedule,
+                                               against_screen=against_screen,
+                                               baseline_options=dict(baseline_options or {}))
     records, plan = {}, []
     for seed in seeds:
         screen = replicate_name(name, seed)
@@ -299,7 +328,9 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
             plan.append((seed, screen, _command(screen, seed, request, against=provenance["name"], device=device,
                                                 data_workers=data_workers, eval_batch_size=eval_batch_size,
                                                 cache=cache, dev_build=dev_build, out_root=out_root)))
-    check_replicates(records, expected=request)
+    request = check_replicates(records, expected=request)
+    if from_records:
+        provenance = _recorded_baseline(records)
     if records:
         check_pairing(records, DECIDED)
     band = null_band(out_root, request["protocol"], request["baseline"]["options"], request["suites"],
@@ -319,7 +350,7 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
               "started": now(), "init_seeds": seeds, "request": request,
               "screens": {str(seed): {"name": replicate_name(name, seed), "reused": seed in records} for seed in seeds},
               "baseline": {"name": provenance["name"], "init_seed": provenance["init_seed"],
-                           "checkpoint": provenance["checkpoint"]}}
+                           "checkpoint": provenance["checkpoint"]}, "from_records": from_records}
 
     def stage(status: str, **fields):
         record.update(status=status, **fields)

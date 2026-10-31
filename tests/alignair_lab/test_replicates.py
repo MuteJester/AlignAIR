@@ -194,6 +194,24 @@ def test_replicates_pool_finished_screens_into_a_report_without_training(rig, re
 
 
 @pytest.mark.integration
+def test_finished_replicates_are_pooled_from_their_records_alone(rig, replicate_root, tmp_path, capsys):
+    """``--from-records`` reads the replicates' screen records and the calibration only: no record cache, dev build or
+    baseline checkpoint, and none of the request's arguments. It pools as the full ``--reuse`` path does."""
+    copy_replicate(replicate_root, 1, .01)
+    copy_replicate(replicate_root, 2, -.02)
+    assert main(replicate_arguments(rig, replicate_root, "--reuse", "--report", "full")) == 0
+    missing = tmp_path / "nowhere"
+    assert main(["replicates", "--name", "rep", "--init-seeds", "0,1,2", "--reuse", "--from-records", "--report",
+                 "records", "--out-root", str(replicate_root), "--cache", str(missing), "--dev-build", str(missing)]) == 0
+    full, records = (json.loads((replicate_root / name / "report.json").read_text()) for name in ("full", "records"))
+    assert records["decisions"] == full["decisions"] and records["request"] == full["request"]
+    assert records["baseline"] == full["baseline"] and records["from_records"] and not full["from_records"]
+    capsys.readouterr()
+    assert main(["replicates", "--name", "rep", "--from-records", "--out-root", str(replicate_root)]) == 2
+    assert "--reuse" in capsys.readouterr().err
+
+
+@pytest.mark.integration
 def test_a_missing_replicate_or_one_of_another_request_is_refused_before_anything_is_written(rig, replicate_root,
                                                                                            capsys):
     copy_replicate(replicate_root, 1, 0.)
