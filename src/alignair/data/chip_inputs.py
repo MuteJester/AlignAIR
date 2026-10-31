@@ -61,7 +61,7 @@ def chip_record_targets(record, reference, frames, region_labels) -> dict:
             path = query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene])
             if columns is not None and path.reason is None:
                 for offset, base in enumerate(path.positions):
-                    if base is not None and base < len(columns):
+                    if base is not None and base < len(columns) and columns[base] >= 0:
                         column[path.query_start + offset] = columns[base]
         targets[f"coord_{gene}"] = PositionLabels(column, IGNORE)
     allowed = np.left_shift(1, region).astype(np.int64)

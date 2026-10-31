@@ -24,12 +24,12 @@ def _base(table, row, column, width):
 
 def test_rows_are_one_hot_at_their_frame_columns():
     bank = BankCompiler(_reference())
-    assert bank.width("v") == 6 and bank.rows("v") == 2
+    assert bank.width("v") == 384 and bank.rows("v") == 2
     table, cover = bank.table_v, bank.cover_v
-    assert table.shape == (2, 24) and cover.shape == (2, 6)
-    assert [_base(table, 0, c, 6) for c in range(6)] == ["A", "C", None, None, "G", "T"]
-    assert [_base(table, 1, c, 6) for c in range(6)] == ["A", "C", None, None, "G", "A"]
-    assert cover[0].tolist() == [1, 1, 0, 0, 1, 1]
+    assert table.shape == (2, 384 * 4) and cover.shape == (2, 384)
+    assert [_base(table, 0, c, 384) for c in range(7)] == ["A", "C", None, None, "G", "T", None]
+    assert [_base(table, 1, c, 384) for c in range(6)] == ["A", "C", None, None, "G", "A"]
+    assert cover[0, :7].tolist() == [1, 1, 0, 0, 1, 1, 0] and cover[0].sum() == 4
     assert table.sum(-1).tolist() == cover.sum(-1).tolist()
 
 
@@ -37,8 +37,8 @@ def test_d_has_reverse_complement_rows():
     bank = BankCompiler(_reference())
     assert bank.rows("d") == 4
     assert bank.row_allele_d.tolist() == [0, 1, 0, 1] and bank.row_inverted_d.tolist() == [False, False, True, True]
-    assert [_base(bank.table_d, 2, c, 4) for c in range(4)] == ["A", "T", "C", "C"]     # reverse complement of GGAT
-    assert [_base(bank.table_d, 1, c, 4) for c in range(4)] == ["C", "C", None, None]  # N is no base; D*02 is short
+    assert [_base(bank.table_d, 2, c, 48) for c in range(4)] == ["A", "T", "C", "C"]     # reverse complement of GGAT
+    assert [_base(bank.table_d, 1, c, 48) for c in range(4)] == ["C", "C", None, None]  # N is no base; D*02 is short
 
 
 def test_row_mask_maps_alleles_to_both_d_rows():

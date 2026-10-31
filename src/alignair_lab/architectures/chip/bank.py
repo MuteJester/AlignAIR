@@ -32,14 +32,14 @@ class BankCompiler(nn.Module):
             alleles = reference.gene(gene.upper())
             rows = [(index, sequence, frame.columns[name])
                     for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences))]
-            if gene == "d":
-                rows += [(index, reverse_complement(sequence), torch.arange(len(sequence)).numpy())
-                         for index, sequence in enumerate(alleles.sequences)]
+            if gene == "d":           # a reverse complement row reads its own positions, as a forward D row does
+                rows += [(index, reverse_complement(sequence), frame.columns[name])
+                         for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences))]
             table = torch.zeros(len(rows), frame.width * len(BASES))
             cover = torch.zeros(len(rows), frame.width)
             for row, (_, sequence, columns) in enumerate(rows):
                 for k, base in enumerate(sequence.upper()):
-                    if base in BASES:
+                    if base in BASES and columns[k] >= 0:
                         table[row, int(columns[k]) * len(BASES) + BASES.index(base)] = 1.
                         cover[row, int(columns[k])] = 1.
             self.register_buffer(f"table_{gene}", table, persistent=False)

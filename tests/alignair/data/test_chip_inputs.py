@@ -59,7 +59,7 @@ def test_coordinates_are_frame_columns_of_the_aligned_bases():
     targets = _targets()
     assert targets["coord_v"].values[:8].tolist() == [0, 1, 2, 3, 6, 7, 8, 9]     # gapped: 2 columns after base 3
     assert targets["coord_d"].values[10:14].tolist() == [1, 2, 3, 4]
-    assert targets["coord_j"].values[16:21].tolist() == [2, 3, 4, 5, 6]
+    assert targets["coord_j"].values[16:21].tolist() == [47, 48, 49, 50, 51]    # the W/F codon at column 48
     assert (targets["coord_v"].values[8:] == -100).all() and targets["coord_v"].padding == -100
 
 
