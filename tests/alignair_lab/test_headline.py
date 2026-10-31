@@ -3,7 +3,15 @@ and reads fixed / broken, and each boundary's Δ, verdict and reads fixed / brok
 in the assay's suite detail, as on its own summary page)."""
 import pytest
 
-from alignair_lab.headline import BOUNDARIES, DECODERS, HEADLINE, render_headline
+from alignair_lab.headline import (
+    BOUNDARIES,
+    DECODERS,
+    HEADLINE,
+    POOLED_HEADING,
+    SEEDS_HEADING,
+    render_headline,
+    render_pooled_headline,
+)
 
 pytestmark = pytest.mark.component
 
@@ -37,7 +45,8 @@ SEEDS = (0., -.02, -.01, -.03, .01, -.01)
 
 
 def calibration(values=SEEDS, band=BAND):
-    """A calibration as a screen's headline takes it: the band and each baseline seed's values (``noise.seed_values``)."""
+    """A calibration as a screen's headline takes it: the band and each baseline seed's values
+    (``noise.seed_values``)."""
     metrics = [metric for metric, _ in HEADLINE]
     seeds = {str(seed): {"pooled": dict.fromkeys(metrics, value),
                          "suites": {f"S{n}": dict.fromkeys(metrics, value) for n in range(1, 13)}}
@@ -134,3 +143,49 @@ def test_a_different_alignair_code_or_the_same_model_is_flagged():
     assert "different AlignAIR code" in render_headline(found)
     found["same_model"] = True
     assert "same model" in render_headline(found)
+
+
+def replicates(shifts=(0., .01, .02)):
+    """Init seed -> its screen's comparison: ``comparison()`` with every headline Δ raised by the seed's shift."""
+    found = {}
+    for seed, shift in enumerate(shifts):
+        summary = comparison()
+        for suite in summary["suites"].values():          # the suites share their entries: each is replaced
+            for metric, _ in HEADLINE:
+                if metric in suite["headline"]:
+                    shared = suite["headline"][metric]
+                    suite["headline"][metric] = {**shared, "delta": shared["delta"] + shift}
+        found[seed] = summary
+    return found
+
+
+def pooled_rows(text, heading):
+    """The rows, by their first cell, of the table after ``heading``, up to the next blank line."""
+    lines = text[text.index(heading):].splitlines()[1:]
+    table = lines[:lines.index("")] if "" in lines else lines
+    return {line.split("  ")[0].strip(): cells(line) for line in table}
+
+
+def test_the_pooled_headline_sets_the_candidates_seeds_against_the_baseline_seeds():
+    """Three seeds of clone_key.exact pool to +2.1, +3.1 and +4.1 (mean +3.1, SD 1.0). Against the six baseline seeds
+    (mean −1.0, SD 1.4) the diff is +4.1, and Welch's z = 4.1 / sqrt(1.0²/3 + 1.4²/6) = 5.1."""
+    text = render_pooled_headline(replicates(), calibration=calibration(), title=["Replicates wide: lab-wide-v1."],
+                                  boundaries=(0, "wide"))
+    assert text.splitlines()[0] == "Replicates wide: lab-wide-v1."
+    table = pooled_rows(text, POOLED_HEADING)
+    assert table["Metric"] == ["candidate", "baseline seeds", "diff", "z", "agree", "band", "noise"]
+    assert table["clone_key.exact"] == ["+3.1±1.0 k3", "-1.0±1.4 n6", "+4.1", "+5.1", "12/12", "1.0", "beyond noise"]
+    assert table["J top-1"][4:] == ["11/11", "3.0", "beyond noise"]                     # S9: too few clusters
+    seeds = pooled_rows(text, SEEDS_HEADING)
+    assert seeds["Metric"] == ["init 0", "init 1", "init 2"] and seeds["clone_key.exact"] == ["+2.1", "+3.1", "+4.1"]
+    heading = next(line for line in text.splitlines() if "init seed 0" in line and "wide" in line)
+    assert "alone" in heading and text.index(heading) < text.index(DECODERS[0][1]) < text.index(DECODERS[1][1])
+    assert max(map(len, text.splitlines())) <= 132
+
+
+def test_one_seed_is_given_the_baselines_spread_and_no_calibration_marks_nothing():
+    one = pooled_rows(render_pooled_headline(replicates((0.,)), calibration=calibration(), boundaries=(0, "wide")),
+                      POOLED_HEADING)
+    assert one["clone_key.exact"][:4] == ["+2.1 k1", "-1.0±1.4 n6", "+3.1", "+2.0"]
+    none = pooled_rows(render_pooled_headline(replicates(), calibration=None, boundaries=(0, "wide")), POOLED_HEADING)
+    assert none["clone_key.exact"] == ["+3.1±1.0 k3", "none", "n/a", "n/a", "12/12", "none", "uncalibrated"]

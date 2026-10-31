@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from alignair_lab.noise import MIN_SEEDS, UNCALIBRATED, decide
+from alignair_lab.noise import MIN_SEEDS, UNCALIBRATED, decide, pooled
 
 HEADLINE = (("clone_key.exact", "clone_key.exact"), ("junction.nt_exact", "junction.nt_exact"), ("v.top1_in_set", "V top-1"),
             ("d.top1_in_set", "D top-1"), ("j.top1_in_set", "J top-1"))
@@ -38,12 +38,23 @@ BOUNDARIES = tuple((f"head.{gene}.{edge}_exact", f"{gene.upper()} {edge}") for g
 DECODERS = (("soft", "Boundary exact rates, the soft-argmax decoder:"),
             ("argmax", "Boundary exact rates, the position logits' argmax decoder (the product's):"))
 MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
-LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate better, - worse, = tie, ? too few clusters), reads "
-          "fixed/broken.",
-          "CIs resample reads and leave out run-to-run training noise, weighed below: pooled Δ / null band (lab-null-v1 "
-          "screens; a reference);",
-          "seeds: baseline seeds' Δs, mean±SD n; diff: pooled − their mean, Welch z, suites agreeing (*: all). Beyond "
-          "noise: |z|>=2, 2/3 agree.")
+LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate better, - worse, = tie, ? too few clusters), "
+          "reads fixed/broken.",
+          "CIs resample reads and leave out run-to-run training noise, weighed below: pooled Δ / null band "
+          "(lab-null-v1 screens; a reference);",
+          "seeds: baseline seeds' Δs, mean±SD n; diff: pooled − their mean, Welch z, suites agreeing (*: all). "
+          "Beyond noise: |z|>=2, 2/3 agree.")
+POOLED_LEGEND = (
+    "candidate: each init seed's Δ against the baseline screen (read-weighted over the suites), mean±SD k; "
+    "baseline seeds: the",
+    "calibration's baseline screens' Δs against that screen, mean±SD n. diff: their difference; z: diff / "
+    "sqrt(sc²/k + sb²/n), with",
+    "sc = sb for one seed; agree: suites whose diff has its sign (*: none has enough clusters, so all); band: "
+    "the largest Δ between",
+    "baseline screens, a reference. Beyond noise: |z| >= 2 and 2/3 of the suites agreeing; uncalibrated without 3 "
+    "baseline seeds.")
+POOLED_HEADING = "The candidate's init seeds against the calibration's baseline seeds (pp):"
+SEEDS_HEADING = "Each init seed's pooled Δ against the baseline screen (pp):"
 TALLY = "+/-/="
 POOLED, SEEDS, DIFF, NOISE = "pooled", "seeds", "diff", "noise"
 _SEPARATOR = "  "
@@ -128,6 +139,56 @@ def _table(suites: dict, metrics: Sequence[tuple[str, str]], *, ci: bool, extra=
         return _SEPARATOR.join([label.ljust(first), *(cell.ljust(width) for cell, width in zip(cells, widths))]).rstrip()
 
     return [line("Suite", columns), *(line(name, cells) for name, cells in rows)]
+
+
+def _grid(header: Sequence[str], rows: Sequence[Sequence[str]]) -> list[str]:
+    widths = [max(len(row[i]) for row in (header, *rows)) for i in range(len(header))]
+    return [_SEPARATOR.join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip() for row in (header, *rows)]
+
+
+def _percent(value: float | None) -> str:
+    return "n/a" if value is None else f"{100 * value:+.1f}"
+
+
+def candidate_cell(found: Mapping) -> str:
+    """A decision's candidate seeds (``noise.decide``): mean±SD k in pp, or mean k1 for one seed."""
+    spread = "" if found["candidate_sd"] is None else f"±{100 * found['candidate_sd']:.1f}"
+    return f"{100 * found['pooled']:+.1f}{spread} k{found['k']}"
+
+
+def render_pooled_headline(comparisons: Mapping[int, Mapping], *, calibration: Mapping | None,
+                           boundaries: tuple[int, str], title: Sequence[str] = ()) -> str:
+    """The headline of a candidate's replicates (``replicates``), after the lines of ``title``: ``comparisons``, init
+    seed -> its screen's comparison summary, each against the same baseline screen; ``calibration`` as for
+    ``render_headline``. ``POOLED_HEADING``: per headline metric, the candidate's seeds (mean±SD k), the baseline
+    seeds (mean±SD n), the diff, Welch's z, the suites agreeing in sign, the null band (a reference) and the decision
+    (``noise.decide``); ``SEEDS_HEADING``: each seed's pooled Δ; then the boundary tables of the screen of one seed,
+    ``boundaries`` (its init seed and its name), labelled as that seed's alone."""
+    seeds = list(comparisons)
+    calibration = calibration or {}
+    decisions = decide([comparisons[seed] for seed in seeds], calibration.get("seeds"),
+                       [metric for metric, _ in HEADLINE], band=calibration.get("band"))
+    rows = []
+    for metric, label in HEADLINE:
+        found = decisions[metric]
+        if found["pooled"] is None:
+            rows.append([label, *["n/a"] * 7])
+            continue
+        signs = f"{found['agree']}/{found['suites']}{'*' if found['basis'] == 'all' else ''}"
+        z = "n/a" if found["z"] is None else f"{found['z']:+.1f}"
+        rows.append([label, candidate_cell(found), seeds_cell(found), _percent(found["diff"]), z, signs,
+                     band_text(found), found["decision"] or UNCALIBRATED])
+    per_seed = [[label, *(_percent(pooled(comparisons[seed], metric)) for seed in seeds)] for metric, label in HEADLINE]
+    seed, screen = boundaries
+    lines = [*title, *POOLED_LEGEND, "", POOLED_HEADING,
+             *_grid(["Metric", "candidate", "baseline seeds", "diff", "z", "agree", "band", "noise"], rows), "",
+             SEEDS_HEADING, *_grid(["Metric", *(f"init {found}" for found in seeds)], per_seed), "",
+             f"Boundary exact rates of init seed {seed} alone ({screen}): one seed against the baseline screen, "
+             "not pooled."]
+    for decoder, heading in DECODERS:
+        lines += ["", heading, *_table(comparisons[seed]["suites"],
+                                       [(f"{metric}.{decoder}", label) for metric, label in BOUNDARIES], ci=False)]
+    return "\n".join(lines)
 
 
 def render_headline(comparison: dict, *, title: Sequence[str] = (), calibration: Mapping | None = None) -> str:

@@ -196,7 +196,8 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
         candidate = [value for value in (pooled(comparison, metric) for comparison in comparisons) if value is not None]
         values = seed_distribution(baseline, metric) if baseline else []
         found = {"candidate": candidate, "pooled": statistics.fmean(candidate) if candidate else None,
-                 "candidate_sd": None, "baseline_mean": None, "baseline_sd": None, "k": len(candidate),
+                 "candidate_sd": statistics.stdev(candidate) if len(candidate) > 1 else None,
+                 "baseline_mean": None, "baseline_sd": None, "k": len(candidate),
                  "n": len(values), "diff": None, "se": None, "z": None, "band": (band or {}).get(metric)}
         calibrated = bool(candidate) and len(values) >= MIN_SEEDS
         if calibrated:

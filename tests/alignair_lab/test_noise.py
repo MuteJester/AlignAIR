@@ -149,7 +149,8 @@ def test_several_candidate_seeds_are_compared_by_their_mean_and_spread():
     assert found["candidate_sd"] == pytest.approx(.01) and found["z"] == pytest.approx(.04 / se)
     assert found["decision"] == "beyond noise"
     # a suite's sign is its mean Δ over the candidate's seeds: each seed alone has a suite below the baseline seeds
-    split = decision([entry(.08), entry(-.04), entry(.04), entry(.04)], [entry(-.04), entry(.08), entry(.04), entry(.04)])
+    split = decision([entry(.08), entry(-.04), entry(.04), entry(.04)],
+                     [entry(-.04), entry(.08), entry(.04), entry(.04)])
     assert (split["agree"], split["suites"], split["decision"]) == (4, 4, "beyond noise")
 
 
