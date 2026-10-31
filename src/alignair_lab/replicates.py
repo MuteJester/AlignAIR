@@ -266,7 +266,7 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
         decisions = decide(list(comparisons.values()), (calibration or {}).get("seeds"), metrics,
                            band=(calibration or {}).get("band"))
         title = _title(name, request, seeds, records, provenance, band, calibration)
-        headline = render_pooled_headline(comparisons, calibration=calibration, title=title,
+        headline = render_pooled_headline(comparisons, decisions=decisions, title=title,
                                           boundaries=(seeds[0], replicate_name(name, seeds[0])))
         (directory / HEADLINE_FILE).write_text(headline + "\n", encoding="utf-8")
         stored = None if band is None else {key: value for key, value in band.items() if key != "seeds"}

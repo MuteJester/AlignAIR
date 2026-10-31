@@ -14,8 +14,10 @@ from alignair_lab.headline import (
     render_headline,
     render_pooled_headline,
 )
+from alignair_lab.noise import decide
 
 pytestmark = pytest.mark.component
+METRICS = [metric for metric, _ in HEADLINE]
 
 
 def entry(delta, ci=(-0.012, 0.031), verdict="tie_or_inconclusive", fixed=12, broken=3, n_paired=500, test="paired"):
@@ -56,15 +58,43 @@ def calibration(values=SEEDS, band=BAND):
     return {"band": band, "seeds": seeds}
 
 
+def decided(comparisons, given=None):
+    """The decisions of ``comparisons`` against the calibration ``given`` (None: uncalibrated), made once."""
+    given = given or {}
+    return decide(list(comparisons), given.get("seeds"), METRICS, band=given.get("band"))
+
+
+def single(found, given=None, **options):
+    """``render_headline`` of one comparison, given its decisions."""
+    return render_headline(found, decisions=decided([found], given), **options)
+
+
+def pooled_text(found, given=None, **options):
+    """``render_pooled_headline`` of init seed -> comparison, given their decisions."""
+    return render_pooled_headline(found, decisions=decided(found.values(), given), **options)
+
+
+def test_the_renderers_take_their_decisions_and_make_none(monkeypatch):
+    """The decisions are made once, by the screen or the replicates, and passed to the renderers."""
+    import alignair_lab.headline as headline
+    decisions = decided([comparison()], calibration())
+    decisions["clone_key.exact"] = {**decisions["clone_key.exact"], "decision": "beyond noise (worse)"}
+    monkeypatch.setattr(headline, "decide", lambda *arguments, **options: pytest.fail("a renderer decided"),
+                        raising=False)
+    assert cells(rows(render_headline(comparison(), decisions=decisions))["noise"])[0] == "beyond noise (worse)"
+    pooled = render_pooled_headline({0: comparison()}, decisions=decisions, boundaries=(0, "wide"))
+    assert pooled_rows(pooled, POOLED_HEADING)["clone_key.exact"][-1] == "beyond noise (worse)"
+
+
 def test_twelve_suites_fit_one_screen():
-    text = render_headline(comparison(), title=["Screen wide: lab-wide-v1 at 20000 steps."], calibration=calibration())
+    text = single(comparison(), calibration(), title=["Screen wide: lab-wide-v1 at 20000 steps."])
     lines = text.splitlines()
     assert lines[0] == "Screen wide: lab-wide-v1 at 20000 steps."
     assert len(lines) <= 55 and max(map(len, lines)) <= 132, (len(lines), max(map(len, lines)))
 
 
 def test_each_headline_metric_shows_its_delta_ci_verdict_and_reads_fixed_and_broken():
-    text = render_headline(comparison())
+    text = single(comparison())
     first = text[:text.index("soft-argmax")]                      # the headline metrics' table
     rows = {line.split()[0]: line for line in first.splitlines() if line.startswith("S")}
     assert "+12.3 [10.1,14.5] + 70/8" in rows["S1"]
@@ -75,7 +105,7 @@ def test_each_headline_metric_shows_its_delta_ci_verdict_and_reads_fixed_and_bro
 
 
 def test_boundaries_show_both_decoders_and_each_column_tallies_its_verdicts():
-    text = render_headline(comparison())
+    text = single(comparison())
     soft, argmax = (text.index(heading) for _, heading in DECODERS)
     assert "soft-argmax" in DECODERS[0][1] and "soft" not in DECODERS[1][1] and soft < argmax
     soft_rows = [line for line in text[soft:argmax].splitlines() if line.startswith("S1 ")]
@@ -89,7 +119,7 @@ def test_boundaries_show_both_decoders_and_each_column_tallies_its_verdicts():
 
 def test_the_headline_says_its_verdicts_leave_out_training_noise():
     """Two GPU runs of one architecture on the same records differ at 20k steps by more than the read CIs."""
-    text = render_headline(comparison())
+    text = single(comparison())
     assert "run-to-run training noise" in text and "lab-null-v1" in text
 
 
@@ -109,7 +139,7 @@ def test_each_headline_metric_weighs_its_pooled_delta_against_the_baseline_seeds
     baseline screen (mean −1.0, SD 1.4, n 6) give the diff (+3.1 for clone_key.exact) and Welch's z with the candidate's
     spread the baseline's, with the suites, of those with enough clusters for a verdict (J top-1: not S9), whose diff
     has its sign (information). One seed's z of 2.0 is Student's t at 5 df, two-sided p .10: within noise."""
-    found = rows(render_headline(comparison(), calibration=calibration()))
+    found = rows(single(comparison(), calibration()))
     assert cells(found["pooled"]) == ["+2.1 / 1.0", "+1.2 / 5.0", "+1.2 / 0.5", "+1.2 / 2.0", "+1.3 / 3.0"]
     assert cells(found["seeds"]) == ["-1.0±1.4 n6"] * 5
     assert cells(found["diff"]) == ["+3.1 z+2.0 12/12", "+2.2 z+1.4 11/11", "+2.2 z+1.4 12/12", "+2.2 z+1.4 11/11",
@@ -123,7 +153,7 @@ def test_a_pooled_gain_with_a_regressing_suite_is_mixed_and_names_it():
     found = comparison()
     found["suites"]["S1"]["headline"]["clone_key.exact"] = entry(0.40)
     found["suites"]["S5"]["headline"]["clone_key.exact"] = entry(-0.08)
-    text = render_headline(found, calibration=calibration())
+    text = single(found, calibration())
     assert cells(rows(text)["noise"])[0] == "mixed: S5"
     assert f"{REGRESSIONS} clone_key.exact S5 -7.0 pp z -4.6." in text.splitlines()
 
@@ -132,30 +162,30 @@ def test_the_regressions_are_reported_whatever_the_verdict():
     """D top-1 loses 8 pp on S6 while its pooled Δ is within noise: the regression is listed all the same."""
     found = comparison()
     found["suites"]["S6"]["headline"]["d.top1_in_set"] = entry(-0.08)
-    text = render_headline(found, calibration=calibration())
+    text = single(found, calibration())
     assert cells(rows(text)["noise"])[3] == "within noise"
     assert f"{REGRESSIONS} D top-1 S6 -7.0 pp z -4.6." in text.splitlines()
-    assert f"{REGRESSIONS} none." in render_headline(comparison(), calibration=calibration()).splitlines()
-    assert f"{REGRESSIONS} not measured, uncalibrated." in render_headline(comparison()).splitlines()
+    assert f"{REGRESSIONS} none." in single(comparison(), calibration()).splitlines()
+    assert f"{REGRESSIONS} not measured, uncalibrated." in single(comparison()).splitlines()
 
 
 def test_signs_counted_over_every_suite_for_want_of_clusters_are_marked():
     found = comparison()
     for suite in found["suites"].values():
         suite["headline"]["v.top1_in_set"] = entry(0.012, test="too_few_clusters")
-    diff = cells(rows(render_headline(found, calibration=calibration()))["diff"])
+    diff = cells(rows(single(found, calibration()))["diff"])
     assert diff[2] == "+2.2 z+1.4 12/12*" and not diff[0].endswith("*")
 
 
 def test_baseline_seeds_that_never_differ_mark_nothing():
-    found = rows(render_headline(comparison(), calibration=calibration(values=(0., 0., 0.))))
+    found = rows(single(comparison(), calibration(values=(0., 0., 0.))))
     assert cells(found["seeds"])[0] == "+0.0±0.0 n3" and cells(found["diff"])[0] == "+2.1 z n/a 12/12"
     assert cells(found["noise"]) == ["uncalibrated: spread 0"] * 5
 
 
 def test_without_three_baseline_seeds_the_headline_is_uncalibrated_and_marks_nothing():
     for given, seeds in ((None, "none"), (calibration(values=(0., -.02)), "n2 < 3")):
-        found = rows(render_headline(comparison(), calibration=given))
+        found = rows(single(comparison(), given))
         assert cells(found["pooled"])[0] == ("+2.1 / none" if given is None else "+2.1 / 1.0")
         assert cells(found["seeds"]) == [seeds] * 5 and cells(found["diff"])[0] == "n/a 12/12"
         assert cells(found["noise"]) == ["uncalibrated"] * 5
@@ -164,9 +194,9 @@ def test_without_three_baseline_seeds_the_headline_is_uncalibrated_and_marks_not
 def test_a_different_alignair_code_or_the_same_model_is_flagged():
     found = comparison()
     found["code"] = {"this": "c" * 64, "baseline": "d" * 64, "same": False}
-    assert "different AlignAIR code" in render_headline(found)
+    assert "different AlignAIR code" in single(found)
     found["same_model"] = True
-    assert "same model" in render_headline(found)
+    assert "same model" in single(found)
 
 
 def replicates(shifts=(0., .01, .02)):
@@ -193,7 +223,7 @@ def pooled_rows(text, heading):
 def test_the_pooled_headline_sets_the_candidates_seeds_against_the_baseline_seeds():
     """Three seeds of clone_key.exact pool to +2.1, +3.1 and +4.1 (mean +3.1, SD 1.0). Against the six baseline seeds
     (mean −1.0, SD 1.4) the diff is +4.1, and Welch's z = 4.1 / sqrt(1.0²/3 + 1.4²/6) = 5.1."""
-    text = render_pooled_headline(replicates(), calibration=calibration(), title=["Replicates wide: lab-wide-v1."],
+    text = pooled_text(replicates(), calibration(), title=["Replicates wide: lab-wide-v1."],
                                   boundaries=(0, "wide"))
     assert text.splitlines()[0] == "Replicates wide: lab-wide-v1."
     table = pooled_rows(text, POOLED_HEADING)
@@ -218,20 +248,19 @@ def test_the_pooled_headline_names_the_suites_a_mixed_gain_regresses_on():
     found = replicates()
     for summary in found.values():
         summary["suites"]["S5"]["headline"]["clone_key.exact"] = entry(-0.08)
-    text = render_pooled_headline(found, calibration=calibration(), boundaries=(0, "wide"))
+    text = pooled_text(found, calibration(), boundaries=(0, "wide"))
     assert pooled_rows(text, POOLED_HEADING)["clone_key.exact"][-1] == "mixed: S5"
     assert pooled_rows(text, SUITES_HEADING)["S5"][0] == "-12.1!"
     assert f"{REGRESSIONS} clone_key.exact S5 -7.0 pp z -12.1." in text.splitlines()
-    assert f"{REGRESSIONS} none." in render_pooled_headline(replicates(), calibration=calibration(),
+    assert f"{REGRESSIONS} none." in pooled_text(replicates(), calibration(),
                                                              boundaries=(0, "wide")).splitlines()
 
 
 def test_one_seed_is_given_the_baselines_spread_and_no_calibration_marks_nothing():
-    one = pooled_rows(render_pooled_headline(replicates((0.,)), calibration=calibration(), boundaries=(0, "wide")),
-                      POOLED_HEADING)
+    one = pooled_rows(pooled_text(replicates((0.,)), calibration(), boundaries=(0, "wide")), POOLED_HEADING)
     assert one["clone_key.exact"] == ["+2.1 k1", "-1.0±1.4 n6", "+3.1", "+2.0", "5.0", "0.096", "12/12", "1.0",
                                       "within noise"]
-    none_text = render_pooled_headline(replicates(), calibration=None, boundaries=(0, "wide"))
+    none_text = pooled_text(replicates(), None, boundaries=(0, "wide"))
     none = pooled_rows(none_text, POOLED_HEADING)
     assert none["clone_key.exact"] == ["+3.1±1.0 k3", "none", "n/a", "n/a", "n/a", "n/a", "12/12", "none",
                                        "uncalibrated"]

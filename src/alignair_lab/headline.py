@@ -32,7 +32,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from alignair_lab.noise import MIN_SEEDS, MIXED, UNCALIBRATED, decide, pooled
+from alignair_lab.noise import MIN_SEEDS, MIXED, UNCALIBRATED, pooled
 
 HEADLINE = (("clone_key.exact", "clone_key.exact"), ("junction.nt_exact", "junction.nt_exact"), ("v.top1_in_set", "V top-1"),
             ("d.top1_in_set", "D top-1"), ("j.top1_in_set", "J top-1"))
@@ -148,12 +148,6 @@ def regressions_line(decisions: Mapping[str, Mapping]) -> str:
     return f"{REGRESSIONS} {'; '.join(found) if found else 'none'}."
 
 
-def _decisions(comparisons: Sequence[Mapping], calibration: Mapping | None) -> dict[str, dict]:
-    calibration = calibration or {}
-    return decide(list(comparisons), calibration.get("seeds"), [metric for metric, _ in HEADLINE],
-                  band=calibration.get("band"))
-
-
 def _noise_rows(decisions: Mapping[str, Mapping], metrics: Sequence[tuple[str, str]]) -> list:
     rows = {POOLED: [], SEEDS: [], DIFF: [], NOISE: []}
     for metric, _ in metrics:
@@ -208,17 +202,17 @@ def _suite_z_block(comparisons: Mapping[int, Mapping], decisions: Mapping[str, M
     return [SUITES_HEADING, *_grid(["Suite", *(label for _, label in HEADLINE)], rows)]
 
 
-def render_pooled_headline(comparisons: Mapping[int, Mapping], *, calibration: Mapping | None,
+def render_pooled_headline(comparisons: Mapping[int, Mapping], *, decisions: Mapping[str, Mapping],
                            boundaries: tuple[int, str], title: Sequence[str] = ()) -> str:
     """The headline of a candidate's replicates (``replicates``), after the lines of ``title``: ``comparisons``, init
-    seed -> its screen's comparison summary, each against the same baseline screen; ``calibration`` as for
-    ``render_headline``. ``POOLED_HEADING``: per headline metric, the candidate's seeds (mean±SD k), the baseline
-    seeds (mean±SD n), the diff, Welch's z, the suites agreeing in sign, the null band (a reference) and the decision
-    (``noise.decide``; a mixed one names its regressing suites); ``SEEDS_HEADING``: each seed's pooled Δ;
-    ``SUITES_HEADING``: each suite's own z per metric (``suite_z_cell``); then the boundary tables of the screen of
-    one seed, ``boundaries`` (its init seed and its name), labelled as that seed's alone."""
+    seed -> its screen's comparison summary, each against the same baseline screen, and ``decisions``, their decisions
+    (``noise.decide`` over the comparisons, made once by the caller). ``POOLED_HEADING``: per headline metric, the
+    candidate's seeds (mean±SD k), the baseline seeds (mean±SD n), the diff, Welch's z, its df and p, the suites
+    agreeing in sign, the null band (a reference) and the decision (a mixed one names its regressing suites);
+    ``REGRESSIONS``; ``SEEDS_HEADING``: each seed's pooled Δ; ``SUITES_HEADING``: each suite's own z per metric
+    (``suite_z_cell``); then the boundary tables of the screen of one seed, ``boundaries`` (its init seed and its
+    name), labelled as that seed's alone."""
     seeds = list(comparisons)
-    decisions = _decisions([comparisons[seed] for seed in seeds], calibration)
     rows = []
     for metric, label in HEADLINE:
         found = decisions[metric]
@@ -235,7 +229,8 @@ def render_pooled_headline(comparisons: Mapping[int, Mapping], *, calibration: M
     lines = [*title, *POOLED_LEGEND, "", POOLED_HEADING,
              *_grid(["Metric", "candidate", "baseline seeds", "diff", "z", "df", "p", "agree", "band", "noise"],
                     rows),
-             regressions_line(decisions), "", SEEDS_HEADING, *_grid(["Metric", *(f"init {found}" for found in seeds)], per_seed), "",
+             regressions_line(decisions), "", SEEDS_HEADING,
+             *_grid(["Metric", *(f"init {found}" for found in seeds)], per_seed), "",
              *_suite_z_block(comparisons, decisions), "",
              f"Boundary exact rates of init seed {seed} alone ({screen}): one seed against the baseline screen, "
              "not pooled."]
@@ -245,18 +240,16 @@ def render_pooled_headline(comparisons: Mapping[int, Mapping], *, calibration: M
     return "\n".join(lines)
 
 
-def render_headline(comparison: dict, *, title: Sequence[str] = (), calibration: Mapping | None = None) -> str:
-    """The headline of a comparison summary (see the module docstring), after the lines of ``title``.
-    ``calibration``: the ``band`` (each metric's null band, ``noise.null_band``, Δs as fractions) and the ``seeds``
-    (each baseline seed's values against the comparison's baseline screen, ``noise.seed_values``); None: uncalibrated,
-    nothing marked."""
+def render_headline(comparison: dict, *, decisions: Mapping[str, Mapping], title: Sequence[str] = ()) -> str:
+    """The headline of a comparison summary (see the module docstring), after the lines of ``title``. ``decisions``:
+    the comparison's decisions (``noise.decide([comparison], ...)``, made once by the caller, against the calibration's
+    baseline seeds or uncalibrated)."""
     lines = [*title, *LEGEND]
     if comparison.get("same_model"):
         lines.append("The candidate and the baseline are the same model: every Δ is 0.")
     if (comparison.get("code") or {}).get("same") is False:
         lines.append("Warning: different AlignAIR code for the two models, so every Δ holds the code change as well.")
     suites = comparison["suites"]
-    decisions = _decisions([comparison], calibration)
     lines += ["", *_table(suites, HEADLINE, ci=True, extra=_noise_rows(decisions, HEADLINE)),
               regressions_line(decisions)]
     for decoder, heading in DECODERS:

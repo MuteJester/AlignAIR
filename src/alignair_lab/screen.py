@@ -259,13 +259,13 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
             summary = result.against["summary"]
             report = layout.diagnostics_md(result.model_key)
             calibration = against_calibration(band, provenance["init_seed"])
+            decisions = decide([summary], (calibration or {}).get("seeds"), [metric for metric, _ in HEADLINE],
+                               band=(calibration or {}).get("band"))
             title = _title(record, result, base.model_key, summary["code"]["this"])
-            headline = render_headline(summary, title=title, calibration=calibration)
+            headline = render_headline(summary, title=title, decisions=decisions)
             headline += "\n\n" + "\n".join(_footer(report, layout, result.model_key, base.model_key, times, record))
             record["candidate"]["model_key"] = result.model_key
-            record.update(report=str(report), comparison=summary,
-                          decisions=decide([summary], (calibration or {}).get("seeds"),
-                                           [metric for metric, _ in HEADLINE], band=(calibration or {}).get("band")))
+            record.update(report=str(report), comparison=summary, decisions=decisions)
         (screen / "headline.txt").write_text(headline + "\n", encoding="utf-8")
         record.update(seconds={key: round(value, 1) for key, value in times.items()}, finished=now())
         stage("done")
