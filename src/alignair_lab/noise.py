@@ -14,11 +14,17 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
   screen, as each baseline seed's value is, so the two distributions compare on one scale: the diff (candidate mean −
   baseline mean) over Welch's standard error, sqrt(sc²/k + sb²/n), is z (``welch``; with one candidate seed its
   spread is taken to be the baseline's, sc = sb). Each suite is tested the same way (``suite_tests``): the candidate
-  seeds' Δs there against the baseline seeds' values there. A suite regresses at z ≤ −``Z_LIMIT``, unless it is
-  limited: too few pairs or clusters for the assay's verdict on the metric (``too_few_pairs``, ``too_few_clusters``)
-  in some seed's comparison, which is reported, flagged, and never counted. The decision:
+  seeds' Δs there against the baseline seeds' values there, with the one-sided p of a fall from Student's t at the
+  Welch–Satterthwaite df (n − 1 for one candidate seed). A suite regresses when Holm's step-down, at family α
+  ``FAMILY_ALPHA`` over the metric's suites that have a p, finds its fall significant and the fall is
+  ``MIN_REGRESSION`` (1 pp) or more. A limited suite, with too few pairs or clusters for the assay's verdict on the
+  metric (``too_few_pairs``, ``too_few_clusters``) in some seed's comparison, is reported and flagged but stays out of
+  the family and never regresses. The p is t's, not the normal's: from 1–3 candidate seeds and 6 baseline seeds,
+  Welch's z has heavy tails, and the normal's p would let Holm call some suite of eleven a regression in about a
+  quarter of the screens without one. The decision:
   ``beyond noise (better)`` at z ≥ ``Z_LIMIT`` with no suite regressing, ``mixed`` at z ≥ ``Z_LIMIT`` with some
-  (``regressions`` names them), ``beyond noise (worse)`` at z ≤ −``Z_LIMIT``, and ``within noise`` otherwise;
+  (``regressions`` names them), ``beyond noise (worse)`` at z ≤ −``Z_LIMIT``, and ``within noise`` otherwise; the
+  ``regressions`` are reported whatever the decision;
   ``uncalibrated`` with fewer than ``MIN_SEEDS`` baseline seeds of the metric, and ``uncalibrated: spread 0`` when the
   standard error is 0: baseline seeds that never differed on it bound nothing. A gain on the hard suites while the
   easy ones sit saturated at Δ 0 is a gain; what the suites guard against is one suite traded for another.
@@ -35,11 +41,15 @@ import math
 import statistics
 from collections.abc import Mapping, Sequence
 
+from scipy import stats
+
 BETTER, WORSE = "beyond noise (better)", "beyond noise (worse)"
 WITHIN, MIXED, UNCALIBRATED = "within noise", "mixed", "uncalibrated"
 ZERO_SPREAD = "uncalibrated: spread 0"
 MIN_SEEDS = 3                             # baseline seeds a calibration needs for a decision
-Z_LIMIT = 2.0                             # |z| from which a diff is beyond noise; a suite at z <= -Z_LIMIT regresses
+Z_LIMIT = 2.0                             # |z| from which a pooled diff is beyond noise
+FAMILY_ALPHA = 0.05                       # Holm's family-wise level over a metric's suites, for their falls
+MIN_REGRESSION = 0.01                     # the smallest fall of a suite that counts as a regression: 1 pp
 # The assay's tests when a metric's pairs in a suite are too few, or fall in too few clusters, for a verdict.
 FEW_CLUSTERS, FEW_PAIRS = "too_few_clusters", "too_few_pairs"
 
@@ -154,9 +164,10 @@ def baseline_summary(values: Mapping[str, Mapping]) -> dict[str, dict]:
 
 def welch(candidate: Sequence[float], baseline: Sequence[float]) -> dict:
     """The candidate's values against the baseline's: their means and sample SDs, their numbers ``k`` and ``n``, the
-    ``diff`` (candidate mean − baseline mean), Welch's standard error ``se`` = sqrt(sc²/k + sb²/n) and ``z`` = diff /
-    se (None when se is 0). With one candidate value its spread is unmeasured (``candidate_sd`` None) and is taken to
-    be the baseline's: sc = sb. ValueError without a candidate value or with fewer than two baseline values."""
+    ``diff`` (candidate mean − baseline mean), Welch's standard error ``se`` = sqrt(sc²/k + sb²/n), ``z`` = diff /
+    se and its degrees of freedom ``df`` (Welch–Satterthwaite; both None when se is 0). With one candidate value its
+    spread is unmeasured (``candidate_sd`` None) and is taken to be the baseline's, sc = sb, so df is n − 1.
+    ValueError without a candidate value or with fewer than two baseline values."""
     k, n = len(candidate), len(baseline)
     if k < 1:
         raise ValueError("Welch's comparison needs a candidate value")
@@ -167,9 +178,16 @@ def welch(candidate: Sequence[float], baseline: Sequence[float]) -> dict:
     sc = sb if measured is None else measured
     se = math.sqrt(sc ** 2 / k + sb ** 2 / n)
     diff = statistics.fmean(candidate) - statistics.fmean(baseline)
+    if not se:
+        df = None
+    elif measured is None:
+        df = n - 1                        # the only spread estimate is the baseline's
+    else:
+        a, b = sc ** 2 / k, sb ** 2 / n
+        df = (a + b) ** 2 / (a ** 2 / (k - 1) + b ** 2 / (n - 1))
     return {"candidate_mean": statistics.fmean(candidate), "candidate_sd": measured,
             "baseline_mean": statistics.fmean(baseline), "baseline_sd": sb, "k": k, "n": n, "diff": diff, "se": se,
-            "z": diff / se if se else None}
+            "z": diff / se if se else None, "df": df}
 
 
 def _suite_signs(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | None, metric: str,
@@ -216,8 +234,7 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
         found["agree"], found["suites"], found["basis"] = _suite_signs(comparisons, baseline if calibrated else None,
                                                                        metric, direction)
         found["suite_z"] = suite_tests(comparisons, baseline, metric) if calibrated else {}
-        found["regressions"] = [name for name, test in found["suite_z"].items()
-                                if not test["limited"] and test["z"] is not None and test["z"] <= -Z_LIMIT]
+        found["regressions"] = [name for name, test in found["suite_z"].items() if test["regresses"]]
         if not candidate:
             decision = None
         elif not calibrated:
@@ -236,10 +253,12 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
 
 def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping], metric: str) -> dict[str, dict]:
     """Each suite the candidate's ``comparisons`` compare ``metric`` in -> its own ``welch`` test: the candidate seeds'
-    Δs there against the ``baseline`` seeds' values there (``diff``, ``z``, ``k``, ``n``; with one candidate seed its
-    spread is taken to be the baseline's), z None with fewer than two baseline values or no spread; and whether it is
-    ``limited``: too few pairs or clusters for the assay's verdict in some seed's comparison, so it never counts as a
-    regression."""
+    Δs there against the ``baseline`` seeds' values there (``diff``, ``z``, ``df``, ``k``, ``n``; with one candidate
+    seed its spread is taken to be the baseline's), z None with fewer than two baseline values or no spread, and the
+    one-sided ``p`` of a fall (Student's t at df); whether it is ``limited`` (too few pairs or clusters for the assay's
+    verdict in some seed's comparison); whether it is ``significant`` by Holm's step-down at family α
+    ``FAMILY_ALPHA`` over the suites with a p that are not limited; and whether it ``regresses``: significant and down
+    by ``MIN_REGRESSION`` or more."""
     found: dict[str, list[dict]] = {}
     for comparison in comparisons:
         for name, suite in suite_deltas(comparison, metric).items():
@@ -248,9 +267,18 @@ def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping],
     for name, suites in found.items():
         values = seed_distribution(baseline, metric, name)
         candidate = [suite["delta"] for suite in suites]
-        test = {"diff": None, "z": None, "k": len(candidate), "n": len(values)}
+        test = {"diff": None, "z": None, "df": None, "p": None, "k": len(candidate), "n": len(values)}
         if len(values) >= 2:
             numbers = welch(candidate, values)
-            test.update(diff=numbers["diff"], z=numbers["z"])
-        tests[name] = {**test, "limited": not all(suite["clustered"] for suite in suites)}
+            test.update(diff=numbers["diff"], z=numbers["z"], df=numbers["df"])
+            if numbers["z"] is not None:
+                test["p"] = float(stats.t.cdf(numbers["z"], numbers["df"]))
+        tests[name] = {**test, "limited": not all(suite["clustered"] for suite in suites), "significant": False,
+                       "regresses": False}
+    family = sorted((test["p"], name) for name, test in tests.items() if test["p"] is not None and not test["limited"])
+    for step, (p, name) in enumerate(family):
+        if p > FAMILY_ALPHA / (len(family) - step):
+            break
+        tests[name]["significant"] = True
+        tests[name]["regresses"] = tests[name]["diff"] <= -MIN_REGRESSION + 1e-12
     return tests

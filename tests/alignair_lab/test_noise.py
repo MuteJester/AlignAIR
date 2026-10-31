@@ -2,11 +2,23 @@
 pairwise comparisons, each baseline seed's values, and the decision rule a candidate's headline applies (its seeds
 against the baseline's, by Welch's z, and the suites' signs), on fixture comparison summaries."""
 import math
+import random
 import statistics
 
 import pytest
+from scipy import stats
 
-from alignair_lab.noise import baseline_summary, decide, null_band, pair, pooled, recentred, seed_values, welch
+from alignair_lab.noise import (
+    baseline_summary,
+    decide,
+    null_band,
+    pair,
+    pooled,
+    recentred,
+    seed_values,
+    suite_tests,
+    welch,
+)
 
 pytestmark = pytest.mark.component
 
@@ -104,16 +116,18 @@ def test_welch_compares_the_candidates_mean_with_the_baselines():
     candidate = [.03, .01, .02]
     sc = statistics.stdev(candidate)
     se = math.sqrt(sc ** 2 / 3 + SB ** 2 / 6)
+    # Welch–Satterthwaite: (a + b)² / (a²/(k − 1) + b²/(n − 1)) with a = sc²/k = b = sb²/n here: 4 / 0.7
     assert welch(candidate, BASE) == {"candidate_mean": pytest.approx(.02), "candidate_sd": pytest.approx(sc),
                                       "baseline_mean": pytest.approx(-.01), "baseline_sd": pytest.approx(SB), "k": 3,
                                       "n": 6, "diff": pytest.approx(.03), "se": pytest.approx(se),
-                                      "z": pytest.approx(.03 / se)}
+                                      "z": pytest.approx(.03 / se), "df": pytest.approx(4 / .7)}
 
 
 def test_one_candidate_seed_is_given_the_baselines_spread():
     """With one seed the candidate's spread is unmeasured; it is taken to be the baseline's (sc = sb)."""
     found = welch([.03], BASE)
     assert found["candidate_sd"] is None and found["se"] == pytest.approx(SB * math.sqrt(1 + 1 / 6))
+    assert found["df"] == 5                       # the only spread estimate is the baseline's, of n − 1 df
     assert found["z"] == pytest.approx(.04 / (SB * math.sqrt(1 + 1 / 6)))
 
 
@@ -130,8 +144,8 @@ SE1 = SB * math.sqrt(1 + 1 / 6)                       # one candidate seed again
 
 def test_better_needs_a_pooled_z_of_two_and_no_suite_regressing():
     """One candidate seed: its pooled Δ less the baseline seeds' mean, over Welch's standard error with the candidate's
-    spread the baseline's; each suite likewise, its Δ against the baseline seeds' values in that suite. No suite is at
-    z ≤ −2, so the gain is better beyond noise. S4's −.5 pp is z +0.3 there: the baseline seeds sit 1 pp below the
+    spread the baseline's; each suite likewise, its Δ against the baseline seeds' values in that suite. No suite
+    regresses, so the gain is better beyond noise. S4's −.5 pp is z +0.3 there: the baseline seeds sit 1 pp below the
     baseline screen."""
     found = decision([entry(.06), entry(.04), entry(.03), entry(-.005)])
     assert (found["k"], found["n"], found["decision"], found["regressions"]) == (1, 6, "beyond noise (better)", [])
@@ -154,20 +168,79 @@ def test_a_gain_on_the_hard_suites_while_the_others_hold_is_better_whatever_thei
 
 
 def test_a_regressing_suite_makes_a_pooled_gain_mixed_and_is_named():
-    found = decision([entry(.12), entry(.06), entry(.06), entry(-.05)])        # S4: diff −.04, z −2.6
-    assert found["z"] >= 2 and found["suite_z"]["S4"]["z"] == pytest.approx(-.04 / SE1)
+    """S4's diff −8 pp is z −5.2; one candidate seed against six baseline seeds is Student's t at 5 df, p .0017."""
+    found = decision([entry(.12), entry(.06), entry(.06), entry(-.09)])
+    s4 = found["suite_z"]["S4"]
+    assert found["z"] >= 2 and s4["z"] == pytest.approx(-.08 / SE1) and s4["df"] == 5
+    assert s4["p"] == pytest.approx(stats.t.cdf(-.08 / SE1, 5)) and s4["significant"] and s4["regresses"]
     assert (found["decision"], found["regressions"]) == ("mixed", ["S4"])
+
+
+def delta_for(p):
+    """The Δ of a suite whose one candidate seed's one-sided p, against BASE there (Student's t at 5 df), is ``p``."""
+    return -.01 + stats.t.ppf(p, 5) * SE1
+
+
+def test_a_regression_counts_when_holm_significant_across_the_suites_with_a_z_and_at_least_one_point():
+    """Holm over the suites with a z, at family α .05: S1's p .001 passes its first step (.05/4), then S2's .015 its
+    second (.05/3), though not Bonferroni's .05/4. A fifth suite with a z steps the thresholds down so that S2 no
+    longer passes; a fifth suite with too few clusters stays out of the family."""
+    found = decision([entry(delta_for(.001)), entry(delta_for(.015)), entry(.10), entry(.10)])
+    assert found["suite_z"]["S1"]["p"] == pytest.approx(.001) and found["suite_z"]["S2"]["p"] == pytest.approx(.015)
+    assert found["regressions"] == ["S1", "S2"]
+    five = decision([entry(delta_for(.001)), entry(delta_for(.015)), entry(.10), entry(.10), entry(.10)],
+                    baseline=seeds(suites=5))
+    assert five["regressions"] == ["S1"] and not five["suite_z"]["S2"]["significant"]
+    limited = decision([entry(delta_for(.001)), entry(delta_for(.015)), entry(.10), entry(.10), entry(.10, test=FEW)],
+                       baseline=seeds(suites=5))
+    assert limited["suite_z"]["S5"]["limited"] and limited["regressions"] == ["S1", "S2"]
+
+
+def test_a_significant_suite_under_one_point_is_not_a_regression():
+    """Baseline seeds tight in S4 (SD .07 pp) make a −0.8 pp drop there significant, but it is under 1 pp."""
+    tight = seeds()
+    for found, value in zip(tight.values(), (0., -.001, .001, 0., .0005, -.0005)):
+        found["suites"]["S4"] = {METRIC: value}
+    small = decision(*[[entry(.10), entry(.10), entry(.10), entry(-.008)]] * 3, baseline=tight)
+    assert small["suite_z"]["S4"]["significant"] and not small["suite_z"]["S4"]["regresses"]
+    assert (small["decision"], small["regressions"]) == ("beyond noise (better)", [])
+    large = decision(*[[entry(.10), entry(.10), entry(.10), entry(-.012)]] * 3, baseline=tight)
+    assert (large["decision"], large["regressions"]) == ("mixed", ["S4"])
+
+
+def test_regressions_are_reported_whatever_the_pooled_verdict():
+    found = decision([entry(.02), entry(.02), entry(.02), entry(-.09)])           # pooled diff +.25 pp: z +0.2
+    assert (found["decision"], found["regressions"]) == ("within noise", ["S4"])
+
+
+@pytest.mark.parametrize("k", [1, 3])
+def test_with_no_suite_effect_a_regression_is_rarely_counted(k):
+    """Candidate and baseline seeds drawn alike in eleven suites (SD 1 pp): some suite at z ≤ −2 comes in about 4
+    trials of 10, which would call nearly half the true gains mixed; a regression counted by Holm with at least 1 pp
+    comes in about 1 of 20."""
+    rng = random.Random(7)
+    trials, names = 1500, [f"S{n}" for n in range(1, 12)]
+    counted = naive = 0
+    for _ in range(trials):
+        baseline = {str(seed): {"pooled": {}, "suites": {name: {METRIC: rng.gauss(0, .01)} for name in names}}
+                    for seed in range(6)}
+        comparisons = [{"suites": {name: {"headline": {METRIC: entry(rng.gauss(0, .01))}} for name in names}}
+                       for _ in range(k)]
+        tests = suite_tests(comparisons, baseline, METRIC)
+        counted += any(test["regresses"] for test in tests.values())
+        naive += any(test["z"] is not None and test["z"] <= -2 for test in tests.values())
+    assert naive / trials > .3 and counted / trials <= .06, (naive / trials, counted / trials)
 
 
 def test_a_suite_with_too_few_clusters_or_pairs_is_reported_but_never_counted_as_a_regression():
     for test in ("too_few_clusters", "too_few_pairs"):
-        found = decision([entry(.12), entry(.06), entry(.06), entry(-.05, test=test)])
+        found = decision([entry(.12), entry(.06), entry(.06), entry(-.09, test=test)])
         limited = found["suite_z"]["S4"]
-        assert limited["limited"] and limited["z"] == pytest.approx(-.04 / SE1)
+        assert limited["limited"] and limited["z"] == pytest.approx(-.08 / SE1) and not limited["regresses"]
         assert (found["decision"], found["regressions"]) == ("beyond noise (better)", [])
     # limited in any seed's comparison of the suite
-    two = decision([entry(.12), entry(.06), entry(.06), entry(-.05)], [entry(.12), entry(.06), entry(.06),
-                                                                        entry(-.05, test=FEW)])
+    two = decision([entry(.12), entry(.06), entry(.06), entry(-.09)], [entry(.12), entry(.06), entry(.06),
+                                                                        entry(-.09, test=FEW)])
     assert two["suite_z"]["S4"]["limited"] and two["regressions"] == []
 
 
