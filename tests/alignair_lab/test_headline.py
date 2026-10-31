@@ -189,7 +189,7 @@ def test_the_suggested_calibration_parses_as_one_shell_line_whatever_its_paths_a
 def test_the_legends_say_holm_is_per_metric_and_what_one_seeds_spread_assumes():
     for text in (single(comparison(), calibration()), pooled_text(replicates(), calibration(), boundaries=(0, "wide"))):
         flat = " ".join(text.split())
-        assert "Holm per metric" in flat and "all 5 metrics" in flat
+        assert "Holm per metric" in flat and "all 6 metrics" in flat
         assert "sc = sb" in flat and "anti-conservative" in flat
 
 
@@ -280,6 +280,22 @@ def test_a_fall_where_the_baseline_seeds_have_no_spread_is_listed_or_counted_on_
     assert f"{REGRESSIONS} none. Spread unmeasured: J top-1 S7 -5.0 pp." in single(found, flat).splitlines()
     found["suites"]["S7"]["headline"]["j.top1_in_set"] = entry(-0.05, verdict="a_better")
     assert f"{REGRESSIONS} J top-1 S7 -5.0 pp (read-level verdict worse)." in single(found, flat).splitlines()
+
+
+def test_the_regressions_line_covers_the_secondary_metric_too():
+    """D short abstain loses 8 pp on S6 (z −4.6), and 3 pp on S12, where its baseline seeds never differ: the first is
+    a regression, the second is listed as unmeasured (the metric has no read-level verdict), in both headlines."""
+    flat = calibration()
+    for seed in flat["seeds"].values():
+        seed["suites"]["S12"]["d_short.abstain_ok"] = 0.
+    found = comparison()
+    for suite in found["suites"].values():
+        suite["headline"]["d_short.abstain_ok"] = entry(0.012)
+    found["suites"]["S6"]["headline"]["d_short.abstain_ok"] = entry(-0.08)
+    found["suites"]["S12"]["headline"]["d_short.abstain_ok"] = entry(-0.03)
+    line = f"{REGRESSIONS} D short abstain S6 -7.0 pp z -4.6. Spread unmeasured: D short abstain S12 -3.0 pp."
+    assert line in single(found, flat).splitlines()
+    assert line in pooled_text({0: found}, flat, boundaries=(0, "wide")).splitlines()
 
 
 def test_a_cluster_limited_fall_where_the_baseline_seeds_have_no_spread_is_listed_never_counted():

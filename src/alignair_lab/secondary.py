@@ -7,7 +7,8 @@ gate can only lower D top-1 there, never raise it: its benefit is this abstentio
 ``cached_comparison`` shapes two models' scores as the assay shapes a comparison summary, so ``noise.decide`` weighs
 them as it weighs the headline metrics: per suite both score on the same reads, the candidate's mean less the
 baseline's. It has no read-level verdict (the assay pairs none for this metric), so a fall in a suite where the
-baseline seeds have no spread is listed, never counted (``noise.suite_tests``). ``merged`` adds such a comparison to
+baseline seeds have no spread is listed on the headline's Regressions line, never counted (``noise.suite_tests``,
+``headline.regressions_line``). ``merged`` adds such a comparison to
 the assay's. ``cached_seed_values`` values a calibration's seeds from its own cached diagnostics, for a calibration
 whose pairs predate the metric (``baselines.calibration_seeds``).
 """

@@ -12,8 +12,9 @@ per suite and a tally row (suites where the candidate is better / worse / tied):
    the baseline's, and the suites whose diff has its sign, of those with enough clusters for a verdict (marked ``*``
    when none has, so every suite counts; information only); and ``noise``, the decision: beyond noise (better or
    worse), mixed (a gain with a suite regressing, the suites named), within noise, or uncalibrated without three
-   baseline seeds; then the ``REGRESSIONS`` line, every regression of the five metrics (Holm over each metric's
-   suites, falls of 1 pp or more; ``noise.suite_tests``) whatever their verdicts;
+   baseline seeds; then the ``REGRESSIONS`` line, every regression of the five metrics and the ``SECONDARY`` ones
+   (Holm over each metric's suites, falls of 1 pp or more; ``noise.suite_tests``) whatever their verdicts, and the
+   falls listed with their spread unmeasured;
 2. and 3. ``BOUNDARIES``: each boundary's exact rate under the soft-argmax decoder, then under the
    position logits' argmax (the product's decoder), as the Δ, the verdict and the reads fixed / broken. Their CIs are in the assay's
    per-suite detail (``<S>/against_<baseline key>.md``), as on the assay's own summary page.
@@ -53,7 +54,7 @@ LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ better, - worse
           "t p<=.025, none regress.",
           "One seed: its spread is assumed the baseline seeds' (sc = sb), so a noisier candidate makes z "
           "anti-conservative (too large).",
-          "Regressions: Holm per metric over its suites (family α 0.05), falls of 1 pp or more, for all 5 metrics "
+          "Regressions: Holm per metric over its suites (family α 0.05), falls of 1 pp or more, for all 6 metrics "
           "whatever their verdicts.")
 POOLED_LEGEND = (
     "candidate: each init seed's Δ against the baseline screen (read-weighted over the suites), mean±SD k; "
@@ -68,7 +69,7 @@ POOLED_LEGEND = (
     "with too few",
     "pairs or clusters is reported (~) but never counted. Uncalibrated without 3 seeds. Regressions: Holm per metric "
     "over its suites",
-    "(family α 0.05), falls of 1 pp or more, listed for all 5 metrics whatever their verdicts. With one seed (k1) its "
+    "(family α 0.05), falls of 1 pp or more, listed for all 6 metrics whatever their verdicts. With one seed (k1) its "
     "spread is assumed",
     "the baseline seeds' (sc = sb): a noisier candidate makes z anti-conservative (too large).")
 REGRESSIONS = "Regressions (Holm over each metric's suites, family α 0.05, falls of 1 pp or more):"
@@ -153,9 +154,10 @@ def band_text(found: Mapping) -> str:
 
 
 def regressions_line(decisions: Mapping[str, Mapping]) -> str:
-    """The ``REGRESSIONS`` line of the headline metrics' decisions (``noise.decide``): each regression's metric,
-    suite, diff (pp) and z, whatever the metric's verdict; none; or not measured without a calibration. Then the falls
-    listed with their spread unmeasured, never counted, those with too few pairs or clusters apart."""
+    """The ``REGRESSIONS`` line of the decisions (``noise.decide``) of the headline metrics and the ``SECONDARY`` ones
+    they hold: each regression's metric, suite, diff (pp) and z, whatever the metric's verdict; none; or not measured
+    without a calibration of the headline metrics. Then the falls listed with their spread unmeasured, never counted,
+    those with too few pairs or clusters apart."""
     if not any(decisions[metric]["suite_z"] for metric, _ in HEADLINE):
         return f"{REGRESSIONS} not measured, uncalibrated."
 
@@ -167,7 +169,8 @@ def regressions_line(decisions: Mapping[str, Mapping]) -> str:
 
     def listed(field: str) -> list[str]:
         return [item(label, suite, decisions[metric]["suite_z"][suite])
-                for metric, label in HEADLINE for suite in decisions[metric][field]]
+                for metric, label in (*HEADLINE, *SECONDARY) if metric in decisions
+                for suite in decisions[metric][field]]
 
     counted, unmeasured, limited = listed("regressions"), listed("unmeasured"), listed("unmeasured_limited")
     line = f"{REGRESSIONS} {'; '.join(counted) if counted else 'none'}."
