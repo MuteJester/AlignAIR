@@ -22,7 +22,6 @@ from .core.config import AlignAIRConfig
 from .core import AlignAIR, validate_reference_binding
 from .predict import PredictConfig, predict as _predict
 from .reference.reference_set import ReferenceSet
-from .reference.identity import validate_reference_identity
 
 __all__ = ["load_model", "predict_sequences", "train_model"]
 
@@ -68,18 +67,16 @@ def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSe
     """Load a trained AlignAIR checkpoint into an eval-ready ``(model, reference)`` pair.
 
     A safe ``.alignair`` model file carries its own reference (rebuilt from the no-pickle
-    ``reference_json``), so ``dataconfigs``/``reference`` are unnecessary and no ``trust_pickle`` is
-    needed. A legacy ``.pt`` checkpoint loads via ``torch.load`` (arbitrary-code pickle) and so is
+    ``reference_json``), so ``dataconfigs`` are unnecessary and no ``trust_pickle`` is needed;
+    ``reference`` binds another reference to a reference-agnostic model (alleles it never trained on
+    included) and must be the embedded one for a fixed-head model. A legacy ``.pt`` checkpoint loads via ``torch.load`` (arbitrary-code pickle) and so is
     refused unless ``trust_pickle=True`` — pass it only for a local file you trust, or convert the
     checkpoint first (``alignair convert x.pt x.alignair --dataconfig … --trust-pickle``).
     """
     from .model_file import container, load_model as _load_alignair
     if container.is_alignair_file(checkpoint_path):
-        lm = _load_alignair(checkpoint_path, device=device, trust_pickle=trust_pickle)
-        if reference is not None:
-            with error_context(path=checkpoint_path):
-                validate_reference_identity(reference, lm.reference)
-        return lm.model, (reference or lm.reference)
+        lm = _load_alignair(checkpoint_path, device=device, trust_pickle=trust_pickle, reference=reference)
+        return lm.model, lm.reference
     if not trust_pickle:
         raise ModelError(
             f"{checkpoint_path} is a legacy .pt checkpoint; loading it runs torch.load "
