@@ -8,6 +8,7 @@ from alignair_lab.headline import (
     DECODERS,
     HEADLINE,
     POOLED_HEADING,
+    REGRESSIONS,
     SEEDS_HEADING,
     SUITES_HEADING,
     render_headline,
@@ -117,11 +118,25 @@ def test_each_headline_metric_weighs_its_pooled_delta_against_the_baseline_seeds
 
 
 def test_a_pooled_gain_with_a_regressing_suite_is_mixed_and_names_it():
-    """S1 gains 30 pp on clone_key.exact while S5 loses 8: the pooled z is 2.5, S5's own z −4.6."""
+    """S1 gains 30 pp on clone_key.exact while S5 loses 8: the pooled z is 2.5, S5's own z −4.6 (p .003 at 5 df, under
+    Holm's first step over twelve suites, .05/12)."""
     found = comparison()
     found["suites"]["S1"]["headline"]["clone_key.exact"] = entry(0.30)
     found["suites"]["S5"]["headline"]["clone_key.exact"] = entry(-0.08)
-    assert cells(rows(render_headline(found, calibration=calibration()))["noise"])[0] == "mixed: S5"
+    text = render_headline(found, calibration=calibration())
+    assert cells(rows(text)["noise"])[0] == "mixed: S5"
+    assert f"{REGRESSIONS} clone_key.exact S5 -7.0 pp z -4.6." in text.splitlines()
+
+
+def test_the_regressions_are_reported_whatever_the_verdict():
+    """D top-1 loses 8 pp on S6 while its pooled Δ is within noise: the regression is listed all the same."""
+    found = comparison()
+    found["suites"]["S6"]["headline"]["d.top1_in_set"] = entry(-0.08)
+    text = render_headline(found, calibration=calibration())
+    assert cells(rows(text)["noise"])[3] == "within noise"
+    assert f"{REGRESSIONS} D top-1 S6 -7.0 pp z -4.6." in text.splitlines()
+    assert f"{REGRESSIONS} none." in render_headline(comparison(), calibration=calibration()).splitlines()
+    assert f"{REGRESSIONS} not measured, uncalibrated." in render_headline(comparison()).splitlines()
 
 
 def test_signs_counted_over_every_suite_for_want_of_clusters_are_marked():
@@ -205,6 +220,9 @@ def test_the_pooled_headline_names_the_suites_a_mixed_gain_regresses_on():
     text = render_pooled_headline(found, calibration=calibration(), boundaries=(0, "wide"))
     assert pooled_rows(text, POOLED_HEADING)["clone_key.exact"][-1] == "mixed: S5"
     assert pooled_rows(text, SUITES_HEADING)["S5"][0] == "-12.1!"
+    assert f"{REGRESSIONS} clone_key.exact S5 -7.0 pp z -12.1." in text.splitlines()
+    assert f"{REGRESSIONS} none." in render_pooled_headline(replicates(), calibration=calibration(),
+                                                             boundaries=(0, "wide")).splitlines()
 
 
 def test_one_seed_is_given_the_baselines_spread_and_no_calibration_marks_nothing():
