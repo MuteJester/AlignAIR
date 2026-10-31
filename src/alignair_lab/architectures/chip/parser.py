@@ -12,6 +12,10 @@ padding changes nothing), the prefix products ``M_1 ⊗ ... ⊗ M_i`` in the log
 over the transposed, reversed sequence, ``log Z = logsumexp α_{n-1}``, the per-base marginals ``α + β - log Z`` and the
 pairwise ``α_{i-1}(a) + M_i(a, b) + β_i(b) - log Z`` that place each boundary. Everything is differentiable, so a
 unit that reads the marginals (the router, the anchors) trains the parser through them.
+
+The scan multiplies full S x S matrices at every one of its log2 L levels: few, wide steps suit a GPU. A CPU runs the
+L-step forward-backward instead (``α_i = α_{i-1} ⊗ M_i``, ``β_{i-1} = M_i ⊗ β_i``: vectors, not matrices), which
+computes the same parse; ``parallel`` chooses explicitly.
 """
 from __future__ import annotations
 
@@ -62,7 +66,27 @@ def _steps(emissions, transitions, mask):
     return torch.where(mask[:, :, None, None], m, identity)
 
 
-def _alpha(emissions, m):
+def _parallel(m, parallel):
+    return m.is_cuda if parallel is None else parallel
+
+
+def _alpha_sequential(emissions, m):
+    alpha = [emissions[:, 0]]
+    for i in range(1, m.shape[1]):
+        alpha.append(torch.logsumexp(alpha[-1].unsqueeze(-1) + m[:, i], dim=-2))
+    return torch.stack(alpha, 1)
+
+
+def _beta_sequential(m):
+    beta = [m.new_zeros(m.shape[0], m.shape[-1])]
+    for i in range(m.shape[1] - 1, 0, -1):
+        beta.append(torch.logsumexp(m[:, i] + beta[-1].unsqueeze(-2), dim=-1))
+    return torch.stack(beta[::-1], 1)
+
+
+def _alpha(emissions, m, parallel=None):
+    if not _parallel(m, parallel):
+        return _alpha_sequential(emissions, m)
     alpha0 = emissions[:, 0]
     if m.shape[1] == 1:
         return alpha0.unsqueeze(1)
@@ -71,7 +95,9 @@ def _alpha(emissions, m):
     return torch.cat([alpha0.unsqueeze(1), rest], 1)
 
 
-def _beta(m):
+def _beta(m, parallel=None):
+    if not _parallel(m, parallel):
+        return _beta_sequential(m)
     batch, length, states, _ = m.shape
     last = m.new_zeros(batch, 1, states)
     if length == 1:
@@ -80,14 +106,17 @@ def _beta(m):
     return torch.cat([torch.logsumexp(suffix, dim=-2).flip(1), last], 1)
 
 
-def log_partition(emissions, transitions, mask) -> torch.Tensor:
+def log_partition(emissions, transitions, mask, parallel: bool | None = None) -> torch.Tensor:
     """``log Z`` (B,) of the paths through the read's bases (``mask``)."""
-    return torch.logsumexp(_alpha(emissions, _steps(emissions, transitions, mask))[:, -1], -1)
+    return torch.logsumexp(_alpha(emissions, _steps(emissions, transitions, mask), parallel)[:, -1], -1)
 
 
-def crf(emissions: torch.Tensor, transitions: torch.Tensor, mask: torch.Tensor) -> ParserOutput:
+def crf(emissions: torch.Tensor, transitions: torch.Tensor, mask: torch.Tensor,
+        parallel: bool | None = None) -> ParserOutput:
+    """The parse; ``parallel``: the log-depth scan (True) or the L-step forward-backward (False); by default the
+    scan on a GPU and the forward-backward elsewhere."""
     m = _steps(emissions, transitions, mask)
-    alpha, beta = _alpha(emissions, m), _beta(m)
+    alpha, beta = _alpha(emissions, m, parallel), _beta(m, parallel)
     log_z = torch.logsumexp(alpha[:, -1], -1)
     log_marginals = alpha + beta - log_z[:, None, None]
     marginals = log_marginals.exp() * mask.unsqueeze(-1)

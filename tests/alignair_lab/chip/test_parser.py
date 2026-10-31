@@ -5,6 +5,7 @@ import itertools
 import pytest
 import torch
 
+from alignair_lab.architectures.chip import parser as parser_module
 from alignair_lab.architectures.chip.parser import STATES, Parser, crf, crf_nll
 
 pytestmark = pytest.mark.component
@@ -86,3 +87,32 @@ def test_gradients_flow_to_emissions_and_transitions():
     (out.log_z.sum() + out.marginals[..., V].sum()).backward()
     assert parser.emit.weight.grad is not None and parser.emit.weight.grad.abs().sum() > 0
     assert parser.trans.weight.grad is not None and parser.trans.weight.grad.abs().sum() > 0
+
+
+def test_the_sequential_and_parallel_scans_give_the_same_parse_and_gradients():
+    emissions, transitions = _random(3, 13, seed=1)
+    mask = torch.arange(13) < torch.tensor([[13], [9], [1]])
+    results = {}
+    for parallel in (True, False):
+        e, t = emissions.clone().requires_grad_(), transitions.clone().requires_grad_()
+        out = crf(e, t, mask, parallel=parallel)
+        (out.log_z.sum() + out.marginals[..., V].sum() + out.boundary_logits["j_start_logits"][:, 4].sum()).backward()
+        results[parallel] = (out, e.grad, t.grad)
+    (par, par_e, par_t), (seq, seq_e, seq_t) = results[True], results[False]
+    assert torch.allclose(par.log_z, seq.log_z, atol=1e-4)
+    assert torch.allclose(par.marginals, seq.marginals, atol=1e-5)
+    for key, logits in par.boundary_logits.items():
+        assert torch.allclose(logits, seq.boundary_logits[key], atol=1e-3), key
+    assert torch.allclose(par_e, seq_e, atol=1e-4) and torch.allclose(par_t, seq_t, atol=1e-4)
+
+
+def test_a_cpu_parse_scans_sequentially(monkeypatch):
+    """The log-depth scan multiplies full S x S matrices at every level, which suits a GPU but not a CPU: a CPU parse
+    (and its allowed-path NLL) runs the L-step forward-backward instead."""
+    def forbidden(*args):
+        raise AssertionError("a CPU parse built the parallel prefix products")
+    monkeypatch.setattr(parser_module, "_prefix_products", forbidden)
+    emissions, transitions = _random(2, 9)
+    mask = torch.arange(9) < torch.tensor([[9], [6]])
+    out = crf(emissions, transitions, mask)
+    crf_nll(out, torch.ones(2, 9, S, dtype=torch.bool), mask)
