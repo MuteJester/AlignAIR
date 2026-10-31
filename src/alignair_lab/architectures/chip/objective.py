@@ -4,7 +4,9 @@ the hard tasks).
 
 - ``orientation``: cross entropy over the 4 orientations, / log 4.
 - ``parse``: the parser's minus log probability of the paths the read cannot tell apart from the true one
-  (``region_allowed``), per base, / log 7.
+  (``region_allowed``), per boundary: over (the true path's region changes + 1) x log(read length), about the
+  boundaries' chance level. A read has a handful of boundaries and hundreds of easy interior bases, so a per-base
+  scale would dilute a misplaced boundary a hundredfold.
 - ``v_anchor``, ``j_anchor``: cross entropy over the read's positions and the "not in read" slot, / log(L + 1).
 - ``shm``: unweighted cross entropy over germline / substitution / insertion on the V, D and J bases (deletion-tagged
   bases left out), / log 3: unweighted, so ``m`` stays a calibrated probability, as the scans' costs need.
@@ -59,6 +61,14 @@ def scan_loss(log_posterior: torch.Tensor, true: torch.Tensor, supervise: torch.
     return -mass / torch.log(count.clamp_min(2).to(log_posterior.dtype)), rows
 
 
+def parse_loss(output: ParserOutput, allowed: torch.Tensor, region: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """(B,) the parser's NLL of the allowed paths per boundary: over (region changes of the true path + 1) x
+    log(read length)."""
+    changes = ((region[:, 1:] != region[:, :-1]) & mask[:, 1:]).sum(1)
+    length = mask.sum(1).clamp_min(2).to(output.log_z.dtype)
+    return crf_nll(output, allowed, mask) / ((changes + 1) * torch.log(length))
+
+
 def _mean(values: torch.Tensor, rows: torch.Tensor) -> torch.Tensor:
     return values[rows].mean() if rows.any() else values.sum() * 0.
 
@@ -84,8 +94,7 @@ class ChipObjective:
 
         parsed = ParserOutput(outputs["chip_emissions"], outputs["chip_transitions"], mask, outputs["chip_log_z"],
                               None, {})
-        nll = crf_nll(parsed, _allowed_states(targets["region_allowed"]), mask)
-        parts["parse"] = (nll / mask.sum(1).clamp_min(1)).mean() / math.log(len(STATES))
+        parts["parse"] = parse_loss(parsed, _allowed_states(targets["region_allowed"]), targets["region"], mask).mean()
 
         length = mask.shape[1]
         slots = torch.cat([mask, torch.ones_like(mask[:, :1])], 1)

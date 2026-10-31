@@ -7,11 +7,39 @@ import torch
 from alignair.tasks.alignment import build_tasks
 
 from alignair_lab.architectures.chip.objective import (
-    LOSS_WEIGHTS, ChipObjective, scan_loss, shm_labels)
-from alignair_lab.architectures.chip.parser import STATES
+    LOSS_WEIGHTS, ChipObjective, parse_loss, scan_loss, shm_labels)
+from alignair_lab.architectures.chip.parser import STATES, crf
 from alignair_lab.architectures.chip.scan import OUT
 
 pytestmark = pytest.mark.component
+
+V, N1, J = STATES.index("V"), STATES.index("N1"), STATES.index("J")
+
+
+def _path(length, v_end, j_start):
+    path = torch.full((length,), N1)
+    path[:v_end], path[j_start:] = V, J
+    return path
+
+
+def _misplaced_parse_loss(length):
+    """The parse loss of a read V [0, L-100), N1 5 bases, J to the end, whose parser is sure of a path with both
+    boundaries 2 bases late."""
+    true = _path(length, length - 100, length - 95)
+    believed = _path(length, length - 98, length - 93)
+    emissions = torch.full((1, length, len(STATES)), -10.)
+    emissions[0, torch.arange(length), believed] = 10.
+    mask = torch.ones(1, length, dtype=torch.bool)
+    allowed = torch.zeros(1, length, len(STATES), dtype=torch.bool)
+    allowed[0, torch.arange(length), true] = True
+    output = crf(emissions, torch.zeros(1, length, len(STATES), len(STATES)), mask)
+    return float(parse_loss(output, allowed, true.unsqueeze(0), mask))
+
+
+def test_the_parse_loss_counts_boundaries_not_bases():
+    short, long = _misplaced_parse_loss(200), _misplaced_parse_loss(500)
+    assert short >= 0.5 and long >= 0.5           # a boundary 2 bases off is plainly visible
+    assert abs(long - short) / short < 0.25         # and a longer read does not dilute it
 
 PARTS = {"orientation", "parse", "v_anchor", "j_anchor", "shm", "coord", "scan_v", "scan_d", "scan_j", "d_presence"}
 
