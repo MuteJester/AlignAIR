@@ -153,6 +153,19 @@ def test_a_missing_replicate_or_one_of_another_request_is_refused_before_anythin
 
 
 @pytest.mark.integration
+def test_replicates_against_another_seed_0_checkpoint_than_the_calibrations_are_refused(rig, replicate_root, capsys):
+    copy_replicate(replicate_root, 1, 0.)
+    protocol = json.loads((replicate_root / "rep" / "screen.json").read_text())["protocol"]
+    shutil.rmtree(replicate_root / "calibration")
+    other = "0" * 12 + "-" + "c" * 12
+    write_null_band(rig, replicate_root, protocol, screens={"0": {"name": "base0", "model_key": other}})
+    assert main(replicate_arguments(rig, replicate_root, "--reuse", seeds="0,1")) == 2
+    error = capsys.readouterr().err
+    assert "another checkpoint" in error and other in error
+    assert not any(path.name.startswith("report-") for path in replicate_root.iterdir())
+
+
+@pytest.mark.integration
 def test_replicates_train_the_missing_seeds_and_reuse_the_finished(rig, replicate_root, capsys):
     assert main(replicate_arguments(rig, replicate_root, "--parallel", "2", seeds="0,1")) == 0
     report = replicate_root / "report-rep-seeds01"

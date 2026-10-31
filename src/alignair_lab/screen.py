@@ -69,6 +69,7 @@ from alignair_lab.baselines import (
     SCREEN_RECORD,
     NAME,
     against_calibration,
+    calibration_checkpoint,
     baseline_milestone,
     baseline_screen,
     check_init_seed,
@@ -259,6 +260,11 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
             summary = result.against["summary"]
             report = layout.diagnostics_md(result.model_key)
             calibration = against_calibration(band, provenance["init_seed"])
+            refused = None if band is None else calibration_checkpoint(band, provenance["init_seed"],
+                                                                        summary["baseline"])
+            if refused:
+                calibration = {**calibration, "seeds": None}
+                record["calibration_refused"] = refused
             decisions = decide([summary], (calibration or {}).get("seeds"), [metric for metric, _ in HEADLINE],
                                band=(calibration or {}).get("band"))
             title = _title(record, result, base.model_key, summary["code"]["this"])
@@ -394,6 +400,8 @@ def _band_lines(record: dict, code: str | None) -> list[str]:
     if seed not in band["init_seeds"]:
         lines.append(f"Uncalibrated: the calibration has no baseline screen of init seed {seed}, this baseline "
                      "screen's, so its seeds' Δs cannot be set against this screen's.")
+    elif record.get("calibration_refused"):
+        lines.append(f"Uncalibrated: {record['calibration_refused']}.")
     if band.get("code_sha256") != code:
         measured = (band.get("code_sha256") or "unrecorded")[:12]
         lines.append(f"Warning: the null band was measured under other AlignAIR code ({measured}) than this "

@@ -43,6 +43,7 @@ from alignair_lab.baselines import (
     SCREEN_RECORD,
     against_calibration,
     baseline_screen,
+    calibration_checkpoint,
     check_init_seed,
     now,
     null_band,
@@ -138,6 +139,20 @@ def check_replicates(records: Mapping[int, Mapping], expected: Mapping | None = 
     return want
 
 
+def check_calibration(records: Mapping[int, Mapping], band: Mapping | None, init_seed: int | None) -> None:
+    """ConfigurationError, naming the replicate and both model keys, when the calibration of ``band`` (None: there is
+    none, nothing to check) cannot weigh a replicate's comparison: its seed-``init_seed`` screen is not the replicate's
+    baseline checkpoint (``baselines.calibration_checkpoint``)."""
+    if band is None:
+        return
+    for seed, record in records.items():
+        refused = calibration_checkpoint(band, init_seed, record["comparison"]["baseline"])
+        if refused:
+            raise ConfigurationError(f"the replicate {record.get('name')} (init seed {seed}) cannot be pooled against "
+                                     f"the calibration {band['path']}: {refused}",
+                                     context={"field": "replicates", "screen": record.get("name")})
+
+
 def expected_request(*, steps: int, architecture: str, model_options: Mapping, suites: Sequence[str] | None,
                      max_cases: int | None, variants: Sequence[str], cache, dev_build, out_root, schedule: str,
                      against_screen: str | None, baseline_options: Mapping) -> tuple[dict, dict]:
@@ -230,6 +245,9 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
                                                 data_workers=data_workers, eval_batch_size=eval_batch_size,
                                                 cache=cache, dev_build=dev_build, out_root=out_root)))
     check_replicates(records, expected=request)
+    band = null_band(out_root, request["protocol"], request["baseline"]["options"], request["suites"],
+                     request["max_cases"], request["suite_builds"])
+    check_calibration(records, band, provenance["init_seed"])
     if plan:
         prepare_candidate(training_config(steps=steps, architecture=architecture,
                                           model_options=request["model_options"],
@@ -258,8 +276,7 @@ def run_replicates(name: str, *, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS,
             records[seed] = json.loads((out_root / screen / SCREEN_RECORD).read_text(encoding="utf-8"))
         records = {seed: records[seed] for seed in seeds}
         check_replicates(records, expected=request)
-        band = null_band(out_root, request["protocol"], request["baseline"]["options"], request["suites"],
-                         request["max_cases"], request["suite_builds"])
+        check_calibration(records, band, provenance["init_seed"])
         calibration = against_calibration(band, provenance["init_seed"])
         comparisons = {seed: records[seed]["comparison"] for seed in seeds}
         metrics = [metric for metric, _ in HEADLINE]

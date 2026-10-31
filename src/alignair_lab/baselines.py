@@ -342,8 +342,24 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
         return None
     path, record = found[0]
     relative_to, seeds = calibration_seeds(record)
+    screens = {seed: {"model_key": (entry or {}).get("model_key")}
+               for seed, entry in (record.get("screens") or {}).items()}
     return {"path": str(path), "init_seeds": record["init_seeds"], "band": record["band"],
-            "code_sha256": record.get("code_sha256"), "relative_to": relative_to, "seeds": seeds}
+            "code_sha256": record.get("code_sha256"), "relative_to": relative_to, "screens": screens, "seeds": seeds}
+
+
+def calibration_checkpoint(band: Mapping, init_seed: int | None, baseline_key: str) -> str | None:
+    """Why the calibration of a null band (``null_band``) cannot weigh a comparison against the baseline model
+    ``baseline_key`` (an assay model key, ``<weights>-<code>``), or None when it can: its seeds' values are each a Δ
+    against its own screen of ``init_seed``, which must be that same checkpoint, by the weights part of the two keys."""
+    recorded = ((band.get("screens") or {}).get(str(init_seed)) or {}).get("model_key")
+    if recorded is None:
+        return (f"the calibration records no model key for its seed-{init_seed} screen, so it cannot be matched to "
+                f"this comparison's baseline {baseline_key}")
+    if recorded.split("-")[0] != baseline_key.split("-")[0]:
+        return (f"the calibration's seed-{init_seed} screen is another checkpoint: calibration {recorded}, this "
+                f"comparison's baseline {baseline_key}")
+    return None
 
 
 def against_calibration(band: Mapping | None, init_seed: int | None) -> dict | None:

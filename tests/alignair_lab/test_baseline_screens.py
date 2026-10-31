@@ -180,6 +180,23 @@ def test_the_null_band_of_the_protocol_weighs_the_candidates_deltas(rig, baselin
     assert any(line.startswith('seeds ') and '-0.2±0.8 n3' in line for line in headline.splitlines())
 
 
+def test_a_calibration_whose_seed_0_screen_is_another_checkpoint_leaves_the_screen_uncalibrated(rig, baseline,
+                                                                                                tmp_path):
+    """The calibration's values are each seed's Δ against its own seed-0 screen: they weigh a comparison only when its
+    baseline is that very checkpoint (the weights part of the two model keys)."""
+    root = screens_with(tmp_path, baseline, 'base0')
+    protocol = json.loads((baseline / 'screen.json').read_text())['protocol']
+    other = '0' * 12 + '-' + 'c' * 12
+    write_null_band(rig, root, protocol, screens={'0': {'name': 'base0', 'model_key': other}})
+    assert main(candidate_arguments(rig, 'other-checkpoint', out_root=root)) == 0
+    record = json.loads((root / 'other-checkpoint' / 'screen.json').read_text())
+    found = [entry for entry in record['decisions'].values() if entry['pooled'] is not None]
+    assert found and all(entry['decision'] == 'uncalibrated' for entry in found)
+    headline = (root / 'other-checkpoint' / 'headline.txt').read_text()
+    assert (f"Uncalibrated: the calibration's seed-0 screen is another checkpoint: calibration {other}, this "
+            f"comparison's baseline {record['comparison']['baseline']}.") in headline
+
+
 def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, baseline, tmp_path):
     root = screens_with(tmp_path, baseline, 'base0')
     protocol = json.loads((baseline / 'screen.json').read_text())['protocol']

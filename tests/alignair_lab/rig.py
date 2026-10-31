@@ -76,16 +76,25 @@ HEADLINE_METRICS = ('clone_key.exact', 'junction.nt_exact', 'v.top1_in_set', 'd.
 PAIR_DELTAS = {(0, 1): -.01, (0, 2): .005, (1, 2): .015}
 
 
+def model_key(checkpoint: Path) -> str:
+    """The assay's model key of a model file under this process's AlignAIR code."""
+    from alignair_assay.diagnostics.identity import alignair_code, model_key as key, weights_sha256
+    return key(weights_sha256(checkpoint), alignair_code()['code_sha256'])
+
+
 def write_null_band(rig, root: Path, protocol, *, name='calibration', band=.005, **fields) -> Path:
     """A null band of ``protocol`` for baseline screens of ``SMALL`` of init seeds 0, 1 and 2 (``PAIR_DELTAS``),
-    compared on the rig's build of S0 under this process's AlignAIR code, ``band`` for every headline metric, with
-    ``fields`` changed; its path. Written as a calibration before the per-seed values was: they come from its pairs."""
+    compared on the rig's build of S0 under this process's AlignAIR code, ``band`` for every headline metric, its seed-0
+    screen the rig's registered baseline screen (``base0``), with ``fields`` changed; its path. Written as a calibration
+    before the per-seed values was: they come from its pairs."""
     from alignair_assay.diagnostics.identity import alignair_code
     pairs = [{'a': a, 'b': b, 'pooled': dict.fromkeys(HEADLINE_METRICS, delta),
               'suites': {'S0': dict.fromkeys(HEADLINE_METRICS, delta)}} for (a, b), delta in PAIR_DELTAS.items()]
+    base0 = {'name': 'base0', 'model_key': model_key(rig.screens / 'base0' / 'train' / 'model.alignair')}
     record = {'kind': 'alignair_lab.null_band', 'version': 1, 'protocol': protocol, 'options': SMALL, 'suites': ['S0'],
               'suite_builds': {'S0': suite_build(rig)}, 'max_cases': None, 'init_seeds': [0, 1, 2], 'pairs': pairs,
-              'band': dict.fromkeys(HEADLINE_METRICS, band), 'code_sha256': alignair_code()['code_sha256'], **fields}
+              'band': dict.fromkeys(HEADLINE_METRICS, band), 'code_sha256': alignair_code()['code_sha256'],
+              'screens': {'0': base0}, **fields}
     (root / name).mkdir(parents=True)
     (root / name / 'null_band.json').write_text(json.dumps(record))
     return root / name / 'null_band.json'
