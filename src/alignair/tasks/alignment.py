@@ -9,6 +9,7 @@ import torch
 from torch import nn
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
+from ..core.d_presence import D_PRESENCE, D_PRESENCE_LOGITS
 from ..core.config import AlignAIRConfig
 from ..errors import ConfigurationError, TrainingDataError
 from .losses import auxiliary_losses, categorical_loss, hierarchical_loss, loss_weight_names, make_loss_weights
@@ -57,6 +58,9 @@ class AlignmentTasks:
         if anchors:
             required_out += [ANCHOR_LOGITS[gene] for gene in ANCHOR_GENES]
             required_target += [ANCHOR_KEYS[gene] for gene in ANCHOR_GENES]
+        if getattr(self.config, "d_presence_head", False):
+            required_out.append(D_PRESENCE_LOGITS)
+            required_target.append(D_PRESENCE)
         for mapping, required, kind in ((outputs, required_out, "output"), (targets, required_target, "target")):
             missing = [key for key in required if key not in mapping]
             if missing:

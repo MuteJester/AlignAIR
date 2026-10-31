@@ -398,6 +398,70 @@ def test_lab_trunk_v2_with_anchors_learns_one_batch(reference):
     assert accuracy() > 0.9 > before
 
 
+# --- the D presence head (d_presence_head=true) -------------------------------------------------------------------
+
+@pytest.mark.component
+@pytest.mark.parametrize('architecture,options', [('lab-trunk-v1', {}),
+                                                  ('lab-trunk-v2', {'boundary_mode': 'half_open'})])
+def test_the_d_presence_head_classifies_the_reads_pooled_trunk_features(reference, architecture, options):
+    """With d_presence_head on, a trunk architecture gives D presence logits (B, 3) over absent, too short to call and
+    callable: the read's masked mean and max trunk features through Linear(2C, 64), GELU and Linear(64, 3), 16,643
+    parameters. Built after every other module, it leaves the rest of the model, its initial weights and its outputs,
+    as they are with the flag off."""
+    off = build(reference, architecture, **SMALL, **options)
+    on = build(reference, architecture, **SMALL, **options, d_presence_head=True)
+    head = on.trunk_heads['d_presence_logits']
+    assert set(build_trunk_heads(on.cfg)) == {'d_presence_logits'}
+    assert count(head) == (2 * TRUNK_CHANNELS * 64 + 64) + (64 * 3 + 3) == 16643
+    assert on.component_modules()['trunk_heads.d_presence_logits'] is head
+    assert set(on.state_dict()) - set(off.state_dict()) == {f'trunk_heads.d_presence_logits.{key}'
+                                                            for key in head.state_dict()}
+    assert all(torch.equal(value, on.state_dict()[key]) for key, value in off.state_dict().items())
+    features = []
+    on.trunk.register_forward_hook(lambda module, inputs, output: features.append(output))
+    batch = tokens()
+    with torch.no_grad():
+        expected, out = off(batch), on(batch)
+    assert set(out) - set(expected) == {'d_presence_logits'}
+    assert all(torch.equal(out[key], expected[key]) for key in expected)
+    keep = (batch['tokenized_sequence'] != 0).unsqueeze(-1)
+    pooled = torch.cat([(features[0] * keep).sum(1) / keep.sum(1),
+                        features[0].masked_fill(~keep, float('-inf')).amax(1)], -1)
+    first, second = head.hidden, head.classes
+    assert out['d_presence_logits'].shape == (3, 3)
+    assert torch.allclose(out['d_presence_logits'], second(torch.nn.functional.gelu(first(pooled))), atol=1e-5)
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_lab_trunk_v2_with_d_presence_learns_one_batch(reference):
+    """Updated 200 times on one batch of 8 GenAIRR reads with every class (4 callable, 2 too short, 2 without a D), its
+    D presence (the argmax of the head) is right for more than 90% of them."""
+    from alignair.data.targets import read_d_presence
+    from alignair.train import overfit_one_batch
+    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.trainer import build_batch
+    components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
+    pool = [*itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, components[2], 41), 300),
+            *itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, components[4], 42), 40)]
+    by_class = {k: [r for r in pool if read_d_presence(r) == k] for k in range(3)}
+    chosen = by_class[2][:4] + by_class[1][:2] + by_class[0][:2]
+    assert len(chosen) == 8
+    model = build(reference, 'lab-trunk-v2', boundary_mode='half_open', **SMALL, d_presence_head=True)
+    batch, targets = build_batch(chosen, reference, model.cfg)
+    assert targets['d_presence'].tolist() == [2] * 4 + [1] * 2 + [0] * 2
+
+    def accuracy():
+        with torch.no_grad():
+            predicted = model.eval()(batch)['d_presence_logits'].argmax(-1)
+        return float((predicted == targets['d_presence']).float().mean())
+
+    before = accuracy()
+    result = overfit_one_batch(model, batch, targets, steps=200, lr=1e-3)
+    assert 'd_presence' in result['history'][0]
+    assert accuracy() > 0.9 > before
+
+
 # --- the model file, the replay and the screen -------------------------------------------------------------------
 
 @pytest.mark.integration

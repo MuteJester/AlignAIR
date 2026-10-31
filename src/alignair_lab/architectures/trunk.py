@@ -25,6 +25,10 @@ the product's ``v_anchor``/``j_anchor`` terms. The product derives the junction,
 from the decoded anchors, so the learned productive head is not built (the modules built after the meta heads then
 start from other random weights than with the flag off).
 
+The model option ``d_presence_head=true`` gives either architecture a D presence head (``DPresenceHead``): absent, too
+short to call or callable, from the read's pooled trunk features, trained by the product's ``d_presence`` term; the
+product gates the D call on it. Built last, it leaves the rest of the model as it is with the flag off.
+
 Shapes: B = batch, L = ``cfg.max_seq_length``, E = ``cfg.embed_dim``, C = ``TRUNK_CHANNELS``.
 """
 from __future__ import annotations
@@ -34,6 +38,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from alignair.core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
+from alignair.core.d_presence import D_CLASSES, D_PRESENCE_LOGITS
 from alignair.core.components import ModelComponents, architecture_components
 from alignair.core.config import AlignAIRConfig, GeneSpec
 from alignair.core.gene_branch import GeneBranch, build_tower
@@ -219,22 +224,45 @@ class AnchorHead(nn.Module):
 
     def forward(self, features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
         positions = self.position(features.transpose(1, 2))[:, 0]
-        keep = mask.unsqueeze(-1)
-        mean = (features * keep).sum(1) / keep.sum(1).clamp_min(1)
-        peak = features.masked_fill(~keep, float("-inf")).amax(1)
-        peak = torch.where(mask.any(1, keepdim=True), peak, torch.zeros_like(peak))     # a read with no position
-        return torch.cat([positions, self.null(torch.cat([mean, peak], -1))], -1)
+        return torch.cat([positions, self.null(_pooled(features, mask))], -1)
+
+
+def _pooled(features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """The read's mean and max features over its positions (``mask``): (B, L, C) -> (B, 2C); 0 for a read with no
+    position."""
+    keep = mask.unsqueeze(-1)
+    mean = (features * keep).sum(1) / keep.sum(1).clamp_min(1)
+    peak = features.masked_fill(~keep, float("-inf")).amax(1)
+    peak = torch.where(mask.any(1, keepdim=True), peak, torch.zeros_like(peak))     # a read with no position
+    return torch.cat([mean, peak], -1)
+
+
+class DPresenceHead(nn.Module):
+    """Whether the read shows a D, and one long enough to call: ``(features (B, L, C), mask (B, L)) -> logits (B, 3)``
+    over ``D_CLASSES`` (absent, too short to call, callable), from the read's mean and max trunk features through
+    Linear(2C, 64), GELU and Linear(64, 3). The product gates the D call on its argmax."""
+
+    def __init__(self, channels: int = TRUNK_CHANNELS, hidden: int = 64):
+        super().__init__()
+        self.hidden = nn.Linear(2 * channels, hidden)
+        self.classes = nn.Linear(hidden, len(D_CLASSES))
+
+    def forward(self, features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        return self.classes(F.gelu(self.hidden(_pooled(features, mask))))
 
 
 def build_trunk_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
     """The heads read from the trunk's features, each built only when its flag is on: ``region_logits``
     (``RegionHead``) with ``region_head``; ``v_anchor_logits`` and ``j_anchor_logits`` (``AnchorHead``: the V Cys
-    and J Trp/Phe codon starts) with ``anchor_heads``. With every flag off, lab-trunk-v1 and lab-trunk-v2 have none."""
+    and J Trp/Phe codon starts) with ``anchor_heads``; ``d_presence_logits`` (``DPresenceHead``) with
+    ``d_presence_head``. With every flag off, lab-trunk-v1 and lab-trunk-v2 have none."""
     heads = {}
     if cfg.region_head:
         heads["region_logits"] = RegionHead()
     if cfg.anchor_heads:
         heads.update({ANCHOR_LOGITS[gene]: AnchorHead() for gene in ANCHOR_GENES})       # V first, then J
+    if cfg.d_presence_head:
+        heads[D_PRESENCE_LOGITS] = DPresenceHead()
     return heads
 
 

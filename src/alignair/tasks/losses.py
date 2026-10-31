@@ -6,6 +6,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS, codon_starts
+from ..core.d_presence import D_PRESENCE, D_PRESENCE_LOGITS
 from ..core.config import AlignAIRConfig
 from ..neural.heads.state import STATE_CLASS_WEIGHTS
 from ..neural.weighting import UncertaintyWeight
@@ -40,6 +41,8 @@ def loss_weight_names(cfg: AlignAIRConfig) -> tuple[str, ...]:
         keys.append("regions")
     if anchors:                                                # the V and J anchor heads
         keys += [ANCHOR_KEYS[gene] for gene in ANCHOR_GENES]
+    if getattr(cfg, "d_presence_head", False):                 # the 3-state D presence head
+        keys.append(D_PRESENCE)
     return tuple(keys)
 
 
@@ -95,6 +98,10 @@ def auxiliary_losses(out, targets, cfg, logvars):
             key = ANCHOR_KEYS[gene]
             ce = _mean_rows(_soft_ce_per_sample(out[ANCHOR_LOGITS[gene]], anchor_target(targets[key], starts), slots))
             parts[key] = _kendall(logvars[key], ce)
+
+    # ---- D presence (absent / too short to call / callable): cross entropy over the three classes ----
+    if getattr(cfg, "d_presence_head", False):
+        parts[D_PRESENCE] = _kendall(logvars[D_PRESENCE], F.cross_entropy(out[D_PRESENCE_LOGITS], targets[D_PRESENCE]))
 
     # ---- orientation (supervised only when the batch carries an orientation label) ----
     if "orientation" in targets and "orientation_logits" in out:
