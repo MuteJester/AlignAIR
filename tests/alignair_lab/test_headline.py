@@ -111,7 +111,7 @@ def test_the_secondary_metric_is_weighed_beside_the_headline_metrics():
     line = next(line for line in single(with_short(comparison()), calibration()).splitlines()
                 if line.startswith("D short abstain"))
     assert line == ("D short abstain (d_short.abstain_ok): pooled +5.0 / band none; seeds -1.0±1.4 n6; diff +6.0 "
-                    "z+3.9 2/2; beyond noise (better).")
+                    "z+3.9 p=.011 2/2; beyond noise (better).")
     assert "D short abstain (d_short.abstain_ok): not scored." in single(comparison(), calibration()).splitlines()
     table = pooled_rows(pooled_text({seed: with_short(comparison()) for seed in (0, 1)}, calibration(),
                                     boundaries=(0, "wide")), POOLED_HEADING)
@@ -240,10 +240,12 @@ def test_each_headline_metric_weighs_its_pooled_delta_against_the_baseline_seeds
     spread the baseline's, with the suites, of those with enough clusters for a verdict (J top-1: not S9), whose diff
     has its sign (information). One seed's z of 2.0 is Student's t at 5 df, two-sided p .10: within noise."""
     found = rows(single(comparison(), calibration()))
+    assert "diff z p agree" in " ".join(single(comparison(), calibration()).split())        # the legend names p
     assert cells(found["pooled"]) == ["+2.1 / 1.0", "+1.2 / 5.0", "+1.2 / 0.5", "+1.2 / 2.0", "+1.3 / 3.0"]
     assert cells(found["seeds"]) == ["-1.0±1.4 n6"] * 5
-    assert cells(found["diff"]) == ["+3.1 z+2.0 12/12", "+2.2 z+1.4 11/11", "+2.2 z+1.4 12/12", "+2.2 z+1.4 11/11",
-                                    "+2.3 z+1.5 11/11"]
+    # p beside z, as the pooled table gives it: two-sided, Student's t at 5 df
+    assert cells(found["diff"]) == ["+3.1 z+2.0 p=.096 12/12", "+2.2 z+1.4 p=.209 11/11", "+2.2 z+1.4 p=.209 12/12",
+                                    "+2.2 z+1.4 p=.209 11/11", "+2.3 z+1.5 p=.198 11/11"]
     assert cells(found["noise"]) == ["within noise"] * 5
 
 
@@ -314,7 +316,7 @@ def test_signs_counted_over_every_suite_for_want_of_clusters_are_marked():
     for suite in found["suites"].values():
         suite["headline"]["v.top1_in_set"] = entry(0.012, test="too_few_clusters")
     diff = cells(rows(single(found, calibration()))["diff"])
-    assert diff[2] == "+2.2 z+1.4 12/12*" and not diff[0].endswith("*")
+    assert diff[2] == "+2.2 z+1.4 p=.209 12/12*" and not diff[0].endswith("*")
 
 
 def test_baseline_seeds_that_never_differ_mark_nothing():

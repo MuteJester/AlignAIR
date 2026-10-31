@@ -50,12 +50,12 @@ DECODERS = (("soft", "Boundary exact rates, the soft-argmax decoder:"),
 MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
 LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ better, - worse, = tie, ? few clusters), reads fixed/broken. "
           "These omit",
-          "run-to-run training noise, weighed below: pooled/band (lab-null-v1), seeds mean±SD n, diff z agree. Better: "
-          "t p<=.025, none regress.",
-          "One seed: its spread is assumed the baseline seeds' (sc = sb), so a noisier candidate makes z "
-          "anti-conservative (too large).",
-          "Regressions: Holm per metric over its suites (family α 0.05), falls of 1 pp or more, for all 6 metrics "
-          "whatever their verdicts.")
+          "run-to-run training noise, weighed below: pooled/band (lab-null-v1), seeds mean±SD n, diff z p agree (p: "
+          "two-sided, Student's t).",
+          "Better: one-sided p<=.025, none regress. One seed: its spread is assumed the baseline seeds' (sc = sb); a "
+          "noisier candidate makes",
+          "z anti-conservative. Regressions: Holm per metric over its suites (family α 0.05), falls ≥ 1 pp, for all 6 "
+          "metrics, any verdict.")
 POOLED_LEGEND = (
     "candidate: each init seed's Δ against the baseline screen (read-weighted over the suites), mean±SD k; "
     "baseline seeds: the",
@@ -119,12 +119,15 @@ def seeds_cell(found: Mapping) -> str:
 
 
 def diff_cell(found: Mapping) -> str:
-    """A decision's diff (pp) and z, with its suites agreeing in sign (``*``: counted over every suite)."""
+    """A decision's diff (pp), z and its two-sided p (``p=.098``, ``p<.001``: without the leading zero, so the cell is
+    no wider than the Δ cells above it), with its suites agreeing in sign (``*``: counted over every suite)."""
     signs = f"{found['agree']}/{found['suites']}{'*' if found['basis'] == 'all' else ''}"
     if found["diff"] is None:
         return f"n/a {signs}"
-    z = "z n/a" if found["z"] is None else f"z{found['z']:+.1f}"
-    return f"{100 * found['diff']:+.1f} {z} {signs}"
+    if found["z"] is None:
+        return f"{100 * found['diff']:+.1f} z n/a {signs}"
+    p = "p<.001" if found["p"] < .001 else f"p={found['p']:.3f}".replace("=0.", "=.")
+    return f"{100 * found['diff']:+.1f} z{found['z']:+.1f} {p} {signs}"
 
 
 def verdict_text(found: Mapping) -> str:
