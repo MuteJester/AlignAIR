@@ -5,6 +5,8 @@ its factories must be registered in a loading process too. Missing factories fai
 """
 from __future__ import annotations
 
+import importlib
+import os
 from dataclasses import dataclass, fields
 from collections.abc import Mapping
 from typing import Callable
@@ -105,6 +107,8 @@ class ModelComponents:
 
 
 _ARCHITECTURES = {"conv-v1": ModelComponents()}
+# The environment variable naming the modules (comma-separated) that register architectures defined outside the package.
+ARCHITECTURE_MODULES = "ALIGNAIR_ARCHITECTURE_MODULES"
 
 
 def _build_component(factory, *arguments, component):
@@ -129,8 +133,19 @@ def register_architecture(name: str, components: ModelComponents) -> None:
 
 
 def architecture_components(name: str) -> ModelComponents:
+    """The registered components of ``name``. An architecture registered outside the package is found by importing
+    the modules ``ALIGNAIR_ARCHITECTURE_MODULES`` names (comma-separated), which register it: a process that loads such
+    a model, a subprocess included, takes them from its environment."""
+    if isinstance(name, str) and name not in _ARCHITECTURES:
+        for module in filter(None, (part.strip() for part in os.environ.get(ARCHITECTURE_MODULES, "").split(","))):
+            try:
+                importlib.import_module(module)
+            except ImportError as exc:
+                raise ConfigurationError(f"{ARCHITECTURE_MODULES} names {module!r}, which cannot be imported",
+                                         context={"module": module}) from exc
     try:
         return _ARCHITECTURES[name]
     except (KeyError, TypeError) as exc:
         raise ConfigurationError(f"unknown model architecture: {name!r}",
-                                 hint="Register its ModelComponents before constructing or loading the model.") from exc
+                                 hint=f"Register its ModelComponents before constructing or loading the model, or name "
+                                      f"the module that registers it in {ARCHITECTURE_MODULES}.") from exc
