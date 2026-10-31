@@ -256,15 +256,19 @@ class ReferenceSet:
             sequences: List[str] = []
             index: Dict[str, int] = {}
             ganc = {}
+            gapped = {}
             for name, seq in upper.get(g, {}).items():
                 if name in index:
                     continue
                 index[name] = len(names)
                 names.append(name)
-                sequences.append(str(seq).upper().replace("-", "").replace(".", ""))
+                written = str(seq).upper().replace("-", ".")
+                sequences.append(written.replace(".", ""))
+                if "." in written:                     # an IMGT-gapped sequence keeps its gapped form
+                    gapped[name] = written
                 if name in anc_in.get(g, {}):
                     ganc[name] = int(anc_in[g][name])
-            out[g] = GeneReference(names, sequences, index, anchors=ganc or None)
+            out[g] = GeneReference(names, sequences, index, anchors=ganc or None, gapped=gapped or None)
         return cls(out, has_d)
 
     def subset(self, allowed: Dict[str, Iterable[str]]) -> "ReferenceSet":
