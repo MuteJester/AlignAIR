@@ -14,6 +14,7 @@ import pytest
 from alignair.model_file import read_metadata
 from alignair_lab.cli import main
 from alignair_lab.recipe import MIN_LR
+from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE
 from alignair_lab.sizes import checkpoint_size, size_line
 from tests.alignair_lab.rig import REMOVED, SMALL, candidate_arguments, copy_card, write_null_band
 
@@ -171,7 +172,7 @@ def test_the_null_band_of_the_protocol_weighs_the_candidates_deltas(rig, baselin
     assert record['null_band']['path'] == str(path) and record['null_band']['init_seeds'] == [0, 1, 2]
     assert 'seeds' not in record['null_band']                        # in null_band.json; the decisions hold their sums
     found = [entry for entry in record['decisions'].values() if entry['pooled'] is not None]
-    assert found and all(entry['decision'] in ('beyond noise', 'within noise') for entry in found)
+    assert found and all(entry['decision'] in (BETTER, WORSE, MIXED, WITHIN) for entry in found)
     for entry in found:     # the baseline seeds against seed 0: 0, -1 and +0.5 pp, from the pairs with seed 0
         assert (entry['k'], entry['n'], entry['baseline_mean']) == (1, 3, pytest.approx(-.005 / 3))
     headline = (root / 'weighed' / 'headline.txt').read_text()

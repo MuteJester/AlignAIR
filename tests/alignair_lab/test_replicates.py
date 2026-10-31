@@ -9,7 +9,7 @@ import pytest
 from alignair.errors import ConfigurationError
 from alignair_lab.cli import main
 from alignair_lab.headline import POOLED_HEADING
-from alignair_lab.noise import pooled
+from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE, pooled
 from alignair_lab.replicates import check_replicates, replicate_name, report_name, request_of
 from tests.alignair_lab.rig import candidate_arguments, common, options, write_null_band
 
@@ -124,7 +124,7 @@ def test_replicates_pool_finished_screens_into_a_report_without_training(rig, re
     assert decided
     for metric, entry in decided:              # each seed's own pooled Δ, against the baseline seeds of the null band
         assert entry["candidate"] == pytest.approx([pooled(screen["comparison"], metric) for screen in screens])
-        assert (entry["k"], entry["n"]) == (3, 3) and entry["decision"] in ("beyond noise", "within noise")
+        assert (entry["k"], entry["n"]) == (3, 3) and entry["decision"] in (BETTER, WORSE, MIXED, WITHIN)
     headline = (report / "headline.txt").read_text()
     assert headline.strip() in capsys.readouterr().out
     assert POOLED_HEADING in headline and "init seed 0 alone (rep)" in headline

@@ -10,8 +10,9 @@ per suite and a tally row (suites where the candidate is better / worse / tied):
    suites) / its null band, printed as a reference; ``seeds``, the calibration's baseline seeds' Δs against the same
    baseline screen (mean±SD n); ``diff``, the pooled Δ less their mean, Welch's z with the candidate's spread taken as
    the baseline's, and the suites whose diff has its sign, of those with enough clusters for a verdict (marked ``*``
-   when none has, so every suite counts); and ``noise``, the decision: beyond noise, within noise, or uncalibrated
-   without three baseline seeds;
+   when none has, so every suite counts; information only); and ``noise``, the decision: beyond noise (better or
+   worse), mixed (a gain with a suite regressing, the suites named), within noise, or uncalibrated without three
+   baseline seeds;
 2. and 3. ``BOUNDARIES``: each boundary's exact rate under the soft-argmax decoder, then under the
    position logits' argmax (the product's decoder), as the Δ, the verdict and the reads fixed / broken. Their CIs are in the assay's
    per-suite detail (``<S>/against_<baseline key>.md``), as on the assay's own summary page.
@@ -30,7 +31,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from alignair_lab.noise import MIN_SEEDS, UNCALIBRATED, decide, pooled
+from alignair_lab.noise import MIN_SEEDS, MIXED, UNCALIBRATED, decide, pooled
 
 HEADLINE = (("clone_key.exact", "clone_key.exact"), ("junction.nt_exact", "junction.nt_exact"), ("v.top1_in_set", "V top-1"),
             ("d.top1_in_set", "D top-1"), ("j.top1_in_set", "J top-1"))
@@ -43,18 +44,22 @@ LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ candidate bette
           "CIs resample reads and leave out run-to-run training noise, weighed below: pooled Δ / null band "
           "(lab-null-v1 screens; a reference);",
           "seeds: baseline seeds' Δs, mean±SD n; diff: pooled − their mean, Welch z, suites agreeing (*: all). "
-          "Beyond noise: |z|>=2, 2/3 agree.")
+          "Better: z>=2, no suite z<=-2.")
 POOLED_LEGEND = (
     "candidate: each init seed's Δ against the baseline screen (read-weighted over the suites), mean±SD k; "
     "baseline seeds: the",
     "calibration's baseline screens' Δs against that screen, mean±SD n. diff: their difference; z: diff / "
     "sqrt(sc²/k + sb²/n), with",
-    "sc = sb for one seed; agree: suites whose diff has its sign (*: none has enough clusters, so all); band: "
-    "the largest Δ between",
-    "baseline screens, a reference. Beyond noise: |z| >= 2 and 2/3 of the suites agreeing; uncalibrated without 3 "
-    "baseline seeds.")
+    "sc = sb for one seed; agree: suites whose diff has its sign (*: none has enough clusters, so all; information); "
+    "band: the",
+    "largest Δ between baseline screens, a reference. Better beyond noise: z >= 2 and no suite regressing (its own z "
+    "<= -2), else",
+    "mixed, naming the suites; worse: z <= -2; a suite with too few pairs or clusters never counts. Uncalibrated "
+    "without 3 seeds.")
 POOLED_HEADING = "The candidate's init seeds against the calibration's baseline seeds (pp):"
 SEEDS_HEADING = "Each init seed's pooled Δ against the baseline screen (pp):"
+SUITES_HEADING = ("Per-suite z, the candidate's seeds against the baseline seeds in each suite (! regresses: z <= -2; "
+                  "~ too few pairs or clusters):")
 TALLY = "+/-/="
 POOLED, SEEDS, DIFF, NOISE = "pooled", "seeds", "diff", "noise"
 _SEPARATOR = "  "
@@ -104,6 +109,24 @@ def diff_cell(found: Mapping) -> str:
     return f"{100 * found['diff']:+.1f} {z} {signs}"
 
 
+def verdict_text(found: Mapping) -> str:
+    """A decision's verdict; a mixed one names the suites it regresses on."""
+    if found["decision"] == MIXED:
+        return f"{MIXED}: {','.join(found['regressions'])}"
+    return found["decision"] or UNCALIBRATED
+
+
+def suite_z_cell(found: Mapping, suite: str) -> str:
+    """One suite's z of a decision: ``-`` when the suite does not compare the metric, ``n/a`` without a z, ``!`` when
+    it regresses, ``~`` when it has too few pairs or clusters to count."""
+    test = found["suite_z"].get(suite)
+    if test is None:
+        return "-"
+    if test["z"] is None:
+        return "n/a"
+    return f"{test['z']:+.1f}{'!' if suite in found['regressions'] else ''}{'~' if test['limited'] else ''}"
+
+
 def band_text(found: Mapping) -> str:
     return "none" if found["band"] is None else f"{100 * found['band']:.1f}"
 
@@ -122,7 +145,7 @@ def _noise_rows(comparison: dict, metrics: Sequence[tuple[str, str]], calibratio
         rows[POOLED].append(f"{100 * found['pooled']:+.1f} / {band_text(found)}")
         rows[SEEDS].append(seeds_cell(found))
         rows[DIFF].append(diff_cell(found))
-        rows[NOISE].append(found["decision"] or UNCALIBRATED)
+        rows[NOISE].append(verdict_text(found))
     return list(rows.items())
 
 
@@ -156,14 +179,24 @@ def candidate_cell(found: Mapping) -> str:
     return f"{100 * found['pooled']:+.1f}{spread} k{found['k']}"
 
 
+def _suite_z_block(comparisons: Mapping[int, Mapping], decisions: Mapping[str, Mapping]) -> list[str]:
+    """``SUITES_HEADING`` and one row per suite of the comparisons, one z per headline metric (``suite_z_cell``)."""
+    if not any(decisions[metric]["suite_z"] for metric, _ in HEADLINE):
+        return ["Per-suite z: none, uncalibrated."]
+    suites = list(dict.fromkeys(name for comparison in comparisons.values() for name in comparison["suites"]))
+    rows = [[suite, *(suite_z_cell(decisions[metric], suite) for metric, _ in HEADLINE)] for suite in suites]
+    return [SUITES_HEADING, *_grid(["Suite", *(label for _, label in HEADLINE)], rows)]
+
+
 def render_pooled_headline(comparisons: Mapping[int, Mapping], *, calibration: Mapping | None,
                            boundaries: tuple[int, str], title: Sequence[str] = ()) -> str:
     """The headline of a candidate's replicates (``replicates``), after the lines of ``title``: ``comparisons``, init
     seed -> its screen's comparison summary, each against the same baseline screen; ``calibration`` as for
     ``render_headline``. ``POOLED_HEADING``: per headline metric, the candidate's seeds (mean±SD k), the baseline
     seeds (mean±SD n), the diff, Welch's z, the suites agreeing in sign, the null band (a reference) and the decision
-    (``noise.decide``); ``SEEDS_HEADING``: each seed's pooled Δ; then the boundary tables of the screen of one seed,
-    ``boundaries`` (its init seed and its name), labelled as that seed's alone."""
+    (``noise.decide``; a mixed one names its regressing suites); ``SEEDS_HEADING``: each seed's pooled Δ;
+    ``SUITES_HEADING``: each suite's own z per metric (``suite_z_cell``); then the boundary tables of the screen of
+    one seed, ``boundaries`` (its init seed and its name), labelled as that seed's alone."""
     seeds = list(comparisons)
     calibration = calibration or {}
     decisions = decide([comparisons[seed] for seed in seeds], calibration.get("seeds"),
@@ -177,12 +210,13 @@ def render_pooled_headline(comparisons: Mapping[int, Mapping], *, calibration: M
         signs = f"{found['agree']}/{found['suites']}{'*' if found['basis'] == 'all' else ''}"
         z = "n/a" if found["z"] is None else f"{found['z']:+.1f}"
         rows.append([label, candidate_cell(found), seeds_cell(found), _percent(found["diff"]), z, signs,
-                     band_text(found), found["decision"] or UNCALIBRATED])
+                     band_text(found), verdict_text(found)])
     per_seed = [[label, *(_percent(pooled(comparisons[seed], metric)) for seed in seeds)] for metric, label in HEADLINE]
     seed, screen = boundaries
     lines = [*title, *POOLED_LEGEND, "", POOLED_HEADING,
              *_grid(["Metric", "candidate", "baseline seeds", "diff", "z", "agree", "band", "noise"], rows), "",
              SEEDS_HEADING, *_grid(["Metric", *(f"init {found}" for found in seeds)], per_seed), "",
+             *_suite_z_block(comparisons, decisions), "",
              f"Boundary exact rates of init seed {seed} alone ({screen}): one seed against the baseline screen, "
              "not pooled."]
     for decoder, heading in DECODERS:

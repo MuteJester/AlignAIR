@@ -125,51 +125,92 @@ def test_welch_needs_a_candidate_value_and_two_baseline_values_and_has_no_z_with
     assert welch([0.], [0., 0., 0.])["z"] is None
 
 
-def test_beyond_noise_needs_a_z_of_two_and_two_thirds_of_the_suites_signs_against_the_baseline_seeds():
+SE1 = SB * math.sqrt(1 + 1 / 6)                       # one candidate seed against BASE: its spread taken as BASE's
+
+
+def test_better_needs_a_pooled_z_of_two_and_no_suite_regressing():
     """One candidate seed: its pooled Δ less the baseline seeds' mean, over Welch's standard error with the candidate's
-    spread the baseline's. Each suite's sign is its Δ less the baseline seeds' mean in that suite, so S4's −.5 pp
-    agrees: the baseline seeds sit 1 pp below the baseline screen there."""
+    spread the baseline's; each suite likewise, its Δ against the baseline seeds' values in that suite. No suite is at
+    z ≤ −2, so the gain is better beyond noise. S4's −.5 pp is z +0.3 there: the baseline seeds sit 1 pp below the
+    baseline screen."""
     found = decision([entry(.06), entry(.04), entry(.03), entry(-.005)])
-    se = SB * math.sqrt(1 + 1 / 6)
-    assert (found["k"], found["n"], found["agree"], found["suites"], found["basis"], found["decision"]) == \
-        (1, 6, 4, 4, "clusters", "beyond noise")
+    assert (found["k"], found["n"], found["decision"], found["regressions"]) == (1, 6, "beyond noise (better)", [])
     assert found["pooled"] == pytest.approx(.03125) and found["candidate"] == [pytest.approx(.03125)]
     assert found["baseline_mean"] == pytest.approx(-.01) and found["baseline_sd"] == pytest.approx(SB)
-    assert found["diff"] == pytest.approx(.04125) and found["z"] == pytest.approx(.04125 / se)
+    assert found["diff"] == pytest.approx(.04125) and found["z"] == pytest.approx(.04125 / SE1)
     assert found["band"] == .05                     # above the pooled Δ: the band is a reference, not the rule
+    assert {suite: entry["z"] for suite, entry in found["suite_z"].items()} == \
+        {"S1": pytest.approx(.07 / SE1), "S2": pytest.approx(.05 / SE1), "S3": pytest.approx(.04 / SE1),
+         "S4": pytest.approx(.005 / SE1)}
+    assert found["suite_z"]["S4"]["diff"] == pytest.approx(.005) and not found["suite_z"]["S4"]["limited"]
     assert decision([entry(.01)] * 4)["decision"] == "within noise"                         # diff .02: z 1.3
-    assert decision([entry(.15), entry(-.02), entry(-.02), entry(-.02)])["decision"] == "within noise"   # 1/4 signs
-    assert decision([entry(-.06)] * 4)["decision"] == "beyond noise"                        # either direction
 
 
-def test_several_candidate_seeds_are_compared_by_their_mean_and_spread():
+def test_a_gain_on_the_hard_suites_while_the_others_hold_is_better_whatever_their_signs():
+    """S1 gains, the other suites sit at their baseline seeds' values: one suite of four agrees in sign (reported),
+    and nothing regresses."""
+    found = decision([entry(.15), entry(-.01), entry(-.01), entry(-.01)])
+    assert (found["agree"], found["suites"], found["decision"]) == (1, 4, "beyond noise (better)")
+
+
+def test_a_regressing_suite_makes_a_pooled_gain_mixed_and_is_named():
+    found = decision([entry(.12), entry(.06), entry(.06), entry(-.05)])        # S4: diff −.04, z −2.6
+    assert found["z"] >= 2 and found["suite_z"]["S4"]["z"] == pytest.approx(-.04 / SE1)
+    assert (found["decision"], found["regressions"]) == ("mixed", ["S4"])
+
+
+def test_a_suite_with_too_few_clusters_or_pairs_is_reported_but_never_counted_as_a_regression():
+    for test in ("too_few_clusters", "too_few_pairs"):
+        found = decision([entry(.12), entry(.06), entry(.06), entry(-.05, test=test)])
+        limited = found["suite_z"]["S4"]
+        assert limited["limited"] and limited["z"] == pytest.approx(-.04 / SE1)
+        assert (found["decision"], found["regressions"]) == ("beyond noise (better)", [])
+    # limited in any seed's comparison of the suite
+    two = decision([entry(.12), entry(.06), entry(.06), entry(-.05)], [entry(.12), entry(.06), entry(.06),
+                                                                        entry(-.05, test=FEW)])
+    assert two["suite_z"]["S4"]["limited"] and two["regressions"] == []
+
+
+def test_a_pooled_loss_is_worse_whatever_the_suites():
+    assert decision([entry(-.06)] * 4)["decision"] == "beyond noise (worse)"                # diff −.05: z −3.3
+    found = decision([entry(.10), entry(-.09), entry(-.09), entry(-.09)])                   # S1 gains alone
+    assert found["z"] <= -2 and found["decision"] == "beyond noise (worse)"
+
+
+def test_several_candidate_seeds_are_compared_by_their_mean_and_spread_pooled_and_per_suite():
     found = decision([entry(.02)] * 4, [entry(.03)] * 4, [entry(.04)] * 4)
     se = math.sqrt(.01 ** 2 / 3 + SB ** 2 / 6)
     assert found["candidate"] == [pytest.approx(.02), pytest.approx(.03), pytest.approx(.04)] and found["k"] == 3
     assert found["candidate_sd"] == pytest.approx(.01) and found["z"] == pytest.approx(.04 / se)
-    assert found["decision"] == "beyond noise"
-    # a suite's sign is its mean Δ over the candidate's seeds: each seed alone has a suite below the baseline seeds
-    split = decision([entry(.08), entry(-.04), entry(.04), entry(.04)],
-                     [entry(-.04), entry(.08), entry(.04), entry(.04)])
-    assert (split["agree"], split["suites"], split["decision"]) == (4, 4, "beyond noise")
+    assert found["decision"] == "beyond noise (better)"
+    # S2 falls in every seed: its seeds' Δs (−.06, −.05, −.04) against the baseline seeds there give z −4.9
+    mixed = decision([entry(.02), entry(-.06), entry(.10), entry(.10)],
+                     [entry(.03), entry(-.05), entry(.10), entry(.10)],
+                     [entry(.04), entry(-.04), entry(.10), entry(.10)])
+    assert mixed["suite_z"]["S2"]["z"] == pytest.approx(-.04 / se) and mixed["suite_z"]["S2"]["k"] == 3
+    assert (mixed["decision"], mixed["regressions"]) == ("mixed", ["S2"])
 
 
-def test_the_signs_count_the_suites_with_enough_clusters_or_every_suite_when_none_has_them():
+def test_a_suite_without_spread_or_two_baseline_values_has_no_z_and_never_regresses():
+    flat = seeds()
+    for found in flat.values():
+        found["suites"]["S4"] = {METRIC: 0.}                    # every baseline seed at the baseline screen's value
+    del flat["1"]["suites"]["S3"], flat["2"]["suites"]["S3"], flat["3"]["suites"]["S3"], flat["4"]["suites"]["S3"]
+    del flat["5"]["suites"]["S3"]                                # only the baseline screen's own seed has S3
+    found = decision([entry(.12), entry(.06), entry(-.30), entry(0.)], baseline=flat)
+    assert found["suite_z"]["S4"]["z"] is None and found["suite_z"]["S3"]["z"] is None
+    assert found["regressions"] == []
+
+
+def test_the_signs_are_kept_as_information_over_the_suites_with_enough_clusters():
     """Enough clusters is the assay's own threshold for a verdict, in every seed's comparison of the suite."""
     clustered = decision([entry(.09), entry(.09), entry(-.03, test=FEW), entry(-.03, test=FEW)])
-    assert (clustered["agree"], clustered["suites"], clustered["basis"], clustered["decision"]) == \
-        (2, 2, "clusters", "beyond noise")
+    assert (clustered["agree"], clustered["suites"], clustered["basis"]) == (2, 2, "clusters")
     fallback = decision([entry(.21, test=FEW), entry(-.03, test=FEW), entry(-.03, test=FEW), entry(-.03, test=FEW)])
-    assert (fallback["agree"], fallback["suites"], fallback["basis"], fallback["decision"]) == \
-        (1, 4, "all", "within noise")
+    assert (fallback["agree"], fallback["suites"], fallback["basis"]) == (1, 4, "all")
     either = decision([entry(.09), entry(.09), entry(.09), entry(.09, test=FEW)],
                       [entry(.09), entry(.09), entry(.09, test=FEW), entry(.09, test=FEW)])
     assert (either["suites"], either["basis"]) == (2, "clusters")
-
-
-def test_a_suite_with_no_change_against_the_baseline_seeds_does_not_agree():
-    found = decision([entry(.17), entry(-.01), entry(-.01), entry(-.01)])
-    assert (found["agree"], found["suites"]) == (1, 4)
 
 
 def test_without_three_baseline_seeds_the_headline_is_uncalibrated():

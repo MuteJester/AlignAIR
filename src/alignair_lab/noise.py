@@ -13,13 +13,17 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
 - ``decide``: the candidate's seeds against the baseline's. Each candidate seed's pooled Δ is against the baseline
   screen, as each baseline seed's value is, so the two distributions compare on one scale: the diff (candidate mean −
   baseline mean) over Welch's standard error, sqrt(sc²/k + sb²/n), is z (``welch``; with one candidate seed its
-  spread is taken to be the baseline's, sc = sb). The candidate is ``beyond noise`` when |z| ≥ ``Z_LIMIT`` and at
-  least 2/3 of the suites agree with the diff's sign: each suite's mean Δ over the candidate's seeds less the
-  baseline seeds' mean there, counting the suites with enough clusters for the assay's verdict on the metric (its test
-  is not ``too_few_clusters``: fewer than ``stats.compare.MIN_CLUSTERS``) in every seed's comparison, or every suite
-  that compares it when none has them (the ``basis``: ``clusters`` or ``all``); otherwise ``within noise``;
+  spread is taken to be the baseline's, sc = sb). Each suite is tested the same way (``suite_tests``): the candidate
+  seeds' Δs there against the baseline seeds' values there. A suite regresses at z ≤ −``Z_LIMIT``, unless it is
+  limited: too few pairs or clusters for the assay's verdict on the metric (``too_few_pairs``, ``too_few_clusters``)
+  in some seed's comparison, which is reported, flagged, and never counted. The decision:
+  ``beyond noise (better)`` at z ≥ ``Z_LIMIT`` with no suite regressing, ``mixed`` at z ≥ ``Z_LIMIT`` with some
+  (``regressions`` names them), ``beyond noise (worse)`` at z ≤ −``Z_LIMIT``, and ``within noise`` otherwise;
   ``uncalibrated`` with fewer than ``MIN_SEEDS`` baseline seeds of the metric, and ``uncalibrated: spread 0`` when the
-  standard error is 0: baseline seeds that never differed on it bound nothing.
+  standard error is 0: baseline seeds that never differed on it bound nothing. A gain on the hard suites while the
+  easy ones sit saturated at Δ 0 is a gain; what the suites guard against is one suite traded for another.
+  The suites whose diff has the pooled diff's sign (``agree``, of the suites with enough pairs and clusters in every
+  seed's comparison, or of every suite when none has them: the ``basis``) are kept as information.
 
 Comparing with the registered baseline screen alone would weigh the candidate against one draw of the baseline's
 distribution: a calibration of six seeds found the registered one the best or near-best on every headline metric,
@@ -31,22 +35,25 @@ import math
 import statistics
 from collections.abc import Mapping, Sequence
 
-BEYOND, WITHIN, UNCALIBRATED = "beyond noise", "within noise", "uncalibrated"
+BETTER, WORSE = "beyond noise (better)", "beyond noise (worse)"
+WITHIN, MIXED, UNCALIBRATED = "within noise", "mixed", "uncalibrated"
 ZERO_SPREAD = "uncalibrated: spread 0"
 MIN_SEEDS = 3                             # baseline seeds a calibration needs for a decision
-Z_LIMIT = 2.0                             # |z| at or above which a diff is beyond noise (with the sign rule)
-FEW_CLUSTERS = "too_few_clusters"         # the assay's test when a metric's pairs fall in too few clusters for a verdict
+Z_LIMIT = 2.0                             # |z| from which a diff is beyond noise; a suite at z <= -Z_LIMIT regresses
+# The assay's tests when a metric's pairs in a suite are too few, or fall in too few clusters, for a verdict.
+FEW_CLUSTERS, FEW_PAIRS = "too_few_clusters", "too_few_pairs"
 
 
 def suite_deltas(comparison: Mapping, metric: str) -> dict[str, dict]:
     """Each suite that compares ``metric`` on paired reads -> its ``delta``, ``n_paired`` and ``clustered``: whether
-    its pairs fall in enough clusters for the assay's verdict (its test is not ``too_few_clusters``)."""
+    its pairs are enough, in enough clusters, for the assay's verdict (its test is neither ``too_few_clusters`` nor
+    ``too_few_pairs``)."""
     found = {}
     for name, suite in comparison["suites"].items():
         entry = (suite.get("headline") or {}).get(metric)
         if entry and entry.get("delta") is not None and entry.get("n_paired"):
             found[name] = {"delta": entry["delta"], "n_paired": entry["n_paired"],
-                           "clustered": entry.get("test") != FEW_CLUSTERS}
+                           "clustered": entry.get("test") not in (FEW_CLUSTERS, FEW_PAIRS)}
     return found
 
 
@@ -188,9 +195,11 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
     """Each of ``metrics`` -> the candidate's pooled Δ of each of its init seeds' ``comparisons`` (``candidate``;
     each against the baseline screen) and their mean (``pooled``), ``welch``'s numbers against the ``baseline``
     seeds' pooled values (each seed's Δ against the same baseline screen, ``seed_values``; None without a
-    calibration), the reference ``band`` (None without one), the suites counted for the sign rule (``suites``, of
-    ``basis`` ``clusters`` or ``all``) and how many ``agree`` with the diff's sign, and the ``decision`` (see the module
-    docstring; None, and no basis, when no suite compares the metric)."""
+    calibration), the reference ``band`` (None without one), each suite's own Welch test (``suite_z``,
+    ``suite_tests``; empty without a calibration) and the suites that regress (``regressions``), the suites counted for
+    the signs (``suites``, of ``basis`` ``clusters`` or ``all``) and how many ``agree`` with the diff's sign, kept as
+    information, and the ``decision`` (see the module docstring; None, and no basis, when no suite compares the
+    metric)."""
     decisions = {}
     for metric in metrics:
         candidate = [value for value in (pooled(comparison, metric) for comparison in comparisons) if value is not None]
@@ -206,14 +215,42 @@ def decide(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping] | Non
         direction = found["diff"] if calibrated else found["pooled"]
         found["agree"], found["suites"], found["basis"] = _suite_signs(comparisons, baseline if calibrated else None,
                                                                        metric, direction)
+        found["suite_z"] = suite_tests(comparisons, baseline, metric) if calibrated else {}
+        found["regressions"] = [name for name, test in found["suite_z"].items()
+                                if not test["limited"] and test["z"] is not None and test["z"] <= -Z_LIMIT]
         if not candidate:
             decision = None
         elif not calibrated:
             decision = UNCALIBRATED
         elif found["z"] is None:
             decision = ZERO_SPREAD
+        elif found["z"] >= Z_LIMIT:
+            decision = MIXED if found["regressions"] else BETTER
+        elif found["z"] <= -Z_LIMIT:
+            decision = WORSE
         else:
-            decision = (BEYOND if abs(found["z"]) >= Z_LIMIT and 3 * found["agree"] >= 2 * found["suites"]
-                        else WITHIN)
+            decision = WITHIN
         decisions[metric] = {**found, "decision": decision}
     return decisions
+
+
+def suite_tests(comparisons: Sequence[Mapping], baseline: Mapping[str, Mapping], metric: str) -> dict[str, dict]:
+    """Each suite the candidate's ``comparisons`` compare ``metric`` in -> its own ``welch`` test: the candidate seeds'
+    Δs there against the ``baseline`` seeds' values there (``diff``, ``z``, ``k``, ``n``; with one candidate seed its
+    spread is taken to be the baseline's), z None with fewer than two baseline values or no spread; and whether it is
+    ``limited``: too few pairs or clusters for the assay's verdict in some seed's comparison, so it never counts as a
+    regression."""
+    found: dict[str, list[dict]] = {}
+    for comparison in comparisons:
+        for name, suite in suite_deltas(comparison, metric).items():
+            found.setdefault(name, []).append(suite)
+    tests = {}
+    for name, suites in found.items():
+        values = seed_distribution(baseline, metric, name)
+        candidate = [suite["delta"] for suite in suites]
+        test = {"diff": None, "z": None, "k": len(candidate), "n": len(values)}
+        if len(values) >= 2:
+            numbers = welch(candidate, values)
+            test.update(diff=numbers["diff"], z=numbers["z"])
+        tests[name] = {**test, "limited": not all(suite["clustered"] for suite in suites)}
+    return tests
