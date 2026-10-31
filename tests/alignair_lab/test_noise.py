@@ -1,8 +1,10 @@
 """Run-to-run training noise: a comparison's Δ pooled over its suites by paired reads, the null band of a calibration's
 pairwise comparisons, and the decision rule a candidate's headline applies, on fixture comparison summaries."""
+import statistics
+
 import pytest
 
-from alignair_lab.noise import decide, null_band, pair, pooled
+from alignair_lab.noise import baseline_summary, decide, null_band, pair, pooled, recentred, seed_values
 
 pytestmark = pytest.mark.component
 
@@ -35,6 +37,38 @@ def test_the_null_band_is_the_largest_pooled_delta_between_two_baseline_screens_
     assert pairs[0] == {"pooled": {METRIC: pytest.approx(.02)}, "suites": {"S1": {METRIC: .01}, "S2": {METRIC: .03}}}
     assert pairs[2]["suites"] == {"S1": {METRIC: .02}}
     assert null_band(pairs) == {METRIC: pytest.approx(.03)}
+
+
+def calibration_pairs():
+    """The three pairs of a calibration of init seeds 0, 1 and 2, each the later seed's Δs against the earlier's."""
+    return [{"a": 0, "b": 1, **pair(comparison(entry(.01), entry(.03)))},
+            {"a": 0, "b": 2, **pair(comparison(entry(-.05), entry(-.01)))},
+            {"a": 1, "b": 2, **pair(comparison(entry(-.06), entry(-.04)))}]
+
+
+def test_each_baseline_seed_is_valued_relative_to_a_reference_seed_from_its_pairs():
+    """Seed s's value is the pooled (and each suite's) Δ of the pair (reference, s), negated for the pair (s,
+    reference); the reference's own is 0 on every metric and suite the others have."""
+    pairs = calibration_pairs()
+    values = seed_values(pairs, [0, 1, 2], relative_to=0)
+    assert list(values) == ["0", "1", "2"]
+    assert values["0"] == {"pooled": {METRIC: 0.}, "suites": {"S1": {METRIC: 0.}, "S2": {METRIC: 0.}}}
+    assert values["1"] == {"pooled": {METRIC: pytest.approx(.02)}, "suites": {"S1": {METRIC: .01}, "S2": {METRIC: .03}}}
+    assert values["2"]["pooled"][METRIC] == pytest.approx(-.03)
+    other = seed_values(pairs, [0, 1, 2], relative_to=1)
+    assert other["0"]["pooled"][METRIC] == pytest.approx(-.02) and other["0"]["suites"]["S2"][METRIC] == -.03
+    assert other["2"]["pooled"][METRIC] == pytest.approx(-.05)
+    moved = recentred(values, 1)
+    assert moved["0"]["pooled"][METRIC] == pytest.approx(-.02) and moved["2"]["suites"]["S1"][METRIC] == \
+        pytest.approx(-.06)
+    with pytest.raises(ValueError, match="no pair compares init seeds 0 and 3"):
+        seed_values(pairs, [0, 1, 3], relative_to=0)
+
+
+def test_the_baseline_seeds_mean_and_sd_per_metric():
+    summary = baseline_summary(seed_values(calibration_pairs(), [0, 1, 2], relative_to=0))
+    assert summary == {METRIC: {"mean": pytest.approx(-.01 / 3), "sd": pytest.approx(statistics.stdev([0, .02, -.03])),
+                                "n": 3}}
 
 
 def test_a_metric_no_suite_of_a_pair_compares_has_no_band_from_that_pair():

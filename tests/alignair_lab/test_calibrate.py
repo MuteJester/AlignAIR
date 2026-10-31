@@ -7,6 +7,7 @@ import shutil
 import pytest
 
 from alignair_lab.cli import main
+from alignair_lab.noise import baseline_summary, seed_values
 from tests.alignair_lab.rig import candidate_arguments, common, options, suite_build
 
 pytestmark = pytest.mark.integration
@@ -41,6 +42,11 @@ def test_calibrate_trains_the_missing_baseline_screens_and_writes_the_null_band(
     assert set(record['band']) >= {'clone_key.exact', 'junction.nt_exact', 'v.top1_in_set'}
     for metric, band in record['band'].items():
         assert band == max(abs(found['pooled'][metric]) for found in record['pairs'] if metric in found['pooled'])
+    # each baseline seed's values relative to the registered seed's (its pairs with a == 0), and their mean and SD
+    assert record['relative_to'] == 0
+    assert record['seeds'] == json.loads(json.dumps(seed_values(record['pairs'], [0, 1, 2], relative_to=0)))
+    assert record['baseline'] == json.loads(json.dumps(baseline_summary(record['seeds'])))
+    assert record['seeds']['1']['pooled'] == record['pairs'][0]['pooled']
     assert 'the null band' in printed and str(path) in printed
     assert main(candidate_arguments(rig, 'calibrated', out_root=root)) == 0
     assert json.loads((root / 'calibrated' / 'screen.json').read_text())['null_band']['path'] == str(path)

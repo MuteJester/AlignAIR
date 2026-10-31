@@ -23,6 +23,7 @@ from pathlib import Path
 
 from alignair.errors import ConfigurationError
 from alignair.train.trainer import RECIPE
+from alignair_lab.noise import seed_values
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, DATACONFIGS, recipe_train_args
 
 NULL_ARCHITECTURE = "lab-null-v1"         # ``architectures.null``: its screens are the baseline screens
@@ -340,8 +341,20 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
     if not found:
         return None
     path, record = found[0]
+    relative_to, seeds = calibration_seeds(record)
     return {"path": str(path), "init_seeds": record["init_seeds"], "band": record["band"],
-            "code_sha256": record.get("code_sha256")}
+            "code_sha256": record.get("code_sha256"), "relative_to": relative_to, "seeds": seeds}
+
+
+def calibration_seeds(record: Mapping) -> tuple[int, dict]:
+    """A null band record's baseline seeds: the seed their values are relative to and each seed's values
+    (``noise.seed_values``), as written, or, for a record that predates them, derived from its pairs relative to the
+    registered seed (``BASELINE_INIT_SEED``), or to its first seed when it has not that one."""
+    if "seeds" in record:
+        return record["relative_to"], record["seeds"]
+    seeds = record["init_seeds"]
+    relative_to = BASELINE_INIT_SEED if BASELINE_INIT_SEED in seeds else seeds[0]
+    return relative_to, seed_values(record["pairs"], seeds, relative_to=relative_to)
 
 
 def check_init_seed(init_seed) -> int:

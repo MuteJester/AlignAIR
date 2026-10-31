@@ -185,6 +185,31 @@ def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, ba
     assert 'Warning: the null band was measured under other AlignAIR code (000000000000)' in headline
 
 
+def test_a_null_band_gives_each_baseline_seeds_values_and_an_older_one_derives_them_from_its_pairs(tmp_path):
+    """A null band read for a screen holds each baseline seed's values relative to the registered seed: as written, or,
+    from a calibration that predates them, derived from its pairs."""
+    from alignair_lab.baselines import null_band
+    from alignair_lab.noise import seed_values
+    metric = 'clone_key.exact'
+    pairs = [{'a': a, 'b': b, 'pooled': {metric: delta}, 'suites': {'S0': {metric: delta}}}
+             for a, b, delta in ((0, 1, .02), (0, 2, -.01), (1, 2, -.03))]
+    protocol, builds = {'recipe': 'v3', 'cache': 'c' * 64, 'steps': 2, 'schedule': None}, {'S0': 'b' * 64}
+
+    def written(**fields):
+        (tmp_path / 'calibration').mkdir(exist_ok=True)
+        record = {'kind': 'alignair_lab.null_band', 'version': 1, 'protocol': protocol, 'options': {}, 'suites': ['S0'],
+                  'suite_builds': builds, 'max_cases': None, 'init_seeds': [0, 1, 2], 'pairs': pairs,
+                  'band': {metric: .03}, 'code_sha256': 'c' * 64, **fields}
+        (tmp_path / 'calibration' / 'null_band.json').write_text(json.dumps(record))
+        return null_band(tmp_path, protocol, {}, ['S0'], None, builds)
+
+    older = written()
+    assert (older['relative_to'], older['seeds']) == (0, seed_values(pairs, [0, 1, 2], relative_to=0))
+    stored = {seed: {'pooled': {metric: value}, 'suites': {'S0': {metric: value}}}
+              for seed, value in (('0', 0.), ('1', .5), ('2', .25))}
+    assert written(relative_to=0, seeds=stored)['seeds'] == stored
+
+
 def test_two_null_bands_of_one_protocol_are_refused(rig, baseline, tmp_path, capsys):
     root = screens_with(tmp_path, baseline, 'base0')
     protocol = json.loads((baseline / 'screen.json').read_text())['protocol']

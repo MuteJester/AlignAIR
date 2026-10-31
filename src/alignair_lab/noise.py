@@ -16,6 +16,7 @@ it with baseline screens of several init seeds, compared pair by pair. Per metri
 """
 from __future__ import annotations
 
+import statistics
 from collections.abc import Mapping, Sequence
 
 BEYOND, WITHIN, UNCALIBRATED = "beyond noise", "within noise", "uncalibrated"
@@ -65,6 +66,69 @@ def null_band(pairs: Sequence[Mapping]) -> dict[str, float]:
         for metric, delta in found["pooled"].items():
             band[metric] = max(band.get(metric, 0.), abs(delta))
     return band
+
+
+def _scaled(found: Mapping, sign: int) -> dict:
+    return {"pooled": {metric: sign * value for metric, value in found["pooled"].items()},
+            "suites": {suite: {metric: sign * value for metric, value in values.items()}
+                       for suite, values in found["suites"].items()}}
+
+
+def seed_values(pairs: Sequence[Mapping], seeds: Sequence[int], *, relative_to: int) -> dict[str, dict]:
+    """Each of a calibration's ``seeds`` (as a string, in order) -> its ``pooled`` value per metric and each suite's
+    (``suites``: suite -> metric -> value), relative to the seed ``relative_to``: the Δs of the pair
+    ``(relative_to, seed)`` of ``pairs`` (``{"a", "b", **pair(...)}``, b's Δs against a's), negated when the pair is
+    ``(seed, relative_to)``. ``relative_to``'s own values are 0, on every metric and suite the others have. ValueError
+    when no pair compares a seed with ``relative_to``."""
+    found = {(entry["a"], entry["b"]): entry for entry in pairs}
+    values = {}
+    for seed in seeds:
+        if seed == relative_to:
+            continue
+        if (relative_to, seed) in found:
+            values[str(seed)] = _scaled(found[(relative_to, seed)], 1)
+        elif (seed, relative_to) in found:
+            values[str(seed)] = _scaled(found[(seed, relative_to)], -1)
+        else:
+            raise ValueError(f"no pair compares init seeds {relative_to} and {seed}")
+    reference = {"pooled": {}, "suites": {}}
+    for value in values.values():
+        reference["pooled"].update(dict.fromkeys(value["pooled"], 0.))
+        for suite, metrics in value["suites"].items():
+            reference["suites"].setdefault(suite, {}).update(dict.fromkeys(metrics, 0.))
+    values[str(relative_to)] = reference
+    return {str(seed): values[str(seed)] for seed in seeds}
+
+
+def recentred(values: Mapping[str, Mapping], seed: int) -> dict[str, dict]:
+    """``values`` (``seed_values``) made relative to another of their seeds: each value minus ``seed``'s on the same
+    metric (and suite); the values ``seed`` lacks are left out."""
+    origin = values[str(seed)]
+    return {name: {"pooled": {metric: value - origin["pooled"][metric] for metric, value in found["pooled"].items()
+                              if metric in origin["pooled"]},
+                   "suites": {suite: {metric: value - origin["suites"][suite][metric]
+                                      for metric, value in metrics.items() if metric in origin["suites"].get(suite, {})}
+                              for suite, metrics in found["suites"].items()}}
+            for name, found in values.items()}
+
+
+def seed_distribution(values: Mapping[str, Mapping], metric: str, suite: str | None = None) -> list[float]:
+    """``metric``'s values over the seeds of ``values`` that have it: pooled, or ``suite``'s."""
+    return [found["pooled"][metric] if suite is None else found["suites"][suite][metric]
+            for found in values.values()
+            if metric in (found["pooled"] if suite is None else found["suites"].get(suite, {}))]
+
+
+def baseline_summary(values: Mapping[str, Mapping]) -> dict[str, dict]:
+    """Each metric -> the ``mean`` and sample ``sd`` of its pooled values over the seeds of ``values`` that have it,
+    and their number ``n`` (the sd is None for one seed)."""
+    metrics = list(dict.fromkeys(metric for found in values.values() for metric in found["pooled"]))
+    summary = {}
+    for metric in metrics:
+        found = seed_distribution(values, metric)
+        summary[metric] = {"mean": statistics.fmean(found), "sd": statistics.stdev(found) if len(found) > 1 else None,
+                           "n": len(found)}
+    return summary
 
 
 def decide(comparison: Mapping, band: Mapping[str, float] | None, metrics: Sequence[str]) -> dict[str, dict]:

@@ -23,8 +23,11 @@ the null band (``noise.null_band``) a candidate's headline weighs its Δs agains
    ``<calibration>/assay``, in this process: under one AlignAIR code.
 5. Writes ``<calibration>/null_band.json``: the protocol, the model options, the suites, their builds (the SHA-256 of
    each ``build.json``) and the cases compared, the
-   screens, each pair's pooled Δs and each suite's (``noise.pair``) and the null band; and prints the band of each
-   headline metric.
+   screens, each pair's pooled Δs and each suite's (``noise.pair``) and the null band; each baseline seed's values
+   (``seeds``: pooled and per suite, from its pair with the registered seed, ``relative_to``; ``noise.seed_values``)
+   and their mean and SD per metric (``baseline``), the distribution a candidate's seeds are compared with
+   (``noise.decide``); and prints the band of each headline metric. A null band written before the per-seed values
+   gives them from its pairs (``baselines.calibration_seeds``).
 """
 from __future__ import annotations
 
@@ -39,10 +42,11 @@ from pathlib import Path
 
 from alignair.errors import ConfigurationError
 from alignair_lab.headline import HEADLINE
-from alignair_lab.noise import null_band, pair
+from alignair_lab.noise import baseline_summary, null_band, pair, seed_values
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED, schedule as learning_schedule, training_config
 from alignair_lab.records import CachedRecordSource
 from alignair_lab.baselines import (
+    BASELINE_INIT_SEED,
     CHECKPOINT,
     NAME,
     NULL_ARCHITECTURE,
@@ -235,7 +239,10 @@ def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = D
             code = summary["code"]["this"]
             pairs.append({"a": first, "b": second, **pair(summary)})
         band = null_band(pairs)
-        record.update(status="done", pairs=pairs, band=band, code_sha256=code, finished=now())
+        relative_to = BASELINE_INIT_SEED if BASELINE_INIT_SEED in seeds else seeds[0]
+        values = seed_values(pairs, seeds, relative_to=relative_to)
+        record.update(status="done", pairs=pairs, band=band, relative_to=relative_to, seeds=values,
+                      baseline=baseline_summary(values), code_sha256=code, finished=now())
         write_json(directory / NULL_BAND, record)
         stage("done")
         shown = [(label, band[metric]) for metric, label in HEADLINE if metric in band]

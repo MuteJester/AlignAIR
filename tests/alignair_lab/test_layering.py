@@ -18,7 +18,7 @@ MODULES = ("recipe", "records", "noise", "headline", "architectures", "sizes", "
            "cli")
 ALLOWED = {"recipe": {"recipe"}, "records": {"records"}, "noise": {"noise"}, "headline": {"headline", "noise"},
            "architectures": {"architectures"}, "sizes": {"architectures", "sizes"},
-           "baselines": {"recipe", "architectures", "baselines"},
+           "baselines": {"recipe", "noise", "architectures", "baselines"},
            "screen": {"recipe", "records", "noise", "headline", "architectures", "sizes", "baselines", "screen"},
            "calibrate": {"recipe", "records", "noise", "headline", "baselines", "screen", "calibrate"},
            "cli": set(MODULES), "__main__": {"cli"}, "__init__": set()}
