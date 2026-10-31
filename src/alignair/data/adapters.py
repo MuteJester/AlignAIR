@@ -14,12 +14,12 @@ from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error
 from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
 from ..neural.heads.region import READ_REGIONS, REGION_INDEX
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, CODON
-from ..core.d_presence import D_PRESENCE
+from ..core.d_presence import ABSENT, D_PRESENCE
 from ..core.boundaries import read_window
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .encoders import encode_allele_sets
 from .projection import frame_offset_of, project_codons, projection_segments, translated_record_usable
-from .targets import build_targets, read_anchors, read_d_presence
+from .targets import UNSCORABLE, build_targets, read_anchors, read_d_presence
 from .tokenizer import AAProteinTokenizer
 
 if TYPE_CHECKING:
@@ -93,10 +93,23 @@ def _limit(sample, config, genes, overflow):
 
 def _anchor_targets(anchors, config) -> dict:
     """``v_anchor``/``j_anchor``: each anchor's read position (forward frame, like the boundaries), or the null slot
-    ``max_seq_length`` when it is not observed."""
-    null = config.max_seq_length
-    return {ANCHOR_KEYS[gene]: torch.tensor(null if anchors[gene] is None else anchors[gene], dtype=torch.long)
-            for gene in ANCHOR_GENES}
+    ``max_seq_length`` when it is not observed; and ``{key}_supervise``, False for an unscorable anchor (its segment's
+    alignment cannot be mapped), which the loss leaves out (its target is the null slot, never read)."""
+    null, targets = config.max_seq_length, {}
+    for gene in ANCHOR_GENES:
+        key, position = ANCHOR_KEYS[gene], anchors[gene]
+        targets[key] = torch.tensor(null if position in (None, UNSCORABLE) else position, dtype=torch.long)
+        targets[f"{key}_supervise"] = torch.tensor(position != UNSCORABLE)
+    return targets
+
+
+def _d_presence_targets(record, config) -> dict:
+    """``d_presence``: the class of the D the model's window shows (the crop cuts the read to it); and
+    ``d_presence_supervise``, False for an unscorable D (its alignment cannot be mapped), which the loss leaves out
+    (its target is absent, never read)."""
+    klass = read_d_presence(record, read_window(config.max_seq_length, getattr(config, "boundary_mode", "residue")))
+    return {D_PRESENCE: torch.tensor(ABSENT if klass == UNSCORABLE else klass, dtype=torch.long),
+            f"{D_PRESENCE}_supervise": torch.tensor(klass != UNSCORABLE)}
 
 
 @dataclass(frozen=True)
@@ -137,9 +150,7 @@ class NucleotideBatchAdapter:
                 if getattr(self.config, "anchor_heads", False):
                     targets.update(_anchor_targets(read_anchors(record, self.reference), self.config))   # forward frame
                 if getattr(self.config, "d_presence_head", False):
-                    # the D the model's window shows (the crop below cuts the read to it)
-                    width = read_window(self.config.max_seq_length, getattr(self.config, "boundary_mode", "residue"))
-                    targets[D_PRESENCE] = torch.tensor(read_d_presence(record, width), dtype=torch.long)
+                    targets.update(_d_presence_targets(record, self.config))
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length,

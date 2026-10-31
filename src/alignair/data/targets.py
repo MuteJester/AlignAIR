@@ -13,6 +13,10 @@ from .coordinates import segment_spans
 from .alignment import parse_cigar, query_reference_map
 
 _GENES = ("v", "d", "j")
+# What ``read_d_presence`` and ``read_anchors`` give for a segment the record places in the read whose alignment cannot
+# be mapped (no CIGAR, or one that disagrees with the segment's read and germline spans): the assay's truth calls such a
+# segment unscorable, so the adapter trains no term on it, rather than calling it absent or its anchor not observed.
+UNSCORABLE = -1
 
 
 def read_d_presence(record: dict, width: int | None = None) -> int:
@@ -20,13 +24,15 @@ def read_d_presence(record: dict, width: int | None = None) -> int:
     window the model sees; the whole read for None) is aligned to the D germline, else ``SHORT`` or ``CALLABLE`` by
     its observed germline length: from the first to the last aligned germline base, so an internal deletion counts
     and an edge gap or an insertion does not, as the AlignAIR assay's truth measures a segment's observed length. An
-    inverted D is a D like any other (its alignment spans the reverse-complemented germline). Only a model with a D
-    presence head needs it."""
+    inverted D is a D like any other (its alignment spans the reverse-complemented germline). ``UNSCORABLE`` when the
+    record places a D in the read but its alignment cannot be mapped. Only a model with a D presence head needs it."""
     with error_context(stage="build_targets", record_id=record.get("sequence_id")):
         coords, germ = segment_spans(record)
         if "d" not in coords:
             return ABSENT
         path = query_reference_map(record.get("d_cigar"), coords["d"], germ["d"])
+        if path.reason is not None:
+            return UNSCORABLE
         aligned = [germline for offset, germline in enumerate(path.positions)
                    if germline is not None and (width is None or path.query_start + offset < width)]
         if not aligned:
@@ -36,7 +42,8 @@ def read_d_presence(record: dict, width: int | None = None) -> int:
 
 def read_anchors(record: dict, reference_set) -> dict[str, int | None]:
     """``{"v": ..., "j": ...}``: the read position of each anchor codon's first base, None when the read does not show
-    it (``_anchor``). Only a model with anchor heads needs them, so ``build_targets`` does not compute them."""
+    it, ``UNSCORABLE`` when the segment's alignment cannot be mapped (``_anchor``). Only a model with anchor heads needs
+    them, so ``build_targets`` does not compute them."""
     with error_context(stage="build_targets", record_id=record.get("sequence_id")):
         coords, germ = segment_spans(record)
         length = len(str(record["sequence"]))
@@ -53,7 +60,8 @@ def _anchor(record, gene: str, reference_set, coords, germ, length: int) -> int 
     the read, the codon's defining base is an aligned base (not deleted, not trimmed away), and the codon lies wholly
     inside the read. The defining base is the V codon's first base and the J codon's last, as the assay's truth defines
     the junction (``[V anchor, J codon's last base + 1)``), so a codon a recombination trim cut keeps its anchor where
-    GenAIRR places the junction. Each anchor is found whether or not the other is."""
+    GenAIRR places the junction. Each anchor is found whether or not the other is. ``UNSCORABLE`` when the segment is
+    in the read but its alignment cannot be mapped."""
     if gene not in coords:
         return None
     allele = str(record[f"{gene}_call"]).split(",")[0]          # the allele the germline coordinates belong to
@@ -61,8 +69,10 @@ def _anchor(record, gene: str, reference_set, coords, germ, length: int) -> int 
     if anchor is None:
         return None
     path = query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene])
+    if path.reason is not None:
+        return UNSCORABLE
     defining = anchor if gene == "v" else anchor + CODON - 1
-    for offset, germline in enumerate(path.positions):          # empty when the alignment is unavailable
+    for offset, germline in enumerate(path.positions):
         if germline == defining:
             position = path.query_start + offset - (0 if gene == "v" else CODON - 1)
             return position if 0 <= position and position + CODON <= length else None

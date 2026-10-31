@@ -54,3 +54,18 @@ def test_the_d_presence_head_needs_its_logits_and_its_target(task_batch, missing
     with pytest.raises(TrainingDataError) as caught:
         presence_term(cfg, out, targets)
     assert missing in caught.value.context["fields"]
+
+
+def test_an_unscorable_d_carries_no_d_presence_loss(task_batch):
+    """A read whose D alignment could not be mapped (``d_presence_supervise`` False) is left out: whatever its logits
+    hold, the term is the other read's, and no gradient reaches it; with no supervised read the term is 0."""
+    logits = torch.tensor([[9.0, -9.0, 0.0], [0.0, 0.0, 0.0]])
+    cfg, out, targets = presence_task(task_batch, logits.clone())
+    targets["d_presence_supervise"] = torch.tensor([False, True])
+    term = presence_term(cfg, out, targets, log_var=0.0)
+    assert term.item() == pytest.approx(math.log(3))
+    term.backward()
+    assert not out["d_presence_logits"].grad[0].any() and out["d_presence_logits"].grad[1].any()
+    cfg, out, targets = presence_task(task_batch, logits.clone())
+    targets["d_presence_supervise"] = torch.tensor([False, False])
+    assert presence_term(cfg, out, targets, log_var=0.0).item() == 0

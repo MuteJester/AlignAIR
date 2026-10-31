@@ -28,6 +28,12 @@ def productive_rows(targets: dict, reference: torch.Tensor) -> torch.Tensor:
     return _row_mask(targets, "productive_supervise", reference)
 
 
+def target_rows(targets: dict, key: str, reference: torch.Tensor) -> torch.Tensor:
+    """Rows whose ``key`` target is supervised: ``{key}_supervise`` when present, else every row (an anchor or the D
+    presence of a segment whose alignment cannot be mapped is not)."""
+    return _row_mask(targets, f"{key}_supervise", reference)
+
+
 def categorical_rows(targets: dict, gene: str, logits: torch.Tensor) -> torch.Tensor:
     """Rows with a class label or a nonempty compatible set; -1 means no class supervision."""
     valid = supervised_rows(targets, gene, logits) & _row_mask(targets, f"{gene}_class_supervise", logits)

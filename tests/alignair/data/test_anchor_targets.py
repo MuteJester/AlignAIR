@@ -140,6 +140,19 @@ def test_an_unannotated_allele_has_no_anchor():
 
 
 @pytest.mark.component
+@pytest.mark.parametrize("cigar", ["", "8M"], ids=["no_cigar", "cigar_off_its_spans"])
+def test_an_anchor_whose_alignment_cannot_be_mapped_is_not_trained(cigar):
+    """A V the record places in the read whose alignment cannot be mapped (no CIGAR, or one that disagrees with its
+    read and germline spans) is unscorable: its anchor is left out of the loss (``v_anchor_supervise`` False), not
+    trained as "not observed". The J anchor, mapped, is supervised and observed."""
+    v = _segment("v", 2, 12, cigar=cigar) if cigar else {**_segment("v", 2, 12), "v_cigar": ""}
+    batch = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record(v=v), _record()])
+    assert batch.targets["v_anchor_supervise"].tolist() == [False, True]
+    assert batch.targets["j_anchor_supervise"].tolist() == [True, True]
+    assert batch.targets["j_anchor"].tolist() == [21, 21]
+
+
+@pytest.mark.component
 def test_anchor_targets_follow_the_forward_frame_in_every_orientation():
     """Every orientation the adapter draws gives the forward read's anchors: the model's teacher-forced correction
     (its orientation applied again) gives back the forward read, as for the boundaries."""
@@ -158,13 +171,14 @@ def test_anchor_targets_follow_the_forward_frame_in_every_orientation():
 
 @pytest.mark.component
 def test_conv_v1_has_no_anchor_targets():
-    """Off, the flag leaves a batch as it was; on, it adds the two anchor targets only."""
+    """Off, the flag leaves a batch as it was; on, it adds the two anchor targets and their supervision masks only."""
     off = AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=NULL)
     assert off.architecture == "conv-v1" and not off.anchor_heads
     without = NucleotideBatchAdapter(_reference(), off, augment_orientation=False)([_record()])
     with_anchors = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
     assert "v_anchor" not in without.targets
-    assert set(with_anchors.targets) - set(without.targets) == {"v_anchor", "j_anchor"}
+    assert set(with_anchors.targets) - set(without.targets) == {"v_anchor", "j_anchor", "v_anchor_supervise",
+                                                                "j_anchor_supervise"}
     assert all(torch.equal(without.targets[key], with_anchors.targets[key]) for key in without.targets)
     assert all(torch.equal(without.inputs[key], with_anchors.inputs[key]) for key in without.inputs)
 

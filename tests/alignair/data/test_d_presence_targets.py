@@ -83,6 +83,17 @@ def test_d_presence_follows_the_window(boundary_mode, length, expected):
 
 
 @pytest.mark.component
+@pytest.mark.parametrize("d", [(14, 24, 1, 11, ""), (14, 24, 1, 11, "8M")], ids=["no_cigar", "cigar_off_its_spans"])
+def test_a_d_whose_alignment_cannot_be_mapped_is_not_trained(d):
+    """A D the record places in the read whose alignment cannot be mapped (no CIGAR, or one that disagrees with the
+    D's read and germline spans) is unscorable, as the assay's truth calls a segment it cannot observe: its target is
+    left out of the loss (``d_presence_supervise`` False), not trained as absent. A mapped D is supervised."""
+    batch = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record(d), _record()])
+    assert batch.targets["d_presence_supervise"].tolist() == [False, True]
+    assert batch.targets["d_presence"].tolist()[1] == CALLABLE
+
+
+@pytest.mark.component
 def test_d_presence_in_every_orientation():
     """Every orientation the adapter draws gives the forward read's D presence, as for the boundaries: the model's
     teacher-forced correction gives back the forward read."""
@@ -101,11 +112,11 @@ def test_d_presence_in_every_orientation():
 
 @pytest.mark.component
 def test_conv_v1_has_no_d_presence_target():
-    """Off, the flag leaves a batch as it was; on, it adds the D presence target only."""
+    """Off, the flag leaves a batch as it was; on, it adds the D presence target and its supervision mask only."""
     off = AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=64)
     without = NucleotideBatchAdapter(_reference(), off, augment_orientation=False)([_record()])
     with_presence = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
-    assert set(with_presence.targets) - set(without.targets) == {"d_presence"}
+    assert set(with_presence.targets) - set(without.targets) == {"d_presence", "d_presence_supervise"}
     assert all(torch.equal(without.targets[key], with_presence.targets[key]) for key in without.targets)
     assert all(torch.equal(without.inputs[key], with_presence.inputs[key]) for key in without.inputs)
 

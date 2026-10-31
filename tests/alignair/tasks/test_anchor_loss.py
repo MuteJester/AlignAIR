@@ -127,3 +127,22 @@ def test_the_anchor_heads_need_their_logits_and_their_targets(task_batch, missin
     with pytest.raises(TrainingDataError) as caught:
         anchor_terms(cfg, out, targets)
     assert missing in caught.value.context["fields"]
+
+
+def test_an_unscorable_anchor_carries_no_anchor_loss(task_batch):
+    """An anchor whose segment's alignment could not be mapped (``v_anchor_supervise`` False) is left out: whatever
+    its logits hold, the term is the other read's, and no gradient reaches it."""
+    logits = {key: torch.zeros(2, WIDTH + 1) for key in ANCHORS}
+    noisy = {key: value.clone() for key, value in logits.items()}
+    noisy["v_anchor"][0, :STARTS] = torch.arange(STARTS, dtype=torch.float32) * 5
+    terms = []
+    for given in (logits, noisy):
+        cfg, out, targets = anchor_task(task_batch, given)
+        targets["v_anchor_supervise"] = torch.tensor([False, True])
+        targets["j_anchor_supervise"] = torch.tensor([True, True])
+        total, parts = anchor_terms(cfg, out, targets)
+        terms.append(parts["v_anchor"].item())
+    assert terms[0] == pytest.approx(terms[1]) == pytest.approx(math.log(STARTS + 1))
+    total.backward()
+    gradient = out["v_anchor_logits"].grad
+    assert not gradient[0].any() and gradient[1].any()

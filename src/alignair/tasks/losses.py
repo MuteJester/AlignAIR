@@ -10,7 +10,7 @@ from ..core.d_presence import D_PRESENCE, D_PRESENCE_LOGITS
 from ..core.config import AlignAIRConfig
 from ..neural.heads.state import STATE_CLASS_WEIGHTS
 from ..neural.weighting import UncertaintyWeight
-from .supervision import supervised_rows, categorical_rows, productive_rows
+from .supervision import supervised_rows, categorical_rows, productive_rows, target_rows
 from .functional import (_kendall, _mean_rows, _soft_ce, soft_gaussian_target,
                          soft_cross_entropy_rows as _soft_ce_per_sample)
 
@@ -96,12 +96,16 @@ def auxiliary_losses(out, targets, cfg, logvars):
         slots = torch.cat([starts, starts.new_ones(starts.shape[0], 1)], dim=-1)     # + the null slot
         for gene in ANCHOR_GENES:
             key = ANCHOR_KEYS[gene]
-            ce = _mean_rows(_soft_ce_per_sample(out[ANCHOR_LOGITS[gene]], anchor_target(targets[key], starts), slots))
-            parts[key] = _kendall(logvars[key], ce)
+            rows = target_rows(targets, key, starts)                         # an unscorable anchor is left out
+            ce = _soft_ce_per_sample(out[ANCHOR_LOGITS[gene]], anchor_target(targets[key], starts), slots)
+            parts[key] = _kendall(logvars[key], _mean_rows(ce, rows), rows)
 
     # ---- D presence (absent / too short to call / callable): cross entropy over the three classes ----
     if getattr(cfg, "d_presence_head", False):
-        parts[D_PRESENCE] = _kendall(logvars[D_PRESENCE], F.cross_entropy(out[D_PRESENCE_LOGITS], targets[D_PRESENCE]))
+        logits = out[D_PRESENCE_LOGITS]
+        rows = target_rows(targets, D_PRESENCE, logits)                      # an unscorable D is left out
+        ce = F.cross_entropy(logits, targets[D_PRESENCE], reduction="none")
+        parts[D_PRESENCE] = _kendall(logvars[D_PRESENCE], _mean_rows(ce, rows), rows)
 
     # ---- orientation (supervised only when the batch carries an orientation label) ----
     if "orientation" in targets and "orientation_logits" in out:
