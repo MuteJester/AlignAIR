@@ -99,6 +99,14 @@ def test_subset_preserves_anchors():
     assert all(sub.gene("V").anchors[n] == rs.gene("V").anchors[n] for n in keepV)
 
 
+def test_subset_preserves_the_gapped_forms():
+    """A genotype subset keeps each kept allele's IMGT-gapped form (the frame a reference-reading model lays V on)."""
+    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
+    keepV = rs.gene("V").names[:5]
+    sub = rs.subset({"V": keepV})
+    assert sub.gene("V").gapped == {n: rs.gene("V").gapped[n] for n in keepV}
+
+
 def test_infer_locus():
     rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
     assert rs.infer_locus() == "IGH"

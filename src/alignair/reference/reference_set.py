@@ -269,7 +269,7 @@ class ReferenceSet:
 
     def subset(self, allowed: Dict[str, Iterable[str]]) -> "ReferenceSet":
         """Return a new ReferenceSet keeping only the named alleles per gene (a donor's
-        reduced genotype), PRESERVING anchors/junction. ``allowed`` = {gene: [names]}."""
+        reduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {gene: [names]}."""
         want = {g.upper(): list(v) for g, v in allowed.items()}
         out: Dict[str, GeneReference] = {}
         for G, ref in self.genes.items():
@@ -277,8 +277,9 @@ class ReferenceSet:
             seqs = [ref.sequences[ref.index[n]] for n in keep]
             anc = ({n: ref.anchors[n] for n in keep if n in ref.anchors}
                    if ref.anchors else None)
+            gapped = ({n: ref.gapped[n] for n in keep if n in ref.gapped} if ref.gapped else None)
             out[G] = GeneReference(keep, seqs, {n: i for i, n in enumerate(keep)},
-                                   anchors=anc or None)
+                                   anchors=anc or None, gapped=gapped or None)
         return ReferenceSet(out, self.has_d)
 
     @classmethod
