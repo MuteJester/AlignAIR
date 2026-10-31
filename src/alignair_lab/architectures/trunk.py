@@ -383,3 +383,28 @@ class CroppedTrunkGeneBranch(TrunkGeneBranchV2):
 
 register("lab-trunk-crop-v1", ModelComponents(trunk=build_trunk, gene_branch=CroppedTrunkGeneBranch,
                                               meta_tower=embedding_meta_tower, trunk_heads=build_trunk_heads))
+
+
+# --- lab-trunk-meta-v1 and lab-trunk-crop-meta-v1: the metadata heads read the trunk ------------------------------
+
+class TrunkMetaTower(nn.Module):
+    """The metadata heads' input from the trunk instead of conv-v1's meta conv tower: the read's masked mean and max
+    trunk features (``mask``, the read's positions) through Linear(2C, block_out) (``proj``) and GELU, (B, block_out);
+    ``emb`` is not read."""
+
+    def __init__(self, cfg: AlignAIRConfig):
+        super().__init__()
+        self.proj = nn.Linear(2 * TRUNK_CHANNELS, cfg.block_out)
+
+    def forward(self, emb: torch.Tensor, *, features: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        return F.gelu(self.proj(_pooled(features, mask)))
+
+
+def trunk_meta_tower(cfg: AlignAIRConfig) -> TrunkMetaTower:
+    return TrunkMetaTower(cfg)
+
+
+register("lab-trunk-meta-v1", ModelComponents(trunk=build_trunk, gene_branch=TrunkGeneBranchV2,
+                                              meta_tower=trunk_meta_tower, trunk_heads=build_trunk_heads))
+register("lab-trunk-crop-meta-v1", ModelComponents(trunk=build_trunk, gene_branch=CroppedTrunkGeneBranch,
+                                                   meta_tower=trunk_meta_tower, trunk_heads=build_trunk_heads))

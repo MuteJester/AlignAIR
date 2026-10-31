@@ -629,6 +629,67 @@ def test_lab_trunk_crop_v1_learns_one_batch(reference):
     assert v_top1() > 0.9 > before
 
 
+# --- lab-trunk-meta-v1 and lab-trunk-crop-meta-v1: the metadata heads read the trunk ------------------------------
+
+@pytest.mark.component
+@pytest.mark.parametrize('architecture', ['lab-trunk-meta-v1', 'lab-trunk-crop-meta-v1'])
+def test_the_trunk_meta_tower_pools_the_reads_trunk_features(reference, architecture):
+    """The metadata heads' input is the read's masked mean and max trunk features through Linear(2C, block_out) and
+    GELU: no convolution of its own, and nothing from the padding."""
+    model = build(reference, architecture, **SMALL, boundary_mode='half_open')
+    tower = model.meta_tower
+    assert count(tower) == 2 * TRUNK_CHANNELS * model.cfg.block_out + model.cfg.block_out
+    assert not any(isinstance(module, torch.nn.Conv1d) for module in tower.modules())
+    features, seen = [], []
+    model.trunk.register_forward_hook(lambda module, inputs, output: features.append(output))
+    tower.register_forward_hook(lambda module, inputs, output: seen.append(output))
+    batch = tokens()
+    with torch.no_grad():
+        model(batch)
+    keep = (batch['tokenized_sequence'] != 0).unsqueeze(-1)
+    pooled = torch.cat([(features[0] * keep).sum(1) / keep.sum(1),
+                        features[0].masked_fill(~keep, float('-inf')).amax(1)], -1)
+    assert torch.allclose(seen[0], torch.nn.functional.gelu(tower.proj(pooled)), atol=1e-5)
+    padded = dict(batch)
+    padded['tokenized_sequence'] = batch['tokenized_sequence'][1:2]       # the 380-long read alone
+    with torch.no_grad():
+        model(padded)
+    assert torch.allclose(seen[1], seen[0][1:2], atol=1e-5)
+
+
+@pytest.mark.component
+def test_lab_trunk_crop_meta_v1_has_no_meta_conv_tower(reference):
+    """With the default options, the trunk meta tower replaces conv-v1's meta conv tower: the meta group shrinks to
+    the projection and the heads, and the model holds no Conv1d outside the trunk, the boundaries and the crops."""
+    from alignair_lab.sizes import model_size
+    crop = model_size(build(reference, 'lab-trunk-crop-v1', boundary_mode='half_open'))
+    meta = model_size(build(reference, 'lab-trunk-crop-meta-v1', boundary_mode='half_open'))
+    assert meta['components']['meta_tower']['conv1d'] == 0
+    assert meta['groups']['meta'] < crop['groups']['meta']
+    assert meta['conv1d'] == crop['conv1d'] - crop['components']['meta_tower']['conv1d']
+    assert (meta['groups']['trunk'], meta['groups']['classification']) == (crop['groups']['trunk'],
+                                                                           crop['groups']['classification'])
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_lab_trunk_meta_v1_learns_one_batch(reference):
+    """Updated 200 times on one batch of 8 GenAIRR reads, its mutation-rate error falls by more than half."""
+    from alignair.train import overfit_one_batch
+    from alignair.train.trainer import build_batch
+    model = build(reference, 'lab-trunk-meta-v1', **SMALL, boundary_mode='half_open')
+    batch, targets = build_batch(records(8), reference, model.cfg)
+
+    def error():
+        with torch.no_grad():
+            rate = model.eval()(batch)['mutation_rate'].reshape(-1)
+        return float((rate - targets['mutation_rate'].reshape(-1)).abs().mean())
+
+    before = error()
+    overfit_one_batch(model, batch, targets, steps=200, lr=1e-3)
+    assert error() < before / 2
+
+
 # --- the model file, the replay and the screen -------------------------------------------------------------------
 
 @pytest.mark.integration
