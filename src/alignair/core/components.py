@@ -74,6 +74,10 @@ class ModelComponents:
     the model's output. A core that needs the reference defines ``bind_reference(reference)``; the model's builders
     and loaders call it. An optional objective (``objective(config) -> TrainingTasks``) is the architecture's training
     objective, which ``tasks.build_tasks`` returns in place of the built-in one.
+
+    ``reference_agnostic``: the architecture's alleles are an input, not weights (its core reads them from the bound
+    reference), so it takes any reference with its genes, alleles it never trained on included, and its calls follow
+    the bound reference's alleles; a fixed-head architecture (the default) is tied to the reference it trained on.
     """
     embedding: Callable[[AlignAIRConfig], nn.Module] = _embedding
     gene_branch: Callable[[GeneSpec, AlignAIRConfig], GeneBranch] = GeneBranch
@@ -85,9 +89,14 @@ class ModelComponents:
     trunk_heads: Callable[[AlignAIRConfig], Mapping[str, nn.Module]] = no_trunk_heads
     core: Callable[[AlignAIRConfig], nn.Module] | None = None
     objective: Callable[[AlignAIRConfig], object] | None = None
+    reference_agnostic: bool = False
 
     def __post_init__(self):
+        if type(self.reference_agnostic) is not bool:
+            raise ConfigurationError("reference_agnostic must be a boolean", context={"component": "reference_agnostic"})
         for field in fields(self):
+            if field.name == "reference_agnostic":
+                continue
             if field.name in ("trunk", "core", "objective") and getattr(self, field.name) is None:
                 continue
             if not callable(getattr(self, field.name)):

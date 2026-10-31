@@ -6,4 +6,4 @@ from .. import register
 from .core import ChipCore
 from .objective import ChipObjective
 
-register("lab-chip-v1", ModelComponents(core=ChipCore, objective=ChipObjective))
+register("lab-chip-v1", ModelComponents(core=ChipCore, objective=ChipObjective, reference_agnostic=True))

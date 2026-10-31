@@ -103,3 +103,26 @@ def test_a_prepared_model_binds_its_reference_to_the_core(architecture):
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     model = prepare_model(reference, architecture=architecture(core=ToyCore)).build_model()
     assert model.core.reference is reference
+
+
+def test_a_reference_agnostic_model_takes_the_bound_references_allele_counts(architecture):
+    """Its alleles are an input: binding another reference makes the config's allele counts that reference's."""
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    model = AlignAIR(config(architecture=architecture(core=ToyCore, reference_agnostic=True)))
+    assert model.reference_agnostic
+    model.bind_reference(reference)
+    assert model.core.reference is reference
+    assert (model.cfg.v_allele_count, model.cfg.j_allele_count, model.cfg.d_allele_count) == (
+        len(reference.gene("V")), len(reference.gene("J")), len(reference.gene("D")))
+
+
+def test_a_fixed_head_model_keeps_its_allele_counts_when_bound(architecture):
+    model = AlignAIR(config(architecture=architecture(core=ToyCore)))
+    assert not model.reference_agnostic and not AlignAIR(config()).reference_agnostic
+    model.bind_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))
+    assert (model.cfg.v_allele_count, model.cfg.j_allele_count, model.cfg.d_allele_count) == (3, 2, 2)
+
+
+def test_reference_agnostic_must_be_a_boolean():
+    with pytest.raises(ConfigurationError):
+        ModelComponents(reference_agnostic="yes")
