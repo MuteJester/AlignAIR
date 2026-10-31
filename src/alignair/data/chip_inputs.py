@@ -8,11 +8,12 @@ Per record (``chip_record_targets``):
   mapped, an inverted D, whose germline the forward frame does not hold).
 - ``region``: each base's recombination region as a ``READ_REGIONS`` index.
 - ``region_allowed``: a bitmask over ``READ_REGIONS`` per base: its region, plus the neighbouring region where the
-  read cannot place the boundary. A V or D end may move right over the bases that continue its germline (N bases that
-  happen to equal the trimmed germline), and a D or J start may move left over the bases that precede its germline,
-  up to the neighbouring gene; and each edge may move inward over its run of bases that mismatch the germline (a
-  mutated edge base reads like an N base). The boundary the read can identify is any of those: the assay's boundary
-  intervals (``alignair_assay.truth.boundaries``).
+  read cannot place the boundary. Each gene's end may move right over the bases that continue its germline (N or
+  flank bases that happen to equal the trimmed germline), and its start left over the bases that precede its
+  germline, up to the neighbouring gene or the read's edge; and each edge may move inward over its run of bases that
+  mismatch the germline (a mutated edge base reads like an N base), V's start into the 5' flank (pre) and J's end
+  into the 3' flank (post). The boundary the read can identify is any of those: the assay's boundary intervals
+  (``alignair_assay.truth.boundaries``).
 
 Per batch (``chip_batch_inputs``), into the model's inputs:
 
@@ -36,9 +37,12 @@ from .coordinates import segment_spans
 IGNORE = -100
 GENES = ("v", "d", "j")
 _BIT = {gene: 1 << READ_REGIONS.index(gene.upper()) for gene in GENES}
-# The N region a gene's edge base may be read as once its boundary moves inward: after a V or D, before a D or J.
-_NP_AFTER = {"v": 1 << READ_REGIONS.index("N1"), "d": 1 << READ_REGIONS.index("N2")}
-_NP_BEFORE = {"d": 1 << READ_REGIONS.index("N1"), "j": 1 << READ_REGIONS.index("N2")}
+# The region a gene's edge base may be read as once its boundary moves inward: the N region or flank after its end,
+# before its start.
+_NP_AFTER = {"v": 1 << READ_REGIONS.index("N1"), "d": 1 << READ_REGIONS.index("N2"),
+             "j": 1 << READ_REGIONS.index("post")}
+_NP_BEFORE = {"v": 1 << READ_REGIONS.index("pre"), "d": 1 << READ_REGIONS.index("N1"),
+              "j": 1 << READ_REGIONS.index("N2")}
 
 
 def _primary(record, gene: str) -> str:
@@ -88,16 +92,14 @@ def _movable_boundaries(allowed, sequence, record, reference, coords, germ, inve
         (start, end), (g_start, g_end) = coords[gene], germ[gene]
         following = coords[order[i + 1]][0] if i + 1 < len(order) else len(sequence)
         preceding = coords[order[i - 1]][1] if i > 0 else 0
-        if gene in ("v", "d"):
-            t = 0
-            while end + t < following and g_end + t < len(germline) and sequence[end + t] == germline[g_end + t]:
-                allowed[end + t] |= _BIT[gene]
-                t += 1
-        if gene in ("d", "j"):
-            t = 1
-            while start - t >= preceding and g_start - t >= 0 and sequence[start - t] == germline[g_start - t]:
-                allowed[start - t] |= _BIT[gene]
-                t += 1
+        t = 0
+        while end + t < following and g_end + t < len(germline) and sequence[end + t] == germline[g_end + t]:
+            allowed[end + t] |= _BIT[gene]
+            t += 1
+        t = 1
+        while start - t >= preceding and g_start - t >= 0 and sequence[start - t] == germline[g_start - t]:
+            allowed[start - t] |= _BIT[gene]
+            t += 1
         _shrinkable_edges(allowed, sequence, germline, gene,
                           query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene]))
 

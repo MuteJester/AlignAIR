@@ -112,6 +112,34 @@ def test_a_gene_keeps_at_least_one_aligned_base():
     assert allowed[14] == _bits("N2", "D")         # C != J germline base 0 (T), but continues the D germline
 
 
+def _outer_targets(record, regions):
+    reference = _reference()
+    labels = np.array([REGION_INDEX[name] for name in regions], dtype=np.int64)
+    return chip_record_targets(record, reference, gene_frames(reference), labels)["region_allowed"].values
+
+
+def test_v_start_and_j_end_shrink_over_their_mismatching_edge_bases_into_the_flanks():
+    """The read's outer edges move like the inner ones (the assay's intervals): V's first base mismatching its
+    germline may be read before V (pre), J's last base mismatching may be read after J (post)."""
+    allowed = _targets(_record(sequence=_substituted(p0="C", p20="C")))["region_allowed"].values
+    assert allowed[0] == _bits("V", "pre") and allowed[1] == _bits("V")
+    assert allowed[20] == _bits("J", "post") and allowed[19] == _bits("J")
+
+
+def test_v_start_and_j_end_extend_over_flank_bases_that_continue_their_germline():
+    """A flank base equal to the germline base before V's first (after J's last) may be read as V (J)."""
+    record = _record()
+    record.update(v_sequence_start=1, v_germline_start=1, v_cigar="7M", j_sequence_end=20, j_germline_end=6,
+                  j_cigar="4M")
+    regions = ["pre"] + REGIONS[1:20] + ["post"]
+    allowed = _outer_targets(record, regions)
+    assert allowed[0] == _bits("pre", "V")         # A == V germline base 0
+    assert allowed[20] == _bits("post", "J")       # A == J germline base 6
+    mismatched = {**record, "sequence": "G" + SEQUENCE[1:20] + "C"}
+    allowed = _outer_targets(mismatched, regions)
+    assert allowed[0] == _bits("pre") and allowed[20] == _bits("post")
+
+
 def test_region_is_the_read_region_index():
     region = _targets()["region"].values
     assert region.tolist() == [READ_REGIONS.index(name) for name in REGIONS]
