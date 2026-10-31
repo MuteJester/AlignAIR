@@ -57,7 +57,10 @@ def test_build_tasks_gives_the_chip_objective(chip):
     assert isinstance(build_tasks(setup.config), ChipObjective)
 
 
-def test_every_part_is_near_one_at_initialization(chip):
+def test_every_part_is_near_one_at_initialization(chip, monkeypatch):
+    """The model's own predictions: no read is given its true columns (a taught read's scan term is near 0)."""
+    from alignair_lab.architectures.chip import core as chip_core
+    monkeypatch.setattr(chip_core, "P_TEACHER", 0.0)
     model, batch, setup = chip
     model.train()
     total, parts = ChipObjective(setup.config).loss(model(_full_bank(batch)), batch.targets)

@@ -63,8 +63,8 @@ def refine_boundaries(out: dict, tokens: torch.Tensor, mask: torch.Tensor, end_m
     """Refine ``v_end_logits`` and ``j_start_logits`` in ``out`` (and their expectations ``v_end``, ``j_start``)."""
     for gene, key in REFINED.items():
         evidence, refinable = _evidence(out, tokens, mask, bank, gene)
-        out[key] = torch.where(refinable[:, None], out[key] + EVIDENCE_WEIGHT * evidence, out[key])
-        slots = end_mask if key.endswith("end_logits") else mask
+        slots = end_mask if key.endswith("end_logits") else mask                # a slot no read has stays as it is
+        out[key] = torch.where(refinable[:, None] & slots, out[key] + EVIDENCE_WEIGHT * evidence, out[key])
         probs = out[key].masked_fill(~slots, IMPOSSIBLE).softmax(-1)
         out[key.removesuffix("_logits")] = (probs * torch.arange(probs.shape[-1], device=probs.device)).sum(
             -1, keepdim=True)

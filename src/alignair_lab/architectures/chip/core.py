@@ -24,6 +24,8 @@ parser's and the reader's with probability ``P_TEACHER``.
 """
 from __future__ import annotations
 
+import math
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -74,6 +76,11 @@ class DPresenceEvidence(nn.Module):
         return self.classes(F.gelu(self.hidden(evidence)))
 
 
+def trimmed_width(mask: torch.Tensor) -> int:
+    """The positions a forward needs: the batch's longest read and the end slot after it, at most the window."""
+    return min(mask.shape[1], int(mask.sum(1).max()) + 1)
+
+
 def _expectation(logits: torch.Tensor, slots: torch.Tensor) -> torch.Tensor:
     """The expected slot (B, 1) of the boundary distribution over the allowed slots."""
     probs = logits.masked_fill(~slots, IMPOSSIBLE).softmax(-1)
@@ -107,6 +114,30 @@ class ChipCore(nn.Module):
     def forward(self, emb, mask, end_mask, *, tokens, batch):
         if self.bank is None:
             raise ConfigurationError("lab-chip-v1 reads a reference bank: bind one with model.bind_reference")
+        whole, width = mask.shape[1], trimmed_width(mask)
+        if width == whole:
+            return self._forward(emb, mask, end_mask, tokens=tokens, batch=batch)
+        batch = {key: value[:, :width] if key.startswith("teacher_") else value for key, value in batch.items()}
+        out = self._forward(emb[:, :width], mask[:, :width], end_mask[:, :width], tokens=tokens[:, :width],
+                            batch=batch)
+        return self._padded(out, whole, width)
+
+    def _padded(self, out: dict, whole: int, width: int) -> dict:
+        """The outputs of a forward over the first ``width`` positions, padded to the window's ``whole``: each slot
+        past the reads holds what a forward over the whole window gives it."""
+        extra = whole - width
+        for key, value in out.items():
+            if key.endswith(("_start_logits", "_end_logits")):
+                out[key] = F.pad(value, (0, extra), value=IMPOSSIBLE)
+            elif key.startswith("chip_") and value.dim() > 1:          # per-position internals: masked by the losses
+                out[key] = torch.cat([value, value.new_zeros(value.shape[0], extra, *value.shape[2:])], 1)
+        for gene, head in (self.anchors or {}).items():
+            logits = out[ANCHOR_LOGITS[gene]]                           # a pad slot: the bias plus log(no region)
+            pad = (head.position.bias + math.log(1e-6)).expand(logits.shape[0], extra)
+            out[ANCHOR_LOGITS[gene]] = torch.cat([logits[:, :width], pad, logits[:, width:]], -1)
+        return out
+
+    def _forward(self, emb, mask, end_mask, *, tokens, batch):
         features = self.trunk(emb, mask)
         parsed = self.parser(features, mask)
         reading = self.reader(features, mask)

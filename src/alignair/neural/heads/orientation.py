@@ -68,15 +68,16 @@ _BASE_TOKENS = {"A": 1, "T": 2, "G": 3, "C": 4}
 
 class BankOrientation(nn.Module):
     """The orientation a bound reference reads: for each of a read's 4 transforms, how many of its k-mers (A/C/G/T
-    only) are k-mers of the reference's germlines. ``bind`` indexes the reference's k-mers (sorted codes in a buffer
-    that is not saved with the weights: the reference is an input); ``vote`` gives each read the transform with most
-    hits and whether that transform won outright (some hit and no tie)."""
+    only) are k-mers of the reference's germlines. ``bind`` indexes the reference's k-mers (a bitmap over every
+    possible k-mer code, 4**k booleans, in a buffer that is not saved with the weights: the reference is an input);
+    ``vote`` gives each read the transform with most hits and whether that transform won outright (some hit and no
+    tie)."""
 
     def __init__(self, k: int = BANK_KMER):
         super().__init__()
         self.k = k
         self.bound = False
-        self.register_buffer("kmers", torch.zeros(0, dtype=torch.long), persistent=False)
+        self.register_buffer("present", torch.zeros(0, dtype=torch.bool), persistent=False)
 
     def _codes(self, tokens: torch.Tensor) -> torch.Tensor:
         """(B, L) tokens -> (B, L - k + 1) base-4 codes of their k-mers; -1 for a k-mer holding a non-A/C/G/T token."""
@@ -91,7 +92,9 @@ class BankOrientation(nn.Module):
         codes = [self._codes(torch.tensor([[_BASE_TOKENS.get(base, 5) for base in sequence.upper()]]))[0]
                  for gene in reference.genes.values() for sequence in gene.sequences]
         codes = torch.cat(codes) if codes else torch.zeros(0, dtype=torch.long)
-        self.kmers = torch.unique(codes[codes >= 0]).to(self.kmers.device)
+        present = torch.zeros(4 ** self.k, dtype=torch.bool)
+        present[codes[codes >= 0]] = True
+        self.present = present.to(self.present.device)
         self.bound = True
 
     def hits(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -102,7 +105,7 @@ class BankOrientation(nn.Module):
         for transform in range(NUM_ORIENTATIONS):
             ids = torch.full((tokens.shape[0],), transform, dtype=torch.long, device=tokens.device)
             codes = self._codes(apply_orientation(tokens, mask, ids))
-            counts.append((torch.isin(codes, self.kmers) & (codes >= 0)).sum(-1))
+            counts.append((self.present[codes.clamp_min(0)] & (codes >= 0)).sum(-1))
         return torch.stack(counts, -1)
 
     def vote(self, tokens: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
