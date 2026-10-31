@@ -202,6 +202,7 @@ def test_the_null_band_of_the_protocol_weighs_the_candidates_deltas(rig, baselin
     noise = next(line for line in headline.splitlines() if line.startswith('noise '))
     assert f'Null band: {path}' in flat(headline) and 'uncalibrated' not in noise
     assert 'other AlignAIR code' not in flat(headline)
+    assert 'Warning: the calibration records no alignair_lab or alignair_assay code digest' in flat(headline)
     assert any(line.startswith('seeds ') and '-0.2±0.8 n3' in line for line in headline.splitlines())
 
 
@@ -225,11 +226,16 @@ def test_a_calibration_whose_seed_0_screen_is_another_checkpoint_leaves_the_scre
 def test_a_null_band_measured_under_other_code_is_applied_with_a_warning(rig, baseline, tmp_path):
     root = screens_with(tmp_path, baseline, 'base0')
     protocol = json.loads((baseline / 'screen.json').read_text())['protocol']
-    path = write_null_band(rig, root, protocol, code_sha256='0' * 64)
+    from alignair_lab.screen import code_digests
+    now = code_digests()
+    path = write_null_band(rig, root, protocol, code_sha256='0' * 64, code={**now, 'alignair_assay': '1' * 64})
     assert main(candidate_arguments(rig, 'recoded', out_root=root)) == 0
     assert json.loads((root / 'recoded' / 'screen.json').read_text())['null_band']['path'] == str(path)
     headline = (root / 'recoded' / 'headline.txt').read_text()
     assert 'Warning: the null band was measured under other AlignAIR code (000000000000)' in flat(headline)
+    # and under other assay code, as calibrate now records it: named, the lab's the same
+    assert (f"Warning: the calibration was measured under other lab or assay code than this screen: alignair_assay "
+            f"{'1' * 12}, this screen's {now['alignair_assay'][:12]}.") in flat(headline)
 
 
 def test_a_null_band_gives_each_baseline_seeds_values_and_an_older_one_derives_them_from_its_pairs(tmp_path):

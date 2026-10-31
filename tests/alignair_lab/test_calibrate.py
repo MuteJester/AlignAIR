@@ -25,6 +25,8 @@ def test_calibrate_trains_the_missing_baseline_screens_and_writes_the_null_band(
     path = root / 'calibration-cache-s2-cosine' / 'null_band.json'
     record = json.loads(path.read_text())
     assert record['status'] == 'done' and record['init_seeds'] == [0, 1, 2] and record['suites'] == ['S0']
+    from alignair_lab.screen import code_digests
+    assert record['code'] == code_digests()            # the AlignAIR, lab and assay code it was measured under
     assert record['suite_builds'] == {'S0': suite_build(rig)}                  # the build its pairs were compared on
     assert record['protocol'] == json.loads((baseline / 'screen.json').read_text())['protocol']
     screens = record['screens']

@@ -26,8 +26,9 @@ the null band (``noise.null_band``) a candidate's headline weighs its Δs agains
    screens, each pair's pooled Δs and each suite's (``noise.pair``) and the null band; each baseline seed's values
    (``seeds``: pooled and per suite, from its pair with the registered seed, ``relative_to``; ``noise.seed_values``)
    and their mean and SD per metric (``baseline``), the distribution a candidate's seeds are compared with
-   (``noise.decide``); and prints the band of each headline metric. A null band written before the per-seed values
-   gives them from its pairs (``baselines.calibration_seeds``).
+   (``noise.decide``); the AlignAIR code its pairs were diagnosed under (``code_sha256``) and the AlignAIR, lab and
+   assay code that measured it (``code``, ``screen.code_digests``); and prints the band of each headline metric. A
+   null band written before the per-seed values gives them from its pairs (``baselines.calibration_seeds``).
 """
 from __future__ import annotations
 
@@ -72,6 +73,7 @@ from alignair_lab.screen import (
     SCREENS,
     assay_layout,
     built_suites,
+    code_digests,
     prepare_candidate,
     suite_builds,
 )
@@ -245,7 +247,7 @@ def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = D
         relative_to = BASELINE_INIT_SEED if BASELINE_INIT_SEED in seeds else seeds[0]
         values = seed_values(pairs, seeds, relative_to=relative_to)
         record.update(status="done", pairs=pairs, band=band, relative_to=relative_to, seeds=values,
-                      baseline=baseline_summary(values), code_sha256=code, finished=now())
+                      baseline=baseline_summary(values), code_sha256=code, code=code_digests(), finished=now())
         write_json(directory / NULL_BAND, record)
         stage("done")
         shown = [(label, band[metric]) for metric, label in HEADLINE if metric in band]

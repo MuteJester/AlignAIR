@@ -337,8 +337,9 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
     """The null band of the protocol ``wanted`` under ``out_root`` (``calibrate``'s ``<dir>/null_band.json``): of
     baseline screens of the model options ``options``, compared on ``suites``, of the builds ``builds`` (suite -> the
     SHA-256 of its ``build.json``: another build of same-named suites holds other reads), and ``max_cases``. Its
-    ``path``, ``init_seeds``, ``band`` and the AlignAIR ``code_sha256`` it was measured under; None when there is
-    none; ConfigurationError, naming them, for several."""
+    ``path``, ``init_seeds``, ``band``, the AlignAIR ``code_sha256`` it was measured under and its ``code`` digests
+    (None for a calibration that predates them); None when there is none; ConfigurationError, naming them, for
+    several."""
     wanted, options = _canonical(wanted), _canonical(dict(options))
     found = []
     root = Path(out_root)
@@ -364,7 +365,8 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
     screens = {seed: {"model_key": (entry or {}).get("model_key")}
                for seed, entry in (record.get("screens") or {}).items()}
     return {"path": str(path), "init_seeds": record["init_seeds"], "band": record["band"],
-            "code_sha256": record.get("code_sha256"), "relative_to": relative_to, "screens": screens, "seeds": seeds}
+            "code_sha256": record.get("code_sha256"), "code": record.get("code"), "relative_to": relative_to,
+            "screens": screens, "seeds": seeds}
 
 
 def calibration_checkpoint(band: Mapping, init_seed: int | None, baseline_key: str) -> str | None:
@@ -383,6 +385,27 @@ def calibration_checkpoint(band: Mapping, init_seed: int | None, baseline_key: s
         return (f"the calibration's seed-{init_seed} screen is another checkpoint: calibration {recorded}, this "
                 f"comparison's baseline {baseline_key}")
     return None
+
+
+LAB_CODE = ("alignair_lab", "alignair_assay")      # the code digests a calibration records beside AlignAIR's
+
+
+def calibration_code_warning(band: Mapping, code: Mapping | None, whose: str) -> str | None:
+    """The warning line when the calibration of ``band`` (``null_band``) was measured under other lab or assay code
+    (``LAB_CODE`` of its ``code``, ``screen.code_digests``) than ``code``, that of ``whose`` candidates (``this
+    screen``, ``the replicates``), naming each digest that differs; or that it records none (it predates them). None
+    when they are the same, or when ``code`` records none: the candidates' own warning says so."""
+    if not code or not all(code.get(field) for field in LAB_CODE):
+        return None
+    possessive = whose + ("'" if whose.endswith("s") else "'s")
+    recorded = band.get("code") or {}
+    if not all(recorded.get(field) for field in LAB_CODE):
+        return (f"Warning: the calibration records no alignair_lab or alignair_assay code digest, so the lab's and the "
+                f"assay's code it was measured under cannot be checked to be {possessive}.")
+    differing = [f"{field} {recorded[field][:12]}, {possessive} {code[field][:12]}" for field in LAB_CODE
+                 if recorded[field] != code[field]]
+    return (f"Warning: the calibration was measured under other lab or assay code than {whose}: "
+            f"{'; '.join(differing)}." if differing else None)
 
 
 def against_calibration(band: Mapping | None, init_seed: int | None) -> dict | None:

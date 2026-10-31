@@ -72,6 +72,7 @@ from alignair_lab.baselines import (
     NAME,
     against_calibration,
     calibration_checkpoint,
+    calibration_code_warning,
     calibrate_command,
     baseline_milestone,
     baseline_screen,
@@ -404,7 +405,7 @@ def _cache_line(cache: dict) -> str:
 def _band_lines(record: dict, code: str | None) -> list[str]:
     """The null band's line: its path, or why there is none (with the calibration that makes the band this screen
     would use, the command whole on its own line); and a warning when it was measured under other AlignAIR code than
-    this comparison."""
+    this comparison, or other lab or assay code than this screen (``baselines.calibration_code_warning``)."""
     band = record["null_band"]
     if record["baseline"]["kind"] == "milestone":
         return ["Null band: none applies, so uncalibrated (Tier 2: milestone): a null band measures the baseline "
@@ -427,7 +428,8 @@ def _band_lines(record: dict, code: str | None) -> list[str]:
         measured = (band.get("code_sha256") or "unrecorded")[:12]
         lines.append(f"Warning: the null band was measured under other AlignAIR code ({measured}) than this "
                      f"comparison ({(code or 'unknown')[:12]}): the noise it bounds may have changed with the code.")
-    return lines
+    warning = calibration_code_warning(band, record.get("code"), "this screen")
+    return lines + ([warning] if warning else [])
 
 
 def _baseline_rate(provenance: Mapping) -> float | None:

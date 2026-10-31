@@ -55,6 +55,7 @@ from alignair_lab.baselines import (
     against_calibration,
     baseline_screen,
     calibration_checkpoint,
+    calibration_code_warning,
     check_init_seed,
     now,
     null_band,
@@ -481,5 +482,8 @@ def _title(name: str, request: Mapping, seeds: Sequence[int], records: Mapping[i
         lines.append(f"Warning: the calibration was measured under other AlignAIR code "
                      f"({(band.get('code_sha256') or 'unrecorded')[:12]}) than the replicates "
                      f"({(codes[0] or 'unknown')[:12]}).")
-    lines += [warning for warning in (code_warning(records), current_code_warning(records, current)) if warning]
+    lab = next((found for found in map(_code, records.values()) if found), None)     # the replicates share it
+    calibrated = None if band is None else calibration_code_warning(band, lab, "the replicates")
+    lines += [warning for warning in (calibrated, code_warning(records), current_code_warning(records, current))
+              if warning]
     return [*lines, ""]

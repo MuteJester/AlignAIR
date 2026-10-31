@@ -12,7 +12,7 @@ from alignair_lab.headline import POOLED_HEADING
 from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE, pooled
 from alignair_lab.screen import code_digests
 from alignair_lab.secondary import METRIC, merged
-from alignair_lab.baselines import against_calibration, calibration_checkpoint
+from alignair_lab.baselines import against_calibration, calibration_checkpoint, calibration_code_warning
 from alignair_lab.replicates import (
     check_calibration,
     check_pairing,
@@ -121,6 +121,26 @@ def test_replicates_of_other_lab_or_assay_code_are_refused():
         with pytest.raises(ConfigurationError, match=f"code.{field}") as caught:
             check_replicates(records)
         assert "cand-init2" in str(caught.value)
+
+
+@pytest.mark.component
+def test_a_calibration_measured_under_other_lab_or_assay_code_is_warned_of_naming_the_digests():
+    """The calibration records the lab's and the assay's code it was measured under (``calibrate``), and a report
+    warns when the candidates' differ, as it does for AlignAIR's; an older calibration records none."""
+    band = {"code": dict(CODE)}
+    assert calibration_code_warning(band, CODE, "the replicates") is None
+    lab = {**CODE, "alignair_lab": "e" * 64}
+    assert calibration_code_warning(band, lab, "this screen") == (
+        f"Warning: the calibration was measured under other lab or assay code than this screen: alignair_lab "
+        f"{'b' * 12}, this screen's {'e' * 12}.")
+    both = {**lab, "alignair_assay": "f" * 64}
+    assert calibration_code_warning(band, both, "the replicates") == (
+        f"Warning: the calibration was measured under other lab or assay code than the replicates: alignair_lab "
+        f"{'b' * 12}, the replicates' {'e' * 12}; alignair_assay {'c' * 12}, the replicates' {'f' * 12}.")
+    assert calibration_code_warning({"code": None}, CODE, "the replicates") == (
+        "Warning: the calibration records no alignair_lab or alignair_assay code digest, so the lab's and the assay's "
+        "code it was measured under cannot be checked to be the replicates'.")
+    assert calibration_code_warning(band, None, "the replicates") is None          # their own warning says so
 
 
 @pytest.mark.component
@@ -250,6 +270,7 @@ def test_replicates_pool_finished_screens_into_a_report_without_training(rig, re
     assert headline.strip() in capsys.readouterr().out
     assert POOLED_HEADING in flat(headline) and "init seed 0 alone (rep)" in flat(headline)
     assert "Warning: code digest unknown for rep-init2:" in flat(headline)
+    assert "Warning: the calibration records no alignair_lab or alignair_assay code digest" in flat(headline)
     assert "other code than its replicates" not in flat(headline)         # screened by the code that pools them
     assert found["code"] == code_digests()                                 # the report's own code, by content
     assert sorted(path.name for path in replicate_root.iterdir()) == \
@@ -301,13 +322,18 @@ def test_replicates_screened_under_older_lab_code_are_pooled_with_a_warning_nami
     path.write_text(json.dumps(found))
     copy_replicate(replicate_root, 1, .01)
     copy_replicate(replicate_root, 2, -.02)
+    band = replicate_root / "calibration" / "null_band.json"     # a calibration measured under this process's code
+    band.write_text(json.dumps({**json.loads(band.read_text()), "code": code_digests()}))
     assert main(replicate_arguments(rig, replicate_root, "--reuse")) == 0
     report = replicate_root / "report-rep-seeds012"
     assert json.loads((report / "report.json").read_text())["status"] == "done"
     headline = flat((report / "headline.txt").read_text())
+    now = code_digests()["alignair_lab"][:12]
     assert (f"Warning: this report runs under other code than its replicates were screened under: alignair_lab differs "
-            f"for rep, rep-init1, rep-init2 (now {code_digests()['alignair_lab'][:12]}).") in headline
+            f"for rep, rep-init1, rep-init2 (now {now}).") in headline
     assert "alignair differs" not in headline and "alignair_assay differs" not in headline
+    assert (f"Warning: the calibration was measured under other lab or assay code than the replicates: alignair_lab "
+            f"{now}, the replicates' {'d' * 12}.") in headline
 
 
 @pytest.mark.integration
