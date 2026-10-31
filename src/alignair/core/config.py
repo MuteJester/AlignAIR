@@ -115,11 +115,18 @@ class AlignAIRConfig:
     # codon and productivity are then derived from them (``predict.junction``), and the learned productive head and
     # its loss term are left out.
     anchor_heads: bool = False
+    # The 3-state D presence head (absent / too short to call / callable, ``core.d_presence``), which gates the D call
+    # at prediction. Only a heavy-chain configuration (``has_d``) has a D to gate.
+    d_presence_head: bool = False
 
     def __post_init__(self):
-        for name in ("short_d_penalty", "region_head", "anchor_heads"):
+        for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head"):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be a boolean", context={"field": name})
+        if self.d_presence_head and not self.has_d:
+            raise ConfigurationError("d_presence_head needs a D: the configuration has none (has_d is False)",
+                                     context={"field": "d_presence_head"},
+                                     hint="Leave d_presence_head off for a light chain.")
         for name, choices in (("classification_mode", ("multilabel", "categorical")),
                               ("boundary_mode", ("residue", "half_open")),
                               ("input_space", ("nucleotide", "protein")),

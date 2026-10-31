@@ -25,7 +25,7 @@ from ..neural.heads.orientation import apply_orientation
 
 # The configuration flags whose heads read the trunk's per-position features (``ModelComponents.trunk_heads``): an
 # architecture without a trunk refuses each of them.
-TRUNK_HEAD_FLAGS = ("region_head", "anchor_heads")
+TRUNK_HEAD_FLAGS = ("region_head", "anchor_heads", "d_presence_head")
 
 
 class AlignAIR(nn.Module):
