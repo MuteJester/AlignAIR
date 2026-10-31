@@ -370,7 +370,11 @@ def null_band(out_root: Path, wanted: Mapping, options: Mapping, suites: Sequenc
 def calibration_checkpoint(band: Mapping, init_seed: int | None, baseline_key: str) -> str | None:
     """Why the calibration of a null band (``null_band``) cannot weigh a comparison against the baseline model
     ``baseline_key`` (an assay model key, ``<weights>-<code>``), or None when it can: its seeds' values are each a Δ
-    against its own screen of ``init_seed``, which must be that same checkpoint, by the weights part of the two keys."""
+    against its own screen of ``init_seed``, which must be that same checkpoint, by the weights part of the two keys,
+    and which a calibration without that seed has not."""
+    if init_seed not in band["init_seeds"]:
+        return (f"the calibration has no baseline screen of init seed {init_seed}, the baseline screen's, so its "
+                "seeds' Δs cannot be set against it")
     recorded = ((band.get("screens") or {}).get(str(init_seed)) or {}).get("model_key")
     if recorded is None:
         return (f"the calibration records no model key for its seed-{init_seed} screen, so it cannot be matched to "

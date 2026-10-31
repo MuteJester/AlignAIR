@@ -12,7 +12,9 @@ from alignair_lab.headline import POOLED_HEADING
 from alignair_lab.noise import BETTER, MIXED, WITHIN, WORSE, pooled
 from alignair_lab.screen import code_digests
 from alignair_lab.secondary import METRIC, merged
+from alignair_lab.baselines import against_calibration, calibration_checkpoint
 from alignair_lab.replicates import (
+    check_calibration,
     check_pairing,
     check_replicates,
     code_warning,
@@ -52,6 +54,25 @@ def test_two_init_seeds_are_refused_saying_why(tmp_path):
                        dev_build=tmp_path / "none")
     assert "3.2–4.4%" in str(caught.value) and "3.5%" in str(caught.value)
     assert not (tmp_path / "screens").exists()
+
+
+@pytest.mark.component
+def test_a_calibration_without_the_baselines_init_seed_leaves_the_replicates_uncalibrated():
+    """The replicates compared with a baseline screen of init seed 3, and the calibration has seeds 0, 1 and 2: its
+    seeds' Δs cannot be set against that screen's, so the report is uncalibrated, not refused. A seed-0 screen that is
+    another checkpoint than the replicates' baseline is refused, as before."""
+    key = "a" * 12 + "-" + "b" * 12
+    records = {seed: record(seed, comparison={"baseline": key}) for seed in (0, 1, 2)}
+    band = {"path": "/screens/calibration/null_band.json", "init_seeds": [0, 1, 2], "band": {},
+            "screens": {str(seed): {"model_key": key} for seed in (0, 1, 2)},
+            "seeds": {str(seed): {"pooled": {}, "suites": {}} for seed in (0, 1, 2)}}
+    check_calibration(records, band, 3)
+    assert against_calibration(band, 3)["seeds"] is None
+    assert calibration_checkpoint(band, 3, key) == ("the calibration has no baseline screen of init seed 3, the "
+                                                   "baseline screen's, so its seeds' Δs cannot be set against it")
+    other = {**band, "screens": {"0": {"model_key": "c" * 12 + "-" + "b" * 12}}}
+    with pytest.raises(ConfigurationError, match="another checkpoint"):
+        check_calibration(records, other, 0)
 
 
 @pytest.mark.component
@@ -251,6 +272,20 @@ def test_finished_replicates_are_pooled_from_their_records_alone(rig, replicate_
     full, records = (json.loads((replicate_root / name / "report.json").read_text()) for name in ("full", "records"))
     assert records["decisions"] == full["decisions"] and records["request"] == full["request"]
     assert records["baseline"] == full["baseline"] and records["from_records"] and not full["from_records"]
+    # replicates against a baseline screen of init seed 3, which the calibration (seeds 0, 1, 2) has not: uncalibrated
+    for name in ("rep", "rep-init1", "rep-init2"):
+        path = replicate_root / name / "screen.json"
+        found = json.loads(path.read_text())
+        found["baseline"]["init_seed"] = 3
+        path.write_text(json.dumps(found))
+    assert main(["replicates", "--name", "rep", "--reuse", "--from-records", "--report", "seed3", "--out-root",
+                 str(replicate_root)]) == 0
+    seed3 = json.loads((replicate_root / "seed3" / "report.json").read_text())
+    assert {entry["decision"] for entry in seed3["decisions"].values() if entry["pooled"] is not None} == \
+        {"uncalibrated"}
+    headline = flat((replicate_root / "seed3" / "headline.txt").read_text())
+    assert "Uncalibrated: the calibration has no baseline screen of init seed 3, the replicates' baseline screen's" \
+        in headline and "their Δs against init seed 3's screen" not in headline
     capsys.readouterr()
     assert main(["replicates", "--name", "rep", "--from-records", "--out-root", str(replicate_root)]) == 2
     assert "--reuse" in capsys.readouterr().err

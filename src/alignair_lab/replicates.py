@@ -266,8 +266,10 @@ def _recorded_baseline(records: Mapping[int, Mapping]) -> dict:
 def check_calibration(records: Mapping[int, Mapping], band: Mapping | None, init_seed: int | None) -> None:
     """ConfigurationError, naming the replicate and both model keys, when the calibration of ``band`` (None: there is
     none, nothing to check) cannot weigh a replicate's comparison: its seed-``init_seed`` screen is not the replicate's
-    baseline checkpoint (``baselines.calibration_checkpoint``)."""
-    if band is None:
+    baseline checkpoint (``baselines.calibration_checkpoint``). A calibration without a screen of ``init_seed`` is not
+    refused: it cannot set its seeds against the replicates' baseline screen, so the report is uncalibrated, and its
+    title says why."""
+    if band is None or init_seed not in band["init_seeds"]:
         return
     for seed, record in records.items():
         refused = calibration_checkpoint(band, init_seed, record["comparison"]["baseline"])
@@ -463,12 +465,14 @@ def _title(name: str, request: Mapping, seeds: Sequence[int], records: Mapping[i
     if band is None:
         lines.append("Calibration: none of this protocol, options, suite build and cases, so uncalibrated.")
     else:
+        uncalibrated = calibration is None or calibration["seeds"] is None
+        against = "" if uncalibrated else f"; their Δs against init seed {provenance['init_seed']}'s screen"
         lines.append(f"Calibration: {band['path']} (baseline screens of init seeds "
-                     f"{', '.join(map(str, band['init_seeds']))}; their Δs against init seed "
-                     f"{provenance['init_seed']}'s screen).")
-        if calibration is None or calibration["seeds"] is None:
+                     f"{', '.join(map(str, band['init_seeds']))}{against}).")
+        if uncalibrated:
             lines.append(f"Uncalibrated: the calibration has no baseline screen of init seed "
-                         f"{provenance['init_seed']}, the replicates' baseline screen's.")
+                         f"{provenance['init_seed']}, the replicates' baseline screen's, so its seeds' Δs cannot be "
+                         "set against that screen's.")
     codes = list(dict.fromkeys((records[seed]["comparison"].get("code") or {}).get("this") for seed in seeds))
     if len(codes) > 1:
         lines.append("Warning: the replicates were diagnosed under different AlignAIR code "
