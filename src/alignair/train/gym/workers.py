@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import islice, repeat
 import multiprocessing
 from multiprocessing import util as process_util
@@ -85,15 +85,16 @@ class Component:
 
 def component_plan(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, start_step: int = 0,
                    purpose: str = 'training') -> tuple[Component, ...]:
-    """The provider calls ``training_records`` makes, in order, found by asking it for one record."""
+    """The provider calls ``training_records`` makes, in order, found by asking it for one record. Flanks are drawn
+    after the provider and change none of its calls, so the plan is found without them."""
     calls = []
 
     def record(reference, parameters, component_seed):
         calls.append(Component(reference, dict(parameters), component_seed))
         return repeat({})
 
-    next(training_records(dataconfigs, policy=policy, seed=seed, start_step=start_step, purpose=purpose,
-                          record_source=record))
+    next(training_records(dataconfigs, policy=replace(policy, flanks=None), seed=seed, start_step=start_step,
+                          purpose=purpose, record_source=record))
     return tuple(calls)
 
 

@@ -345,6 +345,14 @@ def test_a_cache_of_another_genairr_is_refused(cache, tmp_path):
         live(1, record_source=source)
 
 
+def test_a_cache_serves_a_flanked_request_and_its_counts_are_the_bare_streams(cache):
+    from alignair.data.flanks import FlankPolicy
+    flanked = dataclasses.replace(UNSELECTED, flanks=FlankPolicy())
+    CachedRecordSource(cache).require(DATACONFIGS, policy=flanked, seed=SEED, records=RECORDS)
+    assert (component_counts(DATACONFIGS, policy=flanked, seed=SEED, records=29)
+            == component_counts(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=29))
+
+
 def test_require_checks_a_whole_stream_before_any_record(cache):
     source = CachedRecordSource(cache)
     source.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=RECORDS)

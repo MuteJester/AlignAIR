@@ -170,8 +170,10 @@ def canonical_parameters(parameters, *, encoded: bool = False) -> str:
 def component_counts(dataconfigs, *, policy: CurriculumStreamPolicy, seed: int, records: int) -> tuple[int, ...]:
     """How many records each planned component (``component_plan`` order) gives when ``records`` records of
     ``training_records(dataconfigs, policy=policy, seed=seed)`` are drawn: counted on that stream itself, so the
-    zip's complete rounds are included."""
+    zip's complete rounds are included. Flanks change no count (one flanked record per record), so they are left out.
+    """
     records = _count(records, "records")
+    policy = dataclasses.replace(policy, flanks=None)
     counts = []
 
     def counting(reference, parameters, component_seed):
@@ -692,6 +694,7 @@ class CachedRecordSource:
         What was checked is left in ``verification``: ``code_changed``, ``deep`` and the ``records`` compared.
         """
         records = _count(records, "records")
+        policy = dataclasses.replace(policy, flanks=None)       # the cache serves the provider's bare records
         manifest, context = self.manifest, {"stage": "record_cache", "cache": self.path}
         requested = {"recipe": RECIPE, "dataconfigs": dataconfig_names(dataconfigs), "seed": seed,
                      **policy_fields(policy)}

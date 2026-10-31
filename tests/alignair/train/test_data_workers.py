@@ -46,6 +46,17 @@ def test_parallel_cpu_training_reproduces_serial_weights_and_records_the_worker_
     assert read_metadata(serial.model_path)['training']['train_args']['data_workers'] == 0
 
 
+def test_parallel_training_with_flanks_reproduces_the_serial_flanked_records_and_weights(tmp_path):
+    """Flanks are drawn after the provider, so worker-built streams carry the serial run's flanks."""
+    from alignair.data.flanks import FlankPolicy
+    flanks = FlankPolicy(p_prefix=0.5, prefix=(5, 60), p_mask=0.5, p_suffix=0.5, suffix=(5, 40))
+    serial, serial_records = trained(request(flanks=flanks), tmp_path / 'serial.alignair')
+    parallel, parallel_records = trained(request(flanks=flanks, data_workers=3), tmp_path / 'parallel.alignair')
+    assert parallel_records == serial_records
+    assert any(record['flank_5_length'] for _, records in serial_records for record in records)
+    assert_same_weights(weights(serial.model_path), weights(parallel.model_path))
+
+
 def test_resume_accepts_another_worker_count_and_continues_the_serial_stream(tmp_path):
     first = run_training(request(steps=2), out_path=str(tmp_path / 'first.alignair'))
     serial, serial_records = trained(request(resume_path=first.model_path), tmp_path / 'serial.alignair')
