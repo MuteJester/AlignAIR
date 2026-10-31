@@ -111,10 +111,11 @@ def _environment() -> dict:
     return {**os.environ, "PYTHONPATH": os.pathsep.join(dict.fromkeys([*first, *rest]))}
 
 
-def _train_screens(plan: list[tuple[int, str, list[str]]], directory: Path, parallel: int,
-                   echo: Callable[[str], None]) -> None:
+def train_screens(plan: list[tuple[int, str, list[str]]], directory: Path, parallel: int,
+                  echo: Callable[[str], None], *, label: str = "calibrate", what: str = "baseline screen") -> None:
     """Run each ``(seed, name, command)`` of ``plan``, at most ``parallel`` at once, its output in
-    ``directory/<name>.log``; RuntimeError, naming the logs, once the runs under way have finished if any failed."""
+    ``directory/<name>.log``, echoing ``[label]`` progress lines that call each run a ``what``; RuntimeError, naming
+    the logs, once the runs under way have finished if any failed. Interrupted, it ends the runs under way."""
     pending, running, failed = list(plan), {}, []
     environment = _environment()
     try:
@@ -124,15 +125,15 @@ def _train_screens(plan: list[tuple[int, str, list[str]]], directory: Path, para
                 log = open(directory / f"{name}.log", "w", encoding="utf-8")
                 process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=environment)
                 running[process] = (seed, name, log, time.perf_counter())
-                echo(f"[calibrate] training the baseline screen {name} (init seed {seed}); output: {log.name}")
+                echo(f"[{label}] training the {what} {name} (init seed {seed}); output: {log.name}")
             for process in [process for process in running if process.poll() is not None]:
                 seed, name, log, begun = running.pop(process)
                 log.close()
                 if process.returncode:
                     failed.append(log.name)
-                    echo(f"[calibrate] the baseline screen {name} failed (exit {process.returncode}): see {log.name}")
+                    echo(f"[{label}] the {what} {name} failed (exit {process.returncode}): see {log.name}")
                 else:
-                    echo(f"[calibrate] trained {name} in {(time.perf_counter() - begun) / 60:.1f} min")
+                    echo(f"[{label}] trained {name} in {(time.perf_counter() - begun) / 60:.1f} min")
             if running:
                 time.sleep(POLL_SECONDS)
             elif failed:
@@ -143,8 +144,8 @@ def _train_screens(plan: list[tuple[int, str, list[str]]], directory: Path, para
             process.wait()
             log.close()
     if failed:
-        raise RuntimeError(f"{len(failed)} baseline screen(s) failed, see {', '.join(failed)}; the finished ones are "
-                           "reused when calibrate runs again")
+        raise RuntimeError(f"{len(failed)} {what}(s) failed, see {', '.join(failed)}; the finished ones are reused "
+                           f"when {label} runs again")
 
 
 def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = DEFAULT_INIT_SEEDS, parallel: int = 1,
@@ -218,7 +219,7 @@ def run_calibration(*, steps: int = DEFAULT_STEPS, init_seeds: Sequence[int] = D
 
     try:
         stage(f"training {len(plan)} baseline screen(s), reusing {len(seeds) - len(plan)}")
-        _train_screens(plan, directory, parallel, echo)
+        train_screens(plan, directory, parallel, echo)
         for seed in seeds:
             found = out_root / screens[str(seed)]["name"]
             provenance = check_baseline(found / CHECKPOINT, steps, schedule=learning, options=model_options,

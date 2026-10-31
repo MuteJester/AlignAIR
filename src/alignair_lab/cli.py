@@ -7,6 +7,11 @@
   python -m alignair_lab calibrate [--steps 20000] [--init-seeds 0,1,2] [--parallel 1] [--model-option KEY=VALUE ...]
       [--name NAME] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N] [--device cuda] [--data-workers 2]
       [--eval-batch-size 256] [--cache DIR] [--dev-build DIR] [--out-root DIR]
+  python -m alignair_lab replicates --name NAME [--init-seeds 0,1,2] [--parallel 1] [--reuse] [--report NAME]
+      [--steps 20000] [--architecture ARCH] [--model-option KEY=VALUE ...] [--against-screen NAME]
+      [--baseline-model-option KEY=VALUE ...] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N]
+      [--variants baseline] [--device cuda] [--data-workers 2] [--eval-batch-size 256] [--cache DIR] [--dev-build DIR]
+      [--out-root DIR]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
       [--segment-records N]
 
@@ -15,8 +20,10 @@ at the same step (``screen.run_screen``): a screen of lab-null-v1 is a baseline 
 any other compares with the registered baseline screen of its protocol (or the one ``--against-screen`` names), or
 with the baseline's milestone (``--against-milestone``, Tier 2; its directory defaults to the conv-v1 baseline's).
 ``calibrate`` trains the baseline screens of several init seeds (reusing those of the protocol already finished) and
-writes the null band of their protocol, which the headlines of its screens weigh their Δs against
-(``calibrate.run_calibration``). ``cache`` writes the recipe's record cache (``records.write_record_cache``). A
+writes the null band and the baseline seeds' values of their protocol, which the headlines of its screens weigh their
+Δs against (``calibrate.run_calibration``). ``replicates`` screens a candidate from several init seeds, reusing the
+finished screens, and pools them into one report against the baseline seeds (``replicates.run_replicates``; with
+``--reuse`` it trains nothing). ``cache`` writes the recipe's record cache (``records.write_record_cache``). A
 ``--model-option`` value is read as JSON when it parses (``64``, ``true``, ``[3, 5]``), else as a string. Run under
 the frozen GenAIRR the cache was written with (``PYTHONPATH=FROZEN:src``). A refused request or a failed run prints
 ``error: ...`` (and its hint) and returns 2.
@@ -27,7 +34,7 @@ import argparse
 import json
 import sys
 
-from alignair_lab import calibrate, screen
+from alignair_lab import calibrate, replicates, screen
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, BATCH_SIZE, DATACONFIGS, POLICY, SCHEDULES, SEED
 
 CACHE_STEPS = 40_000
@@ -91,6 +98,35 @@ def build_parser() -> argparse.ArgumentParser:
                                             "calibration-<cache>-s<steps>-<schedule>)")
     add_protocol_arguments(calibration)
     calibration.set_defaults(func=run_calibrate)
+
+    replicate = commands.add_parser("replicates", help="screen a candidate from several init seeds, reusing the "
+                                                       "finished screens, and pool them against the calibration's "
+                                                       "baseline seeds")
+    replicate.add_argument("--name", required=True,
+                           help="the replicates' name: init seed 0's screen; init seed k's is <name>-init<k>")
+    replicate.add_argument("--init-seeds", default=",".join(map(str, replicates.DEFAULT_INIT_SEEDS)),
+                           help="comma-separated init seeds of the candidate's screens (default %(default)s)")
+    replicate.add_argument("--parallel", type=int, default=1,
+                           help=f"replicates trained at once, at most {replicates.MAX_PARALLEL} (default %(default)s)")
+    replicate.add_argument("--reuse", action="store_true",
+                           help="train nothing: pool the finished replicates, refusing a missing one")
+    replicate.add_argument("--report", help="the report's directory under --out-root (default "
+                                            "report-<name>-seeds<init seeds>)")
+    replicate.add_argument("--steps", type=int, default=screen.DEFAULT_STEPS,
+                           help="training steps (default %(default)s)")
+    replicate.add_argument("--architecture", default=BASELINE_ARCHITECTURE,
+                           help="the candidate's registered architecture (default %(default)s)")
+    replicate.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
+                           help="a model configuration field (repeatable)")
+    add_protocol_arguments(replicate)
+    replicate.add_argument("--against-screen", metavar="NAME",
+                           help="the baseline screen to compare with (default: the registered baseline screen of the "
+                                "protocol)")
+    replicate.add_argument("--baseline-model-option", action="append", default=[], metavar="KEY=VALUE",
+                           help="a model configuration field of the baseline (repeatable)")
+    replicate.add_argument("--variants", default=",".join(screen.DEFAULT_VARIANTS),
+                           help="the assay's variants of each screen (default %(default)s)")
+    replicate.set_defaults(func=run_replicates)
 
     cache = commands.add_parser("cache", help="write the recipe's record cache")
     cache.add_argument("--out", default=str(screen.CACHE), help="the new cache directory (default %(default)s)")
@@ -174,6 +210,25 @@ def run_calibrate(args) -> int:
                               max_cases=args.max_cases, device=args.device, data_workers=args.data_workers,
                               eval_batch_size=args.eval_batch_size, cache=args.cache, dev_build=args.dev_build,
                               out_root=args.out_root, name=args.name)
+    return 0
+
+
+def _seed_list(text: str) -> list[int]:
+    try:
+        return [int(seed) for seed in _names(text)]
+    except ValueError:
+        raise ValueError(f"--init-seeds takes comma-separated integers, got {text!r}") from None
+
+
+def run_replicates(args) -> int:
+    replicates.run_replicates(args.name, init_seeds=_seed_list(args.init_seeds), parallel=args.parallel,
+                              reuse=args.reuse, report=args.report, steps=args.steps, architecture=args.architecture,
+                              model_options=model_options(args.model_option), suites=_names(args.suites),
+                              max_cases=args.max_cases, variants=_names(args.variants), device=args.device,
+                              data_workers=args.data_workers, eval_batch_size=args.eval_batch_size, cache=args.cache,
+                              dev_build=args.dev_build, out_root=args.out_root, schedule=args.schedule,
+                              against_screen=args.against_screen,
+                              baseline_options=model_options(args.baseline_model_option))
     return 0
 
 

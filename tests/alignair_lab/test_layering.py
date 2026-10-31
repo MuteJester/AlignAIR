@@ -15,12 +15,14 @@ pytestmark = pytest.mark.component
 
 PACKAGE = Path(alignair_lab.__file__).resolve().parent
 MODULES = ("recipe", "records", "noise", "headline", "architectures", "sizes", "baselines", "screen", "calibrate",
-           "cli")
+           "replicates", "cli")
 ALLOWED = {"recipe": {"recipe"}, "records": {"records"}, "noise": {"noise"}, "headline": {"headline", "noise"},
            "architectures": {"architectures"}, "sizes": {"architectures", "sizes"},
            "baselines": {"recipe", "noise", "architectures", "baselines"},
            "screen": {"recipe", "records", "noise", "headline", "architectures", "sizes", "baselines", "screen"},
            "calibrate": {"recipe", "records", "noise", "headline", "baselines", "screen", "calibrate"},
+           "replicates": {"recipe", "records", "noise", "headline", "sizes", "baselines", "screen", "calibrate",
+                          "replicates"},
            "cli": set(MODULES), "__main__": {"cli"}, "__init__": set()}
 
 

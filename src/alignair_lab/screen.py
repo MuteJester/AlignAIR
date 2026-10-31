@@ -6,8 +6,9 @@ with nothing is a baseline screen: one replicate of the baseline, of its ``init_
 architecture compares with the registered baseline screen of its protocol (``baselines``: the recipe id, the record
 cache's content identity, the steps and the schedule), or with the baseline screen it names (``against_screen``).
 Several baseline screens of other init seeds measure the run-to-run noise (``calibrate``): the candidate's headline
-sets its Δs against their distribution (``noise.decide``, its seed alone taken to spread as the baseline's), with
-their null band printed as a reference. A screen compares with a milestone
+sets its Δs against their distribution (``noise.decide``, its seed alone taken to spread as the baseline's; the
+screens of several init seeds of a candidate are pooled by ``replicates``), with their null band printed as a
+reference. A screen compares with a milestone
 of the baseline's own run instead when told one (``against_milestone``, Tier 2): the milestone's run kept a constant
 rate.
 
