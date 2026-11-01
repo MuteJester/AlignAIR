@@ -114,7 +114,8 @@ def test_a_short_d_row_reports_no_statistic_of_a_d_germline_it_does_not_name(gol
         assert row["d_identity"] is None
         assert row["d_germline_alignment"] is None and row["d_germline_alignment_aa"] is None
         assert row["d_sequence_alignment"] == before["d_sequence_alignment"]
-        assert row["v_identity"] == before["v_identity"] and row["j_identity"] == before["j_identity"]
+        # (a row without a J alignment has no j_identity, gated or not)
+        assert row.get("v_identity") == before.get("v_identity") and row.get("j_identity") == before.get("j_identity")
 
 
 def test_a_callable_d_row_is_the_ungated_row(golden):

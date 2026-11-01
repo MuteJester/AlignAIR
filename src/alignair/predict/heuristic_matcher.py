@@ -4,9 +4,10 @@ Instead of a free global alignment (which drifts on mutated/truncated ends), thi
 the model already knows. For each read segment it:
 
   1. anchors on the segment's **end** k-mer — V/J 3' ends are conserved — and slides a small offset
-     window at the germline 3' end to find the best germline end position;
+     window at the germline 3' end to find the best germline end position; the window spans the length
+     difference plus the model's predicted **indel count** (at least ``_INDEL_REACH``);
   2. **derives the start** from the known segment length, then refines it within a window whose width
-     is the model's predicted **indel count**, at least ``_START_REACH``, at most the length difference.
+     is the predicted indel count, at least ``_INDEL_REACH``, at most the length difference.
 
 It is ``O(search_span · k)`` per segment — no dynamic programming — and returns germline coordinates
 (no CIGAR; substitutions/indels are recovered downstream from the coordinates + the model's heads).
@@ -25,7 +26,7 @@ from ..align.backend import AlignResult
 
 _ACCEL = 0.05          # per-step velocity increment that amplifies same-state (match/mismatch) runs
 _START_CHECK = 30      # segment bases compared at the placement's start when checking it for a mis-anchor
-_START_REACH = 3       # fewest bases the derived start is searched either way, whatever the indel count
+_INDEL_REACH = 3       # fewest indels the end and start searches allow for, whatever the predicted count
 
 
 def _run_length_encode(ops: str) -> str:
@@ -46,13 +47,15 @@ def _derive_cigar_py(read: str, germ: str, indels: int, *,
                      mismatch: int = 1, gap: int = 2, margin: int = 2) -> str:
     """Pure-Python banded global alignment of a *pinned* read/germline window -> M/I/D CIGAR string.
 
-    Gap-free windows are a single ``M`` run (no DP). Otherwise a global alignment restricted to a
-    narrow band (width = net length difference + predicted indel count + margin) places the I/D ops;
+    An equal-length window whose mismatches cost less than an insertion-deletion pair is a single ``M``
+    run (no DP): every gapped path through it costs at least that pair, so it is the DP's own optimum,
+    whatever the predicted indel count. Otherwise a global alignment restricted to a narrow band
+    (width = net length difference + predicted indel count + margin) places the I/D ops;
     ``mismatch``/``gap`` favour substitutions (SHM) over indels. This is the reference implementation
     and the fallback when the compiled :mod:`_derive_cy` kernel is unavailable — byte-identical output.
     """
     m, n = len(read), len(germ)
-    if m == n and indels == 0:
+    if m == n and sum(a != b for a, b in zip(read, germ)) * mismatch < 2 * gap:
         return f"{m}M" if m else ""
     if m == 0:
         return f"{n}D" if n else ""
@@ -152,7 +155,8 @@ class HeuristicGermlineMatcher:
         mislocates the germline coordinates by ~the truncation length. So after anchoring we *verify*
         the placement's substitution rate and, if it exceeds ``fallback_rate`` (a clear mis-anchor, vs
         SHM's <~0.2), relocate with a whole-germline offset scan that is agnostic to which end is
-        truncated. Set to 0 to disable the fallback (pure end-anchor)."""
+        truncated. Set to 0 to disable the fallback (pure end-anchor). The same rate on the segment's tail
+        tells overhang from insertions in a segment longer than its germline."""
         self._germlines = germlines
         self._anchor_k = anchor_k
         self._search_span = search_span
@@ -205,11 +209,18 @@ class HeuristicGermlineMatcher:
         k = self._anchor_k
         seg_len, ref_len = len(segment), len(germline)
         len_diff = abs(ref_len - seg_len)
+        # the indel head undercounts (reads with three indels can predict ~0.03), so both searches below reach at
+        # least _INDEL_REACH bases past what the length alone allows
+        indels = max(0, int(round(float(_scalar(indel_count)))))
 
         # 1) anchor on the END k-mer; slide the germline 3' end over the offset window. The window
-        #    spans the full length difference (a read can't be truncated by more than that), optionally
-        #    capped by ``search_span`` — the cap is what blinded the TF version to J 3'-truncation.
-        span = len_diff if self._search_span is None else min(len_diff, self._search_span)
+        #    spans the length difference plus the indel allowance (insertions make a read longer than the
+        #    germline stretch it covers, so its 3' end can sit deeper than the length difference), the
+        #    deeper offsets only while the window stays inside the germline; optionally capped by
+        #    ``search_span`` — the cap is what blinded the TF version to J 3'-truncation.
+        span = min(len_diff + max(indels, _INDEL_REACH), max(len_diff, ref_len - k))
+        if self._search_span is not None:
+            span = min(span, self._search_span)
         end_kmer = segment[-k:]
         best_end, best_cost = ref_len, float("inf")
         for offset in range(span + 1):
@@ -225,11 +236,8 @@ class HeuristicGermlineMatcher:
         anchored_start = max(0, best_end - seg_len)
         best_start = anchored_start
         best_cost = self._anchor_cost(start_kmer, germline[anchored_start:anchored_start + k])
-        # the indel head undercounts (reads with three indels can predict ~0.03), so the search reaches
-        # at least _START_REACH bases; the offset penalty keeps the derived start unless a nearer
-        # k-mer match is clearly better
-        indels = max(0, int(round(float(_scalar(indel_count)))))
-        reach = min(max(indels, _START_REACH), len_diff)
+        # the offset penalty keeps the derived start unless a nearer k-mer match is clearly better
+        reach = min(max(indels, _INDEL_REACH), len_diff)
         offsets = range(-reach - 1, reach + 1)
         for offset in offsets:
             cand = max(0, anchored_start + offset)
@@ -270,6 +278,14 @@ class HeuristicGermlineMatcher:
             return 1.0
         return sum(a != b for a, b in zip(segment, window)) / m
 
+    def _tail_mismatch_rate(self, segment: str, germline: str, ref_end: int) -> float:
+        """Substitution rate of the segment's last ``anchor_k`` bases against the germline ending at ``ref_end``: SHM
+        rate where the tail is germline, ~random where it is overhang (0 when there is no tail to compare)."""
+        k = min(self._anchor_k, len(segment), ref_end)
+        if k == 0:
+            return 0.0
+        return sum(a != b for a, b in zip(segment[-k:], germline[ref_end - k:ref_end])) / k
+
     # ------------------------------------------------------------------ public API
     def match_one(self, sequence: str, seq_start: int, seq_end: int, allele: str,
                   indel_count) -> GermlineMatch:
@@ -299,11 +315,14 @@ class HeuristicGermlineMatcher:
             if scan_start < ref_end:
                 ref_start = scan_start
 
-        # a pure overhang (extra read bases that can't be biological indels) means the germline was
-        # trimmed only because the read stuck out -> fold that trim back into the read coordinates and
-        # report a full-germline span.
+        # a segment longer than its germline holds insertions or overhang (read bases past the germline, e.g. a
+        # constant region after J). Overhang leaves the segment's tail off the germline where the end anchor put
+        # it: then the germline was trimmed only because the read stuck out -> fold that trim back into the read
+        # coordinates and report a full-germline span. A tail that follows the germline is insertions, and the read
+        # coordinates stay.
         pure_overhang = orig_len > ref_len or (orig_len == ref_len and indel_count == 0)
-        if pure_overhang and (ref_start > 0 or ref_end < ref_len):
+        if pure_overhang and (ref_start > 0 or ref_end < ref_len) and (
+                self._tail_mismatch_rate(segment, germline, ref_end) > self._fallback_rate):
             seq_start = max(0, seq_start + ref_start)
             seq_end = min(len(sequence), seq_end - (ref_len - ref_end))
             ref_start, ref_end = 0, ref_len

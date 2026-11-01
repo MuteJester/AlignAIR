@@ -31,15 +31,21 @@ def derive_cigar(bytes read, bytes germ, int indel_count=0,
     cdef int m = len(read)
     cdef int n = len(germ)
     cdef int indels = indel_count if indel_count > 0 else 0
-    if m == n and indels == 0:
-        return ("%dM" % m) if m else ""
+    cdef const unsigned char* R = read
+    cdef const unsigned char* G = germ
+    cdef int i, j, k, k0, hamming = 0
+    if m == n:
+        # every gapped path through an equal-length window costs at least an insertion-deletion pair
+        for i in range(m):
+            if R[i] != G[i]:
+                hamming += 1
+        if hamming * mismatch < 2 * gap:
+            return ("%dM" % m) if m else ""
     if m == 0:
         return ("%dD" % n) if n else ""
     if n == 0:
         return ("%dI" % m) if m else ""
 
-    cdef const unsigned char* R = read
-    cdef const unsigned char* G = germ
     cdef int d = m - n
     cdef int amd = d if d >= 0 else -d
     cdef int band = amd + indels + margin
@@ -57,7 +63,7 @@ def derive_cigar(bytes read, bytes germ, int indel_count=0,
         if back != NULL: free(back)
         raise MemoryError()
 
-    cdef int i, j, k, k0 = -lo
+    k0 = -lo
     cdef double best, c, pd, pu, nb
     cdef signed char op
 
