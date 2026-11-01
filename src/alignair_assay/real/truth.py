@@ -109,6 +109,14 @@ distinct junctions, takes about a minute). SL15 is the candidate primary cluster
 ``cys104_regions`` gives each donor V allele's region through Cys104, with the identical-sequence rule above (an
 allele without a Cys104 of its own takes that of an allele with its sequence).
 
+**V evidence** (``v_covered``). The bases of the observed span that an exact ``V_KMER`` (15) nt k-mer of any V allele
+covers, the donor's or the shared reference's; overlapping k-mers count a base once, and ``N`` matches nothing, so a
+masked or uncalled base breaks every k-mer over it. A read with none holds no V: a D-J rearrangement, primed from C
+like any read but with no V upstream of its D, on which IgBLAST aligns a V of a dozen or so nt and a tool that must
+name a V names one. ``real.metrics`` leaves such a read out of R1 for both tools (``excluded:no_v``). A V the read
+holds keeps an exact 15-mer of its germline unless mutations or indels fall in every 15 nt of it, and a chance
+15-mer in a read without a V only keeps the read in R1, as before the rule.
+
 ``clonotype_clusters`` gives ``stats.compare(..., clusters=...)`` its read id -> clonotype map.
 
 **Truth health** (``truth_health``), a tool-neutral audit of the truth: the known-answer rule run against the shared
@@ -150,6 +158,8 @@ ANCHOR_LENGTH = 30
 MAX_ANCHOR_MISMATCHES = 3
 # The shortest window a known answer may rest on.
 MIN_WINDOW = 200
+# The k-mer length of a read's V evidence (``v_covered``): a read with no exact V_KMER-mer of any V allele has no V.
+V_KMER = 15
 # IMGT nt 310-312, codon 104, as 0-based columns of an IMGT-gapped V-REGION.
 CYS104_COLUMNS = (309, 312)
 CYS_CODONS = frozenset({"TGT", "TGC"})
@@ -209,6 +219,9 @@ class RealTruth:
     # the donor alleles whose window at the reference-exact window's place is that window, and those that cannot be
     # windowed whose V-REGION holds it; None without a reference-exact known answer
     ref_donor: frozenset[str] | None = None
+    # the observed bases an exact V_KMER-mer of any V allele (the donor's or the shared reference's) covers: 0 is a
+    # read without a V; None unset
+    v_covered: int | None = None
 
 
 class KnownMatch(NamedTuple):
@@ -313,10 +326,11 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
     """The truth of every read, in ``meta``'s order. ``reads`` maps a sequence id to its sequence (the FASTA);
     ``meta`` holds one row per read (the TSV: ``sequence_id``, ``isotype``, ``protocol`` and ``primer_masked``,
     as a list or as JSON); ``reference`` is the shared reference, whose V anchors place Cys104 for the clonotype
-    of a read without a donor anchor and whose V alleles, named by the IUIS map ``iuis``, give the reference-exact
-    known answer (None without ``iuis``). ValueError, naming an id, for an id given twice, a row without a read, a
-    read without a row, or a primer span outside its read; and for a genotype or an IUIS map mapped to another shared
-    reference (the genotype's ``source["reference_digest"]``, where it has one)."""
+    of a read without a donor anchor, whose V alleles, named by the IUIS map ``iuis``, give the reference-exact
+    known answer (None without ``iuis``), and whose V alleles, with the donor's, give the V evidence. ValueError,
+    naming an id, for an id given twice, a row without a read, a read without a row, or a primer span outside its
+    read; and for a genotype or an IUIS map mapped to another shared reference (the genotype's
+    ``source["reference_digest"]``, where it has one)."""
     mapped_to = (genotype.source or {}).get("reference_digest")
     if mapped_to and mapped_to != reference.digest():
         raise ValueError(f"the genotype of {genotype.donor} was mapped to another shared reference (digest "
@@ -339,6 +353,8 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
     index = _index(genotype.alleles, max_mismatches)
     shared_anchors = _shared_anchors(reference, max_mismatches)
     shared_index = None if iuis is None else _index(shared_alleles(reference, iuis), max_mismatches)
+    v_kmers = _kmers([*(allele.sequence for allele in genotype.alleles if allele.segment == "v"),
+                      *reference.alleles.get("v", {}).values()], V_KMER)
     donor = genotype.donor
     truths = []
     for row in rows:
@@ -374,7 +390,7 @@ def real_truths(reads: Mapping[str, str], meta: Iterable[Mapping], genotype: Rea
                                 ref_known=None if ref is None else frozenset(a.allele_id for a in ref.alleles),
                                 ref_known_gene=None if ref is None else "|".join(sorted(
                                     {gene for allele in ref.alleles for gene in allele.gene.split("|")})),
-                                ref_donor=ref_donor))
+                                ref_donor=ref_donor, v_covered=_covered(read, observed, v_kmers, V_KMER)))
     roots = single_linkage((junction for truth in truths if (junction := _junction(truth))), SL15_SHARE)
     return [dataclasses.replace(truth, clonotype_sl15=_sl15(truth, roots)) for truth in truths]
 
@@ -505,7 +521,7 @@ def truth_to_json(truth: RealTruth) -> dict:
             "v_window_n": list(truth.v_window_n), "clonotype_sl15": truth.clonotype_sl15,
             "ref_known": None if truth.ref_known is None else sorted(truth.ref_known),
             "ref_known_gene": truth.ref_known_gene,
-            "ref_donor": None if truth.ref_donor is None else sorted(truth.ref_donor)}
+            "ref_donor": None if truth.ref_donor is None else sorted(truth.ref_donor), "v_covered": truth.v_covered}
 
 
 def truth_from_json(record: Mapping) -> RealTruth:
@@ -521,7 +537,8 @@ def truth_from_json(record: Mapping) -> RealTruth:
                          clonotype_sl15=record["clonotype_sl15"],
                          ref_known=None if record["ref_known"] is None else frozenset(record["ref_known"]),
                          ref_known_gene=record["ref_known_gene"],
-                         ref_donor=None if record["ref_donor"] is None else frozenset(record["ref_donor"]))
+                         ref_donor=None if record["ref_donor"] is None else frozenset(record["ref_donor"]),
+                         v_covered=record["v_covered"])
     except (KeyError, TypeError) as error:
         raise ValueError(f"not a read's truth (truth_to_json): {error!r}") from None
 
@@ -666,6 +683,21 @@ def _mismatches(anchor: str, read: str, position: int, limit: int) -> int:
             if count > limit:
                 break
     return count
+
+
+def _kmers(sequences: Iterable[str], k: int) -> frozenset[str]:
+    """Every ``k``-mer of ``sequences``, uppercased."""
+    return frozenset(seq[i:i + k] for seq in map(str.upper, sequences) for i in range(len(seq) - k + 1))
+
+
+def _covered(read: str, observed: tuple[int, int], kmers: frozenset[str], k: int) -> int:
+    """The bases of ``read``'s ``observed`` span that a ``k``-mer of ``kmers`` covers, each counted once."""
+    covered, reach = 0, observed[0]
+    for i in range(observed[0], observed[1] - k + 1):
+        if read[i:i + k] in kmers:
+            covered += i + k - max(i, reach)
+            reach = i + k
+    return covered
 
 
 def _spans(primer_masked, length: int) -> list[tuple[int, int]]:

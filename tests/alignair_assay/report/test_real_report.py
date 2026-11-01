@@ -14,9 +14,9 @@ from alignair_assay.report.real import (
 
 pytestmark = pytest.mark.component
 
-EXCLUSIONS = ("excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled", "excluded:unmapped",
-              "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",
-              "excluded:low_support")
+EXCLUSIONS = ("excluded:no_v", "excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled",
+              "excluded:unmapped", "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318",
+              "excluded:half_resolved", "excluded:low_support")
 SD3_GENES = ["IGHV1-24", "IGHV1-38-4", "IGHV1-58", "IGHV1-69", "IGHV2-70", "IGHV2-70D", "IGHV3-11", "IGHV3-13",
              "IGHV3-35", "IGHV3-38", "IGHV3-43", "IGHV3-43D", "IGHV3-49", "IGHV3-53", "IGHV3-66", "IGHV3-7",
              "IGHV3-72", "IGHV3-74", "IGHV3-9", "IGHV4-4", "IGHV5-51"]

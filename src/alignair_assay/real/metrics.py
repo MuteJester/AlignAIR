@@ -21,8 +21,16 @@ and a wrong call to the same genes are excluded alike; a call into an excluded g
 for both tools (``shared_exclusions``), so a tool's errors into excluded genes leave R1 with their reads, which the
 workflow counts per tool (``workflow.real_score.one_sided``). The genes are the call's own IUIS label genes, not
 those of the donor alleles it matches: a call matches donor alleles only when it is right, so their genes would make
-exclusion depend on it. This supersedes the earlier ruling (b), "genes of the matching donor alleles". A call is
-excluded when any of its genes is, by the first reason that applies, in this order:
+exclusion depend on it. This supersedes the earlier ruling (b), "genes of the matching donor alleles". The read
+comes first:
+
+- ``no_v`` (V only): the read holds no V (``RealTruth.v_covered`` is 0: no 15-mer of any V allele, ``real.truth``),
+  as a D-J rearrangement does. Any V call on it names a V the read does not hold and no call is right, so the read
+  leaves R1 for both tools whatever either calls (before this rule, a forced V call that happened to name a carried
+  allele counted as supported: on SC-11, ~6% of whose reads are D-J, R1 between checkpoints turned on it). Its D and
+  J are scored as any read's.
+
+Otherwise a call is excluded when any of its genes is, by the first reason that applies, in this order:
 
 - ``dropped_truth``: the gene's only calls were dropped by ``filter_d`` (D only): its truth is dropped, not absent.
 - ``not_captured``: the gene's region is not captured (``RealGenotype.captured``, ``real.locus``): the call may be
@@ -145,8 +153,10 @@ UNSUPPORTED_ALLELE = "unsupported_allele"
 UNSUPPORTED_GENE = "unsupported_gene"
 NO_CALL = "no_call"
 EXCLUDED = "excluded:"
-# The exclusions, in the order a call's genes are checked: the first that applies to any of them is its class.
-EXCLUSIONS = ("excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled", "excluded:unmapped",
+NO_V = "excluded:no_v"
+# The exclusions: the read's own first (it holds no V), then in the order a call's genes are checked: the first
+# that applies to any of them is its class.
+EXCLUSIONS = (NO_V, "excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled", "excluded:unmapped",
               "excluded:novel_gene", "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",
               "excluded:low_support")
 # The headline's components: a read with one of these classes is not supported.
@@ -273,9 +283,12 @@ class SupportIndex:
         return self._classes[key]
 
     def classify_v(self, pred: Prediction | None, *, truth: RealTruth | None) -> str:
-        """The class of ``pred``'s top-1 V call on the read of ``truth`` (``is_documented``); ``no_call`` without a
-        row, a V segment or a call. ``truth`` is required, by keyword, so every tool is classified with the same
-        truth: None is a read without one, said explicitly."""
+        """The class of ``pred``'s top-1 V call on the read of ``truth`` (``is_documented``): ``excluded:no_v`` on a
+        read without a V (``RealTruth.v_covered`` 0), whatever the call; else ``no_call`` without a row, a V segment
+        or a call. ``truth`` is required, by keyword, so every tool is classified with the same truth: None is a read
+        without one, said explicitly."""
+        if truth is not None and truth.v_covered == 0:
+            return NO_V
         return self.classify(_top1(pred, "v"), "v", documented=is_documented(truth))
 
     def read_calls(self, pred: Prediction | None, *, truth: RealTruth | None) -> ReadCalls:

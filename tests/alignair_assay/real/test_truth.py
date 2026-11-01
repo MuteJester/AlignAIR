@@ -302,6 +302,33 @@ def test_d_and_j_alleles_are_not_v_windows():
     assert known_answer(read, observed_span(read, []), [A, d]) == frozenset({"IGHV1-2*02"})
 
 
+def _held(allele: RealAllele) -> int:
+    """How many bases of ``allele`` a read holds from its start through Cys104 + 6 then ``N_REGION``: the N region
+    may continue the allele by chance."""
+    return CYS_END + 6 + len(os.path.commonprefix([N_REGION, allele.sequence[CYS_END + 6:]]))
+
+
+def test_v_covered_counts_the_observed_bases_a_v_kmer_covers():
+    # a read through Cys104 + 6 of a V allele: those bases; the shared reference's V alleles count as the donor's
+    reads = {"donor": _race(A.sequence), "shared": _race(B.sequence),
+             "dj": _random(120, 7) + N_REGION + J4 + C_START}  # a D-J rearrangement: no V at all
+    truths = {t.read_id: t for t in real_truths(reads, [_meta(name) for name in reads], _genotype(A), _reference(B))}
+    assert (truths["donor"].v_covered, truths["shared"].v_covered) == (_held(A), _held(B))
+    assert truths["dj"].v_covered == 0
+    # a V the read holds only partly: the bases of its exact 15-mers, overlaps counted once
+    partial = _random(120, 8) + A.sequence[CYS_END - 40:CYS_END + 6] + N_REGION + J4
+    short = _random(120, 9) + A.sequence[CYS_END - 14:CYS_END] + N_REGION + J4  # 14 nt: no whole 15-mer
+    truths = real_truths({"p": partial, "s": short}, [_meta("p"), _meta("s")], _genotype(A), NO_SHARED)
+    assert [t.v_covered for t in truths] == [_held(A) - (CYS_END - 40), 0]
+    # masked primer bases are not observed, and an N inside the V breaks every 15-mer over it
+    multiplex, spans = _multiplex(A.sequence)
+    with_n = _race(A.sequence[:100] + "N" + A.sequence[101:])
+    truths = real_truths({"m": multiplex, "n": with_n},
+                         [{**_meta("m", protocol="multiplex"), "primer_masked": spans}, _meta("n")],
+                         _genotype(A), NO_SHARED)
+    assert [t.v_covered for t in truths] == [_held(A) - 22, _held(A) - 1]
+
+
 # --- Cys104 by Hamming anchor, W118 by motif -----------------------------------------------------------------------
 
 def test_cys104_anchor_tolerates_three_mismatches():
@@ -527,6 +554,7 @@ def test_real_truths_fields():
     for truth in truths:
         assert truth_from_json(json.loads(json.dumps(truth_to_json(truth)))) == truth
     assert truth_to_json(r1)["known"] == ["IGHV1-69*01", "IGHV1-69D*01"] and truth_to_json(r4)["known"] is None
+    assert truth_to_json(r4)["v_covered"] == 0  # B is in neither the genotype nor the (empty) shared reference
     with pytest.raises(ValueError, match="truth"):
         truth_from_json({"read_id": "r1"})
 

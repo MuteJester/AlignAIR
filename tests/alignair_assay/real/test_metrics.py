@@ -14,6 +14,7 @@ import math
 import os
 import random
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -246,8 +247,8 @@ def test_call_to_a_gene_the_contigs_hold_and_the_genotype_does_not_call_is_exclu
     # a gene deleted on every capturing contig is one the donor lacks: unsupported_gene
     assert INDEX.classify("IGHVF7-G1*01") == UNSUPPORTED_GENE
     assert INDEX.classify("IGHD2-2*01", "d") == INDEX.classify("IGHJ6*02", "j") == UNSUPPORTED_GENE
-    # not captured comes first, uncalled next
-    assert EXCLUSIONS[:3] == ("excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled")
+    # of a call's genes, not captured comes first, uncalled next (the read's own no_v comes before every gene)
+    assert EXCLUSIONS[:4] == ("excluded:no_v", "excluded:dropped_truth", "excluded:not_captured", "excluded:uncalled")
     # a genotype whose uncalled genes are unknown is refused
     with pytest.raises(ValueError, match="uncalled"):
         SupportIndex(RealGenotype(donor=DONOR, alleles=ALLELES, captured=CAPTURED, resolved=CAPTURED),
@@ -309,6 +310,27 @@ def test_no_call_is_no_call():
         INDEX.classify("IGHV1-2*02")  # an IUIS name: not an allele of the shared reference
 
 
+def test_a_read_without_a_v_is_out_of_r1_for_both_tools_whatever_they_call():
+    # a D-J rearrangement read holds no V (``v_covered`` 0): a tool that must name a V names one, IgBLAST a junk
+    # V of ~14 nt, so a call that looks supported, a wrong one and no call are excluded alike, before any gene rule
+    no_v = replace(_truth("dj"), v_covered=0)
+    for call in ("IGHVF1-G1*01", "IGHVF1-G1*02", "IGHVF7-G1*01", "IGHVF5-G1*01", None):
+        assert INDEX.classify_v(_pred("dj", call), truth=no_v) == "excluded:no_v"
+    assert EXCLUSIONS[0] == "excluded:no_v"
+    # its D and J are a rearrangement's like any other: scored as any read's
+    pred = _pred("dj", "IGHVF1-G1*01", d="IGHD3-10*01", j="IGHJ6*02")
+    calls = INDEX.read_calls(pred, truth=no_v)
+    assert calls == ReadCalls(v="excluded:no_v", d=SUPPORTED, j=UNSUPPORTED_GENE, v_any_listed_supported=True)
+    assert shared_exclusions({"dj": calls.v}, {"dj": NO_CALL}) == {"dj"}
+    scores = real_case_scores(pred, no_v, calls, excluded={"v"}, index=INDEX)
+    assert not any(name.startswith("real.v.") for name in scores)
+    assert scores["real.d.unsupported"] == 0.0 and scores["real.j.unsupported"] == 1.0
+    # a read with V evidence, or a truth without the count, is classified by its call
+    for truth in (replace(_truth("r"), v_covered=15), _truth("r")):
+        assert INDEX.classify_v(_pred("r", "IGHVF1-G1*01"), truth=truth) == SUPPORTED
+        assert INDEX.classify_v(_pred("r", None), truth=truth) == NO_CALL
+
+
 def test_the_reads_truth_is_required_by_keyword():
     # every tool is classified with the read's truth, so no caller can classify one tool with it and the other
     # without: leaving it out, or passing it by position, is an error
@@ -334,9 +356,10 @@ def test_the_other_exclusions():
     assert INDEX.classify("IGHVF2-G1*01") == SUPPORTED and INDEX.classify("IGHVF2-G1*02") == UNSUPPORTED_ALLELE
     # a gene with a functional donor allele without a usable IMGT-gapped form: no call can be compared through 318
     assert INDEX.classify("IGHVF11-G1*01") == INDEX.classify("IGHVF11-G1*02") == "excluded:beyond_318"
-    assert set(EXCLUSIONS) == {"excluded:not_captured", "excluded:dropped_truth", "excluded:uncalled",
-                               "excluded:unmapped", "excluded:novel_gene", "excluded:nonfunctional",
-                               "excluded:beyond_318", "excluded:half_resolved", "excluded:low_support"}
+    assert set(EXCLUSIONS) == {"excluded:no_v", "excluded:not_captured", "excluded:dropped_truth",
+                               "excluded:uncalled", "excluded:unmapped", "excluded:novel_gene",
+                               "excluded:nonfunctional", "excluded:beyond_318", "excluded:half_resolved",
+                               "excluded:low_support"}
 
 
 def test_the_gene_support_thresholds_are_a_sensitivity_variant():

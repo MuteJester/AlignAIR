@@ -57,8 +57,12 @@ KNOWN_OBSERVABLE = "real.v.known_top1_observable"
 # pieces would read as a name suffix to the registry's check (tests/alignair_assay/real/test_metrics.py).
 D_AND_J = (("real.d.unsupported", "d_classes"), ("real.j.unsupported", "j_classes"))
 DECILES = ("p10", "p20", "p30", "p40", "p50", "p60", "p70", "p80", "p90")
-# The exclusions, in the order a call's genes are checked (``real.metrics.EXCLUSIONS``), and what each means.
+# The exclusions, the read's own first, then in the order a call's genes are checked (``real.metrics.EXCLUSIONS``),
+# and what each means.
 EXCLUSION_NOTES = {
+    "excluded:no_v": "V only, the read's own: the read holds no exact 15-mer of any V allele, the donor's or the "
+                     "shared reference's (a D-J rearrangement), so whatever either tool calls, the read leaves R1 "
+                     "for both; its D and J are scored as any read's.",
     "excluded:dropped_truth": "D only: the gene's only genomic calls were dropped by the D-call filter, so its truth "
                               "is unknown, not absent.",
     "excluded:not_captured": "the donor's genomic contigs do not resolve the gene's region, so the call may be an "
@@ -150,8 +154,8 @@ def _reads_out(comparison: dict | None) -> str:
 
 
 def _exclusions(summary: dict, scopes: list[dict]) -> list[str]:
-    lines = [INVARIANT, "", "What each reason means (a call is excluded by the first that applies to any of its "
-                            "genes, in this order):", "",
+    lines = [INVARIANT, "", "What each reason means (a read without a V first, whatever the call; then a call is "
+                            "excluded by the first that applies to any of its genes, in this order):", "",
              *(f"- `{reason}`: {note}" for reason, note in EXCLUSION_NOTES.items())]
     if not scopes:
         return [*lines, "", _nothing_scored(summary)]
