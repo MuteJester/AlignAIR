@@ -15,12 +15,14 @@ def vj_in_frame(cdr3_start, cdr3_end, v_alignment_start) -> Optional[bool]:
 
 
 def segment_identity(seq_alignment: Optional[str], germ_alignment: Optional[str]) -> Optional[float]:
-    """Fraction of matching nucleotides over non-gap germline positions (any V/D/J segment)."""
+    """Fraction of matching nucleotides over the germline positions the read covers (any V/D/J segment): an IMGT gap
+    column and germline the read does not reach (``.`` in either string) are skipped; a germline base the read lacks
+    (``-``) is a mismatch."""
     if not seq_alignment or not germ_alignment:
         return None
     matches = compared = 0
     for s, g in zip(seq_alignment, germ_alignment):
-        if g == ".":
+        if g == "." or s == ".":
             continue
         compared += 1
         if s == g:

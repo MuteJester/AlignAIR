@@ -137,12 +137,12 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     dgs, dge = rec.get("d_germline_start"), rec.get("d_germline_end")
     v_ref_gapped = v_gapped.get(v_call.split(",")[0], "")
 
-    seq_alignment = build_sequence_alignment(seq, v_ref_gapped, vss, vse, vgs, vge, jse)
+    seq_alignment = build_sequence_alignment(seq, v_ref_gapped, vss, vse, vgs, vge, jse, v_cigar=rec.get("v_cigar"))
     np1, np2 = compute_np_regions(seq, vse, jss, dss, dse, chain)
     germ_alignment = build_germline_alignment(seq, v_gapped, j_ung, d_ung, v_call,
                                               rec.get("j_call", ""), d_call, vge, jgs,
                                               jge, dgs, dge, np1, np2, vse, jss, chain)
-    positions = compute_alignment_positions(v_ref_gapped, vge, vss, dss, dse, jss, jse, chain)
+    positions = compute_alignment_positions(v_ref_gapped, vge, vse, dss, dse, jss, jse, chain)
     seq_aa = translate_alignment(seq_alignment)
     germ_aa = translate_alignment(germ_alignment)
     seg = (extract_segment_alignments(seq_alignment, germ_alignment, seq_aa, germ_aa, positions, chain)

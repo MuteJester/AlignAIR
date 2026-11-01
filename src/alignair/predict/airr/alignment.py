@@ -5,11 +5,14 @@ Pure per-sequence functions. Reference germline maps are plain ``{allele_name: s
 """
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+import re
+from typing import Dict, List, Optional, Tuple
 
 from GenAIRR.utilities import translate
 
 from .constants import SHORT_D_SENTINEL
+
+_CIGAR = re.compile(r"(\d+)([MIDNS=X])")
 
 
 def _count_gaps(ref: str) -> int:
@@ -23,14 +26,38 @@ def _reference_segment(ref_seq: str, end: int, start: int = 0) -> str:
     return ref_seq[start:gap_adjusted_end] if start > 0 else ref_seq[:gap_adjusted_end]
 
 
+def _germline_placed(seq, v_seq_start, v_seq_end, v_germ_start, v_germ_end, v_cigar) -> Optional[List[str]]:
+    """The read base on each V germline position from ``v_germ_start`` to ``v_germ_end`` along ``v_cigar`` (which
+    describes ``seq[v_seq_start:v_seq_end]`` against that germline span): ``-`` where the read lacks the germline base,
+    and a read base the germline lacks is left out. None when the CIGAR does not span both windows."""
+    placed, r = [], v_seq_start
+    for count, op in _CIGAR.findall(v_cigar or ""):
+        count = int(count)
+        if op in "M=X":
+            placed.extend(seq[r:r + count])
+            r += count
+        elif op in "DN":
+            placed.extend("-" * count)
+        else:                                          # I, S: read bases without a germline position
+            r += count
+    if not placed or r != v_seq_end or len(placed) != v_germ_end - v_germ_start:
+        return None
+    return placed
+
+
 def build_sequence_alignment(seq, v_ref_gapped, v_seq_start, v_seq_end, v_germ_start,
-                             v_germ_end, j_seq_end) -> Optional[str]:
-    """Insert IMGT gaps into the query to match the V-germline gapped reference, then append D+J."""
+                             v_germ_end, j_seq_end, v_cigar=None) -> Optional[str]:
+    """The read laid on the IMGT-gapped V germline up to ``v_germ_end``, then the read after V up to ``j_seq_end``.
+    Along a ``v_cigar`` that spans the V window each read base sits in its own germline column: a germline base the
+    read lacks is ``-`` and a read base the germline lacks is left out (IMGT's indel correction), so a V indel moves
+    no later column. Without one the V bases fill the germline columns in order. Germline the read does not cover
+    is ``.``."""
     if not v_ref_gapped:
         return None
     gaps = _count_gaps(v_ref_gapped)
     v_ref_trimmed = v_ref_gapped[: v_germ_end + gaps]
-    seq_to_gap = seq[v_seq_start:v_seq_end]
+    placed = _germline_placed(seq, v_seq_start, v_seq_end, v_germ_start, v_germ_end, v_cigar)
+    seq_to_gap = "".join(placed) if placed is not None else seq[v_seq_start:v_seq_end]
     seq_remain = seq[v_seq_end:j_seq_end]
     if v_germ_start > 0:
         seq_to_gap = "." * v_germ_start + seq_to_gap
@@ -73,21 +100,24 @@ def build_germline_alignment(seq, v_gapped, j_ungapped, d_ungapped, v_call, j_ca
     return v_part + (np1 or "") + j_part
 
 
-def compute_alignment_positions(v_ref_gapped, v_germ_end, v_seq_start, d_seq_start, d_seq_end,
+def compute_alignment_positions(v_ref_gapped, v_germ_end, v_seq_end, d_seq_start, d_seq_end,
                                 j_seq_start, j_seq_end, chain) -> Dict[str, Optional[int]]:
-    """Each segment's positions in the (IMGT-gapped) alignment strings. The germline coordinates stay the aligner's:
-    they are positions in the germline, which the alignment's gaps do not move."""
+    """Each segment's positions in the (IMGT-gapped) alignment strings. The V part spans the gapped germline up to
+    ``v_germ_end`` (``build_sequence_alignment``) and the read after V follows it base for base, so a read position
+    past V sits ``p - v_seq_end`` columns after the V part, wherever V starts in its germline and whatever its indels.
+    The germline coordinates stay the aligner's: they are positions in the germline, which the alignment's gaps do
+    not move."""
     gap = _count_gaps(v_ref_gapped) if v_ref_gapped else 0
     v_end = v_germ_end + gap
     d_start_al = d_end_al = None
     if chain == "heavy" and d_seq_start is not None:
-        d_start_al = d_seq_start - v_seq_start + gap
-        d_end_al = d_seq_end - v_seq_start + gap
+        d_start_al = v_end + d_seq_start - v_seq_end
+        d_end_al = v_end + d_seq_end - v_seq_end
     return {
         "v_alignment_start": 0, "v_alignment_end": v_end,
         "d_alignment_start": d_start_al, "d_alignment_end": d_end_al,
-        "j_alignment_start": j_seq_start - v_seq_start + gap,
-        "j_alignment_end": j_seq_end - v_seq_start + gap,
+        "j_alignment_start": v_end + j_seq_start - v_seq_end,
+        "j_alignment_end": v_end + j_seq_end - v_seq_end,
     }
 
 
