@@ -68,11 +68,36 @@ def test_masked_flanks_are_n_and_reach_into_v_within_the_extra():
         assert 3 <= r["mask_5_length"] <= 5 and r["v_sequence_start"] == r["mask_5_length"]
 
 
+def test_unmasked_flanks_carry_scattered_uncalled_bases_inside_the_flank_only():
+    """A 5'RACE consensus read's leader holds uncalled bases (N) here and there, not one masked run: on ``p_flank_n``
+    of the unmasked 5' flanks each base turns to N at a rate drawn in ``flank_n_rate``; the read and every
+    coordinate are untouched."""
+    policy = FlankPolicy(p_prefix=1.0, prefix=(60, 60), p_mask=0.0, p_suffix=0.0, p_flank_n=1.0,
+                         flank_n_rate=(0.2, 0.2))
+    out = list(flank_records([RECORD] * 20, policy, seed=7))
+    assert all(r["sequence"][60:] == RECORD["sequence"] and r["v_sequence_start"] == 60 for r in out)
+    assert all(r["mask_5_length"] == 0 and r["sequence"][:60].count("N") < 60 for r in out)
+    assert 0.15 < sum(r["sequence"][:60].count("N") for r in out) / (20 * 60) < 0.25
+    plain = FlankPolicy(p_prefix=1.0, prefix=(60, 60), p_mask=0.0, p_suffix=0.0, p_flank_n=0.0)
+    assert all("N" not in r["sequence"] for r in flank_records([RECORD] * 20, plain, seed=7))
+    # on by default, at a share of the unmasked flanks
+    flanked = list(flank_records([RECORD] * 200, FlankPolicy(p_prefix=1.0, prefix=(60, 60), p_mask=0.0,
+                                                             p_suffix=0.0), seed=7))
+    with_n = sum("N" in r["sequence"] for r in flanked)
+    assert 0 < with_n < 200
+
+
 def test_policy_round_trips_and_validates():
     policy = FlankPolicy(p_prefix=0.2, prefix=(10, 40), p_mask=0.5, mask_extra=(0, 6), p_suffix=0.1,
-                         suffix=(5, 30), max_length=500)
+                         suffix=(5, 30), max_length=500, p_flank_n=0.25, flank_n_rate=(0.01, 0.1))
     assert FlankPolicy.from_dict(policy.to_dict()) == policy
+    # a policy recorded before the uncalled bases reads back with their defaults
+    old = {key: value for key, value in policy.to_dict().items() if key not in ("p_flank_n", "flank_n_rate")}
+    restored = FlankPolicy.from_dict(old)
+    assert (restored.p_flank_n, restored.flank_n_rate) == (FlankPolicy().p_flank_n, FlankPolicy().flank_n_rate)
+    assert restored.prefix == (10, 40) and restored.p_mask == 0.5
     for bad in ({"p_prefix": 1.5}, {"prefix": (9, 3)}, {"suffix": (-1, 4)}, {"mask_extra": (0, -1)},
-                {"max_length": 0}):
+                {"max_length": 0}, {"p_flank_n": -0.1}, {"flank_n_rate": (0.2, 0.1)},
+                {"flank_n_rate": (0.0, 1.5)}):
         with pytest.raises(ConfigurationError):
             FlankPolicy(**bad)

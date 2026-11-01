@@ -2,11 +2,14 @@
 
 GenAIRR simulates the rearrangement alone, so its reads start in V and end in J; a model trained on them alone learns
 that V starts at the read's first base and that nothing follows J. A 5'RACE read starts in the 5' UTR and leader, a
-multiplex read starts at its V primer masked to N, and a read may end in the constant region. ``add_flanks`` puts such
-sequence around a record's read and moves every read coordinate with it (``READ_COORDINATES``; germline coordinates
-stay), so the record's region, boundary and alignment targets hold for the flanked read. A mask reaching into V starts
-V at its first unmasked base (its germline start and CIGAR move with it), as the bases under N are not observable.
-``flank_records`` draws flanks for a record stream under a ``FlankPolicy``, reproducibly from the stream's seed.
+multiplex read starts at its V primer masked to N, and a read may end in the constant region. A 5'RACE consensus
+read's leader also holds uncalled bases (N) here and there (about 12% of the pilot RACE reads, up to 20 or more);
+a model that has only seen N as one masked run before V reads them as a primer and starts V among them.
+``add_flanks`` puts such sequence around a record's read and moves every read coordinate with it
+(``READ_COORDINATES``; germline coordinates stay), so the record's region, boundary and alignment targets hold for
+the flanked read. A mask reaching into V starts V at its first unmasked base (its germline start and CIGAR move with
+it), as the bases under N are not observable. ``flank_records`` draws flanks for a record stream under a
+``FlankPolicy``, reproducibly from the stream's seed.
 """
 from __future__ import annotations
 
@@ -70,9 +73,10 @@ def _span(value, field: str) -> tuple[int, int]:
 class FlankPolicy:
     """Which reads get flanks and how long: a random-base 5' flank on ``p_prefix`` of the reads (length uniform in
     ``prefix``), masked to N on ``p_mask`` of those together with the next 0 to ``mask_extra`` read bases (a primer
-    over the first V bases), and a random-base 3' flank on ``p_suffix`` of the reads (length in ``suffix``). Lengths
-    are inclusive; a read keeps its own bases whole and grows to at most ``max_length``, its flanks shortened to
-    fit (3' first)."""
+    over the first V bases), and a random-base 3' flank on ``p_suffix`` of the reads (length in ``suffix``). On
+    ``p_flank_n`` of the unmasked 5' flanks each flank base turns to N at a rate uniform in ``flank_n_rate``
+    (uncalled bases in a leader; the read and its coordinates are untouched). Lengths are inclusive; a read keeps its
+    own bases whole and grows to at most ``max_length``, its flanks shortened to fit (3' first)."""
 
     p_prefix: float = 0.4
     prefix: tuple[int, int] = (1, 140)
@@ -81,15 +85,26 @@ class FlankPolicy:
     p_suffix: float = 0.3
     suffix: tuple[int, int] = (1, 100)
     max_length: int = 576
+    p_flank_n: float = 0.3
+    flank_n_rate: tuple[float, float] = (0.0, 0.15)
 
     def __post_init__(self):
-        for field in ("p_prefix", "p_mask", "p_suffix"):
+        for field in ("p_prefix", "p_mask", "p_suffix", "p_flank_n"):
             value = getattr(self, field)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
                 raise ConfigurationError(f"{field} must be a probability in [0, 1]", context={"field": field})
             object.__setattr__(self, field, float(value))
         for field in ("prefix", "mask_extra", "suffix"):
             object.__setattr__(self, field, _span(getattr(self, field), field))
+        try:
+            low, high = (float(x) for x in self.flank_n_rate)
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError("flank_n_rate must be a (low, high) pair of rates",
+                                     context={"field": "flank_n_rate"}) from exc
+        if not 0.0 <= low <= high <= 1.0:
+            raise ConfigurationError("flank_n_rate must satisfy 0 <= low <= high <= 1",
+                                     context={"field": "flank_n_rate"})
+        object.__setattr__(self, "flank_n_rate", (low, high))
         if isinstance(self.max_length, bool) or not isinstance(self.max_length, int) or self.max_length < 1:
             raise ConfigurationError("max_length must be a positive integer", context={"field": "max_length"})
 
@@ -113,6 +128,9 @@ def flank_records(records: Iterable[Mapping], policy: FlankPolicy, seed: int) ->
         room = max(0, policy.max_length - len(record["sequence"]))
         prefix = min(prefix, room)
         suffix = min(suffix, room - prefix)
-        yield add_flanks(record, prefix="".join(BASES[rng.integers(0, 4, prefix)]),
-                         suffix="".join(BASES[rng.integers(0, 4, suffix)]),
+        head = BASES[rng.integers(0, 4, prefix)]
+        if prefix and not masked and rng.random() < policy.p_flank_n:
+            rate = rng.uniform(*policy.flank_n_rate)
+            head = np.where(rng.random(prefix) < rate, "N", head)
+        yield add_flanks(record, prefix="".join(head), suffix="".join(BASES[rng.integers(0, 4, suffix)]),
                          mask=prefix + extra if masked and prefix else 0)
