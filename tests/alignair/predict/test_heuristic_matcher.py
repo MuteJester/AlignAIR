@@ -39,6 +39,32 @@ def test_clean_ends_tolerate_internal_mutations():
     assert (m.ref_start, m.ref_end) == (0, 40)
 
 
+_LONG = "".join(__import__("random").Random(7).choices("ACGT", k=300))   # a 300 bp germline
+
+
+def test_a_body_deletion_under_an_underpredicted_indel_count_keeps_the_anchored_start():
+    # full-length V with one base deleted at 100: the read's 3' majority sits one germline base later, but its
+    # start is still germline base 0; the model's indel count (0.1) rounds to none
+    read = _LONG[:100] + _LONG[101:]
+    m = HeuristicGermlineMatcher({"V1": _LONG}).match_one(read, 0, len(read), "V1", indel_count=0.1)
+    assert (m.ref_start, m.ref_end) == (0, 300)
+
+
+def test_three_body_deletions_under_an_underpredicted_indel_count_keep_the_start():
+    # three bases deleted (at 80, 160 and 240): the length gives a start 3 bases in, and the model's indel count
+    # (0.1) rounds to none, yet the read's first bases are the germline's first
+    read = _LONG[:80] + _LONG[81:160] + _LONG[161:240] + _LONG[241:]
+    m = HeuristicGermlineMatcher({"V1": _LONG}).match_one(read, 0, len(read), "V1", indel_count=0.1)
+    assert (m.ref_start, m.ref_end) == (0, 300)
+
+
+def test_a_3prime_truncated_amplicon_relocates_its_start_by_the_scan():
+    # an FR1-like read ending 180 bases before the germline's 3' end, beyond the end anchor's reach
+    read = _LONG[:120]
+    m = HeuristicGermlineMatcher({"V1": _LONG}).match_one(read, 0, 120, "V1", indel_count=0)
+    assert m.ref_start == 0
+
+
 def test_from_reference_builds_germline_table():
     class _Ref:
         names = ["A*01", "A*02"]

@@ -6,7 +6,7 @@ the model already knows. For each read segment it:
   1. anchors on the segment's **end** k-mer — V/J 3' ends are conserved — and slides a small offset
      window at the germline 3' end to find the best germline end position;
   2. **derives the start** from the known segment length, then refines it within a window whose width
-     is bounded by the model's predicted **indel count**.
+     is the model's predicted **indel count**, at least ``_START_REACH``, at most the length difference.
 
 It is ``O(search_span · k)`` per segment — no dynamic programming — and returns germline coordinates
 (no CIGAR; substitutions/indels are recovered downstream from the coordinates + the model's heads).
@@ -24,6 +24,8 @@ import numpy as np
 from ..align.backend import AlignResult
 
 _ACCEL = 0.05          # per-step velocity increment that amplifies same-state (match/mismatch) runs
+_START_CHECK = 30      # segment bases compared at the placement's start when checking it for a mis-anchor
+_START_REACH = 3       # fewest bases the derived start is searched either way, whatever the indel count
 
 
 def _run_length_encode(ops: str) -> str:
@@ -223,12 +225,12 @@ class HeuristicGermlineMatcher:
         anchored_start = max(0, best_end - seg_len)
         best_start = anchored_start
         best_cost = self._anchor_cost(start_kmer, germline[anchored_start:anchored_start + k])
+        # the indel head undercounts (reads with three indels can predict ~0.03), so the search reaches
+        # at least _START_REACH bases; the offset penalty keeps the derived start unless a nearer
+        # k-mer match is clearly better
         indels = max(0, int(round(float(_scalar(indel_count)))))
-        if indels > 0:
-            reach = min(indels, len_diff)
-            offsets = range(-reach - 1, reach + 1)
-        else:
-            offsets = range(-1, 1)
+        reach = min(max(indels, _START_REACH), len_diff)
+        offsets = range(-reach - 1, reach + 1)
         for offset in offsets:
             cand = max(0, anchored_start + offset)
             window = germline[cand:cand + k]
@@ -256,10 +258,13 @@ class HeuristicGermlineMatcher:
         return offset, offset + m
 
     @staticmethod
-    def _placement_mismatch_rate(segment: str, germline: str, ref_start: int, ref_end: int) -> float:
-        """Substitution rate of the segment against the germline window the anchor chose — a sanity
-        check on the placement (a correct one mismatches only at SHM rate, a mis-anchor ~randomly)."""
-        window = germline[ref_start:ref_end]
+    def _start_mismatch_rate(segment: str, germline: str, ref_start: int) -> float:
+        """Substitution rate of the segment's first ``_START_CHECK`` bases against the germline from the
+        chosen start — a sanity check on the START (a correct one mismatches only at SHM rate, a
+        mis-anchor ~randomly). Only the head is compared: past an indel every base of an ungapped
+        comparison is shifted, so a whole-segment rate calls a correctly placed read with a body indel
+        mis-anchored."""
+        window = germline[ref_start:ref_start + _START_CHECK]
         m = min(len(segment), len(window))
         if m == 0:
             return 1.0
@@ -283,12 +288,13 @@ class HeuristicGermlineMatcher:
         orig_len = seq_end - seq_start
         ref_start, ref_end = self._locate_in_germline(segment, germline, indel_count)
 
-        # verify the anchor's placement; a 3'-truncated amplicon breaks the end-anchor's START
+        # verify the anchor's start; a 3'-truncated amplicon breaks the end-anchor's START
         # derivation (start = end - seg_len over-/under-shoots when the read overhangs the germline),
-        # so if the chosen window mismatches far above SHM rate, relocate the START with the
-        # truncation-agnostic whole-germline scan while KEEPING the anchor's end (which stays accurate).
+        # so if the segment's head mismatches the germline there far above SHM rate, relocate the START
+        # with the truncation-agnostic whole-germline scan while KEEPING the anchor's end (which stays
+        # accurate).
         if self._fallback_rate and (
-                self._placement_mismatch_rate(segment, germline, ref_start, ref_end) > self._fallback_rate):
+                self._start_mismatch_rate(segment, germline, ref_start) > self._fallback_rate):
             scan_start, _ = self._scan_locate(segment, germline)
             if scan_start < ref_end:
                 ref_start = scan_start
