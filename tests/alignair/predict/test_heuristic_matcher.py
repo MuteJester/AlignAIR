@@ -89,6 +89,16 @@ def test_a_3prime_truncated_amplicon_relocates_its_start_by_the_scan():
     assert m.ref_start == 0
 
 
+def test_a_segment_shorter_than_the_anchor_spans_as_many_germline_bases_as_read_bases():
+    # an 11-base D (shorter than the 15-base anchor) over germline 4..15 of a 21-base D: its germline end is where its
+    # last base sits, not where a 15-base window ending there would
+    germline = "GGGTATAGCAGCAGCTGGTAC"
+    read = "CCCC" + germline[4:15] + "TTTT"
+    m = HeuristicGermlineMatcher({"D1": germline}).match_one(read, 4, 15, "D1", indel_count=0)
+    assert m == GermlineMatch(seq_start=4, seq_end=15, ref_start=4, ref_end=15)
+    assert derive_alignment(read[4:15], germline[4:15], 0).cigar == "11M"
+
+
 def test_from_reference_builds_germline_table():
     class _Ref:
         names = ["A*01", "A*02"]

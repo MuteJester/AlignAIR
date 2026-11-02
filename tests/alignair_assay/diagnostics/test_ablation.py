@@ -259,10 +259,12 @@ def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped
             assert final[case_id][name] == value, (case_id, name)
             equal += 1
     assert equal > 50 * 20
-    # The model's own germline alignment (true calls, its matcher) is not oracle quality.
+    # The model's own germline alignment (true calls, its matcher) scores like it too on S0's unmutated reads: the
+    # matcher places every segment where the oracle does, a D shorter than its end anchor included.
     own = results["true_calls"].scores
-    assert any(own[c][name] != final[c][name] for c in oracle for name in oracle[c]
-               if FED.match(name) and not REENCODED.match(name))
+    differing = sorted({name for c in oracle for name in oracle[c]
+                        if FED.match(name) and not REENCODED.match(name) and own[c][name] != final[c][name]})
+    assert differing == []
 
 
 def test_unobserved_segments_fall_back_to_the_model_and_are_counted(make_shaped_model, s0_cases, s0_truths,

@@ -206,8 +206,10 @@ class HeuristicGermlineMatcher:
 
     # ------------------------------------------------------------------ core search
     def _locate_in_germline(self, segment: str, germline: str, indel_count) -> tuple[int, int]:
-        k = self._anchor_k
         seg_len, ref_len = len(segment), len(germline)
+        # a segment shorter than the anchor (most D segments) is its own anchor: a longer window would compare it with
+        # the window's first bases only and put its end past its last base
+        k = max(1, min(self._anchor_k, seg_len))
         len_diff = abs(ref_len - seg_len)
         # the indel head undercounts (reads with three indels can predict ~0.03), so both searches below reach at
         # least _INDEL_REACH bases past what the length alone allows

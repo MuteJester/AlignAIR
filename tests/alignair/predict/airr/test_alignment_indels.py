@@ -4,7 +4,8 @@ import pytest
 
 from alignair.predict.airr import build_airr
 from alignair.predict.airr import quality
-from alignair.predict.airr.alignment import build_sequence_alignment, compute_alignment_positions
+from alignair.predict.airr.alignment import (build_germline_alignment, build_sequence_alignment,
+                                             compute_alignment_positions)
 
 pytestmark = pytest.mark.component
 
@@ -40,6 +41,29 @@ def test_alignment_positions_follow_a_v_deletion():
     positions = compute_alignment_positions(GAPPED, 8, 7, 9, 12, 14, 20, "heavy")
     assert (positions["d_alignment_start"], positions["d_alignment_end"]) == (12, 15)
     assert (positions["j_alignment_start"], positions["j_alignment_end"]) == (17, 23)
+
+
+# V ACGTACGT, np1 TT, a D of 4 read bases over the 5-base germline GGACC (its A deleted), np2 A, J TTTGGG
+_D_DEL_READ = "ACGTACGT" + "TT" + "GGCC" + "A" + "TTTGGG"
+
+
+def _germline(seq, d_cigar, j_start=15, j_germline="TTTGGG", j_cigar="6M"):
+    return build_germline_alignment(seq, {"V1": GAPPED}, {"J1": j_germline}, {"D1": "GGACC"}, "V1", "J1", "D1",
+                                    8, 0, len(j_germline), 0, 5, "TT", "A", 8, j_start, "heavy",
+                                    j_seq_end=len(seq), d_cigar=d_cigar, j_cigar=j_cigar)
+
+
+def test_germline_alignment_lays_the_d_germline_along_its_cigar():
+    # the deleted germline base has no read column, so the D germline takes the read's 4 columns and J stays in place
+    germ = _germline(_D_DEL_READ, "2M1D2M")
+    assert germ == "AC.GT.ACGT" + "TT" + "GGCC" + "A" + "TTTGGG"
+    positions = compute_alignment_positions(GAPPED, 8, 8, 10, 14, 15, 21, "heavy")
+    assert germ[positions["j_alignment_start"]:positions["j_alignment_end"]] == "TTTGGG"
+
+
+def test_germline_alignment_puts_a_gap_where_the_read_has_a_base_the_j_germline_lacks():
+    seq = "ACGTACGT" + "TT" + "GGACC" + "A" + "TTTAGGG"
+    assert _germline(seq, "5M", j_start=16, j_cigar="3M1I3M").endswith("A" + "TTT-GGG")
 
 
 def test_segment_identity_counts_only_the_germline_the_read_covers():

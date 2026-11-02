@@ -81,13 +81,45 @@ def compute_np_regions(seq, v_seq_end, j_seq_start, d_seq_start, d_seq_end,
     return seq[v_seq_end:j_seq_start], None
 
 
+def _germline_along(germ, read_len, cigar) -> str:
+    """The germline base on each of a segment's ``read_len`` read bases along ``cigar`` (which describes those read
+    bases against ``germ``): ``-`` where the read has a base the germline lacks, and a germline base the read lacks is
+    left out, so the segment takes exactly its read's columns. Without a CIGAR spanning both, the germline in order,
+    cut to or padded with ``.`` (uncovered) to the read's length; without a read length, the germline as it is."""
+    if read_len is None:
+        return germ
+    placed, g = [], 0
+    for count, op in _CIGAR.findall(cigar or ""):
+        count = int(count)
+        if op in "M=X":
+            placed.append(germ[g:g + count])
+            g += count
+        elif op == "I":
+            placed.append("-" * count)
+        elif op == "S":                                # read bases aligned to no germline
+            placed.append("." * count)
+        else:                                          # D, N: germline bases without a read base
+            g += count
+    along = "".join(placed)
+    if g == len(germ) and len(along) == read_len:
+        return along
+    return germ[:read_len].ljust(read_len, ".")
+
+
 def build_germline_alignment(seq, v_gapped, j_ungapped, d_ungapped, v_call, j_call, d_call,
                              v_germ_end, j_germ_start, j_germ_end, d_germ_start, d_germ_end,
-                             np1, np2, v_seq_end, j_seq_start, chain) -> Optional[str]:
+                             np1, np2, v_seq_end, j_seq_start, chain, *, j_seq_end=None, d_cigar=None,
+                             j_cigar=None) -> Optional[str]:
+    """The germline under ``build_sequence_alignment``'s columns: the IMGT-gapped V germline up to ``v_germ_end``, then
+    for the read after V its NP bases as they are and the D and J germlines each on its own read bases along its CIGAR
+    (``_germline_along``), so a D or J indel, or a germline span of another length than its read span, moves no later
+    column. Without ``j_seq_end`` the D and J germline spans are laid end to end as they are."""
     v_ref = v_gapped.get(v_call.split(",")[0], "")
     v_part = _reference_segment(v_ref, v_germ_end)
     j_ref = j_ungapped.get(j_call.split(",")[0], "")
     j_part = j_ref[j_germ_start: j_germ_end + _count_gaps(j_ref)] if j_ref else ""
+    if j_part and j_seq_end is not None:
+        j_part = _germline_along(j_part, j_seq_end - j_seq_start, j_cigar)
     if chain == "heavy":
         first_d = d_call.split(",")[0] if d_call else ""
         if SHORT_D_SENTINEL in first_d:
@@ -95,6 +127,9 @@ def build_germline_alignment(seq, v_gapped, j_ungapped, d_ungapped, v_call, j_ca
         else:
             d_ref = d_ungapped.get(first_d, "")
             d_part = d_ref[d_germ_start: d_germ_end + _count_gaps(d_ref)] if d_ref else ""
+            if d_part and j_seq_end is not None:
+                d_len = max(0, j_seq_start - v_seq_end - len(np1 or "") - len(np2 or ""))
+                d_part = _germline_along(d_part, d_len, d_cigar)
             d_region = (np1 or "") + d_part + (np2 or "")
         return v_part + d_region + j_part
     return v_part + (np1 or "") + j_part

@@ -141,7 +141,8 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     np1, np2 = compute_np_regions(seq, vse, jss, dss, dse, chain)
     germ_alignment = build_germline_alignment(seq, v_gapped, j_ung, d_ung, v_call,
                                               rec.get("j_call", ""), d_call, vge, jgs,
-                                              jge, dgs, dge, np1, np2, vse, jss, chain)
+                                              jge, dgs, dge, np1, np2, vse, jss, chain, j_seq_end=jse,
+                                              d_cigar=rec.get("d_cigar"), j_cigar=rec.get("j_cigar"))
     positions = compute_alignment_positions(v_ref_gapped, vge, vse, dss, dse, jss, jse, chain)
     seq_aa = translate_alignment(seq_alignment)
     germ_aa = translate_alignment(germ_alignment)
