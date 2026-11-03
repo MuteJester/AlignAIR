@@ -34,6 +34,28 @@ def _heuristic_alignment(seq, s, e, allele, germ, indel, matcher, derive) -> Ger
     return GermlineAlignment(allele, gm.seq_start, gm.seq_end, gm.ref_start, gm.ref_end, cigar)
 
 
+def _gapless(seq, s, e, aln: GermlineAlignment, germ) -> GermlineAlignment:
+    """A D aligned without gaps, as IgBLAST and IMGT align one: ``aln`` itself when it has none, else the read's D
+    bases ``seq[s:e]`` at the offset along ``germ`` that matches most of them (among equals the one nearest
+    ``aln``'s placement of the first base), cut to the bases the germline covers; a D of no read bases spans no germline
+    base."""
+    if "I" not in aln.cigar and "D" not in aln.cigar:
+        return aln
+    segment, n, m = seq[s:e].upper(), e - s, len(germ)
+    if n <= 0:
+        return GermlineAlignment(aln.allele, s, s, 0, 0, "")
+    nearest = aln.germ_start - (aln.seq_start - s)
+    best = None
+    for offset in range(1 - n, m):
+        lo, hi = max(0, -offset), min(n, m - offset)
+        matches = sum(a == b for a, b in zip(segment[lo:hi], germ[lo + offset:hi + offset]))
+        key = (matches, -abs(offset - nearest))
+        if best is None or key > best[0]:
+            best = (key, offset, lo, hi)
+    _, offset, lo, hi = best
+    return GermlineAlignment(aln.allele, s + lo, s + hi, lo + offset, hi + offset, f"{hi - lo}M")
+
+
 def align_germline(sequences, segments, calls, reference, aligner=None, *,
                    reader: str = "heuristic", indel_counts=None) -> dict:
     """Returns {gene: list[GermlineAlignment | None]} (None when a read has no call for the gene).
@@ -72,8 +94,9 @@ def align_germline(sequences, segments, calls, reference, aligner=None, *,
                 continue
             if reader == "heuristic":
                 ind = float(indel_counts[i]) if indel_counts is not None else 0.0
-                results.append(_heuristic_alignment(seq, s, e, allele, germ, ind, matcher, derive))
+                aln = _heuristic_alignment(seq, s, e, allele, germ, ind, matcher, derive)
             else:
-                results.append(_wfa_alignment(seq, s, e, allele, germ, aligner))
+                aln = _wfa_alignment(seq, s, e, allele, germ, aligner)
+            results.append(_gapless(seq, s, e, aln, germ) if gene == "d" else aln)
         out[gene] = results
     return out

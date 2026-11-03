@@ -656,8 +656,8 @@
     "IGHD4-4*01",
     "IGHD6-13*01"
    ],
-   "d_cigar": "37D",
-   "d_germline_end": 37,
+   "d_cigar": "",
+   "d_germline_end": 0,
    "d_germline_start": 0,
    "d_likelihoods": [
     0.5259684920310974,
@@ -779,8 +779,8 @@
     "IGHD6-13*01",
     "IGHD3-10*03"
    ],
-   "d_cigar": "16D",
-   "d_germline_end": 16,
+   "d_cigar": "",
+   "d_germline_end": 0,
    "d_germline_start": 0,
    "d_likelihoods": [
     0.5282063484191895,
@@ -956,16 +956,16 @@
     "IGHD3-16*03",
     "IGHD3-10*03"
    ],
-   "d_cigar": "1I1M1I13M",
+   "d_cigar": "15M",
    "d_germline_end": 15,
-   "d_germline_start": 1,
+   "d_germline_start": 0,
    "d_likelihoods": [
     0.5318557620048523,
     0.5308752059936523,
     0.5230938792228699
    ],
    "d_sequence_end": 316,
-   "d_sequence_start": 300,
+   "d_sequence_start": 301,
    "indel_count": 0.0,
    "input_sequence": "CGGTGACCAGGGTGACCTGGCCCCACTGCTGGAAGGGTGTTAGCACCGAAGGTTCACGTAATTTTCGCACAGTCATTCACAGCGGTTTCCTCGGCTCGCAGGCTGTTCATTTGTAGATACAACGTGTTCTTGGAAGTGTCTCTGGAGATGCTGAATCGGCCCTTCACAGAGTCTGCATAGTATTTATTACTTCCATCAAATGAGTGATTTGCCACCCACTCCCGGCCCCTGCCTGGAGCCTGGCGGACCCAGTGTCTAGCATAGCAGTTGAAGGTGAATCCAGAGGCTGCACGGGAGAGTCTCAGGTACCTCCCAGGCAGGACCTCNNCTCCCCCAGACTCCA",
    "j_call": "IGHJ6*02",
