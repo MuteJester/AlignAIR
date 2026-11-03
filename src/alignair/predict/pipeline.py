@@ -20,6 +20,7 @@ from .germline import align_germline
 from .junction import derive_junction
 from .segment import correct_segments
 from .threshold import select_alleles
+from .v_presence import V_ABSENT, V_PRESENCE, v_absent
 
 
 def _genes(cfg: PredictConfig):
@@ -135,11 +136,13 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector, allowed=allowed)
     alignments = align_germline(seqs, segs, calls, reference, aligner,
                                 reader=cfg.germline_reader, indel_counts=preds.indel_count)
+    # a read without a V (a D-J rearrangement, a read starting inside the junction) gets no V call
+    no_v = v_absent(seqs, alignments["v"], reference)
     # `sequences` here is the post-crop, PRE-orientation read; `seqs` is its canonical (forward) frame.
     # The record must OWN the pre-orientation read (not a parallel external list) so the AIRR writer emits
     # the correct `sequence`/`rev_comp` identically for the Python API and the CLI, and crop-consistently.
     records = _to_records(seqs, calls, alignments, genes, preds, cfg.chain_types, segs.low_quality,
-                          was_cropped, input_sequences=sequences)
+                          was_cropped, input_sequences=sequences, no_v=no_v)
     if cfg.airr:
         from .airr import build_airr
         records = build_airr(records, reference, chain=("heavy" if cfg.has_d else "light"))
@@ -152,11 +155,12 @@ def _anchor(position) -> int | None:
 
 
 def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, low_quality=None,
-                was_cropped=None, input_sequences=None) -> list:
+                was_cropped=None, input_sequences=None, no_v=None) -> list:
     orientation = preds.orientation
     anchors = getattr(preds, "anchors", None)
     records = []
     for i, seq in enumerate(sequences):
+        absent_v = no_v is not None and no_v[i]
         oid = int(orientation[i]) if orientation is not None else 0
         rec = {"sequence": seq, "orientation_id": oid,
                "mutation_rate": float(preds.mutation_rate[i]),
@@ -166,7 +170,9 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
             # a model with anchor heads: its record carries the anchors (forward frame, like `seq`) and the
             # productivity they give over the read's V start and J end (predict.junction), not a learned call
             rec.update({ANCHOR_KEYS[g]: _anchor(anchors[g][i]) for g in ANCHOR_GENES})
-            v, j = alignments["v"][i], alignments["j"][i]
+            if absent_v:                                       # no V, so no V anchor to open a junction
+                rec[ANCHOR_KEYS["v"]] = None
+            v, j = (None if absent_v else alignments["v"][i]), alignments["j"][i]
             rec["productive"] = derive_junction(seq, *(rec[ANCHOR_KEYS[g]] for g in ANCHOR_GENES), coding_span=(
                 None if v is None else v.seq_start, None if j is None else j.seq_end)).productive
         if input_sequences is not None:
@@ -199,8 +205,19 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
         d_presence = getattr(preds, "d_presence", None)
         if d_presence is not None and "d" in genes:
             _gate_d(rec, int(d_presence[i]))
+        if absent_v:
+            _gate_v(rec)
         records.append(rec)
     return records
+
+
+def _gate_v(rec: dict) -> None:
+    """Drop the V of a read that holds none (``predict.v_presence``) and record it: no call, no coordinates; the AIRR
+    assembly then gives the read no junction or alignment, and its D and J calls stand."""
+    rec[V_PRESENCE] = V_ABSENT
+    rec["v_call"], rec["v_calls"], rec["v_likelihoods"] = "", [], []
+    for key in ("v_sequence_start", "v_sequence_end", "v_germline_start", "v_germline_end", "v_cigar"):
+        rec.pop(key, None)
 
 
 def _gate_d(rec: dict, klass: int) -> None:

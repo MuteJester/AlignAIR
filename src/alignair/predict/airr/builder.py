@@ -20,6 +20,7 @@ from ...core.anchors import ANCHOR_GENES, ANCHOR_KEYS
 from ...core.d_presence import ABSENT, D_CLASSES, D_PRESENCE, SHORT
 from .constants import SHORT_D_SENTINEL
 from ..junction import derive_junction
+from ..v_presence import V_ABSENT, V_PRESENCE
 from .regions import (anchor_junction_fields, cdr3_in_read, cigar_has_indel, compute_junction, compute_junction_cigar,
                       extract_regions)
 
@@ -117,7 +118,10 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
         out["productive"] = None
         predicted_nonproductive = not neural_productive
     out["ar_indels"] = rec.get("indel_count")
-    cigar_junction = not anchored and _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=is_tcr)
+    if rec.get(V_PRESENCE) == V_ABSENT:
+        # a read without a V (predict.v_presence): no junction or alignment hangs on a V; its D and J calls stand
+        return _partial(out, "no_v")
+    cigar_junction =not anchored and _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=is_tcr)
     # skip the heavy alignment math for clearly-garbage reads (predicted non-productive with multiple
     # indels); the junction above is already attached, and AIRR `productive` stays as it is (blank without anchors).
     # These are PARTIAL, not ok — germline_alignment / identity are not derivable.

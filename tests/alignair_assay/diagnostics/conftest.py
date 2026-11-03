@@ -48,7 +48,9 @@ def make_shaped_model(make_small_model):
     def make(variant: str):
         names = {"igh_igk": ("HUMAN_IGH_OGRDB", "HUMAN_IGK_OGRDB"), "igk": ("HUMAN_IGK_OGRDB",)}.get(
             variant, ("HUMAN_IGH_OGRDB",))
-        model, reference_set = make_small_model(*names, seed=1)
+        # the varied orientations come from the head alone: no bank vote overrides it
+        model, reference_set = make_small_model(*names, seed=1,
+                                                bank_orientation=variant != "igh_varied_orientation")
         with torch.no_grad():
             for g, (start, end) in (LIGHT_SPANS if variant == "igk" else SPANS).items():
                 for head, position in ((model.branches[g].start_head, start), (model.branches[g].end_head, end)):

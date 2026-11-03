@@ -14,8 +14,9 @@
 6. ``segments``: ``pipeline.correct_segments``.
 7. ``alleles``: ``pipeline.select_alleles``.
 8. ``germline``: ``pipeline.align_germline``.
-9. ``records``: ``pipeline._to_records``.
-10. ``airr``: ``alignair.predict.airr.build_airr``.
+9. ``v_presence``: ``pipeline.v_absent``, the reads that hold no V (``alignair.predict.v_presence``).
+10. ``records``: ``pipeline._to_records``, which drops those reads' V.
+11. ``airr``: ``alignair.predict.airr.build_airr``.
 
 Every stage is AlignAIR's own function, looked up where ``pipeline.predict`` looks it up; none is re-implemented.
 Substitutions (``Substitutions``) happen only between stage calls. The private AlignAIR names called here
@@ -67,8 +68,8 @@ from alignair.predict.state import Segments
 from alignair_assay.core.reference import Reference
 
 # The replayed stages, in pipeline order: the keys of ``StageOutputs.seconds``.
-STAGES = ("input_policy", "forward", "clean", "masks", "canonicalize", "segments", "alleles", "germline", "records",
-          "airr")
+STAGES = ("input_policy", "forward", "clean", "masks", "canonicalize", "segments", "alleles", "germline",
+          "v_presence", "records", "airr")
 # "argmax": the logits' argmax, which the product decodes boundaries with; "soft": the soft-argmax expectation.
 DECODERS = ("soft", "argmax")
 
@@ -102,6 +103,8 @@ class StageOutputs:
     # gene -> (reads, alleles) bool: the alleles each read may be called with (the per-read locus masks of a
     # multi-locus model, which select_alleles applied); None when the selector ran unmasked
     allowed: dict[str, np.ndarray] | None = None
+    # per read: whether it holds no V (pipeline.v_absent), so its record has no V call; None when not replayed
+    no_v: list[bool] | None = None
 
 
 @dataclass(frozen=True)
@@ -266,16 +269,18 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
         calls = _substitute(calls, subs.calls)
     with _timed(seconds, "germline"):
         germline = _align(canonical, segments, calls, reference_set, cfg, preds.indel_count, subs.germline)
+    with _timed(seconds, "v_presence"):
+        no_v = pipeline.v_absent(canonical, germline["v"], reference_set)
     with _timed(seconds, "records"):
         records = pipeline._to_records(canonical, calls, germline, genes, preds, cfg.chain_types,
-                                       segments.low_quality, was_cropped, input_sequences=reads)
+                                       segments.low_quality, was_cropped, input_sequences=reads, no_v=no_v)
     with _timed(seconds, "airr"):
         airr_rows = (build_airr(records, reference_set, chain=("heavy" if cfg.has_d else "light")) if cfg.airr
                      else records)
 
     return StageOutputs(ids=list(ids), raw=raw, predictions=preds, canonical=canonical, segments=segments,
                         calls=calls, germline=germline, records=records, airr_rows=airr_rows, seconds=seconds,
-                        allele_names=names, allowed=allowed)
+                        allele_names=names, allowed=allowed, no_v=no_v)
 
 
 @contextmanager

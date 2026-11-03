@@ -82,11 +82,19 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
         assert out.segments.low_quality.any()
         assert "partial" in Counter(row.get("airr_assembly_status") for row in out.airr_rows)
         return
-    assert all(row["v_sequence_end"] - row["v_sequence_start"] > 200 for row in out.airr_rows)
+    # a read the model puts in a frame without its V holds no V there and has none (predict.v_presence)
+    with_v = [row for row in out.airr_rows if row.get("v_presence") != "absent"]
+    assert all(row["v_sequence_end"] - row["v_sequence_start"] > 200 for row in with_v)
+    assert all(row["airr_assembly_reason"] == "no_v" for row in out.airr_rows if row not in with_v)
+    if variant in ("igh", "igh_igk"):
+        assert len(with_v) == len(out.airr_rows)      # the bank vote puts every read in its V's frame
     if variant == "igh_varied_orientation":
         assert set(Counter(row["orientation_id"] for row in out.airr_rows)) == {0, 1, 2, 3}
+        assert 0 < len(with_v) < len(out.airr_rows)   # the head's frames: some reads keep their V, some do not
+    if variant == "igk":
+        assert len(with_v) <= len(out.airr_rows) // 2  # an IGK model reads no IGK V in most of the IGH reads
     if variant != "igh":
-        assert all(re.search("[ID]", row["v_cigar"] + row["j_cigar"]) for row in out.airr_rows)
+        assert all(re.search("[ID]", row["v_cigar"] + row["j_cigar"]) for row in with_v)
     if variant == "igh_igk":
         loci = Counter(row["locus"] for row in out.airr_rows)
         assert set(loci) == {"IGH", "IGK"}
@@ -104,6 +112,7 @@ def test_replay_equals_product_pipeline_for_a_half_open_model(make_small_model, 
     model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
     torch.manual_seed(0)
     model = AlignAIR(replace(model.cfg, boundary_mode="half_open")).eval()
+    model.bind_reference(reference_set)
     ids, seqs = _inputs(s0_reads)
     seqs[-3] = seqs[0] * 3   # longer than the window: cropped to leave the terminal slot
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
@@ -116,7 +125,9 @@ def _half_open(make_small_model):
     from alignair.core import AlignAIR
     model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
     torch.manual_seed(0)
-    return AlignAIR(replace(model.cfg, boundary_mode="half_open")).eval(), reference_set
+    model = AlignAIR(replace(model.cfg, boundary_mode="half_open")).eval()
+    model.bind_reference(reference_set)
+    return model, reference_set
 
 
 def test_classifier_spans_run_on_a_half_open_model(make_small_model, s0_reads):
@@ -574,6 +585,7 @@ def test_a_core_models_calls_take_no_classifier_spans(make_small_model, s0_reads
     register_architecture("test-whole-model-core", ModelComponents(core=lambda cfg: _WholeModelCore(inner)))
     torch.manual_seed(0)
     model = AlignAIR(replace(inner.cfg, architecture="test-whole-model-core")).eval()
+    model.bind_reference(reference_set)
     ids, seqs = _inputs(s0_reads)
     base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     n = len(seqs)

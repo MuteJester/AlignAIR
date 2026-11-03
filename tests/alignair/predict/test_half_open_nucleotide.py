@@ -69,7 +69,9 @@ def test_prediction_reports_an_end_at_the_read_length_when_the_logits_say_so():
     model.branches["j"].end_head.register_forward_hook(peak_at_the_slot_after_the_last_base)
     row = predict_sequences(model, _reference(), [READ], device="cpu", batch_size=1)[0]
     assert row["j_sequence_end"] == len(READ)
-    for gene in ("v", "d", "j"):
+    # the toy V germline (12 nt) holds no 15-mer, so its read holds no V (predict.v_presence)
+    assert row["v_presence"] == "absent" and row["v_call"] == ""
+    for gene in ("d", "j"):
         assert 0 <= row[f"{gene}_sequence_start"] <= row[f"{gene}_sequence_end"] <= len(READ)
     # a read longer than the window is cropped to leave the terminal slot
     assert len(predict_sequences(model, _reference(), [READ * 8], device="cpu", batch_size=1)) == 1

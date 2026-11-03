@@ -28,7 +28,8 @@ def test_a_tiny_chip_trains_reloads_predicts_airr_rows_and_resumes(tmp_path):
                  "ACGTN"]
     result = aligner.predict(sequences, batch_size=2)
     rows = list(result)
-    assert len(rows) == 2 and all(row["v_call"] for row in rows)
+    # the V read keeps its V call; the 5 nt read holds no V (predict.v_presence)
+    assert len(rows) == 2 and rows[0]["v_call"] and (rows[1]["v_call"], rows[1]["v_presence"]) == ("", "absent")
     raw = aligner.predict_raw(sequences, batch_size=1)
     assert raw["v_allele"].shape == (2, aligner.model.cfg.v_allele_count)
     assert not any(key.startswith("chip_") for key in raw)

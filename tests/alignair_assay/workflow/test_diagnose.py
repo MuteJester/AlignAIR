@@ -130,7 +130,8 @@ def test_a_d_presence_head_is_diagnosed_with_its_confusion(built, make_small_mod
 
 
 def test_end_to_end_report_renders_every_section(built, make_small_model):
-    model, reference_set = make_small_model(REFERENCE, seed=0)
+    # the head's orientation alone (no bank vote), so the misoriented reads are the head's wrong calls
+    model, reference_set = make_small_model(REFERENCE, seed=0, bank_orientation=False)
     model.orientation_head = Forward()
     result = evaluate((model, reference_set), built, ["S0", "S1"], device="cpu", batch_size=32, profile=True)
     assert isinstance(result, DiagnosticsResult)

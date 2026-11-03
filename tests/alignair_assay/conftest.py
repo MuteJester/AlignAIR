@@ -97,20 +97,26 @@ def load_fixture():
 
 @pytest.fixture(scope="session")
 def make_small_model(genairr):
-    """``make(*dataconfig_names, seed=0) -> (model, reference_set)``: a random-init AlignAIR with narrow towers
-    (embedding 8, 8 filters, 32 tower outputs; about 0.3 M parameters) on the dataconfigs' reference, in eval
-    mode on the CPU, with ``TEMPERATURES`` as its allele temperatures."""
+    """``make(*dataconfig_names, seed=0, bank_orientation=True) -> (model, reference_set)``: a random-init AlignAIR
+    with narrow towers (embedding 8, 8 filters, 32 tower outputs; about 0.3 M parameters) on the dataconfigs'
+    reference, in eval mode on the CPU, with ``TEMPERATURES`` as its allele temperatures. With ``bank_orientation``
+    it orients a read by the reference's k-mers where they decide (``core.config.bank_orientation``), so a read the
+    reference reads is in its V's frame as a trained orientation head puts it, and keeps its V call
+    (``predict.v_presence``); the random-init head orients the rest."""
     import torch
     from alignair.core import AlignAIR
     from alignair.core.config import AlignAIRConfig
     from alignair.reference.reference_set import ReferenceSet
 
-    def make(*names: str, seed: int = 0):
+    def make(*names: str, seed: int = 0, bank_orientation: bool = True):
         configs = [dataconfig(name) for name in names]
         cfg = AlignAIRConfig.from_dataconfigs(*configs, embed_dim=8, filters=8, block_out=32,
-                                              allele_temperatures=dict(TEMPERATURES))
+                                              allele_temperatures=dict(TEMPERATURES),
+                                              bank_orientation=bank_orientation)
         torch.manual_seed(seed)
-        return AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(*configs)
+        model, reference_set = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(*configs)
+        model.bind_reference(reference_set)
+        return model, reference_set
 
     return make
 
