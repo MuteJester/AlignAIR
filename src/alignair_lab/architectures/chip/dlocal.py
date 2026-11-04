@@ -29,12 +29,17 @@ RATE = (0.01, 0.25)        # the mutation rate the ratios use, clamped
 TEMPERATURE = 1.0          # the scores' temperature in the alleles' log posterior
 
 
+def junction_bounds(mask: torch.Tensor, v_end: torch.Tensor, j_start: torch.Tensor) -> tuple:
+    """``(start, stop)`` (B,): the read positions from ``v_end - FLANK`` to ``j_start + FLANK``, within the read."""
+    start = (v_end - FLANK).clamp(0, mask.shape[1] - 1)
+    return start, torch.minimum(j_start + FLANK, mask.sum(1))
+
+
 def junction(tokens: torch.Tensor, mask: torch.Tensor, v_end: torch.Tensor, j_start: torch.Tensor) -> torch.Tensor:
     """(B, width) the read's bases from ``v_end - FLANK`` to ``j_start + FLANK`` (A/C/G/T tokens; 0 elsewhere): the
     width is the batch's longest junction, at most ``CROP``."""
     length = tokens.shape[1]
-    start = (v_end - FLANK).clamp(0, length - 1)
-    stop = torch.minimum(j_start + FLANK, mask.sum(1))
+    start, stop = junction_bounds(mask, v_end, j_start)
     width = int((stop - start).clamp(1, CROP).max())
     position = start[:, None] + torch.arange(width, device=tokens.device)
     crop = tokens.gather(1, position.clamp_max(length - 1))
