@@ -88,14 +88,17 @@ def _expectation(logits: torch.Tensor, slots: torch.Tensor) -> torch.Tensor:
 
 
 class ChipCore(nn.Module):
-    def __init__(self, cfg):
+    """The chip's units on a trunk ``channels`` wide (``TRUNK_CHANNELS``; lab-chipw64-v1 is 64 wide)."""
+
+    def __init__(self, cfg, channels: int = TRUNK_CHANNELS):
         super().__init__()
         self.genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
         self.counts = {gene: getattr(cfg, _COUNT[gene]) for gene in self.genes}
-        self.trunk = DilatedTrunk(cfg.embed_dim, TRUNK_CHANNELS)
-        self.parser = Parser()
-        self.anchors = nn.ModuleDict({gene: AnchorHead() for gene in ANCHOR_GENES}) if cfg.anchor_heads else None
-        self.reader = ShmReader(genes=self.genes)
+        self.trunk = DilatedTrunk(cfg.embed_dim, channels)
+        self.parser = Parser(channels)
+        self.anchors = (nn.ModuleDict({gene: AnchorHead(channels) for gene in ANCHOR_GENES}) if cfg.anchor_heads
+                        else None)
+        self.reader = ShmReader(channels, genes=self.genes)
         self.scans = nn.ModuleDict({gene: BankScan() for gene in self.genes})
         self.d_presence = DPresenceEvidence() if cfg.d_presence_head else None
         self.bank = None

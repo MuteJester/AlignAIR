@@ -15,15 +15,18 @@ OPTIONS = {"architecture": "lab-chip-v1", "embed_dim": 8, "boundary_mode": "half
            "d_presence_head": True, "chip_inputs": True}
 
 
-def test_a_tiny_chip_trains_reloads_predicts_airr_rows_and_resumes(tmp_path):
+@pytest.mark.parametrize("architecture,channels", [("lab-chip-v1", 128), ("lab-chipw64-v1", 64)])
+def test_a_tiny_chip_trains_reloads_predicts_airr_rows_and_resumes(tmp_path, architecture, channels):
     request = TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", steps=2, batch_size=2, device="cpu", seed=31,
-                                          val_every=1, model_options=OPTIONS)
+                                          val_every=1, model_options={**OPTIONS, "architecture": architecture})
     losses, metrics = [], []
     run = run_training(request, output_dir=tmp_path / "first",
                        on_iteration=lambda item: losses.append(item.result.total))
     assert len(losses) == 2 and np.isfinite(losses).all()
     aligner = run.best_aligner(device="cpu")
-    assert aligner.model.cfg.architecture == "lab-chip-v1" and aligner.model.core.bank is not None
+    assert aligner.model.cfg.architecture == architecture and aligner.model.core.bank is not None
+    # the trunk's width, as the model file rebuilds it
+    assert aligner.model.core.trunk.project.out_channels == channels
     sequences = ["CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCCTGCAAGGCTTCTGGATACACCTTC",
                  "ACGTN"]
     result = aligner.predict(sequences, batch_size=2)
