@@ -244,7 +244,10 @@ def test_stage_outputs_shapes_and_ids(small_model, s0_reads):
     for g in GENES:
         assert len(out.segments.start[g]) == len(out.segments.end[g]) == n
         assert len(out.calls[g]) == len(out.germline[g]) == n
-        assert [call.names[0] for call in out.calls[g]] == [record[f"{g}_call"] for record in out.records]
+        assert [call.names[0] for call in out.calls[g]] == [record[f"{g}_call"].split(",")[0] for record in out.records]
+    # a V call is listed with its ties (the call first)
+    assert all(record["v_call"] == ",".join(ties)
+               for record, ties, gone in zip(out.records, out.v_ties, out.no_v) if not gone)
     assert len(out.segments.low_quality) == n
     assert len(out.records) == len(out.airr_rows) == n
     assert list(out.seconds) == list(STAGES) and all(seconds >= 0 for seconds in out.seconds.values())
@@ -442,7 +445,7 @@ def test_calls_replace_the_selected_alleles(make_shaped_model, s0_reads):
     for i in range(n):
         if i % 2 == 0:
             assert out.calls["v"][i] == calls["v"][i]
-            assert out.records[i]["v_call"] == pick and out.germline["v"][i].allele == pick
+            assert out.records[i]["v_call"].split(",")[0] == pick and out.germline["v"][i].allele == pick
         else:
             assert out.calls["v"][i] == base.calls["v"][i] and out.germline["v"][i] == base.germline["v"][i]
     assert out.calls["j"] == base.calls["j"]

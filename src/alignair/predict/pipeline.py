@@ -20,6 +20,7 @@ from .germline import align_germline
 from .junction import derive_junction
 from .segment import correct_segments
 from .threshold import select_alleles
+from .ties import tied_alleles
 from .v_presence import V_ABSENT, V_PRESENCE, v_absent
 
 
@@ -138,11 +139,13 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
                                 reader=cfg.germline_reader, indel_counts=preds.indel_count)
     # a read without a V (a D-J rearrangement, a read starting inside the junction) gets no V call
     no_v = v_absent(seqs, alignments["v"], reference)
+    # the V alleles each read cannot tell from its call, among those it may be called with
+    v_ties = tied_alleles(seqs, alignments["v"], reference, allowed=None if allowed is None else allowed.get("v"))
     # `sequences` here is the post-crop, PRE-orientation read; `seqs` is its canonical (forward) frame.
     # The record must OWN the pre-orientation read (not a parallel external list) so the AIRR writer emits
     # the correct `sequence`/`rev_comp` identically for the Python API and the CLI, and crop-consistently.
     records = _to_records(seqs, calls, alignments, genes, preds, cfg.chain_types, segs.low_quality,
-                          was_cropped, input_sequences=sequences, no_v=no_v)
+                          was_cropped, input_sequences=sequences, no_v=no_v, v_ties=v_ties)
     if cfg.airr:
         from .airr import build_airr
         records = build_airr(records, reference, chain=("heavy" if cfg.has_d else "light"))
@@ -155,7 +158,7 @@ def _anchor(position) -> int | None:
 
 
 def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, low_quality=None,
-                was_cropped=None, input_sequences=None, no_v=None) -> list:
+                was_cropped=None, input_sequences=None, no_v=None, v_ties=None) -> list:
     orientation = preds.orientation
     anchors = getattr(preds, "anchors", None)
     records = []
@@ -193,7 +196,9 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
             rec["locus"] = chain_types[0]
         for g in genes:
             call, aln = calls[g][i], alignments[g][i]
-            rec[f"{g}_call"] = call.names[0] if call.names else ""
+            # the V call is listed with the alleles the read cannot tell from it (predict.ties)
+            listed = v_ties[i] if g == "v" and v_ties is not None and v_ties[i] else call.names[:1]
+            rec[f"{g}_call"] = ",".join(listed)
             rec[f"{g}_calls"] = list(call.names)
             rec[f"{g}_likelihoods"] = list(call.likelihoods)
             if aln is not None:

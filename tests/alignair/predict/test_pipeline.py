@@ -30,5 +30,5 @@ def test_predict_end_to_end_contract():
         assert isinstance(r[f"{g}_sequence_start"], (int, np.integer))
         assert isinstance(r[f"{g}_cigar"], str)
         if r[f"{g}_call"]:
-            assert r[f"{g}_call"] in ref.gene(g.upper()).names          # a real reference allele
+            assert set(r[f"{g}_call"].split(",")) <= set(ref.gene(g.upper()).names)   # real reference alleles
         assert r[f"{g}_sequence_end"] >= r[f"{g}_sequence_start"]
