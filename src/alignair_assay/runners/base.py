@@ -58,7 +58,8 @@ class RunnerOptions:
     alignair_model: str = "alignair-igh-human@1.0.0"
     alignair_checkpoint: str | None = None
     device: str = "cpu"
-    batch_size: int = 64
+    # None: the tool's own default (alignair-local's CLI picks one per device and worker count)
+    batch_size: int | None = 64
     cache_dir: str | None = None
     # left out of the hash: a dict is not hashable, and the options stay usable as a key
     checkpoints: Mapping[str, str] = field(default_factory=dict, hash=False)

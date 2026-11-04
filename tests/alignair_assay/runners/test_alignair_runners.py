@@ -221,7 +221,10 @@ def test_local_command_line(tmp_path):
     assert runner.predict_command(fasta, out) == [
         sys.executable, "-c", "import sys; from alignair.cli.main import main; sys.exit(main())",
         "predict", "--model", str(checkpoint), "--input", str(fasta), "--out", str(out), "--device", "cuda",
-        "--batch-size", "32", "--quiet"]
+        "--batch-size", "32", "--quiet", "--threads", "4"]
+    assert "--threads" not in AlignAIRLocal(checkpoint).predict_command(fasta, out)
+    # without a batch size the CLI picks its own
+    assert "--batch-size" not in AlignAIRLocal(checkpoint, batch_size=None).predict_command(fasta, out)
     assert CLI_ENTRY == "import sys; from alignair.cli.main import main; sys.exit(main())"
     assert runner.predict_command(fasta, out, genotype=genotype)[-2:] == ["--genotype", str(genotype)]
     assert runner.environment() == {"PYTHONPATH": str(SOURCE_DIR), "OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4"}

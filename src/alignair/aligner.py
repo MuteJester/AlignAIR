@@ -47,8 +47,12 @@ def resolve_device(device: str | None = "auto") -> str:
     return d
 
 
-def _auto_batch_size(device: str) -> int:
-    return 256 if device.startswith("cuda") else 64
+def _auto_batch_size(device: str, workers: int = 1) -> int:
+    """256 on a GPU, 64 in one CPU process, 16 per single-threaded CPU worker (``predict.parallel``), whose
+    activations then stay in its share of the cache."""
+    if device.startswith("cuda"):
+        return 256
+    return 16 if workers > 1 else 64
 
 
 @dataclass

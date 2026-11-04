@@ -359,12 +359,12 @@ class AlignAIRImage:
 class AlignAIRLocal:
     """A model checkpoint (a ``.alignair`` file) run with this checkout's AlignAIR CLI. It runs in a subprocess of
     the interpreter running the assay, with ``PYTHONPATH`` set to the checkout's ``src``, on torch device
-    ``device`` with ``batch_size`` reads per batch. ``threads`` sets the math threads, and ``cpus``, when given,
-    pins it with ``taskset``."""
+    ``device`` with ``batch_size`` reads per batch. ``threads`` sets the math threads and the CLI's ``--threads``,
+    and ``cpus``, when given, pins it with ``taskset``."""
 
     name = "alignair-local"
 
-    def __init__(self, checkpoint, device: str = "cpu", batch_size: int = 64, threads: int | None = None,
+    def __init__(self, checkpoint, device: str = "cpu", batch_size: int | None = 64, threads: int | None = None,
                  cpus: str | None = None):
         self.checkpoint = Path(absolute_path(checkpoint))
         self.device = device
@@ -395,9 +395,14 @@ class AlignAIRLocal:
 
     def predict_command(self, fasta, out_tsv, genotype=None) -> list[str]:
         """``<python> -c CLI_ENTRY predict --model <checkpoint> --input <fasta> --out <tsv> --device <device>
-        --batch-size <n> --quiet [--genotype <genotype>]``."""
+        [--batch-size <n>] --quiet [--threads <threads>] [--genotype <genotype>]``: without ``batch_size`` the CLI
+        picks its own; with ``threads``, the CLI's own thread option (on the CPU, that many single-threaded worker
+        processes)."""
         argv = [sys.executable, "-c", CLI_ENTRY, "predict", "--model", str(self.checkpoint), "--input", str(fasta),
-                "--out", str(out_tsv), "--device", self.device, "--batch-size", str(self.batch_size), "--quiet"]
+                "--out", str(out_tsv), "--device", self.device,
+                *(["--batch-size", str(self.batch_size)] if self.batch_size is not None else []), "--quiet"]
+        if self.threads is not None:
+            argv += ["--threads", str(self.threads)]
         return argv if genotype is None else [*argv, "--genotype", str(genotype)]
 
     def fingerprint(self) -> dict:

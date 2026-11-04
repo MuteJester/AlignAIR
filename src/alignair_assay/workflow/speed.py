@@ -113,7 +113,7 @@ def speed_configs(cfg: RunConfig, *, cuda: bool | None = None) -> list[tuple[str
     (``<tool>_<N>t``; one configuration when N is 1). alignair-local, timed when it is a tool or
     ``cfg.alignair_checkpoint`` is set, runs instead on ``cuda`` with N threads (``alignair-local_cuda``) when
     its interpreter sees a CUDA device (``cuda``; probed by ``runners.alignair.local_cuda_available`` when None),
-    and on ``cpu`` at N threads. The tools' other options are ``cfg``'s. ValueError when N is below 1 or above the
+    and on ``cpu`` at N threads, at its CLI's own batch size. The tools' other options are ``cfg``'s. ValueError when N is below 1 or above the
     host's logical CPUs, or for alignair-api among the tools (``API``: alignair-local times its checkpoint)."""
     refuse_api(cfg.tools)
     n = cfg.threads
@@ -132,8 +132,9 @@ def speed_configs(cfg: RunConfig, *, cuda: bool | None = None) -> list[tuple[str
             if cuda is None:
                 cuda = local_cuda_available()
             on_gpu = [("cuda", f"{tool}_cuda")] if cuda else []
-            for device, name in [*on_gpu, ("cpu", f"{tool}_{n}t")]:
-                configs.append((name, SpeedConfig(tool, replace(base, threads=n, cpus=cpu_list(n), device=device))))
+            for device, name in [*on_gpu, ("cpu", f"{tool}_{n}t")]:   # at the CLI's own batch size, as a user runs it
+                configs.append((name, SpeedConfig(tool, replace(base, threads=n, cpus=cpu_list(n), device=device,
+                                                                 batch_size=None))))
         else:
             for threads in dict.fromkeys((1, n)):
                 configs.append((f"{tool}_{threads}t",

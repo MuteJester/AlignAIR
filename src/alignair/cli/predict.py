@@ -43,7 +43,12 @@ def register(sub) -> None:
                    help="output columns: a preset (full/core/minimal/airr) or a comma-separated "
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
     p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
-    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--batch-size", type=int, default=None,
+                   help="reads per batch (default: 256 on a GPU, 16 per worker with --threads on the CPU, else 64)")
+    p.add_argument("--threads", type=int, default=None,
+                   help="CPU threads: on the CPU, N worker processes of one thread each (torch's threads scale "
+                        "poorly on read batches); on a GPU, torch's CPU threads (default: one process on torch's "
+                        "own thread count)")
     p.add_argument("--chunk-size", type=int, default=20000,
                    help="stream the input in chunks of this many reads (default 20000)")
     p.add_argument("--genotype", default=None,
@@ -101,11 +106,12 @@ def _load_metadata_table(args):
 
 
 def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_column, id_column,
-                    meta_by_id, extra_cols, out_locus, overrides, batch_size, rejects_out):
+                    meta_by_id, extra_cols, out_locus, overrides, batch_size, rejects_out, pool=None):
     """Stream reader-chunk -> predict -> AIRR assembly -> metadata join -> writer -> counters, in
     chunks of sequence/metadata payloads. ID reservations grow with distinct accepted output IDs.
     Order and cross-chunk ID handling are preserved; rejects are written incrementally. Returns
-    ``(counts, fail_reasons, partial_reasons)``. The output is committed atomically on a clean pass."""
+    ``(counts, fail_reasons, partial_reasons)``. The output is committed atomically on a clean pass.
+    ``pool`` (a ``predict.parallel.ProcessPool``), when given, predicts each chunk in its workers."""
     import csv
     from collections import Counter
 
@@ -141,7 +147,8 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
                     rejects_buf.clear()
                 if not cseqs:
                     continue
-                records = aligner.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides).to_dicts()
+                records = (pool.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides) if pool is not None
+                           else aligner.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides).to_dicts())
                 metas = lookup_metadata_rows(meta_by_id, batch.source_ids)  # Batched lookup by original source ID
                 writer.write(cids, cseqs, records, metas=metas)
                 counts["accepted"] += len(cseqs)
@@ -194,7 +201,7 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
         "alignair_version": md.get("created_by_alignair"),
         "loci": list(loci) if loci else [],  # the model's exact locus mapping
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
-                    "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size,
+                    "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size, "threads": args.threads,
                     "device": device},
         "counts": {  # full record accounting
             "input_records": counts["input"], "accepted_records": counts["accepted"],
@@ -219,8 +226,10 @@ def run(args) -> int:
     from ..registry import maybe_notify_updates, resolve_model, sources as _sources
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
 
-    if args.chunk_size <= 0 or args.batch_size <= 0:
+    if args.chunk_size <= 0 or (args.batch_size is not None and args.batch_size <= 0):
         return report_error(ConfigurationError("--chunk-size and --batch-size must be positive"))
+    if args.threads is not None and args.threads < 1:
+        return report_error(ConfigurationError(f"--threads must be at least 1 (got {args.threads})"))
     for name, val in (("--max-assembly-failures", args.max_assembly_failures),
                       ("--max-partial-assemblies", args.max_partial_assemblies)):
         if not (0.0 <= val <= 1.0):
@@ -278,6 +287,17 @@ def run(args) -> int:
     except DuplicateMetadataId as e:
         return fail(e)
 
+    # threads: on the CPU, worker processes of one thread each (predict.parallel); elsewhere torch's CPU threads
+    pool = None
+    if args.threads is not None:
+        if device == "cpu" and args.threads > 1:
+            from ..predict.parallel import ProcessPool
+            pool = ProcessPool(aligner, args.threads)
+        else:
+            torch.set_num_threads(args.threads)
+    from ..aligner import _auto_batch_size
+    args.batch_size = args.batch_size or _auto_batch_size(device, pool.workers if pool is not None else 1)
+
     # 2) stream reader-chunk -> predict -> assemble -> join -> write, in bounded memory (~chunk_size)
     from ..io.airr import PredictionCountMismatch
     try:
@@ -285,10 +305,12 @@ def run(args) -> int:
             aligner, input_path=args.input, out_path=args.out, columns=args.columns,
             chunk_size=args.chunk_size, seq_column=args.sequence_column, id_column=args.id_column,
             meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus, overrides=overrides,
-            batch_size=args.batch_size, rejects_out=args.rejects_out)
+            batch_size=args.batch_size, rejects_out=args.rejects_out, pool=pool)
     except PredictionCountMismatch as e:                  # a defect returned != 1 prediction per read
         return fail(e)
     finally:
+        if pool is not None:
+            pool.close()
         if hasattr(meta_by_id, "close"):                 # release the disk-backed metadata index
             meta_by_id.close()
 

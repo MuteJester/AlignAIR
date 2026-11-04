@@ -262,6 +262,8 @@ def test_speed_configs():
     local = configs["alignair-local_cuda"]()
     assert isinstance(local, AlignAIRLocal) and (local.device, local.threads, local.cpus) == ("cuda", 8, "0-7")
     assert local.checkpoint == Path("/models/m.alignair")
+    # the CLI times at its own default batch size, as a user runs it
+    assert local.batch_size is None and configs["alignair-local_8t"]().batch_size is None
 
     # No CUDA device: alignair-local on CPU only. No checkpoint: no alignair-local. The oracle is never timed,
     # and one thread is one configuration.
