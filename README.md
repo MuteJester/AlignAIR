@@ -81,11 +81,16 @@ alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
 
 # restrict calls to a donor's genotype (a subset of the model's reference) - YAML or FASTA
 alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human --genotype donor.yaml
+
+# or infer the donor's V genotype from the reads themselves and re-call the reads it settles
+alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human --infer-genotype
 ```
 
 `--model <id>` downloads + hash-verifies + caches the model on first use (pin a version with
 `--model <id>@<version>`). `--genotype` constrains the run to a subset of the model's reference - no
-retraining.
+retraining. `--infer-genotype` counts each V gene's alleles over the reads whose V call is a single
+allele (TIgGER's frequency rule), writes the genotype as an AIRR GenotypeSet (`out.tsv.genotype.json`),
+and re-calls the reads whose call it excludes while they tie an allele it allows.
 
 Prefer your own reference or species? Train a model, then align with it:
 

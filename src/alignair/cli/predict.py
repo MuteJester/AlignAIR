@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 from ..aligner import Aligner
 from ..errors import AlignAIRError, ConfigurationError, InputError, ModelError, RegistryError, report_error
+from ..genotype.lean import EXPLAIN, MIN_READS
 from ._errors import fail
 
 
@@ -60,6 +61,18 @@ def register(sub) -> None:
                         "model's own reference (the same allele, or a close same-length variant)")
     p.add_argument("--genotype-method", choices=["mask", "softmax", "renormalize", "redistribute"],
                    default="mask", help="how to apply the genotype constraint (default: mask)")
+    p.add_argument("--infer-genotype", action="store_true",
+                   help="infer the donor's V genotype from the reads' own calls (TIgGER's frequency rule on the "
+                        "reads whose V call is a single allele) and re-call the reads whose call it excludes while "
+                        "they tie an allele it allows; writes the genotype to --genotype-out. Reads the input twice")
+    p.add_argument("--genotype-out", default=None,
+                   help="where --infer-genotype writes the genotype, an AIRR GenotypeSet (default: <out>.genotype.json)")
+    p.add_argument("--genotype-explain", type=float, default=EXPLAIN,
+                   help=f"--infer-genotype: the share of a gene's single-allele reads its alleles explain "
+                        f"(default {EXPLAIN})")
+    p.add_argument("--genotype-min-reads", type=int, default=MIN_READS,
+                   help=f"--infer-genotype: the single-allele reads a gene needs to be genotyped; a gene with fewer "
+                        f"keeps every allele (default {MIN_READS})")
     p.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
     p.add_argument("--revision", default=None,
                    help="pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version")
@@ -106,12 +119,14 @@ def _load_metadata_table(args):
 
 
 def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_column, id_column,
-                    meta_by_id, extra_cols, out_locus, overrides, batch_size, rejects_out, pool=None):
+                    meta_by_id, extra_cols, out_locus, overrides, batch_size, rejects_out, pool=None,
+                    observe=None):
     """Stream reader-chunk -> predict -> AIRR assembly -> metadata join -> writer -> counters, in
     chunks of sequence/metadata payloads. ID reservations grow with distinct accepted output IDs.
     Order and cross-chunk ID handling are preserved; rejects are written incrementally. Returns
     ``(counts, fail_reasons, partial_reasons)``. The output is committed atomically on a clean pass.
-    ``pool`` (a ``predict.parallel.ProcessPool``), when given, predicts each chunk in its workers."""
+    ``pool`` (a ``predict.parallel.ProcessPool``), when given, predicts each chunk in its workers. ``observe``, when
+    given, is called with each chunk's first row index and its records before they are counted."""
     import csv
     from collections import Counter
 
@@ -149,6 +164,8 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
                     continue
                 records = (pool.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides) if pool is not None
                            else aligner.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides).to_dicts())
+                if observe is not None:
+                    observe(counts["written"], records)
                 metas = lookup_metadata_rows(meta_by_id, batch.source_ids)  # Batched lookup by original source ID
                 writer.write(cids, cseqs, records, metas=metas)
                 counts["accepted"] += len(cseqs)
@@ -188,7 +205,8 @@ def _sha256_file(path: str) -> str:
 
 
 def _write_run_metadata(out: str, model_path: str, args, device: str, counts: dict, *,
-                        loci=None, fail_reasons: dict | None = None, partial_reasons: dict | None = None) -> None:
+                        loci=None, fail_reasons: dict | None = None, partial_reasons: dict | None = None,
+                        genotype_pass: dict | None = None) -> None:
     from ..model_file import container, read_metadata
     md = read_metadata(model_path) if container.is_alignair_file(model_path) else {}
     ref = md.get("reference", {})
@@ -214,6 +232,7 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
         },
         "airr_assembly_fail_reasons": fail_reasons or {}, "airr_assembly_partial_reasons": partial_reasons or {},
         "offline": bool(args.offline),
+        **({"genotype_pass": genotype_pass} if genotype_pass is not None else {}),
         "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     }
     with open(out + ".run.json", "w") as f:
@@ -234,6 +253,15 @@ def run(args) -> int:
                       ("--max-partial-assemblies", args.max_partial_assemblies)):
         if not (0.0 <= val <= 1.0):
             return report_error(ConfigurationError(f"{name} must be a fraction in [0, 1] (got {val})"))
+    if args.infer_genotype:
+        if args.genotype:
+            return report_error(ConfigurationError("--infer-genotype infers the genotype; it cannot take --genotype"))
+        if "-" in (args.input, args.out):
+            return report_error(ConfigurationError(
+                "--infer-genotype reads the input twice and rewrites the output: give files, not '-'"))
+        if not (0.0 < args.genotype_explain <= 1.0) or args.genotype_min_reads < 1:
+            return report_error(ConfigurationError("--genotype-explain must be in (0, 1] and --genotype-min-reads "
+                                                   "at least 1"))
 
     # 1) resolve + load the model ONCE (before reading, so a 1M-read input never sits in memory)
     srcs = _sources.resolve_sources(args.registry)
@@ -299,16 +327,33 @@ def run(args) -> int:
     args.batch_size = args.batch_size or _auto_batch_size(device, pool.workers if pool is not None else 1)
 
     # 2) stream reader-chunk -> predict -> assemble -> join -> write, in bounded memory (~chunk_size)
-    from ..io.airr import PredictionCountMismatch
+    from ..io.airr import PredictionCountMismatch, needs_assembly
+    from . import genotype_pass as gp
+    observer = gp.Observer() if args.infer_genotype else None
+    first = f"{args.out}.pass1.{os.getpid()}" if observer is not None else args.out
+    genotype_record = None
     try:
         counts, fail_reasons, partial_reasons = _stream_predict(
-            aligner, input_path=args.input, out_path=args.out, columns=args.columns,
+            aligner, input_path=args.input, out_path=first, columns=args.columns,
             chunk_size=args.chunk_size, seq_column=args.sequence_column, id_column=args.id_column,
             meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus, overrides=overrides,
-            batch_size=args.batch_size, rejects_out=args.rejects_out, pool=pool)
+            batch_size=args.batch_size, rejects_out=args.rejects_out, pool=pool, observe=observer)
+        if observer is not None:      # infer the genotype, re-call the reads it moves, swap their rows in
+            do_airr = needs_assembly(args.columns)
+
+            def predict(sequences, **bound):
+                if pool is not None:
+                    return pool.predict(sequences, batch_size=args.batch_size, airr=do_airr, **bound)
+                return aligner.predict(sequences, batch_size=args.batch_size, airr=do_airr, **bound).to_dicts()
+            genotype_record = gp.complete(observer, args, first=first, predict=predict,
+                                          v_names=reference.gene("V").names, extra_cols=extra_cols,
+                                          out_locus=out_locus, meta_by_id=meta_by_id, counts=counts,
+                                          fail_reasons=fail_reasons, partial_reasons=partial_reasons)
     except PredictionCountMismatch as e:                  # a defect returned != 1 prediction per read
         return fail(e)
     finally:
+        if observer is not None and os.path.exists(first):
+            os.remove(first)
         if pool is not None:
             pool.close()
         if hasattr(meta_by_id, "close"):                 # release the disk-backed metadata index
@@ -316,7 +361,8 @@ def run(args) -> int:
 
     if not args.no_run_metadata:
         _write_run_metadata(args.out, model_path, args, device, counts, loci=loci,
-                            fail_reasons=fail_reasons, partial_reasons=partial_reasons)
+                            fail_reasons=fail_reasons, partial_reasons=partial_reasons,
+                            genotype_pass=genotype_record)
     if counts["accepted"] == 0:
         return report_error(InputError(f"no valid reads in {args.input} (wrote {counts['rejected']} to rejects)",
                                        context={"path": args.input, "rejected_count": counts["rejected"]}))
