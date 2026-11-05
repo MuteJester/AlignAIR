@@ -41,9 +41,10 @@ NULL_SUITES, DIAGNOSE_SUITES, NULL_SCALE = ("S1", "S7"), ("S1", "S3"), 0.05
 DIAGNOSE_BATCH = RunnerOptions().batch_size
 REAL_DONOR, REAL_CAP = "W-97", 2000
 # The positive control: the module zeroed in a copy of the checkpoint, and the head metric that must get worse. The
-# chip's parser places every boundary, so with it zeroed the J end under the logits' argmax, which the model gets
-# right on most S1 reads, cannot stay exact.
-POSITIVE_MODULE, POSITIVE_METRIC = "core.parser", "head.j.end_exact.argmax"
+# chip's parser places the boundaries the read does not fix: with it zeroed, the D start under the logits' argmax
+# moves on almost every read (tests/alignair_assay/diagnostics/test_positive_control.py). The J end of a full-length
+# S1 read is its read end whatever the parser says, so it is no control.
+POSITIVE_MODULE, POSITIVE_METRIC = "core.parser", "head.d.start_exact.argmax"
 # The tool of ``all`` whose per-case scores must equal ``diagnose``'s (the checkpoint's second label).
 AGREEMENT_TOOL = f"alignair-local@{NULL_LABELS[1]}"
 # IgBLAST against independent evidence: its known answers on real reads, its S1 V top-1 (the P2 number) and speed.
