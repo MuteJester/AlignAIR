@@ -92,10 +92,10 @@ class AlignAIRConfig:
     allele_temperatures: Optional[dict] = None
     # Serialized construction choices shared by nucleotide and protein models. Architecture names
     # resolve through core.components; loading never imports arbitrary code from a model file.
-    architecture: str = "conv-v1"
+    architecture: str = "chip-v1"
     classification_mode: Literal["multilabel", "categorical"] = "multilabel"
-    boundary_mode: Literal["residue", "half_open"] = "residue"
-    use_meta_heads: bool = True
+    boundary_mode: Literal["residue", "half_open"] = "half_open"
+    use_meta_heads: bool = False
     reject_empty_sequences: bool = False
     input_space: Literal["nucleotide", "protein"] = "nucleotide"
     label_space: Literal["alleles", "protein_classes"] = "alleles"
@@ -109,10 +109,10 @@ class AlignAIRConfig:
     productive_unknown: Literal["negative", "masked"] = "negative"
     # The chip's training inputs (``data.chip_inputs``): per-base germline columns and identifiable regions, and per
     # batch the bank masks and teacher inputs. The chip reads half-open boundaries.
-    chip_inputs: bool = False
+    chip_inputs: bool = True
     # At inference, orient each read by the bound reference (``neural.heads.orientation.BankOrientation``): the
     # transform under which most of its 12-mers are germline 12-mers; the orientation head decides when none wins.
-    bank_orientation: bool = False
+    bank_orientation: bool = True
     # The heads read from a trunk's per-position features: only an architecture with a trunk builds them
     # (``core.model.TRUNK_HEAD_FLAGS``). New ones are appended here, so positional construction never shifts.
     # The per-position recombination-region head (pre/V/N1/D/N2/J/post).
@@ -120,15 +120,18 @@ class AlignAIRConfig:
     # The V and J anchor heads (the V Cys and J Trp/Phe codon starts, or "not observed"). The junction, frame, stop
     # codon and productivity are then derived from them (``predict.junction``), and the learned productive head and
     # its loss term are left out.
-    anchor_heads: bool = False
+    anchor_heads: bool = True
     # The 3-state D presence head (absent / too short to call / callable, ``core.d_presence``), which gates the D call
-    # at prediction. Only a heavy-chain configuration (``has_d``) has a D to gate.
-    d_presence_head: bool = False
+    # at prediction. Only a heavy-chain configuration (``has_d``) has a D to gate; None (the default) builds it
+    # exactly when the configuration has a D.
+    d_presence_head: Optional[bool] = None
     # The chip's trunk width (channels per position): its parser, anchors, SHM reader and D units read features this
     # wide. chip-v1 is trained at 64.
     trunk_channels: int = 64
 
     def __post_init__(self):
+        if self.d_presence_head is None:
+            self.d_presence_head = self.has_d
         for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head", "chip_inputs",
                      "bank_orientation"):
             if type(getattr(self, name)) is not bool:
@@ -161,8 +164,9 @@ class AlignAIRConfig:
         The caller supplies its tokenizer vocabulary and label counts. Other combinations, such as
         categorical heads with auxiliary predictions, can be selected with dataclasses.replace.
         """
-        return replace(self, classification_mode="categorical", boundary_mode="half_open",
-                       use_orientation=False, use_meta_heads=False, state_head=False,
+        return replace(self, architecture="conv-v1", classification_mode="categorical", boundary_mode="half_open",
+                       use_orientation=False, use_meta_heads=False, state_head=False, anchor_heads=False,
+                       d_presence_head=False, chip_inputs=False, bank_orientation=False,
                        reject_empty_sequences=True, input_space="protein", label_space="protein_classes")
 
     def classification_key(self, gene: str) -> str:

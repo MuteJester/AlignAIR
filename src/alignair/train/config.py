@@ -38,7 +38,8 @@ class TrainingConfig:
     draw in the training step, an ``on_iteration`` callback or a study evaluator raises TrainingError;
     use ``data_workers=0`` there.
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant
-    region) around the curriculum's reads, which GenAIRR simulates bare; None trains on the bare reads.
+    region) around the curriculum's reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the
+    chip's recipe; None trains on the bare reads.
     """
     dataconfigs: tuple
     steps: int = 100_000
@@ -62,7 +63,7 @@ class TrainingConfig:
     init_from: str | None = None
     trust_pickle: bool = False
     data_workers: int = 0
-    flanks: FlankPolicy | None = None
+    flanks: FlankPolicy | None = field(default_factory=FlankPolicy)
 
     def __post_init__(self):
         if self.init_from and self.resume_path or type(self.trust_pickle) is not bool:

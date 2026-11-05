@@ -91,7 +91,11 @@ def build_model_config(v_label_count: int, j_label_count: int, d_label_count: in
     config = AlignAIRConfig(v, j, d if has_d else 0, has_d=has_d, num_chain_types=chains,
                             max_seq_length=length,
                             vocab_size=AA_VOCAB_SIZE if input_space == 'protein' else len(TOKEN_DICT),
-                            use_orientation=input_space == 'nucleotide')
+                            use_orientation=input_space == 'nucleotide',
+                            bank_orientation=input_space == 'nucleotide')
+    if input_space == 'protein':                  # the amino-acid track keeps conv-v1 until it leaves AlignAIR
+        config = replace(config, architecture='conv-v1', boundary_mode='residue', use_meta_heads=True,
+                         anchor_heads=False, d_presence_head=False, chip_inputs=False, bank_orientation=False)
     if label_space == 'protein_classes':
         config = replace(config.with_amino_acid_heads(), use_orientation=input_space == 'nucleotide')
     config = replace(config, input_space=input_space, label_space=label_space, **config_options)
