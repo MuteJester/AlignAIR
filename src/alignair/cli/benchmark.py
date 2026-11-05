@@ -1,7 +1,7 @@
 """``alignair benchmark`` — evaluate a model on freshly-generated GenAIRR reads, per stratum.
 
-A self-contained self-check (call accuracy, coord MAE, junction_nt_exact). The full head-to-head
-against IgBLAST lives in the separate ``alignair_benchmark`` package.
+A self-contained self-check (call accuracy, coord MAE, junction_nt_exact). The head-to-head against IgBLAST, on
+simulated suites and real donors, is the development assay's (``alignair_assay``).
 """
 from __future__ import annotations
 

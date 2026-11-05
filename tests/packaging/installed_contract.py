@@ -79,7 +79,6 @@ def main():
                 raise AssertionError("offline loading accepted a missing cache artifact")
         # The research harness is intentionally source-only. The runtime's
         # shipped self-evaluator must work without importing that harness.
-        assert importlib.util.find_spec("alignair_benchmark") is None
         assert importlib.util.find_spec("alignair_lab") is None
         from alignair.evaluate import run_benchmark
         evaluation = run_benchmark(restored, reference, gd.HUMAN_IGH_OGRDB,

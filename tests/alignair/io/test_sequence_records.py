@@ -173,10 +173,12 @@ def test_io_failures_are_classified_and_chained(tmp_path):
     assert caught.value.context["path"] == str(missing)
 
 
+# ``mtime=0``: a fixed gzip header, so the parameter (and the test id) is the same in every process that collects it
 @pytest.mark.parametrize("name,payload,cause", [("bad.fa", b"\xff", UnicodeError),
                                                ("bad.fa.gz", b"not gzip", gzip.BadGzipFile),
                                                ("deflate.fa.gz", b"\x1f\x8b\x08\x00" + b"\x00" * 6 + b"\x07" + b"\x00" * 8, zlib.error),
-                                               ("short.fa.gz", gzip.compress(b">id\nAC\n")[:-5], EOFError)])
+                                               ("short.fa.gz", gzip.compress(b">id\nAC\n", mtime=0)[:-5], EOFError)],
+                         ids=["bad_text", "not_gzip", "bad_deflate", "truncated_gzip"])
 def test_corrupt_text_or_gzip_is_an_input_error(tmp_path, name, payload, cause):
     path = tmp_path / name
     path.write_bytes(payload)

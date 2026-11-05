@@ -2,7 +2,7 @@
 
 Each lab module may import only the lab modules listed for it in ``ALLOWED``; a new module needs a row before it
 passes. ``architectures`` holds candidate model code shaped like the product's, so it imports the product and nothing
-of the assay or of the rest of the lab. No lab module imports ``alignair_benchmark``.
+of the assay or of the rest of the lab.
 """
 import ast
 from pathlib import Path
@@ -62,9 +62,7 @@ def _problems(modules) -> list[str]:
             problems.append(f"{rel}: module {owner!r} has no row in ALLOWED")
         for line, name in _imports(rel, tree):
             parts = name.split(".")
-            if parts[0] == "alignair_benchmark":
-                problems.append(f"{rel}:{line}: imports alignair_benchmark")
-            elif parts[0] == "alignair_assay" and owner == "architectures":
+            if parts[0] == "alignair_assay" and owner == "architectures":
                 problems.append(f"{rel}:{line}: architectures may not import the assay")
             elif parts[0] == "alignair_lab" and len(parts) > 1 and parts[1] not in ALLOWED.get(owner, set()):
                 problems.append(f"{rel}:{line}: {owner} may not import alignair_lab.{parts[1]}")
@@ -89,7 +87,6 @@ def test_the_rule_refuses_what_it_names():
                ("architectures/wide.py", "from alignair_assay.core import layout"): "may not import the assay",
                ("architectures/wide.py", "from ..records import write_record_cache"): "architectures may not import "
                                                                                      "alignair_lab.records",
-               ("headline.py", "import alignair_benchmark"): "imports alignair_benchmark",
                ("sweep.py", ""): "module 'sweep' has no row in ALLOWED"}
     for module, problem in refused.items():
         found = _problems(_synthetic(module))

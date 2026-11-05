@@ -5,8 +5,8 @@ from numbers import Real
 from ....errors import ConfigurationError
 
 # How a curriculum draws its polymerase-indel count per read:
-# - "uniform", the historical form and the default: a uniform count in [0, round(5p)]. Benchmark, evaluation and
-#   matcher datasets are generated from it, so it never changes.
+# - "uniform", the historical form and the default: a uniform count in [0, round(5p)]. The benchmark and evaluation
+#   strata are generated from it, so it never changes.
 # - "weighted": indels are rare in real reads (GenAIRR: under 1% per read at standard fidelity), so this form gives
 #   them only the share of reads the indel head needs to learn from. The weight of reads with at least one indel
 #   ramps linearly from INDEL_FRACTION[0] at p=0 to INDEL_FRACTION[1] at p=1, and INDEL_COUNT_WEIGHTS splits it

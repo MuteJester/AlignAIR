@@ -14,9 +14,3 @@ pytest_plugins = (
 @pytest.fixture(scope="session")
 def repo_root(pytestconfig) -> Path:
     return pytestconfig.rootpath
-
-
-@pytest.fixture(scope="session")
-def training_csv(repo_root) -> Path:
-    """The retained IGH CSV also tests real allele-vocabulary cardinalities."""
-    return repo_root / "tests" / "fixtures" / "training" / "sample_igh.csv"

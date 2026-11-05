@@ -5,7 +5,7 @@ passes. ``real`` is the one nested package: each of its modules is a sub-layer o
 by ``real.<sub>`` (``real/__init__.py`` by ``real``), with its own row, and an import of
 ``alignair_assay.real.<sub>`` is an import of that sub-layer. ``workflow`` and ``cli`` may import any of them;
 ``report`` none (it renders plain dicts). ``alignair`` is imported only by ``core/reference.py`` and
-``diagnostics/``, ``alignair_benchmark`` never, and the pure layers (truth, metrics, stats, real.truth,
+``diagnostics/``, and the pure layers (truth, metrics, stats, real.truth,
 real.metrics) do no file, process or network IO.
 """
 
@@ -179,12 +179,6 @@ def test_real_truth_and_metrics_are_pure():
     io = _synthetic(("real/truth.py", "import csv"), ("real/metrics.py", "def f(p):\n    return p.read_text()"))
     assert len(_io_problems(io)) == 2
     assert _io_problems(_synthetic(("real/genotype.py", "import csv\nopen('x')"))) == []
-
-
-def test_no_benchmark_import():
-    found = [f"{rel}:{line}" for _, rel, tree in _modules() for line, name in _imports(rel, tree)
-             if name.split(".")[0] == "alignair_benchmark"]
-    assert not found, found
 
 
 def test_no_lab_import():

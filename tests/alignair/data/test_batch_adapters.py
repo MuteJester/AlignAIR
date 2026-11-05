@@ -112,14 +112,11 @@ def test_record_adapters_reject_the_wrong_objective_and_malformed_records():
         adapter(_reference(), cfg, overflow="discard")([_record()])
 
 
-def test_historical_imports_use_the_shared_implementations():
-    from alignair.train.gym.targets import build_targets as old_targets
+def test_the_trainers_batch_builder_is_the_shared_adapter():
     from alignair.train.trainer import build_batch
     from alignair.data.adapters import build_nucleotide_batch
-    from alignair.data.targets import build_targets
 
     assert build_batch is build_nucleotide_batch
-    assert old_targets is build_targets
 
 
 def test_nucleotide_empty_read_policy_matches_the_model_configuration():

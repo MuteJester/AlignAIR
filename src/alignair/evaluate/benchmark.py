@@ -12,7 +12,7 @@ from ..errors import DataContractError
 
 def default_strata() -> dict:
     """Named GenAIRR generation params: clean, moderate corruption, heavy-SHM, and a J-anchored short
-    amplicon. (The full 22-stratum head-to-head lives in the ``alignair_benchmark`` package.) The strata are
+    amplicon. (The head-to-head against IgBLAST is the development assay's, ``alignair_assay``.) The strata are
     pinned to the curriculum's historical uniform indel form, so they keep generating the same data."""
     from ..train.gym import Curriculum
     cur = Curriculum(indel_form="uniform")

@@ -9,12 +9,11 @@ LAYERS = {"component", "integration", "acceptance"}
 
 
 def _claim_tests():
-    """The release claims' evidence tests: ``alignair.validation.gates.CLAIM_TESTS``, or a replacement assigned to
-    this module's ``CLAIM_TESTS``. Imported when first needed, not when this plugin loads: importing ``alignair``
-    imports GenAIRR, which a test directory's conftest may first put a frozen copy of on the path."""
+    """The release claims' evidence tests: ``tests.support.claims.CLAIM_TESTS``, or a replacement assigned to this
+    module's ``CLAIM_TESTS``."""
     claims = globals().get("CLAIM_TESTS")
     if claims is None:
-        from alignair.validation.gates import CLAIM_TESTS as claims
+        from .claims import CLAIM_TESTS as claims
     return claims
 
 

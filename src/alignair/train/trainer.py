@@ -86,7 +86,7 @@ class TrainingOutcome:
 def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, init_seed=None, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
-          monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
+          mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
           schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
@@ -103,10 +103,10 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     in ``train_args["selection_unavailable"]``.
 
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks around every curriculum stream's reads
-    (``CurriculumStreamPolicy.flanks``): training, validation and the X-ray probe; ``train_args["flanks"]`` records it.
+    (``CurriculumStreamPolicy.flanks``): training and validation; ``train_args["flanks"]`` records it.
 
     ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
-    GenAIRR provider of every curriculum stream of the run: training, validation and the X-ray probe. With
+    GenAIRR provider of every curriculum stream of the run: training and validation. With
     ``data_workers`` > 0 it runs in the worker processes, so it must be picklable (a module-level function or a
     picklable object). None generates the records with GenAIRR.
 
@@ -164,7 +164,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
               "it, so the run draws no selected records", flush=True)
 
     def _build_stream(purpose, *, augment=False, start_step=0):
-        # every stream draws its own seed blocks: training (a resume from (seed, step)), validation and the probe
+        # every stream draws its own seed blocks: training (a resume from (seed, step)) and validation
         records = training_records(dataconfigs, policy=source_policy, seed=seed, purpose=purpose,
                                    start_step=start_step,
                                    record_source=record_source)
@@ -237,23 +237,6 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
 
     observation = StudySession(study, model, _checkpoint) if study is not None else None
 
-    # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
-    xray = probe_input = None
-    if monitor_log:
-        from ..xray import ModelXRay
-        ev = list(itertools.islice(_build_stream('probe'), batch_size))
-        probe_input, probe_targets = data.validation_adapter(ev)
-
-        def task_eval(m, inp, _tg=probe_targets):
-            return tasks.metrics(m(inp), _tg)
-
-        def task_losses(m, inp, _tg=probe_targets, _lv=logvars):
-            return tasks.loss(m(inp), _tg, _lv)[1]      # per-task loss tensors
-
-        xray = ModelXRay(model, lr=lr, log_path=monitor_log, deep_every=deep_every,
-                         uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
-                         shared_module="embedding")
-
     # fixed-seed, immutable validation batches for best-checkpoint selection
     val_set = []
     if val_every and val_every > 0:
@@ -294,9 +277,6 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
             if log_every and step % log_every == 0:
                 line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
                         + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
-                if xray is not None:               # reads this step's grads (pre next zero_grad)
-                    rec = xray.observe(step, total, parts, probe_input=probe_input)
-                    line += "  " + xray.summary_line(rec)
                 print(line, flush=True)
             if val_set and step % val_every == 0:  # validation + best-checkpoint selection
                 vmetrics, vscore = engine.validate(val_set)
@@ -316,7 +296,5 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     if save_path:                                  # save the ACTUAL completed step, not the requested one
         save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args,
                       label_schema=schema, scheduler=engine.scheduler)
-    if xray is not None:
-        xray.close()
     return TrainingOutcome(model, completed, best_path, observation.checkpoints if observation else {},
                            tuple(observation.validations) if observation else ())
