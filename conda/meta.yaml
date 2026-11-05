@@ -32,13 +32,11 @@ requirements:
     - pytorch >=2.2
     - genairr >=2.2.0          # NOTE: not yet on bioconda — submit/locate before a Bioconda recipe lands
     - numpy >=1.24
-    - scipy >=1.11
     - pyyaml >=6.0
     - biopython >=1.80
-    # CLI extra (matches pyproject [cli]: huggingface_hub, parasail, argcomplete)
+    # CLI extra (matches pyproject [cli]: huggingface_hub, parasail)
     - huggingface_hub >=0.20
     - parasail-python >=1.3
-    - argcomplete >=3.0
 
 test:
   imports:

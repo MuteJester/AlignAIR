@@ -25,7 +25,6 @@ def __getattr__(name):
 
 def pytest_addoption(parser):
     group = parser.getgroup("alignair QA")
-    group.addoption("--run-local-data", action="store_true", help="Allow optional local research artifacts")
     group.addoption("--model-cache", help="Directory of pre-fetched, checksum-pinned validation models")
     group.addoption("--enforce-claims", action="store_true", help="Require every release claim's evidence to pass")
     group.addoption("--claim-report", help="Write required-claim outcomes as JSON")
@@ -66,8 +65,6 @@ def pytest_collection_modifyitems(config, items):
         layers = LAYERS & {mark.name for mark in item.iter_markers()}
         if len(layers) != 1:
             raise pytest.UsageError(f"{item.nodeid}: declare exactly one QA layer, found {sorted(layers)}")
-        if item.get_closest_marker("local_data") and not config.getoption("--run-local-data"):
-            item.add_marker(pytest.mark.skip(reason="local data requires --run-local-data"))
 
 
 @pytest.hookimpl(trylast=True)

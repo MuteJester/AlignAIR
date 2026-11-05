@@ -148,4 +148,4 @@ def test_profile_of_the_released_checkpoint(reference, s1_layout, device):
     assert profile["reads_per_second"] > 0 and profile["device"] == device
     assert sum(e["share"] for e in profile["modules"].values()) == pytest.approx(1.0, abs=1e-6)
     assert sum(e["share"] for e in profile["stages"].values()) == pytest.approx(1.0, abs=1e-6)
-    assert all(profile["modules"][f"{g}.seg_tower"]["ms_per_read"] > 0 for g in "vdj")
+    assert all(profile["modules"][name]["ms_per_read"] > 0 for name in hooked_modules(model))

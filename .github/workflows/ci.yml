@@ -30,7 +30,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[cli,test-research]"
+          pip install ".[cli,test]"
       - name: Smoke — CLI is wired
         run: |
           alignair --version
@@ -63,14 +63,14 @@ jobs:
           python-version: "3.12"
       - run: |
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[cli,test-research]"
+          pip install ".[cli,test]"
       - name: Component tests in a reproducible shuffled order
         run: |
-          python -m pytest tests -q -m "component and not slow and not local_data and not model_validation" \
+          python -m pytest tests -q -m "component and not slow and not model_validation" \
             --test-order=shuffle --order-seed=20261026 --junitxml=test-results/shuffled.xml
       - name: Component tests in concurrent isolated workers
         run: |
-          python -m pytest tests -q -m "component and not slow and not local_data and not model_validation" \
+          python -m pytest tests -q -m "component and not slow and not model_validation" \
             -n 2 --junitxml=test-results/parallel.xml
       - uses: actions/upload-artifact@v4
         if: always()

@@ -19,7 +19,6 @@ markers =
     integration: test integration
     acceptance: test acceptance
     claim_evidence: required evidence
-    local_data: local data
 """)
     pytester.makeconftest(f"""
 pytest_plugins = {plugins!r}

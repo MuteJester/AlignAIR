@@ -37,8 +37,8 @@ pip install "AlignAIR[cli]"            # core + CLI (recommended)
 alignair doctor                        # verify Python / PyTorch+CUDA / GenAIRR
 ```
 
-Install extras: `[cli]` (model download + parasail), `[train]` (training extras), `[test]` (pytest +
-official AIRR validation and recipe checks), `[test-research]` (also AA HMM/scorer test tools), `[all]`.
+Install extras: `[cli]` (model download + parasail), `[test]` (pytest, official AIRR validation, recipe
+checks), `[all]`.
 CSV/TSV reading uses Python's standard library; pandas is not
 required for inference or training. PyTorch is auto-detected for GPU; for a CPU-only install, `pip install torch
 --index-url https://download.pytorch.org/whl/cpu` first.
