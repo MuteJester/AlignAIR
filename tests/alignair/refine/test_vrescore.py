@@ -7,7 +7,7 @@ import torch
 
 from alignair.data.tokenizer import TOKEN_DICT
 
-from alignair_lab.architectures.chip.vrescore import GAP, banded_scores
+from alignair.refine.vrescore import GAP, banded_scores
 
 pytestmark = pytest.mark.component
 
@@ -70,7 +70,7 @@ def _reference_band_dp(pair, active):
 def test_the_band_recursion_is_the_base_by_base_definition():
     """Pair scores from matches to the outside penalty and bases outside the span (inactive steps) included: the
     recursion's scores are the definition's."""
-    from alignair_lab.architectures.chip.vrescore import OUTSIDE, band_dp
+    from alignair.refine.vrescore import OUTSIDE, band_dp
     torch.manual_seed(0)
     pair = torch.randn(3, 2, 40, 17) * 2
     pair[0, :, :5] = OUTSIDE

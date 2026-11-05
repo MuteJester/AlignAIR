@@ -1,4 +1,4 @@
-"""lab-chip-v1's core: the trunk, parser, anchors, SHM reader and bank scans wired into the product's outputs, with the
+"""The chip's core (chip-v1): the trunk, parser, anchors, SHM reader and bank scans wired into the product's outputs, with the
 scans' gradient into the parser valved, D presence reading detached evidence, and teacher inputs read only while
 training."""
 import pytest
@@ -9,7 +9,7 @@ from alignair.core.d_presence import D_PRESENCE_LOGITS
 from alignair.errors import ConfigurationError
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
-from alignair_lab.architectures.chip import core as chip_core
+from alignair.network import chip as chip_core
 
 from .conftest import toy_reference
 
@@ -173,7 +173,7 @@ def test_the_chip_reads_only_up_to_the_batchs_longest_read_and_gives_the_same_ou
     """The chip computes over the batch's longest read (and its end slot), not the whole window, and pads its outputs
     back: every product output equals the whole window's, and so does every loss part (the per-position internals past
     the reads, which the losses mask, are zeros). Eval mode: dropout and the teacher draws depend on the shapes."""
-    from alignair_lab.architectures.chip.objective import ChipObjective
+    from alignair.network.objective import ChipObjective
     model, batch, setup = chip
     model.eval()
     trimmed = model(batch.inputs)

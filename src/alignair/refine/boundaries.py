@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import torch
 
-from alignair.core.anchors import ANCHOR_LOGITS
+from ..core.anchors import ANCHOR_LOGITS
 
-from .parser import IMPOSSIBLE
+from ..network.parser import IMPOSSIBLE
 
 WINDOW = 24               # bases from the anchor whose evidence counts
 OUTSIDE = -8.0            # the ratio of a base the allele does not have

@@ -124,12 +124,18 @@ class AlignAIRConfig:
     # The 3-state D presence head (absent / too short to call / callable, ``core.d_presence``), which gates the D call
     # at prediction. Only a heavy-chain configuration (``has_d``) has a D to gate.
     d_presence_head: bool = False
+    # The chip's trunk width (channels per position): its parser, anchors, SHM reader and D units read features this
+    # wide. chip-v1 is trained at 64.
+    trunk_channels: int = 64
 
     def __post_init__(self):
         for name in ("short_d_penalty", "region_head", "anchor_heads", "d_presence_head", "chip_inputs",
                      "bank_orientation"):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be a boolean", context={"field": name})
+        if type(self.trunk_channels) is not int or self.trunk_channels < 1:
+            raise ConfigurationError(f"trunk_channels must be a positive integer, got {self.trunk_channels!r}",
+                                     context={"field": "trunk_channels"})
         if self.d_presence_head and not self.has_d:
             raise ConfigurationError("d_presence_head needs a D: the configuration has none (has_d is False)",
                                      context={"field": "d_presence_head"},

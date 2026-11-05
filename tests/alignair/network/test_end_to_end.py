@@ -1,4 +1,4 @@
-"""lab-chip-v1 end to end on the human IGH reference: it trains from GenAIRR, reloads through a model file bound to its
+"""The chip (chip-v1) end to end on the human IGH reference: it trains from GenAIRR, reloads through a model file bound to its
 reference, predicts AIRR rows and resumes. (The generic candidate contract in test_architectures assumes conv-v1's
 components and both alphabets; the chip is nucleotide-only and is checked here.)"""
 import numpy as np
@@ -7,24 +7,23 @@ import pytest
 from alignair import TrainingConfig, run_training
 from alignair.model_file import read_training_state
 
-import alignair_lab.architectures  # noqa: F401  (registers lab-chip-v1)
 
 pytestmark = pytest.mark.integration
 
-OPTIONS = {"architecture": "lab-chip-v1", "embed_dim": 8, "boundary_mode": "half_open", "anchor_heads": True,
+OPTIONS = {"architecture": "chip-v1", "embed_dim": 8, "boundary_mode": "half_open", "anchor_heads": True,
            "d_presence_head": True, "chip_inputs": True}
 
 
-@pytest.mark.parametrize("architecture,channels", [("lab-chip-v1", 128), ("lab-chipw64-v1", 64)])
-def test_a_tiny_chip_trains_reloads_predicts_airr_rows_and_resumes(tmp_path, architecture, channels):
+@pytest.mark.parametrize("channels", [64, 16])
+def test_a_tiny_chip_trains_reloads_predicts_airr_rows_and_resumes(tmp_path, channels):
     request = TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", steps=2, batch_size=2, device="cpu", seed=31,
-                                          val_every=1, model_options={**OPTIONS, "architecture": architecture})
+                                          val_every=1, model_options={**OPTIONS, "trunk_channels": channels})
     losses, metrics = [], []
     run = run_training(request, output_dir=tmp_path / "first",
                        on_iteration=lambda item: losses.append(item.result.total))
     assert len(losses) == 2 and np.isfinite(losses).all()
     aligner = run.best_aligner(device="cpu")
-    assert aligner.model.cfg.architecture == architecture and aligner.model.core.bank is not None
+    assert aligner.model.cfg.architecture == "chip-v1" and aligner.model.core.bank is not None
     # the trunk's width, as the model file rebuilds it
     assert aligner.model.core.trunk.project.out_channels == channels
     sequences = ["CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCCTGCAAGGCTTCTGGATACACCTTC",

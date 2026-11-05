@@ -18,7 +18,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from alignair.reference.frames import gene_frames
+from ..reference.frames import gene_frames
 
 BASES = "ATGC"
 _COMPLEMENT = str.maketrans("ACGTN", "TGCAN")

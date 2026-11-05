@@ -3,7 +3,7 @@ import pytest
 import torch
 
 from alignair.reference.reference_set import GeneReference, ReferenceSet
-from alignair_lab.architectures.chip.bank import BankCompiler
+from alignair.network.bank import BankCompiler
 
 pytestmark = pytest.mark.component
 

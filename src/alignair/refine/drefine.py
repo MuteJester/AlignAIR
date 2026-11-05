@@ -23,7 +23,7 @@ import torch
 from torch.nn import functional as F
 
 from .dlocal import RATE, junction, junction_bounds
-from .parser import IMPOSSIBLE
+from ..network.parser import IMPOSSIBLE
 
 OUTSIDE = -8.0             # the ratio of a read base the diagonal pairs with no germline base
 MIN_SCORE = 0.0            # the best stretch a read's junction needs on its called allele for the D to be refined

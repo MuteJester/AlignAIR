@@ -3,7 +3,7 @@ import pytest
 import torch
 
 from alignair.reference.frames import FRAME_WIDTHS
-from alignair_lab.architectures.chip.reader import EDIT_STATES, ShmReader, top_coordinates
+from alignair.network.reader import EDIT_STATES, ShmReader, top_coordinates
 
 pytestmark = pytest.mark.component
 

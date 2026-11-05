@@ -7,8 +7,8 @@ import torch
 from alignair.data.tokenizer import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
-from alignair_lab.architectures.chip.bank import BankCompiler, reverse_complement
-from alignair_lab.architectures.chip.drefine import refine_d_boundaries
+from alignair.network.bank import BankCompiler, reverse_complement
+from alignair.refine.drefine import refine_d_boundaries
 
 pytestmark = pytest.mark.component
 
@@ -90,7 +90,7 @@ def test_the_d_starts_at_the_v_end_where_its_germline_runs_back_into_the_v():
 def test_a_d_start_with_no_d_end_after_it_is_impossible():
     """No D end can follow a start at or past the J start (26): those slots are the parser's impossible logit, not one
     that depends on how many impossible slots the window has."""
-    from alignair_lab.architectures.chip.parser import IMPOSSIBLE
+    from alignair.network.parser import IMPOSSIBLE
     out, _ = _refined(V + N1 + D1[3:15] + N2 + J)
     assert (out["d_start_logits"][0, 26:] == IMPOSSIBLE).all()
     assert (out["d_end_logits"][0, :11] == IMPOSSIBLE).all()                # nor a D end at or before the V end
@@ -100,7 +100,7 @@ def test_a_heavy_weight_on_a_long_read_still_finds_the_d(monkeypatch):
     """At a weight where the evidence of the bases before the junction alone passes the impossible logit, the D is
     still the one its germline places: the evidence counts from the V end, and a slot no path uses never outweighs
     one a path does. N2 runs 10 bases, 4 of them past the germline's end; the J starts at 34."""
-    from alignair_lab.architectures.chip import drefine
+    from alignair.refine import drefine
     monkeypatch.setattr(drefine, "EVIDENCE_WEIGHT", 200.)
     out, _ = _refined(V + N1 + D1[3:15] + "C" * 10 + J, j_start=34)
     assert out["d_start_logits"].argmax().item() == 12

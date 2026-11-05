@@ -21,7 +21,7 @@ from __future__ import annotations
 import torch
 from torch.nn import functional as F
 
-from .scan import allele_log_posterior
+from ..network.scan import allele_log_posterior
 
 FLANK = 6                  # bases on each side of the V end and J start the junction keeps
 CROP = 96                  # the junction's most bases

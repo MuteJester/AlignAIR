@@ -1,4 +1,4 @@
-"""lab-chip-v1's core: the units wired as the design's chip-v3 and chip-v4-training diagrams draw them.
+"""The chip's core (``chip-v1``, AlignAIR's network): the units wired as the design's chip-v3 and chip-v4-training diagrams draw them.
 
 After the product's orientation correction: the trunk (``DilatedTrunk``) gives every base its features once; the
 parser reads the region path; the anchor heads (``AnchorHead``) find the V Cys and J Trp/Phe, each only inside its
@@ -33,25 +33,25 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from alignair.core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
-from alignair.core.d_presence import D_CLASSES, D_PRESENCE_LOGITS
-from alignair.errors import ConfigurationError
-
-from ..trunk import TRUNK_CHANNELS, AnchorHead, DilatedTrunk
+from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
+from ..core.d_presence import D_PRESENCE_LOGITS
+from ..errors import ConfigurationError
+from ..refine.boundaries import refine_boundaries
+from ..refine.dlocal import local_d_log_posterior
+from ..refine.drefine import refine_d_boundaries
+from ..refine.vrescore import rescore_v
 from .bank import BankCompiler
-from .dlocal import local_d_log_posterior
-from .drefine import refine_d_boundaries
 from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser
+from .presence import DPresenceEvidence
 from .reader import ShmReader, top_coordinates
-from .refiner import refine_boundaries
 from .scan import BankScan, allele_log_posterior
-from .vrescore import rescore_v
+from .trunk import TRUNK_CHANNELS, AnchorHead, DilatedTrunk
 
 ROUTE_VALVE = 0.1
 P_TEACHER = 0.5
 TOP_K = 3
 SUPPORT = 1e-8            # at inference, the region marginal over which a base's columns are read for the gene's scan
-_COUNT ={"v": "v_allele_count", "d": "d_allele_count", "j": "j_allele_count"}
+_COUNT = {"v": "v_allele_count", "d": "d_allele_count", "j": "j_allele_count"}
 
 
 class _Valve(torch.autograd.Function):
@@ -70,17 +70,6 @@ def valve(x: torch.Tensor, scale: float) -> torch.Tensor:
     return _Valve.apply(x, scale)
 
 
-class DPresenceEvidence(nn.Module):
-    """(B, 4) evidence -> (B, 3) logits over ``D_CLASSES``: Linear(4, 16), GELU, Linear(16, 3)."""
-
-    def __init__(self):
-        super().__init__()
-        self.hidden, self.classes = nn.Linear(4, 16), nn.Linear(16, len(D_CLASSES))
-
-    def forward(self, evidence):
-        return self.classes(F.gelu(self.hidden(evidence)))
-
-
 def trimmed_width(mask: torch.Tensor) -> int:
     """The positions a forward needs: the batch's longest read and the end slot after it, at most the window."""
     return min(mask.shape[1], int(mask.sum(1).max()) + 1)
@@ -93,7 +82,7 @@ def _expectation(logits: torch.Tensor, slots: torch.Tensor) -> torch.Tensor:
 
 
 class ChipCore(nn.Module):
-    """The chip's units on a trunk ``channels`` wide (``TRUNK_CHANNELS``; lab-chipw64-v1 is 64 wide)."""
+    """The chip's units on a trunk ``channels`` wide (chip-v1: ``cfg.trunk_channels``, 64 as trained)."""
 
     def __init__(self, cfg, channels: int = TRUNK_CHANNELS):
         super().__init__()
@@ -121,7 +110,7 @@ class ChipCore(nn.Module):
 
     def forward(self, emb, mask, end_mask, *, tokens, batch):
         if self.bank is None:
-            raise ConfigurationError("lab-chip-v1 reads a reference bank: bind one with model.bind_reference")
+            raise ConfigurationError("the chip reads a reference bank: bind one with model.bind_reference")
         whole, width = mask.shape[1], trimmed_width(mask)
         if width == whole:
             return self._forward(emb, mask, end_mask, tokens=tokens, batch=batch)

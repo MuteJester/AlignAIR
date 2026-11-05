@@ -24,11 +24,11 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from alignair.core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
-from alignair.core.d_presence import D_CLASSES, D_PRESENCE, D_PRESENCE_LOGITS
-from alignair.neural.heads.state import STATE_INDEX
-from alignair.tasks.metrics import MetricReport, alignment_metrics
-from alignair.tasks.supervision import supervised_rows
+from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
+from ..core.d_presence import D_CLASSES, D_PRESENCE, D_PRESENCE_LOGITS
+from ..neural.heads.state import STATE_INDEX
+from ..tasks.metrics import MetricReport, alignment_metrics
+from ..tasks.supervision import supervised_rows
 
 from .parser import GENES as STATE_OF, STATES, ParserOutput, crf_nll
 from .reader import EDIT_STATES

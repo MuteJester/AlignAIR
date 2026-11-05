@@ -14,9 +14,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from alignair.reference.frames import FRAME_WIDTHS
+from ..reference.frames import FRAME_WIDTHS
 
-from ..trunk import TRUNK_CHANNELS
+from .trunk import TRUNK_CHANNELS
 
 EDIT_STATES = ("germline", "substitution", "insertion")
 

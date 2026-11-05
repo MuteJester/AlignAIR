@@ -5,8 +5,8 @@ import itertools
 import pytest
 import torch
 
-from alignair_lab.architectures.chip import parser as parser_module
-from alignair_lab.architectures.chip.parser import STATES, Parser, crf, crf_nll
+from alignair.network import parser as parser_module
+from alignair.network.parser import STATES, Parser, crf, crf_nll
 
 pytestmark = pytest.mark.component
 

@@ -106,7 +106,21 @@ class ModelComponents:
                                          context={"component": field.name})
 
 
-_ARCHITECTURES = {"conv-v1": ModelComponents()}
+def _chip_core(cfg: AlignAIRConfig) -> nn.Module:
+    """The chip's core (``alignair.network.chip``) on a trunk ``cfg.trunk_channels`` wide; imported when built, so the
+    registry does not import the network."""
+    from ..network.chip import ChipCore
+    return ChipCore(cfg, channels=cfg.trunk_channels)
+
+
+def _chip_objective(cfg: AlignAIRConfig):
+    """The chip's training objective (``alignair.network.objective``)."""
+    from ..network.objective import ChipObjective
+    return ChipObjective(cfg)
+
+
+_ARCHITECTURES = {"conv-v1": ModelComponents(),
+                  "chip-v1": ModelComponents(core=_chip_core, objective=_chip_objective, reference_agnostic=True)}
 # The environment variable naming the modules (comma-separated) that register architectures defined outside the package.
 ARCHITECTURE_MODULES = "ALIGNAIR_ARCHITECTURE_MODULES"
 

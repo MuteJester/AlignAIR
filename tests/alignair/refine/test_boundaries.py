@@ -6,8 +6,8 @@ import torch
 from alignair.data.tokenizer import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
-from alignair_lab.architectures.chip.bank import BankCompiler
-from alignair_lab.architectures.chip.refiner import refine_boundaries
+from alignair.network.bank import BankCompiler
+from alignair.refine.boundaries import refine_boundaries
 
 from .conftest import toy_reference
 

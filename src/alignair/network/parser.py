@@ -25,9 +25,9 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from alignair.neural.heads.region import READ_REGIONS
+from ..neural.heads.region import READ_REGIONS
 
-from ..trunk import TRUNK_CHANNELS
+from .trunk import TRUNK_CHANNELS
 
 STATES = tuple(READ_REGIONS)
 GENES = {"v": STATES.index("V"), "d": STATES.index("D"), "j": STATES.index("J")}

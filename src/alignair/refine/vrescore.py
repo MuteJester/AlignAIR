@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import torch
 
-from alignair.core.anchors import ANCHOR_LOGITS
+from ..core.anchors import ANCHOR_LOGITS
 
 BAND = 8                    # bases of net insertion or deletion the band holds
 GAP = 4.0                   # the cost of a base inserted or deleted (about log(1 / 0.02))

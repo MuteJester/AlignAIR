@@ -7,8 +7,8 @@ import torch
 
 from alignair.data.tokenizer import TOKEN_DICT
 
-from alignair_lab.architectures.chip.bank import reverse_complement
-from alignair_lab.architectures.chip.dlocal import junction, local_scores
+from alignair.network.bank import reverse_complement
+from alignair.refine.dlocal import junction, local_scores
 
 pytestmark = pytest.mark.component
 

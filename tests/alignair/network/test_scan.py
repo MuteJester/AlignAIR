@@ -5,8 +5,8 @@ import torch
 
 from alignair.data.tokenizer import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
-from alignair_lab.architectures.chip.bank import BankCompiler, reverse_complement
-from alignair_lab.architectures.chip.scan import OUT, BankScan, allele_log_posterior
+from alignair.network.bank import BankCompiler, reverse_complement
+from alignair.network.scan import OUT, BankScan, allele_log_posterior
 
 pytestmark = pytest.mark.component
 

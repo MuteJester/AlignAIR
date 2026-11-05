@@ -1,5 +1,5 @@
 """A toy chip: a 21-base read (V [0, 8), N1, D [10, 14), N2, J [16, 21)) against a two-allele-per-gene reference, with
-lab-chip-v1 built and bound to it."""
+chip-v1 (a 128-channel trunk) built and bound to it."""
 import pytest
 import torch
 
@@ -7,11 +7,10 @@ from alignair.core import prepare_model
 from alignair.data import NucleotideBatchAdapter
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
-import alignair_lab.architectures  # noqa: F401  (registers lab-chip-v1)
 
 SEQUENCE = "ACGTACGT" + "AT" + "GGCC" + "CT" + "TGGAA"
 SPANS = {"v": (0, 8, 0, 8), "d": (10, 14, 1, 5), "j": (16, 21, 2, 7)}
-OPTIONS = dict(architecture="lab-chip-v1", max_seq_length=64, boundary_mode="half_open", anchor_heads=True,
+OPTIONS = dict(architecture="chip-v1", trunk_channels=128, max_seq_length=64, boundary_mode="half_open", anchor_heads=True,
                d_presence_head=True, chip_inputs=True)
 
 
