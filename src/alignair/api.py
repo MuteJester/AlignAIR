@@ -88,11 +88,12 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
 
 def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str = "cpu",
                 **train_overrides) -> str:
-    """Train a new AlignAIR model on one or more GenAIRR dataconfigs (1 => single-chain, N =>
-    multi-chain) and save a resumable checkpoint to ``out_path``. ``train_overrides`` forwards to
-    :func:`alignair.train.trainer.train` (e.g. ``lr=``, ``batch_size=``, ``progresses=``,
-    ``short_boost=``, ``resume_path=``)."""
+    """Train a new AlignAIR model on one or more GenAIRR dataconfigs and save a resumable checkpoint to ``out_path``.
+    ``train_overrides`` forwards to :func:`alignair.train.trainer.train` (e.g. ``lr=``, ``batch_size=``,
+    ``progresses=``, ``short_boost=``, ``resume_path=``). Like ``alignair train``, the curriculum's reads get library
+    flanks (``data.flanks.FlankPolicy``) unless ``flanks=`` says otherwise (None: bare reads)."""
     import GenAIRR.data as gd
+    from .data.flanks import FlankPolicy
     from .tasks import build_tasks
     from .core import prepare_model
     from .train.guards import validate_training_request
@@ -111,6 +112,7 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     tasks = train_overrides.get("tasks")
     tasks = build_tasks(cfg) if tasks is None else tasks
     train_overrides["tasks"] = tasks
+    train_overrides.setdefault("flanks", FlankPolicy())
     _train(model, reference, dcs, cfg, steps=steps, device=device,
            save_path=out_path, **train_overrides)
     return out_path
