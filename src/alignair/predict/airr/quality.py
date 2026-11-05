@@ -1,11 +1,7 @@
-"""AIRR quality flags: stop_codon, vj_in_frame, v_identity."""
+"""Segment identity of an AIRR row's sequence/germline alignment."""
 from __future__ import annotations
 
 from typing import Optional
-
-
-def stop_codon(seq_alignment_aa: Optional[str]) -> Optional[bool]:
-    return ("*" in seq_alignment_aa) if seq_alignment_aa is not None else None
 
 
 def segment_identity(seq_alignment: Optional[str], germ_alignment: Optional[str]) -> Optional[float]:
@@ -23,7 +19,3 @@ def segment_identity(seq_alignment: Optional[str], germ_alignment: Optional[str]
             matches += 1
     return matches / compared if compared else None
 
-
-def v_identity(v_sequence_alignment: Optional[str], v_germline_alignment: Optional[str]) -> Optional[float]:
-    """Back-compat alias of :func:`segment_identity` for the V segment."""
-    return segment_identity(v_sequence_alignment, v_germline_alignment)

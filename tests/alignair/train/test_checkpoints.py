@@ -1,47 +1,13 @@
 """Checkpoint publication survives failed writes without losing a completed predecessor."""
-from dataclasses import dataclass
 from pathlib import Path
-import random
 
-import numpy as np
 import pytest
 import torch
 
 from alignair.errors import ConfigurationError
 from alignair.train import checkpoints
-from alignair.train.random_state import restore_rng_state
 
 pytestmark = pytest.mark.component
-
-
-@dataclass
-class Config:
-    width: int = 4
-
-
-def test_snapshot_is_weights_only_and_has_a_plain_config(tmp_path):
-    model = torch.nn.Linear(4, 2)
-    path = tmp_path/'nested'/'weights.pt'
-    checkpoints.save_snapshot(path, model, Config(), 7)
-    state = torch.load(path, weights_only=True)
-    assert set(state) == {'model', 'cfg', 'step'}
-    assert state['cfg'] == {'width': 4} and state['step'] == 7
-    torch.testing.assert_close(state['model']['weight'], model.weight)
-
-
-def test_failed_snapshot_preserves_previous_file_and_removes_partial_temporary(tmp_path, monkeypatch):
-    model = torch.nn.Linear(2, 2)
-    path = tmp_path/'weights.pt'
-    checkpoints.save_snapshot(path, model, {}, 1)
-    original = path.read_bytes()
-    def broken_save(state, target):
-        Path(target).write_bytes(b'partial')
-        raise OSError('disk full')
-    monkeypatch.setattr(torch, 'save', broken_save)
-    with pytest.raises(OSError, match='disk full'):
-        checkpoints.save_snapshot(path, model, {}, 2)
-    assert path.read_bytes() == original
-    assert sorted(p.name for p in tmp_path.iterdir()) == ['weights.pt']
 
 
 def test_failed_alignair_writer_preserves_a_completed_checkpoint(tmp_path, monkeypatch):

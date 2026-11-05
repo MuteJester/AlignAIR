@@ -37,7 +37,7 @@ def test_public_train_validate_reload_predict_path_is_shared(has_d, tmp_path):
     cfg = predictor.model.cfg
     for gene in cfg.genes:
         assert len(schema['genes'][gene]) == cfg.allele_count(gene)
-        assert outputs[cfg.classification_key(gene)].shape == (2, cfg.allele_count(gene))
+        assert outputs[f"{gene}_allele"].shape == (2, cfg.allele_count(gene))
     assert 'orientation' in outputs
     final = read_metadata(run.model_path)
     assert final['training']['steps'] == 2

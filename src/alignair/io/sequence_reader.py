@@ -16,7 +16,6 @@ from ..data.identity import UniqueSequenceIds
 from ..data.inputs import (nucleotide_file_policy, validate_nucleotide as validate,
                            validate_nucleotide_sequence as validate_sequence)
 from ..errors import ConfigurationError
-from .metadata import DuplicateMetadataId, MetadataIndex, build_metadata_index, load_metadata  # compatibility imports
 from .sequence_records import _open_text, detect_sequence_format, iter_sequence_records
 
 def _detect_format(path: str, seq_column: str | None = None) -> str:

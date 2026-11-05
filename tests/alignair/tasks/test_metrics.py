@@ -27,12 +27,6 @@ def test_auxiliary_metrics_omit_a_prediction_without_observed_truth(task_batch):
     assert metrics["indel_mae"] == 1 and metrics["orientation_acc"] == 1
 
 
-def test_auxiliary_metrics_can_be_left_out(task_batch):
-    out, targets = task_batch(auxiliary=True)
-    metrics = alignment_metrics(out, targets, ("v", "j"), auxiliary=False).means()
-    assert not {"mutation_mae", "indel_mae", "orientation_acc"} & set(metrics)
-
-
 def test_validation_weights_by_supervised_counts_instead_of_batch_means(task_batch):
     first, first_targets = task_batch(batch_size=2)
     second, second_targets = task_batch(batch_size=1)

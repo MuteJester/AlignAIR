@@ -14,5 +14,3 @@ IMGT_REGIONS = {
 }
 
 SHORT_D_SENTINEL = "Short-D"
-
-AIRR_BOOLEAN_COLUMNS = ("stop_codon", "vj_in_frame", "productive")

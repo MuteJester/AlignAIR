@@ -14,8 +14,8 @@ def _coordinate(value):
     return int(value) if isinstance(value, str) else index(value)
 
 
-def query_spans(record, *, include_empty=False):
-    """Validate query coordinates, optionally retaining simulator zero-length segment markers."""
+def query_spans(record):
+    """Validate query coordinates; a simulator's zero-length segment marker is left out."""
     length = len(record["sequence"])
     query = {}
     for gene in GENES:
@@ -30,7 +30,7 @@ def query_spans(record, *, include_empty=False):
         except (TypeError, ValueError, OverflowError) as exc:
             raise TrainingDataError("Invalid query-coordinate span.",
                                     context={"gene": gene.upper(), "fields": fields}) from exc
-        if start != end or include_empty:
+        if start != end:
             query[gene] = (start, end)
     return query
 

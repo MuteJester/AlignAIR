@@ -23,12 +23,12 @@ def restore_model_state(model, state_dict, *, source=None) -> None:
 
 
 @contextmanager
-def evaluation_mode(model, *, gradients=False):
-    """Evaluate with exact mode restoration; explicitly enable gradients for diagnostic probes."""
+def evaluation_mode(model):
+    """Evaluate without gradients, restoring every module's mode exactly on exit."""
     modes = [(module, module.training) for module in model.modules()]
     try:
         model.eval()
-        with torch.set_grad_enabled(gradients):
+        with torch.set_grad_enabled(False):
             yield
     finally:
         for module, training in modes:

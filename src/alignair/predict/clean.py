@@ -18,10 +18,6 @@ from .state import Predictions
 NOT_OBSERVED = -1
 
 
-def _stack(batches, key):
-    return np.concatenate([np.asarray(b[key]).reshape(len(np.asarray(b[key])), -1) for b in batches])
-
-
 def _flat(batches, key):
     return np.concatenate([np.asarray(b[key]).reshape(-1) for b in batches])
 

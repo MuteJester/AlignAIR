@@ -285,15 +285,6 @@ def test_file_read_failures_are_typed_and_chained(tmp_path):
         assert caught.value.__cause__ is not None
 
 
-def test_metadata_legacy_imports_are_aliases_of_the_new_owner():
-    from alignair.io import sequence_reader
-    import alignair
-    assert sequence_reader.DuplicateMetadataId is alignair.DuplicateMetadataId is DuplicateMetadataId
-    assert sequence_reader.MetadataIndex is MetadataIndex
-    assert sequence_reader.load_metadata is load_metadata
-    assert sequence_reader.build_metadata_index is build_metadata_index
-
-
 def test_source_metadata_lookup_is_batched_and_ignores_absent_keys():
     from alignair.io.metadata import lookup_metadata_rows
     class Lookup:

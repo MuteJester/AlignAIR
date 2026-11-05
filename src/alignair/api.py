@@ -13,24 +13,13 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from .errors import ConfigurationError, InputError
+from .errors import InputError
 
 from .core import AlignAIR
 from .predict import PredictConfig, predict as _predict
 from .reference.reference_set import ReferenceSet
 
 __all__ = ["load_model", "predict_sequences", "train_model"]
-
-def _build_reference(dataconfigs, reference):
-    if reference is not None:
-        return reference
-    if dataconfigs is None:
-        raise ConfigurationError("pass reference=... or dataconfigs=[...] to supply the germline reference "
-                         "(it must match the one the model was trained on)")
-    import GenAIRR.data as gd
-    dcs = [getattr(gd, d) if isinstance(d, str) else d for d in dataconfigs]
-    return ReferenceSet.from_dataconfigs(*dcs)
-
 
 def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSet | None = None,
                device: str = "cpu", trust_pickle: bool = False) -> tuple[AlignAIR, ReferenceSet]:

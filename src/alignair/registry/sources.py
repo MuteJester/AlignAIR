@@ -57,13 +57,9 @@ def _config_registries(config_path: str | None) -> list[str]:
     return [str(r) for r in regs] if regs else []
 
 
-def resolve_sources(cli: list[str] | None = None, *, config_path: str | None = None,
-                    include_default: bool = True) -> list[str]:
-    """Registry sources in precedence order (first non-empty wins).
-
-    ``include_default=False`` returns only configured sources, allowing callers to distinguish
-    explicit configuration from the built-in catalog without duplicating configuration precedence.
-    """
+def resolve_sources(cli: list[str] | None = None, *, config_path: str | None = None) -> list[str]:
+    """Registry sources in precedence order (first non-empty wins): the CLI, ``ALIGNAIR_REGISTRY``, the config
+    file, then the built-in catalog."""
     if cli:
         return list(cli)
     env = os.environ.get("ALIGNAIR_REGISTRY")
@@ -72,7 +68,7 @@ def resolve_sources(cli: list[str] | None = None, *, config_path: str | None = N
     cfg = _config_registries(config_path)
     if cfg:
         return cfg
-    return [DEFAULT_REGISTRY] if include_default else []
+    return [DEFAULT_REGISTRY]
 
 
 def _base(source: str) -> str:

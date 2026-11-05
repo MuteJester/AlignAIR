@@ -163,13 +163,6 @@ class HeuristicGermlineMatcher:
         self._end_offset_penalty = end_offset_penalty
         self._fallback_rate = fallback_rate
 
-    @classmethod
-    def from_reference(cls, reference_set, **kwargs) -> "HeuristicGermlineMatcher":
-        germlines = {}
-        for ref in reference_set.genes.values():
-            germlines.update({name: seq.upper() for name, seq in zip(ref.names, ref.sequences)})
-        return cls(germlines, **kwargs)
-
     # ------------------------------------------------------------------ scoring
     @staticmethod
     def _anchor_cost(query_kmer: str, germline_window: str) -> float:
@@ -329,11 +322,6 @@ class HeuristicGermlineMatcher:
             seq_end = min(len(sequence), seq_end - (ref_len - ref_end))
             ref_start, ref_end = 0, ref_len
         return GermlineMatch(seq_start, seq_end, ref_start, ref_end)
-
-    def match(self, sequences, seq_starts, seq_ends, alleles, indel_counts) -> list[GermlineMatch]:
-        """Batch ``match_one`` over aligned iterables (one segment per read for a single gene)."""
-        return [self.match_one(s, ss, se, a, ic)
-                for s, ss, se, a, ic in zip(sequences, seq_starts, seq_ends, alleles, indel_counts)]
 
 
 def _scalar(x) -> float:

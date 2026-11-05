@@ -1,19 +1,14 @@
-"""The nucleotide vocabulary with explicit padding policies."""
+"""The nucleotide vocabulary."""
 from __future__ import annotations
 import numpy as np
-
-from ..errors import InputError
-from .batching import pad_vectors
 
 TOKEN_DICT = {"A": 1, "T": 2, "G": 3, "C": 4, "N": 5, "P": 0}
 
 
 class CenterPaddedTokenizer:
-    """Encode a nucleotide string to ints and center-pad to ``max_length``.
-
-    Vocabulary size is 6 (0..5), matching the model embedding. Unknown chars map
-    to N(5). Padding token is 0; left pad = floor(pad/2), right pad = ceil.
-    """
+    """Encode a nucleotide string to token ids (``TOKEN_DICT``: vocabulary 0..5, 0 the padding token, unknown
+    characters to N). Batches are right-padded by ``data.inference.SequenceInputAdapter``. (The class name is
+    historical; the reads are not center-padded.)"""
 
     def __init__(self, max_length: int = 576, token_dict: dict | None = None):
         self.max_length = int(max_length)
@@ -22,27 +17,3 @@ class CenterPaddedTokenizer:
 
     def encode(self, sequence: str) -> np.ndarray:
         return np.array([self.token_dict.get(nt, self._n) for nt in sequence], dtype=np.int64)
-
-    def encode_and_pad(self, sequence: str) -> tuple[np.ndarray, int]:
-        encoded = self.encode(sequence)
-        if len(encoded) > self.max_length:
-            raise ValueError(
-                f"sequence length {len(encoded)} exceeds max_length {self.max_length}")
-        pad_total = self.max_length - len(encoded)
-        pad_left = pad_total // 2
-        pad_right = pad_total - pad_left
-        padded = np.pad(encoded, (pad_left, pad_right), constant_values=0)
-        return padded, pad_left
-
-
-def pad_tokenize(sequences, token_dict: dict | None = None):
-    """Right-pad a batch of nucleotide strings to the batch max length.
-
-    Returns (tokens LongTensor (B, Lmax), mask BoolTensor (B, Lmax) with True=valid).
-    Unknown characters map to N; pad token is 0.
-    """
-    td = token_dict or TOKEN_DICT
-    n = td["N"]
-    encoded = [[td.get(c, n) for c in s.upper()] for s in sequences]
-    tokens = pad_vectors(encoded)
-    return tokens, tokens != 0

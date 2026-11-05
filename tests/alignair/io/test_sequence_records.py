@@ -31,13 +31,6 @@ def test_fasta_retains_empty_and_unnamed_records_for_downstream_accounting(tmp_p
     path = tmp_path / "records.fa"
     path.write_text("\n>\n\n>same\n>same\n ac \n de \n>\n")
     assert list(iter_sequence_records(path)) == [(None, ""), ("same", ""), ("same", " ac  de "), (None, "")]
-    assert list(iter_sequence_records(path, strip_sequence_lines=True)) == [(None, ""), ("same", ""), ("same", "acde"), (None, "")]
-
-
-def test_text_line_stripping_is_explicit_and_fasta_line_joining_preserves_interior_spaces(tmp_path):
-    path = tmp_path / "reads"
-    path.write_text("  AC DE  \n\n  fG \n")
-    assert list(iter_sequence_records(path, strip_sequence_lines=True)) == [(None, "AC DE"), (None, "fG")]
 
 
 @pytest.mark.parametrize("text", ["", "\n \r\n\t\n"])
@@ -151,8 +144,7 @@ def test_owned_file_closes_on_exhaustion_early_close_and_parse_failure(monkeypat
     assert source.closed and len(calls) == 1
 
 
-@pytest.mark.parametrize("kwargs", [{"format": "unknown"}, {"format": None}, {"format": []},
-                                   {"strip_sequence_lines": 1}, {"strip_sequence_lines": None}])
+@pytest.mark.parametrize("kwargs", [{"format": "unknown"}, {"format": None}, {"format": []}])
 def test_invalid_options_fail_before_opening_source(monkeypatch, kwargs):
     def forbidden(*args, **kw): pytest.fail("opened source before validating options")
     monkeypatch.setattr("builtins.open", forbidden)

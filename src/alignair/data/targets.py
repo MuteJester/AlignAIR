@@ -173,12 +173,6 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
 
     calls = {g.upper(): set(str(record[f"{g}_call"]).split(","))
              for g in _GENES if record.get(f"{g}_call")}
-    # the allele the germline coordinates actually belong to (GenAIRR lists it
-    # first); teacher-forced germline alignment must use THIS allele's reps, not an
-    # arbitrary co-listed one whose germline length differs.
-    primary = {g.upper(): str(record[f"{g}_call"]).split(",")[0]
-               for g in _GENES if record.get(f"{g}_call")}
-
     return {
         "tokens": _tok(seq),
         "region_labels": region,
@@ -186,13 +180,7 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         "germline": germ,
         "inseq": coords,
         "calls": calls,
-        "primary": primary,
-        # inverted-D reads contain RC(germline) at the D locus; we cannot yet
-        # supervise D-match/D-germline against the forward reference, so flag them
-        # and mask those terms (RC reference modelling is deferred).
-        "d_inverted": bool(record.get("d_inverted", False)),
-        "orientation_id": 0,  # forward-only gym for now
-        "noise_count": float(record["n_quality_errors"] + record.get("n_pcr_errors", 0)),
+        "d_inverted": bool(record.get("d_inverted", False)),   # an inverted D is RC(germline) in the read
         "mutation_rate": float(record["mutation_rate"]),
         "indel_count": float(record["n_indels"]),
     }

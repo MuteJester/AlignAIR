@@ -56,7 +56,7 @@ def _failure(message, path, fmt, line):
                                         "format": fmt, "line": line})
 
 
-def _fasta(lines, path, strip_sequence_lines):
+def _fasta(lines, path):
     started, name, parts = False, None, []
     for number, line in lines:
         if line.startswith(">"):
@@ -65,7 +65,7 @@ def _fasta(lines, path, strip_sequence_lines):
             words = line[1:].split()
             started, name, parts = True, words[0] if words else None, []
         elif started:
-            parts.append(line.strip() if strip_sequence_lines else line.rstrip("\r\n"))
+            parts.append(line.rstrip("\r\n"))
         else:  # the source adapter has already skipped leading blank lines
             raise _failure("sequence occurs before its FASTA header", path, "fasta", number)
     yield RawSequenceRecord(name, "".join(parts))
@@ -117,20 +117,17 @@ def _table(lines, head, first_line, seq_column, id_column, path):
 
 
 def iter_sequence_records(path: str | os.PathLike[str], *, format: str = "auto",
-                          seq_column: str | None = None, id_column: str | None = None,
-                          strip_sequence_lines: bool = False):
+                          seq_column: str | None = None, id_column: str | None = None):
     """Yield raw records from FASTA, four-line FASTQ, CSV/TSV or nonblank text lines.
 
     Plain/gzip paths and borrowed stdin (``-``) use one streaming pass. File handles close on
     exhaustion, errors or explicit iterator.close(); stdin remains open. FASTA emits empty and
     unnamed records; text ignores blank lines. IDs are header first words or table fields.
     Case, alphabet, duplicates and missing IDs are left to callers. FASTA/text sequence whitespace
-    is retained by default; strip_sequence_lines selects per-line stripping for protein CLI input.
+    is retained (only line endings are dropped).
     """
     if not isinstance(format, str) or format not in _FORMATS:
         raise ConfigurationError(f"sequence format must be one of {_FORMATS}, got {format!r}")
-    if not isinstance(strip_sequence_lines, bool):
-        raise ConfigurationError("strip_sequence_lines must be a boolean")
     path = os.fspath(path)
     if not isinstance(path, str):
         raise ConfigurationError("sequence input path must be text")
@@ -144,7 +141,7 @@ def iter_sequence_records(path: str | os.PathLike[str], *, format: str = "auto",
             fmt = detect_sequence_format(path, head, seq_column) if format == "auto" else format
             lines = chain([first], lines)
             if fmt == "fasta":
-                yield from _fasta(lines, path, strip_sequence_lines)
+                yield from _fasta(lines, path)
             elif fmt == "fastq":
                 yield from _fastq(lines, path)
             elif fmt == "table":
@@ -152,7 +149,7 @@ def iter_sequence_records(path: str | os.PathLike[str], *, format: str = "auto",
             else:
                 for _, line in lines:
                     if line.strip():
-                        yield RawSequenceRecord(None, line.strip() if strip_sequence_lines else line.rstrip("\r\n"))
+                        yield RawSequenceRecord(None, line.rstrip("\r\n"))
     except (UnicodeError, EOFError, gzip.BadGzipFile, zlib.error) as exc:
         raise InputError("cannot decode sequence input", context={"stage": "sequence_file_parsing", "path": path}) from exc
     except OSError as exc:

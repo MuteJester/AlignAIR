@@ -72,10 +72,6 @@ class AlignAIRConfig:
         """The width of ``gene``'s allele output (``gene`` one of ``genes``)."""
         return getattr(self, f"{gene}_allele_count")
 
-    def classification_key(self, gene: str) -> str:
-        """Output key of a gene's sigmoid allele probabilities."""
-        return f"{gene}_allele"
-
     # ------------------------------------------------------------------ constructors
     @classmethod
     def from_dataconfigs(cls, *dataconfigs, max_seq_length: int = 576, **kwargs) -> "AlignAIRConfig":

@@ -6,14 +6,10 @@ import glob
 import logging
 from operator import index
 import os
-from pathlib import Path
 import re
 import shutil
 
-import torch
-
 from ..errors import ConfigurationError, error_context
-from ..core.config import AlignAIRConfig
 from ..io.atomic import atomic_write
 from .random_state import capture_rng_state
 
@@ -73,13 +69,6 @@ def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> Resum
                            state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'),
                            state.scheduler_state,
                            state.train_args.get('schedule'), state.train_args.get('lr'))
-
-
-def save_snapshot(path, model, cfg, step):
-    """Weights/config/step only: a warm-start snapshot, without optimizer or RNG continuation."""
-    config = dataclasses.asdict(cfg) if dataclasses.is_dataclass(cfg) else cfg
-    atomic_write(path, lambda temporary: torch.save(
-        {"model": model.state_dict(), "cfg": config, "step": step}, temporary), stage="training_checkpoint")
 
 
 def _ext(path) -> str:

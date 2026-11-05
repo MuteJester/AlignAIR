@@ -11,7 +11,7 @@ pytestmark = pytest.mark.component
 
 
 @pytest.mark.parametrize("module,name,builtin", [
-    ("io.sequence_reader", "DuplicateMetadataId", ValueError),
+    ("io.metadata", "DuplicateMetadataId", ValueError),
     ("io.airr", "PredictionCountMismatch", RuntimeError),
     ("predict.airr.builder", "AirrAssemblyError", Exception),
     ("registry.cache", "IntegrityError", RuntimeError),

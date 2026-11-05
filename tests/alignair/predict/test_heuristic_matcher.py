@@ -99,16 +99,6 @@ def test_a_segment_shorter_than_the_anchor_spans_as_many_germline_bases_as_read_
     assert derive_alignment(read[4:15], germline[4:15], 0).cigar == "11M"
 
 
-def test_from_reference_builds_germline_table():
-    class _Ref:
-        names = ["A*01", "A*02"]
-        sequences = ["acgt", "TTTT"]
-    class _RS:
-        genes = {"V": _Ref()}
-    matcher = HeuristicGermlineMatcher.from_reference(_RS())
-    assert matcher._germlines == {"A*01": "ACGT", "A*02": "TTTT"}   # uppercased
-
-
 # ---------------- derive_alignment (CIGAR reconstruction) ----------------
 from alignair.predict.heuristic_matcher import derive_alignment
 

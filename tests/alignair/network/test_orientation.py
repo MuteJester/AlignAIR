@@ -2,7 +2,8 @@
 import pytest
 import torch
 
-from alignair.data.tokenizer import pad_tokenize
+from alignair.data.batching import pad_vectors
+from alignair.data.tokenizer import TOKEN_DICT
 from alignair.network.orientation import (NUM_ORIENTATIONS, EmbeddingOrientationHead, apply_orientation, complement,
                                           reverse_valid)
 
@@ -10,6 +11,12 @@ pytestmark = pytest.mark.component
 
 # token ids back to letters for readability
 INV = {0: "-", 1: "A", 2: "T", 3: "G", 4: "C", 5: "N"}
+
+
+def pad_tokenize(sequences):
+    """Right-padded token ids and the valid-position mask of a batch of reads."""
+    tokens = pad_vectors([[TOKEN_DICT[c] for c in s] for s in sequences])
+    return tokens, tokens != 0
 
 
 def to_str(tok, msk):

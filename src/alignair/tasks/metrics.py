@@ -45,7 +45,7 @@ class MetricAccumulator:
 
 
 @torch.no_grad()
-def alignment_metrics(out: dict, targets: dict, genes, *, auxiliary: bool = True) -> MetricReport:
+def alignment_metrics(out: dict, targets: dict, genes) -> MetricReport:
     report = MetricReport()
     for gene in genes:
         scores = out[f"{gene}_allele"]
@@ -58,8 +58,7 @@ def alignment_metrics(out: dict, targets: dict, genes, *, auxiliary: bool = True
         errors = {boundary: (out[f"{gene}_{boundary}"].reshape(-1) - targets[f"{gene}_{boundary}"].reshape(-1)).abs()
                   for boundary in ("start", "end")}
         report.add(f"{gene}_seg_mae", (errors["start"] + errors["end"]) / 2, valid)
-    if auxiliary:
-        _auxiliary_metrics(report, out, targets)
+    _auxiliary_metrics(report, out, targets)
     return report
 
 

@@ -1,6 +1,4 @@
 """Input policy, label identity, and allocation boundaries of shared model preparation."""
-from dataclasses import replace
-
 import pytest
 import torch
 
@@ -41,7 +39,7 @@ def test_the_model_is_built_with_the_reference_output_vocabulary():
     with torch.no_grad():
         output = model({'tokenized_sequence': tokens})
     for gene, size in setup.label_counts.items():
-        assert output[setup.config.classification_key(gene)].shape == (2, size)
+        assert output[f"{gene}_allele"].shape == (2, size)
     assert 'embedding' in model.component_modules()
 
 

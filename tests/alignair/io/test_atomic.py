@@ -3,16 +3,16 @@ from pathlib import Path
 
 import pytest
 
-from alignair.errors import InputError, OperationIOError
+from alignair.errors import InputError
 from alignair.io import atomic
 
 pytestmark = pytest.mark.component
 
 
-def test_utf8_text_replaces_a_completed_file_and_creates_missing_parents(tmp_path):
+def test_a_completed_file_is_replaced_and_missing_parents_are_created(tmp_path):
     path = tmp_path / 'nested' / 'report.txt'
-    atomic.atomic_write_text(path, 'first')
-    atomic.atomic_write_text(path, 'complete §5\n')
+    atomic.atomic_write(path, lambda temporary: Path(temporary).write_text('first', encoding='utf-8'))
+    atomic.atomic_write(path, lambda temporary: Path(temporary).write_text('complete §5\n', encoding='utf-8'))
     assert path.read_text(encoding='utf-8') == 'complete §5\n'
     assert list(path.parent.iterdir()) == [path]
 
@@ -52,30 +52,3 @@ def test_domain_error_inherits_requested_stage_and_final_destination(tmp_path):
     assert caught.value.context == {'stage': 'study_publication', 'path': str(path)}
     assert not path.exists() and not list(tmp_path.iterdir())
 
-
-@pytest.mark.parametrize('sort_keys', [False, True])
-@pytest.mark.parametrize('indent', [None, 2])
-def test_json_formatting_preserves_standard_escaping_and_requested_key_order(tmp_path, sort_keys, indent):
-    import json
-    path = tmp_path/'nested'/'report.json'
-    value = {'z': '§5', 'a': [None, .5]}
-    atomic.atomic_write_json(path, value, sort_keys=sort_keys, indent=indent)
-    assert path.read_bytes() == json.dumps(value, indent=indent, sort_keys=sort_keys).encode('utf-8')
-
-
-@pytest.mark.parametrize('value', [float('nan'), float('inf'), object()])
-def test_invalid_json_does_not_create_output_parents(tmp_path, value):
-    path = tmp_path/'absent'/'report.json'
-    with pytest.raises(InputError) as caught: atomic.atomic_write_json(path, {'value': value}, stage='test_report')
-    assert caught.value.context == {'stage': 'test_report', 'path': str(path)}
-    assert caught.value.__cause__ is not None and not list(tmp_path.iterdir())
-
-
-def test_json_replace_failure_is_contextual_and_preserves_the_completed_file(tmp_path, monkeypatch):
-    path = tmp_path/'report.json'; path.write_bytes(b'completed')
-    def fail(*args): raise OSError('replace interrupted')
-    monkeypatch.setattr(atomic.os, 'replace', fail)
-    with pytest.raises(OperationIOError) as caught: atomic.atomic_write_json(path, {'value': 1}, stage='test_report')
-    assert caught.value.context == {'stage': 'test_report', 'path': str(path)}
-    assert isinstance(caught.value.__cause__, OSError)
-    assert path.read_bytes() == b'completed' and list(tmp_path.iterdir()) == [path]

@@ -98,20 +98,9 @@ def test_catalog_revision_and_inline_version_precedence(spec, revision, tmp_path
     assert hashlib.sha256(path.read_bytes()).hexdigest() == sha
 
 
-@pytest.mark.parametrize("spec,revision", [("human-igh", None), ("human-igh@2.1.0", None),
-                                         ("human-igh", "2.1.0")])
-def test_existing_historical_alias_without_registry_configuration(spec, revision, tmp_path):
-    path = tmp_path / "legacy.alignair"
-    path.write_bytes(b"historical")
-    aliases = {"human-igh": path, "human-igh@2.1.0": path}
-    assert cache.resolve_model(spec, revision=revision, local_aliases=aliases, offline=True) == path
-
-
 @pytest.mark.parametrize("configuration", ["argument", "environment", "config"])
-def test_configured_registry_takes_precedence_over_alias(configuration, tmp_path, monkeypatch):
+def test_a_configured_registry_resolves_the_model(configuration, tmp_path, monkeypatch):
     src, sha = _registry(tmp_path)
-    legacy = tmp_path / "legacy.alignair"
-    legacy.write_bytes(b"must not be loaded")
     kwargs = {}
     if configuration == "argument":
         kwargs["sources"] = [src]
@@ -122,40 +111,28 @@ def test_configured_registry_takes_precedence_over_alias(configuration, tmp_path
         cfg.mkdir()
         (cfg / "config.toml").write_text(f'registries = ["{src}"]\n')
         monkeypatch.setenv("ALIGNAIR_CONFIG_DIR", str(cfg))
-    path = cache.resolve_model("human-igh@2.1.0", local_aliases={"human-igh@2.1.0": legacy}, **kwargs)
-    assert path != legacy
+    path = cache.resolve_model("human-igh@2.1.0", **kwargs)
     assert hashlib.sha256(path.read_bytes()).hexdigest() == sha
 
 
-@pytest.mark.parametrize("target", ["missing", "directory", "different_version", "unmapped"])
-def test_unusable_alias_falls_through_to_default_catalog(target, tmp_path, monkeypatch):
+def test_without_configuration_the_default_catalog_resolves_the_model(tmp_path, monkeypatch):
     from alignair.registry import sources
 
     src, sha = _registry(tmp_path)
     monkeypatch.setattr(sources, "DEFAULT_REGISTRY", src)
-    legacy = tmp_path / "legacy.alignair"
-    legacy.write_bytes(b"old version")
-    aliases = {"unrelated": legacy} if target == "unmapped" else {
-        "human-igh@2.0.0" if target == "different_version" else "human-igh@2.1.0":
-            {"missing": tmp_path / "missing", "directory": tmp_path}.get(target, legacy)}
-    path = cache.resolve_model("human-igh", revision="2.1.0", local_aliases=aliases)
-    assert path != legacy
+    path = cache.resolve_model("human-igh", revision="2.1.0")
     assert hashlib.sha256(path.read_bytes()).hexdigest() == sha
 
 
-def test_explicit_empty_sources_disables_alias_and_default_catalog(tmp_path):
-    legacy = tmp_path / "legacy.alignair"
-    legacy.write_bytes(b"legacy")
+def test_explicit_empty_sources_disables_the_default_catalog():
     with pytest.raises(ModelError, match="unknown model"):
-        cache.resolve_model("human-igh", sources=[], local_aliases={"human-igh": legacy})
+        cache.resolve_model("human-igh", sources=[])
 
 
-def test_configured_registry_failure_never_silently_loads_alias(tmp_path, monkeypatch):
-    legacy = tmp_path / "legacy.alignair"
-    legacy.write_bytes(b"legacy")
+def test_a_configured_registry_failure_is_raised(tmp_path, monkeypatch):
     monkeypatch.setenv("ALIGNAIR_REGISTRY", f"file://{tmp_path / 'missing-registry'}")
     with pytest.raises(RegistryError):
-        cache.resolve_model("human-igh", local_aliases={"human-igh": legacy})
+        cache.resolve_model("human-igh")
 
 
 def test_pinned_cached_needs_no_network(monkeypatch, tmp_path):
