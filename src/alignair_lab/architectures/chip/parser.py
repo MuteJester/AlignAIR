@@ -14,8 +14,9 @@ pairwise ``α_{i-1}(a) + M_i(a, b) + β_i(b) - log Z`` that place each boundary.
 unit that reads the marginals (the router, the anchors) trains the parser through them.
 
 The scan multiplies full S x S matrices at every one of its log2 L levels: few, wide steps suit a GPU. A CPU runs the
-L-step forward-backward instead (``α_i = α_{i-1} ⊗ M_i``, ``β_{i-1} = M_i ⊗ β_i``: vectors, not matrices), which
-computes the same parse; ``parallel`` chooses explicitly.
+L-step forward-backward instead (``α_i = α_{i-1} ⊗ M_i``, ``β_{i-1} = M_i ⊗ β_i``: vectors, not matrices; the two
+recursions as one loop over a doubled batch, since a step's cost on a CPU is mostly its fixed overhead), which computes
+the same parse; ``parallel`` chooses explicitly.
 """
 from __future__ import annotations
 
@@ -77,11 +78,18 @@ def _alpha_sequential(emissions, m):
     return torch.stack(alpha, 1)
 
 
-def _beta_sequential(m):
-    beta = [m.new_zeros(m.shape[0], m.shape[-1])]
-    for i in range(m.shape[1] - 1, 0, -1):
-        beta.append(torch.logsumexp(m[:, i] + beta[-1].unsqueeze(-2), dim=-1))
-    return torch.stack(beta[::-1], 1)
+def _forward_backward_sequential(emissions, m):
+    """``(α, β)`` in one L-step loop: β's recursion ``β_{i-1}(a) = ⊕_b M_i(a, b) ⊗ β_i(b)`` is α's on the transposed
+    steps taken from the end, so the two run as one batch of 2B vectors (half the steps, each as cheap)."""
+    batch = m.shape[0]
+    steps = torch.cat([m[:, 1:], m[:, 1:].flip(1).transpose(-1, -2)])                     # (2B, L - 1, S, S)
+    state = torch.cat([emissions[:, 0], m.new_zeros(batch, m.shape[-1])])
+    both = [state]
+    for step in steps.unbind(1):
+        state = torch.logsumexp(state.unsqueeze(-1) + step, dim=-2)
+        both.append(state)
+    both = torch.stack(both, 1)
+    return both[:batch], both[batch:].flip(1)
 
 
 def _alpha(emissions, m, parallel=None):
@@ -95,9 +103,7 @@ def _alpha(emissions, m, parallel=None):
     return torch.cat([alpha0.unsqueeze(1), rest], 1)
 
 
-def _beta(m, parallel=None):
-    if not _parallel(m, parallel):
-        return _beta_sequential(m)
+def _beta(m):
     batch, length, states, _ = m.shape
     last = m.new_zeros(batch, 1, states)
     if length == 1:
@@ -116,7 +122,10 @@ def crf(emissions: torch.Tensor, transitions: torch.Tensor, mask: torch.Tensor,
     """The parse; ``parallel``: the log-depth scan (True) or the L-step forward-backward (False); by default the
     scan on a GPU and the forward-backward elsewhere."""
     m = _steps(emissions, transitions, mask)
-    alpha, beta = _alpha(emissions, m, parallel), _beta(m, parallel)
+    if _parallel(m, parallel):
+        alpha, beta = _alpha(emissions, m, parallel=True), _beta(m)
+    else:
+        alpha, beta = _forward_backward_sequential(emissions, m)
     log_z = torch.logsumexp(alpha[:, -1], -1)
     log_marginals = alpha + beta - log_z[:, None, None]
     marginals = log_marginals.exp() * mask.unsqueeze(-1)
