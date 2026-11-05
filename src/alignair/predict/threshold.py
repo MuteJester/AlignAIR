@@ -1,13 +1,11 @@
 """Allele selection — turn per-allele probabilities into a called allele *set*.
 
-The allele heads are multi-label **sigmoid + BCE(label_smoothing=0.1)**, so each output is a
-calibrated ``P(allele present)``. That makes the set threshold a *derived* property, not a fitted
-one: keep every allele the model believes is more-likely-present-than-not, i.e. ``p >= 0.5``
-(``"absolute"``, the default). No per-dataset calibration.
+The chip's allele scores are each allele's likelihood relative to the read's best allele (the bank scan's
+posterior divided by its maximum: the best allele scores 1). The set keeps every allele scoring at least the
+threshold (``"absolute"``, the default, at 0.5).
 
-Alternatives: ``"largest_gap"`` (fully parameter-free — cut at the biggest drop in the sorted
-probabilities) and ``"max_likelihood_percentage"`` (the legacy relative-to-max rule; kept for
-comparison, but it re-introduces the ``pct`` hyperparameter and over-calls on a BCE head).
+Alternatives: ``"largest_gap"`` (parameter-free: cut at the biggest drop in the sorted scores) and
+``"max_likelihood_percentage"`` (a cut relative to the top score).
 
 Every selector takes ``(p, param, cap)`` and returns ``(indices, likelihoods)`` sorted by
 probability, non-empty (always keeps top-1), and capped at ``cap``.

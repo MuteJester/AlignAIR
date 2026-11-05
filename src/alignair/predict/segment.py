@@ -1,7 +1,6 @@
 """Segmentation correction: raw float boundaries -> final integer read-frame coordinates.
 
-De-pad (per the *actual* configured ``max_len`` — TF legacy hardcoded 576, a bug the new TF pipeline
-fixed), floor, then a **constrained projection** that enforces every invariant *jointly* rather than a
+De-pad (per the configured ``max_len``), floor, then a **constrained projection** that enforces every invariant *jointly* rather than a
 one-directional repair (which could push later segments past the read):
 
   * bounds: ``0 <= start <= end <= seq_len`` for every segment;

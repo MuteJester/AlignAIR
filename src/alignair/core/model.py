@@ -40,8 +40,7 @@ class AlignAIR(nn.Module):
         """Restore decoded weights strictly, then place the model in evaluation mode.
 
         Construction uses the configured architecture on CPU before device placement. Artifact
-        decoders own configuration migrations, reference/label checks, and calibration binding;
-        this factory neither reads files nor relaxes key/shape matching. ``source`` supplies a
+        decoders own configuration migrations and reference/label checks; this factory neither reads files nor relaxes key/shape matching. ``source`` supplies a
         diagnostic path only. Parameters retain gradients for subsequent fine-tuning.
         """
         with torch.device("cpu"):

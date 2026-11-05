@@ -154,6 +154,8 @@ def test_bundle_export_preserves_checkpoint_provenance(tmp_path):
     card = (out / "bundle" / "model_card.md").read_text()           # human-facing provenance
     assert "effective SHM cap per locus" in card
     assert "HUMAN_TCRA_IMGT=0.0" in card
+    # a chip reads its alleles from the bound reference: the card says so, not that alleles need a retrain
+    assert "alignair predict --reference" in card and "requires training a new model" not in card
 
 
 @pytest.mark.slow

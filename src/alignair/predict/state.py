@@ -23,7 +23,7 @@ class GeneCall:
 @dataclass
 class Predictions:
     """Cleaned, batch-merged model outputs (numpy). Per-gene dicts keyed by present genes."""
-    allele: dict[str, np.ndarray]     # {gene: [N, n_alleles] sigmoid probabilities}
+    allele: dict[str, np.ndarray]     # {gene: [N, n_alleles] scores relative to the read's best allele (best = 1)}
     start: dict[str, np.ndarray]      # {gene: [N] float read position}
     end: dict[str, np.ndarray]        # {gene: [N] float read position}
     mutation_rate: np.ndarray         # [N]

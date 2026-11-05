@@ -198,8 +198,8 @@ class Aligner:
     def predict_raw(self, sequences, *, batch_size=64) -> dict:
         """The model's raw head arrays; label_schema describes column identity.
 
-        This method does not apply product calibration or AIRR assembly. Every output uses model
-        semantics, including categorical logits versus multilabel probabilities and model-frame positions.
+        This method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the
+        read's best allele, model-frame positions).
         """
         from .data import prepare_nucleotide_inputs, SequenceInputAdapter
         from .core.boundaries import read_window

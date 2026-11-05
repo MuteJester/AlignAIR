@@ -1,7 +1,6 @@
-"""Write DNAlignAIR predictions as an AIRR rearrangement TSV (+ optional uncertainty/resolution
-extension columns the AIRR schema does not cover: per-gene equivalence set, resolution level, and
-set confidence). Only the equivalence set (``*_call_set``) is populated by default; the resolution
-level and set confidence are reserved for the optional (separate) calibration step."""
+"""Write AlignAIR predictions as an AIRR rearrangement TSV, with extension columns the AIRR schema does not cover
+(per-gene equivalence set, resolution level and set confidence). Only the equivalence set (``*_call_set``) is
+populated."""
 from __future__ import annotations
 
 from alignair.errors import DataContractError

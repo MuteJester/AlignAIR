@@ -18,7 +18,7 @@ class TrainingRun:
     validations: tuple = ()
 
     def best_aligner(self, *, device='auto'):
-        """Reload through the shared model owner; predict_raw works with either input space."""
+        """The best (or last) model, reloaded through the shared model owner."""
         from ..aligner import Aligner
         return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
 

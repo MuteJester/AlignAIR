@@ -64,9 +64,8 @@ def _loci_from_membership(per_index: Dict[str, list], order: List[str],
 
 def _infer_loci_from_names(genes: Dict[str, "GeneReference"]) -> List["LocusInfo"]:
     """Reconstruct the per-locus schema from allele names alone — for references serialized before the
-    schema was stored. Order follows first appearance in the V head (== the union/chain_type-class-id
-    order, since the union appends per-dataconfig), so it aligns with a trained chain_type head. Fails
-    closed on interleaved / nonstandard-named loci (see :func:`_loci_from_membership`)."""
+    schema was stored. Order follows first appearance in the V allele order (the union appends per dataconfig).
+    Fails closed on interleaved / nonstandard-named loci (see :func:`_loci_from_membership`)."""
     order: List[str] = []
     per_index: Dict[str, list] = {}                      # GENE -> [locus_or_None per allele index]
     for G in ("V", "J", "D"):
@@ -96,9 +95,8 @@ class GeneReference:
 @dataclass
 class LocusInfo:
     """One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has
-    a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union allele heads.
-    The list index equals the model's chain_type class id, so a predicted chain_type maps straight to a
-    locus and to the allele-index range that read is allowed to call within."""
+    a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union's allele order. A read's
+    locus is its V call's (``predict.pipeline``)."""
     locus: str
     chain_type: str
     has_d: bool
@@ -117,7 +115,7 @@ class ReferenceSet:
         return self.genes[g.upper()]
 
     def validate(self, *, genes=None) -> None:
-        """Validate selected ordered vocabularies before model or protein-view construction."""
+        """Validate selected ordered vocabularies before model construction."""
         selected = (('V', 'J', 'D') if self.has_d else ('V', 'J')) if genes is None else genes
         for gene in selected:
             gene = gene.upper()
@@ -132,7 +130,7 @@ class ReferenceSet:
                 raise DataContractError("reference allele order, sequences, and index disagree", context={"gene": gene})
 
     def locus_names(self) -> tuple:
-        """Ordered AIRR locus codes, aligned to the model's chain_type class id (empty if unknown)."""
+        """Ordered AIRR locus codes, in the order the union was built (empty if unknown)."""
         return tuple(l.locus for l in self.loci)
 
     def locus_mask(self, locus: str, gene: str) -> np.ndarray:
@@ -156,7 +154,7 @@ class ReferenceSet:
         has_d = any(dc.metadata.has_d for dc in dataconfigs)
         wanted = ["v", "j"] + (["d"] if has_d else [])
         genes: Dict[str, GeneReference] = {}
-        locus_order: List[str] = []                       # distinct loci, in chain_type-class-id order
+        locus_order: List[str] = []                       # distinct loci, in union order
         locus_chain: Dict[str, str] = {}
         per_index: Dict[str, list] = {}                   # GENE -> [locus per allele index]
         for g in wanted:
@@ -239,12 +237,8 @@ class ReferenceSet:
         gene_type is V/J (+ D for heavy chains; omit D for light). ``anchors`` optionally supplies
         {gene: {allele_name: pos}} so alleles keep their junction anchor.
 
-        NOTE: the *fixed-head* production model's V/D/J classification indices are tied to the
-        allele order it was trained on. This builder produces a reference in whatever order the file
-        provides, which will **not** match a trained head — so it is for reference-conditioned/retrieval
-        code and for constructing a reference to (re)train against, NOT for relabeling a fixed-head
-        model's outputs. Novel alleles are not callable by a fixed-head model (see
-        :class:`alignair.genotype.NovelAlleleUnsupportedError`).
+        The alleles keep the file's order. A chip reads its alleles from the bound reference, so the result can be
+        bound to a model (``predict --reference``), novel alleles included, or trained against.
         """
         upper = {k.upper(): v for k, v in genes.items()}
         anc_in = {k.upper(): v for k, v in (anchors or {}).items()}
@@ -308,9 +302,7 @@ class ReferenceSet:
         """Load a genotype FASTA (``>allele_name`` headers + DNA). Gene type (V/D/J) is
         inferred from each allele name; alleles whose segment can't be inferred are skipped.
 
-        See :meth:`from_genotype` re: the fixed-head contract — the resulting allele order will not
-        match a trained head, so this is for (re)training / reference-conditioned code, not for
-        relabeling a fixed-head model's output columns."""
+        Like :meth:`from_genotype`, the result can be bound to a model or trained against."""
         genes: Dict[str, Dict[str, str]] = {"V": {}, "D": {}, "J": {}}
         name = None
         chunks: List[str] = []

@@ -251,7 +251,8 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict) -> None
     if report:
         lines += ["## Validation (fixed held-out stream)", ""]
         lines += [f"- {k}: {v}" for k, v in sorted(report.items())]
-    lines += ["", "This is a fixed-reference classifier: the embedded reference is the callable set.",
-              "Adding alleles / species requires training a new model. See the AlignAIR model-contract docs."]
+    lines += ["", "The embedded reference is the default callable set. The model reads its alleles from the bound "
+              "reference, so other alleles of the same genes (a donor's genotype, novel alleles) are called by "
+              "binding another reference (alignair predict --reference) without retraining."]
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")

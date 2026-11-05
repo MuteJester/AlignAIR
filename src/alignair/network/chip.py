@@ -1,4 +1,4 @@
-"""The chip's core (``chip-v1``, AlignAIR's network): the units wired as the design's chip-v3 and chip-v4-training diagrams draw them.
+"""The chip's core (``chip-v1``, AlignAIR's network) and how its units are wired.
 
 After the product's orientation correction: the trunk (``DilatedTrunk``) gives every base its features once; the
 parser reads the region path; the anchor heads (``AnchorHead``) find the V Cys and J Trp/Phe, each only inside its
@@ -11,7 +11,7 @@ a gene's columns are read only over each read's window of bases whose region mar
 ``SUPPORT`` (``ShmReader.top_columns``): a base outside it would weigh at most that in the scan.
 
 Outputs, under the product's keys: the parser's boundary logits and their expectations, the V end and J start refined
-by the called alleles' germlines from the anchors (``refiner``, with the anchor heads); at inference, the D posterior
+by the called alleles' germlines from the anchors (``refine.boundaries``, with the anchor heads); at inference, the D posterior
 times the junction's local alignment to every D row (``dlocal``), the D start and end refined on the called D's
 germline (``drefine``), and the V posterior times the banded gapped alignment of the V span to its top rows
 (``vrescore``); ``{gene}_allele``, the

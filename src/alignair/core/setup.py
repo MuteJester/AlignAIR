@@ -136,8 +136,8 @@ def validate_label_schema(schema, reference, config) -> None:
 
 def validate_reference_binding(reference, config, *, label_schema=None) -> None:
     """Check a reference/configuration binding without allocating model parameters: the heads use the reference's
-    ordered allele panel. Artifact readers still own reference hashes and calibration binding, and translate invalid
-    embedded bindings to integrity errors."""
+    ordered allele panel. Artifact readers still own reference hashes, and translate invalid embedded bindings to
+    integrity errors."""
     if not isinstance(reference, ReferenceSet) or not isinstance(config, AlignAIRConfig):
         raise ConfigurationError('model binding requires a ReferenceSet and AlignAIRConfig')
     _spaces(config.input_space, config.label_space)

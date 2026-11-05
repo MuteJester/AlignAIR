@@ -1,12 +1,9 @@
 """Shape-matched warm starts from another model's weights.
 
-The shared, reference-agnostic backbone — token/position embedding, orientation head, the shared meta
-tower, per-gene segmentation towers + boundary heads, and the mutation/indel/productivity meta-heads —
-has the same shape across references (it depends on ``embed_dim``/``filters``/``block_out``/``max_len``,
-not on the allele counts). It transfers directly. The reference-specific parts — allele classification
-heads, an auto-scaled classification tower, a chain_type head, or a gene absent in the new locus — keep
-their fresh initialization when shapes differ. Equal-width class heads ARE copied even when label
-identities differ: this is not a label-aware mapping or a guarantee of architectural compatibility.
+A chip's weights do not depend on its reference (the alleles are an input, the bound bank), so a source of the
+same widths (``embed_dim``, ``trunk_channels``) transfers whole. A part whose shape differs (another width, or a
+gene the target does not have) keeps the target's fresh initialization. This is not a guarantee of architectural
+compatibility.
 
 Transfer is a shape-matched partial load: copy every parameter/buffer whose NAME **and** SHAPE match the
 source; leave the rest at the target's init. General across any source→target pair.
