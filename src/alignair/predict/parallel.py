@@ -2,20 +2,47 @@
 
 Torch's intra-op threads scale poorly on a read batch's small convolutions (the chip: 47 reads/s on one thread, 137
 on eight), so N single-threaded processes, each predicting its share of a chunk, use N cores far better. Every worker
-holds its own copy of the aligner and runs with one thread; workers are spawned, never forked (a fork after torch's
-OpenMP pool has run can hang the child). The aligner is pickled once to a private temporary file that each worker
-loads: handed to the workers directly it would be written down each one's start-up pipe in turn, and every write
-waits for that child to import torch, so N workers would start one after another. A chunk is cut into contiguous
-parts, a few per worker so a slow part does not hold the rest back, and the parts' records come back in input order.
+holds its own copy of the aligner and runs with one thread. Workers are forked from a forkserver: a clean process
+that imports torch and alignair once (``PRELOAD``) and stays single-threaded, so a fork from it carries no thread or
+lock of anyone else's; never from the parent, whose torch may have started its OpenMP pool (a fork after that can
+hang the child). ``prestart`` starts the forkserver early, so its imports run while the parent loads the model; a
+platform without a forkserver spawns the workers instead, each importing torch itself. The aligner is pickled once
+to a private temporary file that each worker loads: handed to the workers directly it would be written down each
+one's start-up pipe in turn. A chunk is cut into contiguous parts, a few per worker so a slow part does not hold the
+rest back, and the parts' records come back in input order. Closing stops the workers outright: their predictions
+are all in by then, and each would otherwise spend half a second tearing torch down.
 """
 from __future__ import annotations
 
 import math
+import multiprocessing
 import os
 import pickle
 import tempfile
 
+from ..core.components import ARCHITECTURE_MODULES
+
+PRELOAD = ("torch", "alignair.aligner")      # what the forkserver imports once for every worker
 _ALIGNER = None                                   # a worker's aligner, set by _start
+
+
+def _context():
+    if "forkserver" not in multiprocessing.get_all_start_methods():
+        return multiprocessing.get_context("spawn")
+    return multiprocessing.get_context("forkserver")
+
+
+def prestart() -> None:
+    """Start the workers' forkserver now, importing ``PRELOAD`` and the modules ``ALIGNAIR_ARCHITECTURE_MODULES``
+    names, so a ``ProcessPool`` made later forks ready workers at once. A no-op where it runs already, or where the
+    platform has none."""
+    context = _context()
+    if context.get_start_method() != "forkserver":
+        return
+    extra = (part.strip() for part in os.environ.get(ARCHITECTURE_MODULES, "").split(","))
+    context.set_forkserver_preload([*PRELOAD, *filter(None, extra)])
+    from multiprocessing import forkserver
+    forkserver.ensure_running()
 
 
 def _start(path: str) -> None:
@@ -37,7 +64,6 @@ class ProcessPool:
     PARTS_PER_WORKER = 4
 
     def __init__(self, aligner, workers: int):
-        import multiprocessing as mp
         if workers < 1:
             raise ValueError(f"workers must be at least 1 (got {workers})")
         self.workers = workers
@@ -45,7 +71,8 @@ class ProcessPool:
         try:
             with os.fdopen(handle, "wb") as out:
                 pickle.dump(aligner, out, protocol=pickle.HIGHEST_PROTOCOL)
-            self._pool = mp.get_context("spawn").Pool(workers, initializer=_start, initargs=(self._path,))
+            prestart()
+            self._pool = _context().Pool(workers, initializer=_start, initargs=(self._path,))
         except BaseException:
             os.unlink(self._path)
             raise
@@ -62,7 +89,8 @@ class ProcessPool:
         return [record for part in self._pool.starmap(_predict, jobs) for record in part]
 
     def close(self) -> None:
-        self._pool.close()
+        """Stop the workers (every prediction has returned by now) and remove their copy of the aligner."""
+        self._pool.terminate()
         self._pool.join()
         self._remove()
 
@@ -74,9 +102,4 @@ class ProcessPool:
         return self
 
     def __exit__(self, kind, value, traceback):
-        if kind is None:
-            self.close()
-        else:
-            self._pool.terminate()
-            self._pool.join()
-            self._remove()
+        self.close()

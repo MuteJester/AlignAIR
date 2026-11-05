@@ -249,6 +249,9 @@ def run(args) -> int:
         return report_error(ConfigurationError("--chunk-size and --batch-size must be positive"))
     if args.threads is not None and args.threads < 1:
         return report_error(ConfigurationError(f"--threads must be at least 1 (got {args.threads})"))
+    if device == "cpu" and args.threads is not None and args.threads > 1:
+        from ..predict import parallel             # the workers' forkserver imports while the model loads
+        parallel.prestart()
     for name, val in (("--max-assembly-failures", args.max_assembly_failures),
                       ("--max-partial-assemblies", args.max_partial_assemblies)):
         if not (0.0 <= val <= 1.0):

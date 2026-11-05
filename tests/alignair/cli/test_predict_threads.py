@@ -47,3 +47,17 @@ def test_threads_on_the_cpu_write_the_rows_one_thread_writes(model_file, fasta, 
 
 def test_a_thread_count_below_one_is_refused(model_file, fasta, tmp_path):
     assert _predict(model_file, fasta, tmp_path / "none.tsv", "--threads", "0") != 0
+
+
+@pytest.mark.parametrize("threads, starts", [("3", True), ("1", False)])
+def test_predict_starts_the_workers_forkserver_first_only_when_it_will_use_workers(model_file, fasta, tmp_path,
+                                                                                   monkeypatch, threads, starts):
+    """Before the model loads, so the forkserver's imports run alongside the loading instead of after it."""
+    from alignair.aligner import Aligner
+    from alignair.predict import parallel
+    events, load = [], Aligner.from_pretrained.__func__
+    monkeypatch.setattr(parallel, "prestart", lambda: events.append("prestart"))
+    monkeypatch.setattr(Aligner, "from_pretrained",
+                        classmethod(lambda cls, *a, **k: events.append("load") or load(cls, *a, **k)))
+    assert _predict(model_file, fasta, tmp_path / "out.tsv", "--threads", threads) == 0
+    assert events[:2] == (["prestart", "load"] if starts else ["load"]) and ("prestart" in events) == starts
