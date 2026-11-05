@@ -52,3 +52,27 @@ def test_an_insertion_costs_one_gap_and_keeps_the_allele():
 def test_bases_outside_the_span_do_not_count():
     read = "TTTTT" + V1[10:]
     assert _score(read, 5, ANCHOR - 5)[0, 0].item() == pytest.approx((len(read) - 5) * MATCH, rel=1e-5)
+
+
+def _reference_band_dp(pair, active):
+    """The band's recursion as written first: ``best`` (B, K, W) over the band's diagonals, base by base."""
+    from torch.nn import functional as F
+    width = pair.shape[-1]
+    ramp = GAP * torch.arange(width, dtype=pair.dtype)
+    best = torch.zeros(*pair.shape[:2], width, dtype=pair.dtype)
+    for t in range(pair.shape[2]):
+        deleted = torch.cummax(best + ramp, -1).values - ramp
+        inserted = F.pad(best[..., 1:], (0, 1), value=-1e9) - GAP
+        best = torch.where(active[:, :, t], torch.maximum(deleted + pair[:, :, t], inserted), best)
+    return best.amax(-1)
+
+
+def test_the_band_recursion_is_the_base_by_base_definition():
+    """Pair scores from matches to the outside penalty and bases outside the span (inactive steps) included: the
+    recursion's scores are the definition's."""
+    from alignair_lab.architectures.chip.vrescore import OUTSIDE, band_dp
+    torch.manual_seed(0)
+    pair = torch.randn(3, 2, 40, 17) * 2
+    pair[0, :, :5] = OUTSIDE
+    active = torch.rand(3, 1, 40, 1) < 0.8
+    assert torch.allclose(band_dp(pair, active), _reference_band_dp(pair, active), atol=1e-4)

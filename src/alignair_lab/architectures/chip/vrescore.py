@@ -18,7 +18,6 @@ IgBLAST 99.4%.
 from __future__ import annotations
 
 import torch
-from torch.nn import functional as F
 
 from alignair.core.anchors import ANCHOR_LOGITS
 
@@ -56,13 +55,23 @@ def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor
     pair = torch.where(inside & (germline > 0), pair, torch.full_like(pair, OUTSIDE))
     pair = torch.where((base >= 1) & (base <= 4), pair, torch.zeros_like(pair))          # an N base: no evidence
     active = ((positions >= starts[:, None]) & (positions < ends[:, None]))[:, None, :, None]   # (B, 1, T, 1)
-    ramp = GAP * band.to(pair.dtype)
-    best = torch.zeros(batch, candidates, width, dtype=pair.dtype, device=tokens.device)  # free germline start
-    for t in range(len(positions)):
-        deleted = torch.cummax(best + ramp, -1).values - ramp                            # germline bases skipped
-        inserted = F.pad(best[..., 1:], (0, 1), value=_NEG) - GAP                        # this read base unaligned
-        best = torch.where(active[:, :, t], torch.maximum(deleted + pair[:, :, t], inserted), best)
-    return best.amax(-1)                                                                  # free germline end
+    return band_dp(pair, active)
+
+
+def band_dp(pair: torch.Tensor, active: torch.Tensor) -> torch.Tensor:
+    """(B, K) the band's best score from its pair scores ``pair`` (B, K, T, W) over the read bases ``active``
+    (B, 1, T, 1) take part in. ``best`` (B, K, W) over the band's diagonals starts at 0 (a free germline start) and
+    ends at its max (a free end); at each base, diagonal w takes the best of a diagonal at or left of it (germline
+    bases skipped, ``GAP`` each) plus the pair score, or diagonal w + 1 less ``GAP`` (the base unaligned). Kept as
+    ``best + GAP * w``, the deletion is a plain running max and the insertion ``2 * GAP`` down, so each base is a few
+    ops on (B, K, W) tensors (a base's cost on a CPU is mostly its ops' fixed overhead)."""
+    ramp = GAP * torch.arange(pair.shape[-1], dtype=pair.dtype, device=pair.device)
+    ramped = ramp.expand(*pair.shape[:2], -1).clone()
+    inserted = torch.full_like(ramped, _NEG)
+    for pair_t, active_t in zip(pair.unbind(2), active.unbind(2)):
+        inserted[..., :-1] = ramped[..., 1:] - 2 * GAP
+        ramped = torch.where(active_t, torch.maximum(torch.cummax(ramped, -1).values + pair_t, inserted), ramped)
+    return (ramped - ramp).amax(-1)
 
 
 @torch.no_grad()
