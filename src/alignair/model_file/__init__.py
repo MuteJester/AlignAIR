@@ -198,11 +198,26 @@ def update_card(src_path, dst_path, updates: dict) -> dict:
     return read_metadata(dst_path)
 
 
+# The first bytes of a torch checkpoint (an AlignAIR 3 ``.pt``): a zip archive, or a pickle stream (protocol >= 2).
+_TORCH_MAGIC = (b"PK\x03\x04", b"\x80")
+
+
 def v3_checkpoint_error(path) -> ModelError:
-    """The refusal of a checkpoint that is not an ``.alignair`` model file (an AlignAIR 3 ``.pt``)."""
-    return ModelError(f"{path} is an AlignAIR 3 checkpoint (not an .alignair model file); AlignAIR 4 reads chip "
-                      "models only — use alignair<4 to run it", context={"path": str(path)},
-                      hint="pip install 'alignair<4' runs it.")
+    """The refusal of a path that is not an ``.alignair`` model file: a missing file, an AlignAIR 3 checkpoint (a torch
+    ``.pt``, refused with the version that runs it), or a file that is no model at all."""
+    from pathlib import Path
+    target = Path(path)
+    if not target.is_file():
+        return ModelError(f"no such model file: {path}", context={"path": str(path)},
+                          hint="Check the path, or name a shipped model by its id (alignair models list).")
+    with open(target, "rb") as handle:
+        head = handle.read(4)
+    if head.startswith(_TORCH_MAGIC):
+        return ModelError(f"{path} is an AlignAIR 3 checkpoint (not an .alignair model file); AlignAIR 4 reads chip "
+                          "models only — use alignair<4 to run it", context={"path": str(path)},
+                          hint="pip install 'alignair<4' runs it.")
+    return ModelError(f"{path} is not an AlignAIR model file (.alignair)", context={"path": str(path)},
+                      hint="An empty or truncated file is an interrupted download: fetch the model again.")
 
 
 @dataclass

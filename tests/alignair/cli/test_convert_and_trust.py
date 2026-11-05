@@ -67,3 +67,15 @@ def test_predict_refuses_a_pt_checkpoint_with_the_version_that_runs_it(tmp_path,
     err = capsys.readouterr().err
     assert rc != 0 and "AlignAIR 3 checkpoint" in err and "alignair<4" in err
     assert not (tmp_path / "out.tsv").exists()
+
+
+@pytest.mark.parametrize("payload,message", [(None, "no such model file"), (b"", "not an AlignAIR model file"),
+                                             (b">read\nACGT\n", "not an AlignAIR model file")],
+                         ids=["missing", "empty", "fasta"])
+def test_a_file_that_is_no_checkpoint_is_not_called_an_alignair_3_one(tmp_path, payload, message):
+    path = tmp_path / "model.alignair"
+    if payload is not None:
+        path.write_bytes(payload)
+    with pytest.raises(ModelError, match=message) as caught:
+        api.load_model(str(path))
+    assert "alignair<4" not in str(caught.value)
