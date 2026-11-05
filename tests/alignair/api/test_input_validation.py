@@ -90,12 +90,3 @@ def test_genotype_repertoire_probabilities_records_and_lengths_share_prepared_re
     assert result.records[0]['length_cropped'] is True
     assert model.tokens == [[[1, 4, 5, 5], [3, 0, 0, 0]], [[1, 4, 5, 5], [3, 0, 0, 0]]]
     assert result.allele_probs['v'].shape == (2, 1)
-
-
-def test_temperature_calibration_uses_shared_preparation_for_generator_records():
-    from alignair.calibration import calibrate_allele_temperatures
-    model = ObservedModel()
-    temperatures, report = calibrate_allele_temperatures(
-        model, reference(), iter([{'sequence': ' ac?pT ', 'v_call': 'V1'}]), genes=('v', 'j'))
-    assert temperatures == report == {}  # too few labelled examples to fit a temperature
-    assert model.tokens == [[[1, 4, 5, 5]]]

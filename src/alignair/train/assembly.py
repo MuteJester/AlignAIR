@@ -51,7 +51,7 @@ class TrainingStream:
     def records(self, record_source: RecordSource | None = None):
         """Curriculum records prepared for the model, built as ``train`` builds its training stream."""
         records = training_records(self.dataconfigs, policy=self.policy, seed=self.seed, start_step=self.start_step,
-                                   translated_only=self.data.translated_only, record_source=record_source)
+                                   record_source=record_source)
         return self.data.prepare_records(records, augment=self.augment, seed=self.prepare_seed,
                                          start_step=self.start_step)
 

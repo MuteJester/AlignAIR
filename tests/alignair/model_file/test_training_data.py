@@ -16,7 +16,7 @@ from alignair.train.random_state import capture_rng_state
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(params=[('nucleotide', 'alleles'), ('protein', 'protein_classes')])
+@pytest.fixture(params=[('nucleotide', 'alleles')])
 def checkpoint(request, tmp_path):
     space, labels = request.param
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
@@ -32,7 +32,7 @@ def checkpoint(request, tmp_path):
     optimizer.step()
     scheduler.step()
     rng = capture_rng_state(include_cuda=False)
-    arguments = {'lr': .001, 'schedule': {'total_steps': 9, 'min_lr': .00001}, 'augmentation': None}
+    arguments = {'lr': .001, 'schedule': {'total_steps': 9, 'min_lr': .00001}}
     path = tmp_path / 'resume.alignair'
     model_file.save_model(path, model, dataconfigs=[gd.HUMAN_IGH_OGRDB], logvars=weights,
                           training={'steps': 1, 'batch_size': 2, 'train_args': arguments},

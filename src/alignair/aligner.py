@@ -196,30 +196,21 @@ class Aligner:
         return PredictionResult(records, locus=self.default_locus)
 
     def predict_raw(self, sequences, *, batch_size=64) -> dict:
-        """Shared raw head arrays for nucleotide/protein models; label_schema describes column identity.
+        """The model's raw head arrays; label_schema describes column identity.
 
         This method does not apply product calibration or AIRR assembly. Every output uses model
         semantics, including categorical logits versus multilabel probabilities and model-frame positions.
         """
-        from .data import prepare_nucleotide_inputs, normalize_sequence_inputs, SequenceValidationPolicy, SequenceInputAdapter
-        from .data.inputs import sequence_batch_iterator
+        from .data import prepare_nucleotide_inputs, SequenceInputAdapter
         from .core.boundaries import read_window
-        from .data.tokenizer import AAProteinTokenizer, AA_TOKEN_DICT, CenterPaddedTokenizer
+        from .data.tokenizer import CenterPaddedTokenizer
         from .predict.forward import collect_prediction_outputs, prediction_batches
         from .core.setup import _input_config
         cfg = self.model.cfg
-        _input_config(cfg, cfg.input_space)
+        _input_config(cfg)
         window = read_window(cfg.max_seq_length, cfg.boundary_mode)
-        if cfg.input_space == 'protein':
-            batch = normalize_sequence_inputs(sequence_batch_iterator(sequences),
-                SequenceValidationPolicy(frozenset(AA_TOKEN_DICT), window), allow_records=False)
-            values = [record.sequence for record in batch.records]
-            if not values:
-                raise InputError('cannot predict an empty protein batch')
-            tokenizer = AAProteinTokenizer(on_invalid='raise')
-        else:
-            values, _ = prepare_nucleotide_inputs(sequences, window)
-            tokenizer = CenterPaddedTokenizer()
+        values, _ = prepare_nucleotide_inputs(sequences, window)
+        tokenizer = CenterPaddedTokenizer()
         adapter = SequenceInputAdapter(tokenizer, cfg.max_seq_length, self.device, vocab_size=cfg.vocab_size)
         return collect_prediction_outputs(
             prediction_batches(self.model, values, adapter, batch_size=batch_size))

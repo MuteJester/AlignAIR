@@ -17,7 +17,7 @@ CLASSES = torch.tensor([0, 2])          # one read without a D, one with a calla
 
 
 def presence_task(task_batch, logits):
-    cfg, out, targets = task_batch(protein=False, has_d=True)
+    cfg, out, targets = task_batch(has_d=True)
     cfg = replace(cfg, d_presence_head=True)
     out["d_presence_logits"] = logits.requires_grad_()
     targets["d_presence"] = CLASSES

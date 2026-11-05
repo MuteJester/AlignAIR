@@ -98,13 +98,6 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
     from ..train.trainer import build_batch, eval_metrics
     from ..reference.reference_set import is_tcr
     model, ref = load_model(checkpoint_path, device="cpu")
-    data = None
-    if model.cfg.input_space == 'protein':
-        from ..core.setup import setup_from_schema
-        from ..data.training import prepare_training_data
-        from ..model_file import read_metadata
-        schema = read_metadata(checkpoint_path)['model']['label_schema']
-        data = prepare_training_data(setup_from_schema(ref, model.cfg, schema))
     agg: dict = {}
     for i, dc in enumerate(dcs):
         params = dict(Curriculum(indel_form="uniform").params(0.3))   # pinned: the eval data never drifts
@@ -114,12 +107,8 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
         segs = required_segments(dc)               # per-locus, not the union reference (see the helper)
         recs = [r for r in itertools.islice(exp.stream_records(n=None, seed=seed + i), batch_size * n_batches * 3)
                 if all(r.get(f"{g}_sequence_start") is not None for g in segs)]
-        if data is not None:
-            from ..data.projection import translated_record_usable
-            recs = list(data.prepare_records(r for r in recs if translated_record_usable(r)))
         for b in range(0, len(recs) - batch_size + 1, batch_size):    # +1: include the last full batch
-            batch_in, targets = (data.validation_adapter(recs[b:b + batch_size]) if data is not None
-                                 else build_batch(recs[b:b + batch_size], ref, model.cfg, device="cpu"))
+            batch_in, targets = build_batch(recs[b:b + batch_size], ref, model.cfg, device="cpu")
             with torch.no_grad():
                 for k, v in eval_metrics(model(batch_in), targets, model.cfg).items():
                     agg.setdefault(k, []).append(v)

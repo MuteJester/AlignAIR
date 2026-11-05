@@ -6,7 +6,7 @@ import math
 
 import torch
 
-from .supervision import categorical_rows, productive_rows, supervised_rows
+from .supervision import productive_rows, supervised_rows
 
 
 @dataclass
@@ -45,35 +45,19 @@ class MetricAccumulator:
 
 
 @torch.no_grad()
-def alignment_metrics(out: dict, targets: dict, genes, classification_mode: str,
-                      *, auxiliary: bool = True) -> MetricReport:
+def alignment_metrics(out: dict, targets: dict, genes, *, auxiliary: bool = True) -> MetricReport:
     report = MetricReport()
-    categorical = classification_mode == "categorical"
     for gene in genes:
-        key = f"{gene}_class_logits" if categorical else f"{gene}_allele"
-        scores = out[key]
+        scores = out[f"{gene}_allele"]
         valid = supervised_rows(targets, gene, scores)
         if not valid.any():
             continue
         prediction = scores.argmax(-1)
-        if categorical:
-            classified = categorical_rows(targets, gene, scores)
-            if f"{gene}_compatible" in targets:
-                correct = targets[f"{gene}_compatible"].gather(1, prediction[:, None]).squeeze(1) != 0
-            else:
-                correct = prediction == targets[f"{gene}_class"]
-            report.add(f"{gene}_class_acc", correct, classified)
-        else:
-            correct = targets[f"{gene}_allele"].gather(1, prediction[:, None]).squeeze(1) > 0.5
-            report.add(f"{gene}_allele_top1", correct, valid)
-        errors = {}
-        for boundary in ("start", "end"):
-            errors[boundary] = (out[f"{gene}_{boundary}"].reshape(-1)
-                                - targets[f"{gene}_{boundary}"].reshape(-1)).abs()
-            if categorical:
-                report.add(f"{gene}_{boundary}_mae", errors[boundary], valid)
-        if not categorical:
-            report.add(f"{gene}_seg_mae", (errors["start"] + errors["end"]) / 2, valid)
+        correct = targets[f"{gene}_allele"].gather(1, prediction[:, None]).squeeze(1) > 0.5
+        report.add(f"{gene}_allele_top1", correct, valid)
+        errors = {boundary: (out[f"{gene}_{boundary}"].reshape(-1) - targets[f"{gene}_{boundary}"].reshape(-1)).abs()
+                  for boundary in ("start", "end")}
+        report.add(f"{gene}_seg_mae", (errors["start"] + errors["end"]) / 2, valid)
     if auxiliary:
         _auxiliary_metrics(report, out, targets)
     return report
@@ -96,8 +80,3 @@ def _auxiliary_metrics(report, out, targets):
         report.add("state_acc", prediction == labels, valid, keep_empty=True)
         for name, index in (("sub", 1), ("ins", 2), ("del", 3)):
             report.add(f"state_{name}_recall", prediction == labels, valid & (labels == index), keep_empty=True)
-
-
-def categorical_metrics(out: dict, targets: dict, genes=("v", "j")) -> dict:
-    """Compatibility surface for the original protein-class metric names."""
-    return alignment_metrics(out, targets, genes, "categorical", auxiliary=False).means()

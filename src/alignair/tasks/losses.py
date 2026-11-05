@@ -10,7 +10,7 @@ from ..core.d_presence import D_PRESENCE, D_PRESENCE_LOGITS
 from ..core.config import AlignAIRConfig
 from ..neural.heads.state import STATE_CLASS_WEIGHTS
 from ..neural.weighting import UncertaintyWeight
-from .supervision import supervised_rows, categorical_rows, productive_rows, target_rows
+from .supervision import supervised_rows, productive_rows, target_rows
 from .functional import (_kendall, _mean_rows, _soft_ce, soft_gaussian_target,
                          soft_cross_entropy_rows as _soft_ce_per_sample)
 
@@ -44,7 +44,6 @@ def loss_weight_names(cfg: AlignAIRConfig) -> tuple[str, ...]:
     if getattr(cfg, "d_presence_head", False):                 # the 3-state D presence head
         keys.append(D_PRESENCE)
     return tuple(keys)
-
 
 
 def make_loss_weights(cfg: AlignAIRConfig) -> nn.ModuleDict:
@@ -119,7 +118,6 @@ def auxiliary_losses(out, targets, cfg, logvars):
     return parts
 
 
-
 def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn.ModuleDict):
     L = cfg.max_seq_length
     genes = genes_of(cfg)
@@ -180,7 +178,6 @@ def hierarchical_loss(out: dict, targets: dict, cfg: AlignAIRConfig, logvars: nn
     return total, parts
 
 
-
 def masked_soft_gaussian(gt: torch.Tensor, length: int, slot_mask: torch.Tensor,
                          sigma: float = 1.5) -> torch.Tensor:
     """Soft-Gaussian target restricted to the allowed boundary slots and RENORMALIZED.
@@ -201,37 +198,3 @@ def anchor_target(anchor: torch.Tensor, slots: torch.Tensor, sigma: float = ANCH
     return torch.cat([gaussian * observed, (~observed).to(gaussian.dtype)], dim=-1)
 
 
-
-def categorical_loss(out: dict, targets: dict, genes=("v", "j")):
-    """Mean boundary CE plus mean categorical/compatible-set CE over supervised rows.
-
-    Rows without supervision are selected out before logarithms and cross entropy. Empty compatible
-    sets on excluded rows therefore cannot create infinity-times-zero losses or non-finite gradients.
-    """
-    length = out[f"{genes[0]}_start_logits"].shape[-1]
-    seg_terms, clf_terms = [], []
-    for gene in genes:
-        logits = out[f"{gene}_class_logits"]
-        valid = supervised_rows(targets, gene, logits)
-        for boundary in ("start", "end"):
-            slot_mask = out.get(f"{boundary}_mask", out.get("position_mask"))
-            boundary_logits = out[f"{gene}_{boundary}_logits"][valid]
-            if valid.any():
-                mask = slot_mask[valid]
-                target = masked_soft_gaussian(targets[f"{gene}_{boundary}"][valid], length, mask)
-                seg_terms.append(_soft_ce_per_sample(boundary_logits, target, mask).mean())
-            else:
-                seg_terms.append(boundary_logits.sum())
-        classified = categorical_rows(targets, gene, logits)
-        selected = logits[classified]
-        if not classified.any():
-            clf_terms.append(selected.sum())
-        elif f"{gene}_compatible" in targets:
-            compatible = targets[f"{gene}_compatible"][classified]
-            logp = torch.log_softmax(selected, dim=-1)
-            clf_terms.append(-torch.logsumexp(logp.masked_fill(compatible == 0, float("-inf")), dim=-1).mean())
-        else:
-            clf_terms.append(F.cross_entropy(selected, targets[f"{gene}_class"][classified]))
-    segmentation = torch.stack(seg_terms).mean()
-    classification = torch.stack(clf_terms).mean()
-    return segmentation + classification, {"segmentation": segmentation, "classification": classification}

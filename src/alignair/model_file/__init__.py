@@ -88,7 +88,7 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
     ``dataconfig``/``train_state`` sections (a resumable training checkpoint). Set it to ``False`` for
     a **publish/inference artifact**: weights + config + safe ``reference_json`` + ``reference`` FASTA
     + model card, and ZERO pickle sections. ``card`` supplies descriptive AIRR fields (species/locus/
-    intended_use/…) merged into the header. Protein-class models require their ordered
+    intended_use/…) merged into the header. A model may record its ordered
     ``label_schema``; allele models may omit it. Binding validation precedes destination writes.
     """
     cfg = model.cfg

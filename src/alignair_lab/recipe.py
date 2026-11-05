@@ -71,7 +71,7 @@ def recipe_train_args(schedule: CosineSchedule | None = None) -> dict:
     constant rate), the stream policy and the spaces."""
     return {"recipe": RECIPE, "batch_size": BATCH_SIZE, "lr": LR, "seed": SEED,
             "schedule": None if schedule is None else schedule.to_dict(),
-            "augmentation": None, "input_space": "nucleotide", "label_space": "alleles",
+            "input_space": "nucleotide", "label_space": "alleles",
             "progresses": list(POLICY.progresses), "heavy_shm": POLICY.heavy_shm, "short_boost": POLICY.short_boost,
             "mutation_cap": POLICY.mutation_cap, "source_mode": POLICY.mode, "indel_form": POLICY.indel_form,
             "indel_fraction": list(POLICY.indel_fraction), "selected_fraction": POLICY.selected_fraction,

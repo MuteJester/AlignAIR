@@ -17,7 +17,6 @@ from ..data.adapters import build_nucleotide_batch as build_batch
 from ..data.training import prepare_training_data
 from ..core.setup import ModelSetup
 from ..core.runtime import restore_model_state
-from ..reference.protein import build_protein_reference
 from ..tasks import TrainingTasks, build_tasks
 from .gym.curriculum.base import INDEL_FRACTION
 from .gym.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
@@ -91,7 +90,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
           monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
           grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
-          augmentation=None, schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
+          schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
           indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION, flanks=None):
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
 
@@ -146,16 +145,14 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     if study is not None and not isinstance(study, TrainingStudy):
         raise ConfigurationError('study must be a TrainingStudy or None')
 
-    setup = model_setup or ModelSetup(reference_set, cfg, cfg.input_space, cfg.label_space,
-        build_protein_reference(reference_set) if cfg.label_space == 'protein_classes' else None)
+    setup = model_setup or ModelSetup(reference_set, cfg, cfg.input_space, cfg.label_space)
     if setup.reference is not reference_set or setup.config != cfg:
         raise ConfigurationError('training setup must bind this model configuration and reference')
-    data = prepare_training_data(setup, device=device, augmentation=augmentation)
-    augmentation_metadata = augmentation.to_dict() if augmentation is not None else None
+    data = prepare_training_data(setup, device=device)
     schedule_metadata = schedule.to_dict() if schedule is not None else None
     schema = setup.label_schema()
     requested_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
-                                              mode='amplicon' if cfg.input_space == 'protein' else 'auto',
+                                              mode='auto',
                                               indel_fraction=indel_fraction, indel_form=indel_form,
                                               selected_fraction=selected_fraction, flanks=flanks)
     # A reference GenAIRR cannot draw productive records from (an incompletely annotated custom reference) trains
@@ -170,7 +167,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
     def _build_stream(purpose, *, augment=False, start_step=0):
         # every stream draws its own seed blocks: training (a resume from (seed, step)), validation and the probe
         records = training_records(dataconfigs, policy=source_policy, seed=seed, purpose=purpose,
-                                   start_step=start_step, translated_only=data.translated_only,
+                                   start_step=start_step,
                                    record_source=record_source)
         return data.prepare_records(records, augment=augment, seed=seed, start_step=start_step)
 
@@ -185,7 +182,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         raise ConfigurationError('resume checkpoint does not exist', context={'path': str(resume_path)})
     if resume_from:
         state = load_training_checkpoint(resume_from, device=device, trust_pickle=resume_trust_pickle)
-        validate_continuation(state, cfg, schema, augmentation=augmentation_metadata, schedule=schedule_metadata, lr=lr)
+        validate_continuation(state, cfg, schema, schedule=schedule_metadata, lr=lr)
         restore_model_state(model, state.model_state, source=resume_from)
         if state.weight_state is not None:
             logvars.load_state_dict(state.weight_state)
@@ -221,7 +218,6 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                    "selected_fraction": requested_policy.selected_fraction,
                    "selected_shares": list(source_policy.selected_shares(force_mixture=len(dataconfigs) > 1)),
                    "selection_unavailable": unselectable,
-                   "augmentation": augmentation_metadata,
                    "flanks": flanks.to_dict() if flanks is not None else None,
                    "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
@@ -279,7 +275,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         from .gym.streams import stream_records
         workers = parallel_training_data(
             TrainingStream(tuple(dataconfigs), source_policy, seed,
-                           prepare_training_data(setup, device='cpu', augmentation=augmentation),
+                           prepare_training_data(setup, device='cpu'),
                            augment=True, prepare_seed=seed, start_step=start),
             batch_size=batch_size, workers=data_workers, device=device,
             provider=stream_records if record_source is None else record_source)

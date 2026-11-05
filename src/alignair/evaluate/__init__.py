@@ -1,27 +1,14 @@
-"""Shared evaluation statistics, cohort reports, and the model benchmark API."""
-from .reports import (boundary_error_report, classification_report, constant_median_mae,
-                      macro_accuracy, majority_class_baseline)
-from .probabilities import categorical_nll, frequency_accuracy_report, multiclass_brier_score
+"""Shared interval estimators and the model benchmark API (``benchmark``, imported on first use)."""
 from .statistics import (bootstrap_competence_ci, bootstrap_mean_ci, clopper_pearson_interval, paired_diff_ci,
                          wilson_interval)
-from .cohort import (BoundaryObservation, ClassificationObservation, CohortObservations,
-                     PredictionSetObservation, ScalarObservation, collect_alignment_observations)
-from .alleles import evaluate_allele_cohort
-from .categorical import evaluate_categorical_cohort
-from .strata import ClassificationStratum, protein_v_strata
 
 _BENCHMARK_EXPORTS = ("default_strata", "format_text", "generate_labeled", "run_benchmark", "score")
-__all__ = [*_BENCHMARK_EXPORTS, "boundary_error_report", "classification_report", "constant_median_mae",
-           "macro_accuracy", "majority_class_baseline", "bootstrap_competence_ci", "bootstrap_mean_ci",
-           "paired_diff_ci", "wilson_interval", "clopper_pearson_interval", "BoundaryObservation", "ClassificationObservation",
-           "CohortObservations", "collect_alignment_observations", "PredictionSetObservation",
-           "ScalarObservation", "evaluate_allele_cohort", "evaluate_categorical_cohort",
-           "ClassificationStratum", "protein_v_strata", "categorical_nll",
-           "frequency_accuracy_report", "multiclass_brier_score"]
+__all__ = [*_BENCHMARK_EXPORTS, "bootstrap_competence_ci", "bootstrap_mean_ci", "clopper_pearson_interval",
+           "paired_diff_ci", "wilson_interval"]
 
 
 def __getattr__(name):
-    # Pure report/statistic imports must not initialize the prediction API or simulator benchmark.
+    # Importing the package must not initialize the prediction API or the simulator benchmark.
     if name in _BENCHMARK_EXPORTS:
         from . import benchmark
         value = getattr(benchmark, name)

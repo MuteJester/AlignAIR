@@ -35,7 +35,7 @@ def igh():
 
 def synthetic(adapter=record_workers.ordinal_batch, start=0):
     from types import SimpleNamespace
-    data = TrainingDataSetup(adapter, adapter, False)
+    data = TrainingDataSetup(adapter, adapter)
     panel = SimpleNamespace(name='IGH', metadata=SimpleNamespace(chain_type='BCR_HEAVY'))
     return TrainingStream((panel,), RECIPE, 0, data, augment=True, prepare_seed=0, start_step=start)
 

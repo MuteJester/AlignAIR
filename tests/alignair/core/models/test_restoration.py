@@ -18,8 +18,7 @@ def _config(input_space="nucleotide", label_space="alleles", has_d=True):
 
 
 @pytest.mark.parametrize("input_space,label_space", [
-    ("nucleotide", "alleles"), ("protein", "alleles"),
-    ("protein", "protein_classes"), ("nucleotide", "protein_classes"),
+    ("nucleotide", "alleles"),
 ])
 @pytest.mark.parametrize("has_d", [False, True])
 def test_restoration_preserves_weights_and_outputs_across_model_policies(input_space, label_space, has_d):

@@ -1,4 +1,4 @@
-"""Shared AlignAIR assembly and execution for nucleotide and amino-acid models.
+"""Shared AlignAIR assembly and execution.
 
 Single vs multi chain is not two classes here, it is data: ``cfg.gene_specs`` says which genes exist
 and ``cfg.num_chain_types`` says whether a chain_type/locus head is present. Build the config from one

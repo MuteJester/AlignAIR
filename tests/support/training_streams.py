@@ -24,8 +24,7 @@ class RecordingEngine:
 
 def serial_records(stream):
     """The trainer's serial construction (``train``'s ``_build_stream``) of a ``TrainingStream``."""
-    records = training_records(stream.dataconfigs, policy=stream.policy, seed=stream.seed, start_step=stream.start_step,
-                               translated_only=stream.data.translated_only)
+    records = training_records(stream.dataconfigs, policy=stream.policy, seed=stream.seed, start_step=stream.start_step)
     return stream.data.prepare_records(records, augment=stream.augment, seed=stream.prepare_seed,
                                        start_step=stream.start_step)
 

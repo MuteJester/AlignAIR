@@ -14,7 +14,7 @@ from alignair.reference import ReferenceSet
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(params=['nucleotide', 'protein'])
+@pytest.fixture(params=['nucleotide'])
 def artifact(request, tmp_path):
     reference = ReferenceSet.from_genotype({'V': {'V2': 'ATGTGTAAA', 'V1': 'ATGTGTTTT'},
                                             'D': {'D1': 'TAC'}, 'J': {'J1': 'TGGAAA'}})
@@ -60,37 +60,6 @@ def test_missing_schema_never_bypasses_binding_checks_before_allocation(artifact
     assert caught.value.context['path'] == str(path)
 
 
-def test_protein_class_artifact_requires_schema_even_when_widths_equal_allele_counts(artifact, monkeypatch):
-    setup, path, header, sections = artifact
-    cfg = replace(setup.config, label_space='protein_classes', classification_mode='categorical')
-    sections['config'] = (serialize.config_to_bytes(cfg), 'zlib')
-    container.write_container(path, header, sections)
-    def forbidden(*args, **kwargs):
-        raise AssertionError('class IDs inferred without stored labels')
-    monkeypatch.setattr(AlignAIR, '__init__', forbidden)
-    with pytest.raises(ModelIntegrityError, match='ordered class labels') as caught:
-        model_file.load_model(path)
-    assert caught.value.context['field'] == 'label_schema'
-    assert caught.value.hint == 'Supply the saved label schema or protein reference; do not infer class IDs.'
-
-
-def test_class_artifact_preserves_saved_order_without_retranslating_reference(artifact, monkeypatch):
-    source, path, header, sections = artifact
-    setup = prepare_model(source.reference, input_space=source.input_space, label_space='protein_classes',
-                          max_seq_length=128, embed_dim=4, filters=4, block_out=8)
-    schema = setup.label_schema()
-    schema['genes']['v'].reverse()
-    header['model'] = {'label_schema': schema}
-    sections['config'] = (serialize.config_to_bytes(setup.config), 'zlib')
-    sections['weights'] = (serialize.state_dict_to_bytes(setup.build_model().state_dict()), 'none')
-    container.write_container(path, header, sections)
-    def forbidden(*args, **kwargs):
-        raise AssertionError('saved class order was reconstructed')
-    monkeypatch.setattr('alignair.core.setup.build_protein_reference', forbidden)
-    loaded = model_file.load_model(path)
-    assert loaded.metadata['model']['label_schema'] == schema
-
-
 def test_embedded_reference_contract_error_has_artifact_context(artifact):
     setup, path, header, sections = artifact
     reference = setup.reference
@@ -121,12 +90,11 @@ def test_trusted_legacy_container_still_verifies_available_reference_hashes(tmp_
     assert caught.value.context['stage'] == 'model_binding'
 
 
-@pytest.mark.parametrize('problem', ['head_count', 'missing_class_schema'])
+@pytest.mark.parametrize('problem', ['head_count'])
 def test_save_rejects_invalid_binding_before_touching_destination(problem, tmp_path):
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
                           max_seq_length=128, embed_dim=4, filters=4, block_out=8)
-    cfg = (replace(setup.config, v_allele_count=1) if problem == 'head_count'
-           else replace(setup.config, label_space='protein_classes'))
+    cfg = replace(setup.config, v_allele_count=1)
     model = AlignAIR(cfg)
     path = tmp_path / 'existing.alignair'
     path.write_bytes(b'keep existing artifact')

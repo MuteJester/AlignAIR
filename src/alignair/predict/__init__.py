@@ -6,8 +6,6 @@ from .config import PredictConfig
 from .pipeline import predict
 from .state import GeneCall, GermlineAlignment, Predictions, Segments
 from .forward import collect_prediction_outputs, forward_batch, prediction_batches
-from .probabilities import class_probabilities
-from .features import component_features
 
 __all__ = ["predict", "PredictConfig", "GeneCall", "GermlineAlignment", "Predictions", "Segments",
-           "forward_batch", "prediction_batches", "collect_prediction_outputs", "class_probabilities", "component_features"]
+           "forward_batch", "prediction_batches", "collect_prediction_outputs"]

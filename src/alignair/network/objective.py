@@ -130,7 +130,7 @@ class ChipObjective:
         return total, parts
 
     def metric_report(self, outputs: dict, targets: dict) -> MetricReport:
-        report = alignment_metrics(outputs, targets, self.genes, "multilabel")
+        report = alignment_metrics(outputs, targets, self.genes)
         mask = outputs["start_mask"]
         slots = {"start": mask, "end": outputs["end_mask"]}
         for gene in self.genes:

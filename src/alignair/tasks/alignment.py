@@ -13,7 +13,7 @@ from ..core.d_presence import D_PRESENCE, D_PRESENCE_LOGITS
 from ..core.components import architecture_components
 from ..core.config import AlignAIRConfig
 from ..errors import ConfigurationError, TrainingDataError
-from .losses import auxiliary_losses, categorical_loss, hierarchical_loss, loss_weight_names, make_loss_weights
+from .losses import hierarchical_loss, loss_weight_names, make_loss_weights
 from .metrics import MetricReport, alignment_metrics
 
 LossResult = tuple[torch.Tensor, dict[str, torch.Tensor]]
@@ -67,32 +67,21 @@ class AlignmentTasks:
             if missing:
                 raise TrainingDataError(f"missing task {kind} fields: {missing}",
                                         context={"kind": kind, "fields": missing})
-        if self.config.classification_mode == "categorical" and not (
-                "position_mask" in outputs or {"start_mask", "end_mask"} <= outputs.keys()):
-            raise TrainingDataError("categorical boundary loss requires start/end masks or a position mask",
-                                    context={"kind": "output", "fields": ["start_mask", "end_mask"]})
         needed = loss_weight_names(self.config)
         if needed and (weights is None or any(key not in weights for key in needed)):
             raise ConfigurationError("task loss requires its configured uncertainty weights",
                                      hint="Create weights with tasks.make_weights() and include them in the optimizer.")
         weights = {} if weights is None else weights
-        if self.config.classification_mode == "multilabel":
-            return hierarchical_loss(outputs, targets, self.config, weights)
-        total, parts = categorical_loss(outputs, targets, self.genes)
-        for key, value in auxiliary_losses(outputs, targets, self.config, weights).items():
-            parts[key] = value
-            total = total + value
-        return total, parts
+        return hierarchical_loss(outputs, targets, self.config, weights)
 
     def metric_report(self, outputs: dict, targets: dict) -> MetricReport:
-        return alignment_metrics(outputs, targets, self.genes, self.config.classification_mode)
+        return alignment_metrics(outputs, targets, self.genes)
 
     def metrics(self, outputs: dict, targets: dict) -> dict[str, float]:
         return self.metric_report(outputs, targets).means()
 
     def selection_score(self, metrics: dict[str, float]) -> float:
-        suffix = "allele_top1" if self.config.classification_mode == "multilabel" else "class_acc"
-        values = [metrics[f"{gene}_{suffix}"] for gene in self.genes if f"{gene}_{suffix}" in metrics]
+        values = [metrics[f"{gene}_allele_top1"] for gene in self.genes if f"{gene}_allele_top1" in metrics]
         return sum(values) / len(values) if values and all(math.isfinite(v) for v in values) else math.nan
 
 
@@ -109,6 +98,6 @@ def build_tasks(config: AlignAIRConfig, *, genes=None) -> AlignmentTasks:
     selected = canonical if genes is None else tuple(genes)
     if not selected or len(set(selected)) != len(selected) or not set(selected) <= set(canonical):
         raise ConfigurationError("task genes must be a nonempty, unique subset of the model genes")
-    if config.classification_mode == "multilabel" and selected != canonical:
+    if selected != canonical:
         raise ConfigurationError("the hierarchical objective supervises the configured gene set in canonical order")
     return AlignmentTasks(config, selected)

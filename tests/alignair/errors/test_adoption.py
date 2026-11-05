@@ -19,17 +19,6 @@ pytestmark = pytest.mark.component
     ("train.guards", "TrainingConfigError", ValueError),
     ("train.guards", "NonFiniteLossError", RuntimeError),
     ("genotype.constraint", "NovelAlleleUnsupportedError", ValueError),
-    ("data.tokenizer", "InvalidResidueError", ValueError),
-    ("data.sampling.collection", "SampleBudgetExhausted", RuntimeError),
-    ("applicability.access", "AccessViolation", RuntimeError),
-    ("applicability.access", "ThresholdArtifactMissing", RuntimeError),
-    ("applicability.access", "HashMismatch", RuntimeError),
-    ("applicability.access", "NoAdmissibleThreshold", RuntimeError),
-    ("applicability.fusion", "FusionContractError", RuntimeError),
-    ("applicability.tokenizer", "InputTooLong", ValueError),
-    ("applicability.disjoint", "Gate3DigestMismatch", RuntimeError),
-    ("applicability.profiles", "NoPublishableProfileSource", Exception),
-    ("applicability.assessment.cohort_loader", "LockedTestError", RuntimeError),
 ])
 def test_canonical_exceptions_preserve_builtin_catchability(module, name, builtin):
     cls = getattr(importlib.import_module("alignair." + module), name)

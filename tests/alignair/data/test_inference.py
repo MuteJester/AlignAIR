@@ -6,16 +6,14 @@ import pytest
 import torch
 
 from alignair.data import SequenceInputAdapter
-from alignair.data.tokenizer import AAProteinTokenizer, CenterPaddedTokenizer
+from alignair.data.tokenizer import CenterPaddedTokenizer
 from alignair.errors import ConfigurationError, DataContractError, InputError, current_error_context
 
 pytestmark = pytest.mark.component
 
 
-def test_one_adapter_preserves_protein_and_nucleotide_tokens_with_explicit_padding():
-    protein = SequenceInputAdapter(AAProteinTokenizer(), 6, vocab_size=23)
+def test_the_adapter_preserves_nucleotide_tokens_with_explicit_padding():
     nucleotide = SequenceInputAdapter(CenterPaddedTokenizer(), 6, vocab_size=6)
-    assert protein(['AC','X*'])['tokenized_sequence'].tolist() == [[1,2,0,0,0,0],[21,22,0,0,0,0]]
     assert nucleotide(['ATGC','N'])['tokenized_sequence'].tolist() == [[1,2,3,4,0,0],[5,0,0,0,0,0]]
 
 
@@ -42,7 +40,7 @@ def test_legacy_nucleotide_policy_can_retain_empty_and_unknown_inputs():
                                     {'device':'bad_device'}, {'alphabet':1}, {'alphabet':()},
                                     {'alphabet':('AA',)}, {'alphabet':(1,)}])
 def test_invalid_adapter_configuration_is_classified(options):
-    args = {'tokenizer':AAProteinTokenizer(), 'max_length':8}
+    args = {'tokenizer':CenterPaddedTokenizer(), 'max_length':8}
     args.update(options)
     with pytest.raises(ConfigurationError):
         SequenceInputAdapter(**args)
@@ -50,7 +48,7 @@ def test_invalid_adapter_configuration_is_classified(options):
 
 @pytest.mark.parametrize('sequences', ['AC',None,[],[''],[1],['ACZ'],['AAAAA']])
 def test_invalid_batches_fail_with_input_errors_and_no_scope_leak(sequences):
-    adapter = SequenceInputAdapter(AAProteinTokenizer(),4,alphabet=frozenset('AC'))
+    adapter = SequenceInputAdapter(CenterPaddedTokenizer(),4,alphabet=frozenset('AC'))
     with pytest.raises(InputError):
         adapter(sequences)
     assert current_error_context() == {}

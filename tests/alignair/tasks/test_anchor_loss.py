@@ -36,7 +36,7 @@ def expected_target(anchor):
 
 
 def anchor_task(task_batch, logits=None, anchors=ANCHORS, boundary_mode="residue", meta=False):
-    cfg, out, targets = task_batch(protein=False, has_d=True, auxiliary=meta)
+    cfg, out, targets = task_batch(has_d=True, auxiliary=meta)
     cfg = replace(cfg, anchor_heads=True, boundary_mode=boundary_mode)
     if boundary_mode == "half_open":
         tokens = torch.zeros(2, WIDTH, dtype=torch.long)

@@ -1,4 +1,4 @@
-"""Shared curriculum policies and lazy record sources for nucleotide and protein runners."""
+"""Shared curriculum policies and lazy record sources for the runners."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -14,7 +14,6 @@ from collections.abc import Iterable, Iterator, Mapping
 
 from ...errors import ConfigurationError, error_context
 from ...data.flanks import FlankPolicy, flank_records
-from ...data.projection import translated_record_usable
 from ...reference.reference_set import _locus_of, is_tcr
 from .curriculum import Curriculum
 from .curriculum.base import INDEL_FRACTION, indel_form_name, indel_fraction_range
@@ -227,7 +226,7 @@ class CurriculumStreamPolicy:
         return streams
 
 
-def _scoped_records(records, *, seed, stage, translated_only=False):
+def _scoped_records(records, *, seed, stage):
     iterator = None
     while True:
         with error_context(stage=stage, seed=seed):
@@ -237,9 +236,7 @@ def _scoped_records(records, *, seed, stage, translated_only=False):
                 record = next(iterator)
             except StopIteration:
                 return
-            keep = not translated_only or translated_record_usable(record)
-        if keep:
-            yield record
+        yield record
 
 
 def stream_records(dataconfig, parameters: Mapping, seed: int) -> Iterator[Mapping]:
@@ -283,7 +280,7 @@ def _resolve_reference(value):
 
 
 def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
-                     translated_only: bool = False, record_source: RecordSource | None = None,
+                     record_source: RecordSource | None = None,
                      purpose: str = 'training', start_step: int = 0) -> Iterator[Mapping]:
     """Build lazy, deterministic curriculum records; reference panels and components use complete rounds.
 
@@ -292,7 +289,7 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
     ``seed_block(seed, purpose, start_step, j, i, s)``. The ``purpose`` is ``"training"``, ``"validation"`` or
     ``"probe"`` (the X-ray probe), and a training stream that starts at ``start_step`` (a resumed run) draws blocks
     of its own. Panel j gets the class ID of its distinct normalized locus. Multiple panels always use the amplicon
-    mixture. Translation filtering checks exported length/frame only; sample acceptance remains the builder's policy.
+    mixture.
     """
     if not isinstance(policy, CurriculumStreamPolicy):
         raise ConfigurationError('supply a CurriculumStreamPolicy')
@@ -300,8 +297,6 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
     start_step = _integer(start_step, 'start_step', 0)
     if not isinstance(purpose, str) or purpose not in STREAM_PURPOSES:
         raise ConfigurationError(f'purpose must be one of {STREAM_PURPOSES}', context={'field': 'purpose'})
-    if type(translated_only) is not bool:
-        raise ConfigurationError('translated_only must be a boolean', context={'field': 'translated_only'})
     if record_source is not None and not callable(record_source):
         raise ConfigurationError('record_source must be callable', context={'field': 'record_source'})
     try:
@@ -343,4 +338,4 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
         panels = [panel_records(reference, plan) for reference, plan in zip(resolved, plans)]
         yield from chain.from_iterable(zip(*panels))
 
-    return _scoped_records(generate(), seed=seed, stage='curriculum_source', translated_only=translated_only)
+    return _scoped_records(generate(), seed=seed, stage='curriculum_source')

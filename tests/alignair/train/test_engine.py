@@ -140,21 +140,6 @@ def test_historical_trainer_imports_delegate_to_shared_owners():
     assert trainer._restore_rng is random_state.restore_rng_state
 
 
-def test_engine_infers_default_tasks_for_a_categorical_model():
-    from alignair.core import AlignAIR, AlignAIRConfig
-    from alignair.data import CategoricalBatchAdapter
-    cfg = AlignAIRConfig(max_seq_length=128, embed_dim=4, filters=4, block_out=8,
-                          v_allele_count=2, j_allele_count=2, has_d=False).with_amino_acid_heads()
-    model = AlignAIR(cfg)
-    batch = CategoricalBatchAdapter.from_config(cfg)([
-        {'tokens': [1, 2, 3], 'v_class': 0, 'v_start': 0, 'v_end': 1,
-         'j_class': 1, 'j_start': 1, 'j_end': 3}])
-    engine = TrainingEngine(model, torch.optim.AdamW(model.parameters(), lr=.001))
-    assert engine.step(batch).total > 0
-    result = engine.validate([batch])
-    assert 0 <= result.score <= 1 and model.training
-
-
 @pytest.mark.parametrize('constant', [False, True])
 def test_an_optimizer_disconnected_from_the_loss_fails_before_a_false_successful_step(constant):
     from alignair.errors import TrainingError

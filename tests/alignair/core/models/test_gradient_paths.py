@@ -11,7 +11,7 @@ from alignair.xray.dynamics import gradient_conflict
 pytestmark = pytest.mark.component
 
 
-@pytest.fixture(params=[('nucleotide', 'alleles'), ('protein', 'alleles'), ('protein', 'protein_classes')])
+@pytest.fixture(params=[('nucleotide', 'alleles')])
 def alignment_case(request):
     space, labels = request.param
     cfg = build_model_config(4, 3, 2, input_space=space, label_space=labels, has_d=True,

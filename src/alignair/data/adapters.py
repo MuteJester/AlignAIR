@@ -20,9 +20,7 @@ from ..reference.frames import gene_frames
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .chip_inputs import chip_batch_inputs, chip_record_targets
 from .encoders import encode_allele_sets
-from .projection import frame_offset_of, project_codons, projection_segments, translated_record_usable
 from .targets import UNSCORABLE, build_targets, read_anchors, read_d_presence
-from .tokenizer import AAProteinTokenizer
 
 if TYPE_CHECKING:
     from ..core.config import AlignAIRConfig
@@ -178,127 +176,5 @@ class NucleotideBatchAdapter:
 
 
 
-@dataclass(frozen=True)
-class ProteinAlleleBatchAdapter:
-    """Translated reads with projected boundaries and full nucleotide allele vocabularies."""
-    reference: object
-    config: AlignAIRConfig
-    device: str = "cpu"
-    tokenizer: object = None
-    overflow: str = "prefix"
-
-    def __call__(self, records) -> TrainingBatch:
-        if getattr(self.config, "classification_mode", "multilabel") != "multilabel":
-            raise ConfigurationError("protein allele adaptation requires multilabel targets")
-        if getattr(self.config, "use_orientation", False):
-            raise ConfigurationError("protein records cannot use nucleotide orientation correction")
-        tokenizer = self.tokenizer or AAProteinTokenizer()
-        genes, samples = _genes(self.config), []
-        for i, record in enumerate(records):
-            with _record_context(i, record):
-                if record.get("junction_start") is None or not record.get("sequence_aa"):
-                    raise TrainingDataError("protein records require a translation and junction-derived frame")
-                projection = project_codons(len(record["sequence"]), frame_offset_of(record["junction_start"]),
-                                            projection_segments(record))
-                encoded = tokenizer.encode(record["sequence_aa"])
-                if len(encoded) != projection.n_residues:
-                    raise TrainingDataError("translation length does not match the projected residue frame",
-                                            context={"field": "sequence_aa"})
-                targets = {}
-                for gene in genes:
-                    bounds = projection.aa_bounds.get(gene.upper())
-                    supervise = bounds is not None and not (gene == "d" and record.get("d_inverted", False))
-                    start, end = bounds if bounds is not None else (0, 0)
-                    targets[f"{gene}_start"] = torch.tensor([float(start)], dtype=torch.float32)
-                    targets[f"{gene}_end"] = torch.tensor([float(end)], dtype=torch.float32)
-                    targets[f"{gene}_supervise"] = torch.tensor(supervise)
-                    calls = str(record.get(f"{gene}_call") or "").split(",") if supervise else ()
-                    targets[f"{gene}_allele"] = _alleles(self.reference, gene, calls)
-                for key, value in (("mutation_rate", record["mutation_rate"]),
-                                   ("indel_count", record.get("n_indels", 0)),
-                                   ("productive", float(bool(record.get("productive"))))):
-                    targets[key] = torch.tensor([value], dtype=torch.float32)
-                targets["productive_supervise"] = _productive_supervise(record.get("productive") is not None,
-                                                                        self.config)
-                sample = TrainingSample(encoded, targets, record.get("sequence_id"))
-                samples.append(_limit(sample, self.config, genes, self.overflow))
-        return collate_samples(samples, max_length=self.config.max_seq_length, device=self.device,
-                               reserve_terminal_slot=getattr(self.config, "boundary_mode", "residue") == "half_open")
-
-
-@dataclass(frozen=True)
-class CategoricalBatchAdapter:
-    """Prepared class-index/compatible-set samples, independent of their sequence alphabet."""
-    max_length: int
-    device: str = "cpu"
-    class_counts: dict[str, int] | None = None
-    reserve_terminal_slot: bool = True
-
-    @classmethod
-    def from_config(cls, config, *, device="cpu"):
-        return cls(config.max_seq_length, device,
-                   {spec.name: spec.allele_count for spec in config.gene_specs},
-                   config.boundary_mode == "half_open")
-
-    def __call__(self, samples) -> TrainingBatch:
-        samples = list(samples)
-        if not samples:
-            raise TrainingDataError("cannot adapt an empty categorical batch")
-        for i, sample in enumerate(samples):
-            if not isinstance(sample, Mapping):
-                raise TrainingDataError("categorical samples must be mappings", context={"record_index": i})
-        genes = tuple(gene for gene in ("v", "j", "d") if f"{gene}_class" in samples[0])
-        if not genes:
-            raise TrainingDataError("categorical samples need gene class labels")
-        validity = {gene for gene in genes if gene == "d" or any(f"{gene}_valid" in row for row in samples)}
-        supervision_masks = {f"{gene}_{suffix}" for gene in genes for suffix in ("supervise", "class_supervise")
-                             if any(f"{gene}_{suffix}" in row for row in samples)}
-        compatible = {gene for gene in genes if any(f"{gene}_compatible" in row for row in samples)}
-        prepared = []
-        for i, sample in enumerate(samples):
-            with _record_context(i, sample):
-                if tuple(gene for gene in ("v", "j", "d") if f"{gene}_class" in sample) != genes:
-                    raise TrainingDataError("categorical samples have different gene sets")
-                targets = {}
-                for gene in genes:
-                    value = sample[f"{gene}_class"]
-                    if isinstance(value, bool):
-                        raise TrainingDataError("class indices must be integers", context={"field": f"{gene}_class"})
-                    targets[f"{gene}_class"] = torch.tensor(index(value), dtype=torch.long)
-                    for boundary in ("start", "end"):
-                        targets[f"{gene}_{boundary}"] = torch.tensor([float(sample[f"{gene}_{boundary}"])], dtype=torch.float32)
-                    if gene in validity:
-                        targets[f"{gene}_valid"] = torch.tensor(float(sample.get(f"{gene}_valid", 1.)), dtype=torch.float32)
-                    for key in (f"{gene}_supervise", f"{gene}_class_supervise"):
-                        if key in supervision_masks:
-                            mask = sample.get(key, True)
-                            if not isinstance(mask, (bool, int, float, np.number)) or mask not in (0, 1):
-                                raise TrainingDataError("supervision must be binary", context={"field": key})
-                            targets[key] = torch.tensor(bool(mask))
-                    key = f"{gene}_compatible"
-                    if gene in compatible:
-                        if self.class_counts is None or gene not in self.class_counts:
-                            raise ConfigurationError("compatible sets require explicit per-gene class counts")
-                        if key not in sample:
-                            raise TrainingDataError("compatible-set annotation is missing", context={"field": key})
-                        membership = torch.zeros(self.class_counts[gene], dtype=torch.float32)
-                        for value in sample[key]:
-                            if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or not 0 <= value < membership.numel():
-                                raise TrainingDataError("compatible class is outside the vocabulary", context={"field": key})
-                            membership[value] = 1
-                        targets[key] = membership
-                prepared.append(TrainingSample(sample["tokens"], targets, sample.get("sequence_id")))
-        return collate_samples(prepared, max_length=self.max_length, device=self.device,
-                               reserve_terminal_slot=self.reserve_terminal_slot)
-
-
 def build_nucleotide_batch(records, reference_set, config, device="cpu", augment_orientation=None):
     return tuple(NucleotideBatchAdapter(reference_set, config, device, augment_orientation)(records))
-
-
-def build_protein_allele_batch(records, reference_set, config, device="cpu", tokenizer=None):
-    return tuple(ProteinAlleleBatchAdapter(reference_set, config, device, tokenizer)(records))
-
-
-def collate_categorical(samples, max_len, device="cpu"):
-    return tuple(CategoricalBatchAdapter(max_len, device)(samples))

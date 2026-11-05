@@ -204,25 +204,6 @@ def test_locus_tagging_does_not_mutate_or_relabel_the_providers_own_record():
     assert original=={'source':1} and all(row is not original for row in rows)
 
 
-def test_translation_filter_only_checks_translation_eligibility():
-    rows=[{'sequence':'ATG','sequence_aa':aa,'junction_start':frame,'productive':False}
-          for aa,frame in [('',0),('M',None),('MM',0),('M',0),('*',0)]]
-    def source(*args):return iter(rows)
-    actual=list(training_records((reference(),),policy=CurriculumStreamPolicy((.3,),0.,selected_fraction=0),
-                                  translated_only=True,record_source=source))
-    assert [row['sequence_aa'] for row in actual]==['M','*']
-    assert all(not row['productive'] for row in actual)
-
-
-def test_filter_errors_carry_source_context_without_leaking_to_the_runner():
-    def invalid(*args):yield {'sequence':'ATG','sequence_aa':'M','junction_start':'bad'}
-    records=training_records((reference(),),policy=CurriculumStreamPolicy((.3,),0.),
-                              seed=19,translated_only=True,record_source=invalid)
-    with pytest.raises(TrainingDataError) as caught:next(records)
-    assert caught.value.context['stage']=='curriculum_source' and caught.value.context['seed']==19
-    assert current_error_context()=={}
-
-
 def test_source_factory_failure_preserves_type_and_attempted_seed():
     def fail(*args):raise TrainingDataError('provider failed')
     records=training_records((reference(),),record_source=fail,seed=9)
@@ -329,7 +310,7 @@ def test_every_component_draws_indels_from_the_policys_indel_fraction_ramp():
 @pytest.mark.parametrize('references,options',[
     ((),{}),('KNOWN',{}),(None,{}),((reference(),),{'policy':None}),
     ((reference(),),{'seed':-1}),((reference(),),{'seed':True}),
-    ((reference(),),{'translated_only':1}),((reference(),),{'record_source':1}),
+    ((reference(),),{'record_source':1}),
     ((reference(),),{'purpose':'testing'}),((reference(),),{'purpose':None}),
     ((reference(),),{'start_step':-1}),((reference(),),{'start_step':1.5}),
 ])

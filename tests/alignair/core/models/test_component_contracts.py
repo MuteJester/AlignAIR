@@ -27,7 +27,7 @@ def architecture(monkeypatch):
     return register
 
 
-@pytest.mark.parametrize('protein', [False, True])
+@pytest.mark.parametrize('protein', [False])
 def test_model_configuration_is_an_independent_snapshot_including_nested_values(architecture, protein):
     received = []
     def embedding(cfg):
@@ -112,7 +112,8 @@ def test_disabled_capabilities_do_not_call_their_factories(architecture):
         pytest.fail('disabled component factory called')
     name = architecture(replace(ModelComponents(), orientation_head=forbidden, meta_tower=forbidden,
                                 meta_heads=forbidden, state_head=forbidden))
-    model = AlignAIR(config(input_space='protein', label_space='protein_classes', architecture=name))
+    model = AlignAIR(config(use_orientation=False, bank_orientation=False, use_meta_heads=False, anchor_heads=False,
+                            d_presence_head=False, architecture=name))
     assert model.orientation_head is model.meta_tower is model.state_branch is None
     assert not model.meta_heads
 

@@ -18,9 +18,9 @@ def request(input_space='nucleotide', label_space='alleles', **options):
            'model_options': {'embed_dim': 4, 'filters': 4, 'block_out': 8}, **options})
 
 
-@pytest.mark.parametrize('space,labels,has_d', [('nucleotide', 'alleles', True), ('protein', 'alleles', True),
-                                             ('protein', 'protein_classes', True), ('protein', 'protein_classes', False)])
-def test_public_train_validate_reload_predict_path_is_shared(space, labels, has_d, tmp_path):
+@pytest.mark.parametrize('has_d', [True, False])
+def test_public_train_validate_reload_predict_path_is_shared(has_d, tmp_path):
+    space, labels = 'nucleotide', 'alleles'
     observations = []
     run = run_training(request(space, labels, has_d=has_d, val_every=1), output_dir=tmp_path,
                        on_iteration=lambda iteration: observations.append(iteration.result.total))
@@ -33,25 +33,19 @@ def test_public_train_validate_reload_predict_path_is_shared(space, labels, has_
     schema = predictor.label_schema
     assert schema['input_space'] == space and schema['label_space'] == labels
     assert set(schema['genes']) == ({'v', 'd', 'j'} if has_d else {'v', 'j'})
-    outputs = predictor.predict_raw(iter(['ACGTN', 'AC'] if space == 'nucleotide' else ['ACDX*', 'EVQL']))
+    outputs = predictor.predict_raw(iter(['ACGTN', 'AC']))
     for spec in predictor.model.cfg.gene_specs:
         assert len(schema['genes'][spec.name]) == spec.allele_count
         assert outputs[predictor.model.cfg.classification_key(spec.name)].shape == (2, spec.allele_count)
-    assert ('orientation' in outputs) is (space == 'nucleotide')
-    if space == 'protein':
-        with pytest.raises(ConfigurationError, match='predict_raw'):
-            predictor.predict(['ACDX*'])
-    if labels == 'protein_classes':
-        assert all(isinstance(group, list) and group for group in schema['genes']['v'])
+    assert 'orientation' in outputs
     final = read_metadata(run.model_path)
     assert final['training']['steps'] == 2
     assert final['training']['train_args']['input_space'] == space
     assert load_model(run.model_path).config.input_space == space
 
 
-@pytest.mark.parametrize('space,labels', [('nucleotide', 'alleles'), ('protein', 'alleles'), ('protein', 'protein_classes')])
-def test_public_resume_retains_profile_label_identity_and_optimizer_state(space, labels, tmp_path):
-    original = request(space, labels)
+def test_public_resume_retains_profile_label_identity_and_optimizer_state(tmp_path):
+    original = request()
     first = run_training(original, output_dir=tmp_path / 'first')
     before = first.best_aligner(device='cpu').label_schema
     steps = []
@@ -62,24 +56,14 @@ def test_public_resume_retains_profile_label_identity_and_optimizer_state(space,
 
 
 def test_training_seed_reproduces_weights_and_raw_predictions(tmp_path):
-    config = request('protein', 'protein_classes', seed=17)
+    config = request(seed=17)
     first = run_training(config, output_dir=tmp_path / 'one').best_aligner(device='cpu')
     second = run_training(config, output_dir=tmp_path / 'two').best_aligner(device='cpu')
     assert first.label_schema == second.label_schema
     for key, value in first.model.state_dict().items():
         assert torch.equal(value, second.model.state_dict()[key]), key
-    one, two = first.predict_raw(['EVQL']), second.predict_raw(['EVQL'])
+    one, two = first.predict_raw(['ACGTACGT']), second.predict_raw(['ACGTACGT'])
     assert all(np.array_equal(value, two[key]) for key, value in one.items())
-
-
-def test_protein_allele_training_exercises_existing_losses_through_the_shared_runner(tmp_path):
-    history = []
-    run_training(request('protein', 'alleles', steps=30, batch_size=16, seed=0,
-                          model_options={'embed_dim': 8, 'filters': 8, 'block_out': 32}),
-                 output_dir=tmp_path, on_iteration=lambda iteration: history.append(iteration.result))
-    assert len(history) == 30 and all(np.isfinite(item.total) for item in history)
-    assert {'segmentation', 'classification', 'mutation', 'indel', 'productive'} <= set(history[-1].parts)
-    assert history[-1].total < history[0].total
 
 
 def test_training_config_has_one_owner_and_snapshots_model_options():
@@ -100,7 +84,7 @@ def test_training_config_has_one_owner_and_snapshots_model_options():
 @pytest.mark.parametrize('options', [{'input_space': 'aa'}, {'label_space': 'classes'},
                                     {'input_space': 'nucleotide', 'label_space': 'protein_classes'},
                                     {'model_options': []}, {'model_options': {'v_allele_count': 2}},
-                                    {'steps': True}, {'batch_size': 0}, {'short_boost': False}, {'augmentation': {}}])
+                                    {'steps': True}, {'batch_size': 0}, {'short_boost': False}])
 def test_bad_public_requests_fail_at_construction(options):
     with pytest.raises(ConfigurationError):
         request(**options)
@@ -248,30 +232,6 @@ def test_explicit_checkpoint_path_reloads_schema_even_with_legacy_filename_suffi
     assert run.best_aligner(device='cpu').label_schema['label_space'] == 'alleles'
 
 
-@pytest.mark.parametrize('labels', ['alleles', 'protein_classes'])
-def test_protein_safe_export_validation_and_conversion_preserve_schema_and_predictions(labels, tmp_path):
-    import GenAIRR.data as gd
-    from alignair.cli.convert import _convert_legacy_alignair
-    from alignair.train.build import export_bundle, _validation_report
-    run = run_training(request('protein', labels), output_dir=tmp_path / 'run')
-    source = run.best_aligner(device='cpu')
-    expected = source.predict_raw(['EVQL'])
-    metrics = _validation_report(run.model_path, [gd.HUMAN_IGH_OGRDB], n_batches=1, batch_size=2)
-    assert metrics and all(np.isfinite(value) for value in metrics.values())
-    path = export_bundle(run.model_path, [gd.HUMAN_IGH_OGRDB], str(tmp_path / 'bundle'))
-    exported = Aligner.from_pretrained(path, device='cpu')
-    assert exported.label_schema == source.label_schema
-    assert not any(name.startswith('dataconfig/') or name == 'train_state' for name in read_metadata(path)['sections'])
-    actual = exported.predict_raw(['EVQL'])
-    assert all(np.array_equal(value, actual[key]) for key, value in expected.items())
-    converted_path = str(tmp_path / 'converted.alignair')
-    assert _convert_legacy_alignair(run.model_path, converted_path) == 0
-    assert Aligner.from_pretrained(converted_path, device='cpu').label_schema == source.label_schema
-    from alignair.api import predict_sequences
-    with pytest.raises(ConfigurationError, match='predict_raw'):
-        predict_sequences(source.model, source.reference, ['EVQL'])
-
-
 @pytest.mark.parametrize('empty_source', [False, True])
 def test_training_run_never_adopts_a_stale_best_checkpoint(tmp_path, monkeypatch, empty_source):
     from alignair.train import trainer
@@ -279,10 +239,10 @@ def test_training_run_never_adopts_a_stale_best_checkpoint(tmp_path, monkeypatch
     stale.write_text('an earlier run with different semantics')
     if empty_source:
         monkeypatch.setattr(trainer, 'training_records', lambda *args, **kwargs: iter(()))
-    run = run_training(request('protein', 'protein_classes', val_every=1 if empty_source else 0), output_dir=tmp_path)
+    run = run_training(request(val_every=1 if empty_source else 0), output_dir=tmp_path)
     assert run.best_model_path is None and run.steps == (0 if empty_source else 2)
     assert stale.read_text() == 'an earlier run with different semantics'
-    assert run.best_aligner(device='cpu').model.cfg.input_space == 'protein'
+    assert run.best_aligner(device='cpu').model.cfg.input_space == 'nucleotide'
 
 
 def test_shared_raw_prediction_reserves_half_open_endpoint_for_nucleotide_models(tmp_path):
@@ -294,11 +254,11 @@ def test_shared_raw_prediction_reserves_half_open_endpoint_for_nucleotide_models
 
 
 def test_label_schema_is_checked_during_load_instead_of_silently_reinterpreted(tmp_path):
-    run = run_training(request('protein', 'protein_classes'), output_dir=tmp_path / 'run')
+    run = run_training(request(), output_dir=tmp_path / 'run')
     header = container.read_header(run.model_path)
     payloads = {name: (container.read_section(run.model_path, name), info['codec'])
                 for name, info in header['sections'].items()}
-    header['model']['label_schema']['genes']['v'][0] = ['UNRECOGNIZED_ALLELE']
+    header['model']['label_schema']['genes']['v'][0] = 'UNRECOGNIZED_ALLELE'
     bad = tmp_path / 'bad.alignair'
     container.write_container(bad, header, payloads)
     with pytest.raises(ModelIntegrityError, match='label schema'):
@@ -309,7 +269,7 @@ def test_resume_rejects_incompatible_weights_before_optimizer_or_rng_continuatio
     from alignair.model_file import serialize
     from alignair.train import trainer
 
-    config = request('protein', 'protein_classes', steps=1)
+    config = request(steps=1)
     run = run_training(config, output_dir=tmp_path / 'source')
     header = container.read_header(run.model_path)
     header.pop('_sections_base', None)
@@ -330,17 +290,14 @@ def test_resume_rejects_incompatible_weights_before_optimizer_or_rng_continuatio
     assert caught.value.context['path'] == str(bad)
 
 
-def test_raw_prediction_restores_mode_and_rejects_invalid_protein_inputs(tmp_path):
-    predictor = run_training(request('protein', 'protein_classes'), output_dir=tmp_path).best_aligner(device='cpu')
+def test_raw_prediction_restores_mode_and_rejects_invalid_inputs(tmp_path):
+    predictor = run_training(request(), output_dir=tmp_path).best_aligner(device='cpu')
     predictor.model.train()
-    predictor.predict_raw(['EVQL'])
+    predictor.predict_raw(['ACGT'])
     assert predictor.model.training
-    for values in ([], 'EVQL', [None], ['?'], ['A' * 192]):
+    for values in ([], [None]):
         with pytest.raises(InputError):
             predictor.predict_raw(values)
-    predictor.model.cfg.input_space = 'nucleotide'
-    with pytest.raises(ConfigurationError, match='vocabulary'):
-        predictor.predict_raw(['EVQL'])
 
 
 def test_a_flank_policy_trains_on_flanked_reads_and_is_recorded(tmp_path, monkeypatch):

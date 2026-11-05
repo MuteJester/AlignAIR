@@ -11,7 +11,7 @@ from alignair.reference import ReferenceSet
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(params=["nucleotide", "protein"])
+@pytest.fixture(params=["nucleotide"])
 def artifact(request, tmp_path):
     reference = ReferenceSet.from_genotype({"V": {"V2": "ATGTGTAAA", "V1": "ATGTGCAAA"},
                                             "J": {"J1": "TGGAAA"}})

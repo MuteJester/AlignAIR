@@ -29,7 +29,7 @@ def _batch(vocab_size):
     return {"tokenized_sequence": tokens}
 
 
-@pytest.mark.parametrize("categorical", [False, True], ids=["nucleotide", "protein"])
+@pytest.mark.parametrize("categorical", [False], ids=["nucleotide"])
 def test_shared_model_score_semantics_and_boundary_slots(categorical):
     cfg = _config()
     if categorical:
@@ -50,19 +50,7 @@ def test_shared_model_score_semantics_and_boundary_slots(categorical):
         assert "orientation_logits" in out and "mutation_rate" in out
 
 
-def test_categorical_scores_can_be_composed_with_auxiliary_and_state_heads():
-    cfg = replace(_config(), classification_mode="categorical", use_orientation=False, state_head=True)
-    model = AlignAIR(cfg).eval()
-    out = model(_batch(cfg.vocab_size))
-    assert {"v_class_logits", "mutation_rate", "productive", "state_logits"} <= out.keys()
-    assert "v_allele" not in out and "orientation_logits" not in out
-    sum(t.square().mean() for t in out.values() if t.is_floating_point()).backward()
-    assert model.branches["v"].cls_head.weight.grad is not None
-    assert model.meta_heads["productive"].head.weight.grad is not None
-    assert model.state_branch.head.fc.weight.grad is not None
-
-
-@pytest.mark.parametrize("protein", [False, True])
+@pytest.mark.parametrize("protein", [False])
 def test_config_roundtrip_preserves_construction_choices(protein):
     cfg = _config().with_amino_acid_heads() if protein else _config()
     restored = config_from_bytes(config_to_bytes(cfg))
@@ -86,7 +74,7 @@ def test_old_config_without_construction_choices_retains_nucleotide_defaults():
     assert cfg.classification_key("v") == "v_allele"
 
 
-@pytest.mark.parametrize("protein", [False, True])
+@pytest.mark.parametrize("protein", [False])
 def test_component_inspection_uses_registered_modules_without_duplicating_weights(protein):
     cfg = _config().with_amino_acid_heads() if protein else _config()
     model = AlignAIR(cfg)
@@ -165,7 +153,7 @@ def _mean_branch(spec, cfg):
                       classification_tower=_MeanTower(cfg.embed_dim, cfg.cls_spec(spec)[0]))
 
 
-@pytest.mark.parametrize("protein", [False, True])
+@pytest.mark.parametrize("protein", [False])
 def test_same_replacement_towers_work_with_both_head_presets(protein, monkeypatch):
     monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
     register_architecture("test-mean-towers-v1", replace(ModelComponents(), gene_branch=_mean_branch))

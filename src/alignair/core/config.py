@@ -1,6 +1,6 @@
 """Configuration for the faithful PyTorch AlignAIR aligner.
 
-One model — :class:`alignair.core.AlignAIR` — serves nucleotide and protein-class configurations.
+One model — :class:`alignair.core.AlignAIR` — the chip on nucleotide reads.
 Which one you get is pure data: build the config from **one** GenAIRR dataconfig and it behaves like
 the old SingleChain (no chain_type head); build it from **several** and it behaves like the old
 MultiChain (union allele counts + a chain_type/locus head). Allele counts, ``has_d`` and
@@ -93,12 +93,12 @@ class AlignAIRConfig:
     # Serialized construction choices shared by nucleotide and protein models. Architecture names
     # resolve through core.components; loading never imports arbitrary code from a model file.
     architecture: str = "chip-v1"
-    classification_mode: Literal["multilabel", "categorical"] = "multilabel"
+    classification_mode: Literal["multilabel"] = "multilabel"
     boundary_mode: Literal["residue", "half_open"] = "half_open"
     use_meta_heads: bool = False
     reject_empty_sequences: bool = False
-    input_space: Literal["nucleotide", "protein"] = "nucleotide"
-    label_space: Literal["alleles", "protein_classes"] = "alleles"
+    input_space: Literal["nucleotide"] = "nucleotide"
+    label_space: Literal["alleles"] = "alleles"
     # Historical count-only/CSV configurations assign the last D column to Short-D. Reference-
     # bound constructors derive this setting from label identity; old serialized configs retain True.
     short_d_penalty: bool = True
@@ -149,30 +149,18 @@ class AlignAIRConfig:
         if self.bank_orientation and not self.use_orientation:
             raise ConfigurationError("bank_orientation orients reads in place of the orientation head: it needs one",
                                      context={"field": "bank_orientation"}, hint="Set use_orientation=True.")
-        for name, choices in (("classification_mode", ("multilabel", "categorical")),
+        for name, choices in (("classification_mode", ("multilabel",)),
                               ("boundary_mode", ("residue", "half_open")),
-                              ("input_space", ("nucleotide", "protein")),
-                              ("label_space", ("alleles", "protein_classes")),
+                              ("input_space", ("nucleotide",)),
+                              ("label_space", ("alleles",)),
                               ("productive_unknown", ("negative", "masked"))):
             if getattr(self, name) not in choices:
                 raise ConfigurationError(f"unsupported {name}: {getattr(self, name)!r}",
                                          context={"field": name, "allowed": choices})
 
-    def with_amino_acid_heads(self) -> "AlignAIRConfig":
-        """Copy this config with the established protein-class model's head and mask choices.
-
-        The caller supplies its tokenizer vocabulary and label counts. Other combinations, such as
-        categorical heads with auxiliary predictions, can be selected with dataclasses.replace.
-        """
-        return replace(self, architecture="conv-v1", classification_mode="categorical", boundary_mode="half_open",
-                       use_orientation=False, use_meta_heads=False, state_head=False, anchor_heads=False,
-                       d_presence_head=False, chip_inputs=False, bank_orientation=False,
-                       reject_empty_sequences=True, input_space="protein", label_space="protein_classes")
-
     def classification_key(self, gene: str) -> str:
-        """Output key with explicit score semantics: sigmoid allele probabilities or class logits."""
-        suffix = "allele" if self.classification_mode == "multilabel" else "class_logits"
-        return f"{gene}_{suffix}"
+        """Output key of a gene's sigmoid allele probabilities."""
+        return f"{gene}_allele"
 
     @property
     def gene_specs(self) -> tuple:

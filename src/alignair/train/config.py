@@ -6,8 +6,6 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
 from ..errors import ConfigurationError
-from ..data.augmentation.protein import ProteinSubstitutionPolicy
-from ..data.augmentation.partial import ProteinCropPolicy
 from ..data.flanks import FlankPolicy
 from .schedules import CosineSchedule
 from .study import TrainingStudy
@@ -57,7 +55,6 @@ class TrainingConfig:
     has_d: bool | None = None
     model_options: Mapping = field(default_factory=dict)
     resume_path: str | None = None
-    augmentation: ProteinSubstitutionPolicy | ProteinCropPolicy | None = None
     schedule: CosineSchedule | None = None
     study: TrainingStudy | None = None
     init_from: str | None = None
@@ -69,8 +66,6 @@ class TrainingConfig:
         if self.init_from and self.resume_path or type(self.trust_pickle) is not bool:
             raise ConfigurationError('choose init_from or resume_path; trust_pickle must be a boolean')
         validate_data_workers(self.data_workers)
-        if self.augmentation is not None and not isinstance(self.augmentation, (ProteinSubstitutionPolicy, ProteinCropPolicy)):
-            raise ConfigurationError('augmentation must be a ProteinSubstitutionPolicy, ProteinCropPolicy or None')
         if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
             raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
         if self.schedule is not None:
@@ -79,10 +74,8 @@ class TrainingConfig:
             self.schedule.validate(self.lr)
         if self.study is not None and not isinstance(self.study, TrainingStudy):
             raise ConfigurationError('study must be a TrainingStudy or None')
-        if self.input_space not in ('nucleotide', 'protein') or self.label_space not in ('alleles', 'protein_classes'):
-            raise ConfigurationError('choose nucleotide/protein input and alleles/protein_classes labels')
-        if self.label_space == 'protein_classes' and self.input_space != 'protein':
-            raise ConfigurationError('the public protein-class trainer requires protein inputs')
+        if self.input_space != 'nucleotide' or self.label_space != 'alleles':
+            raise ConfigurationError('AlignAIR trains on nucleotide reads with allele labels')
         if isinstance(self.dataconfigs, (str, bytes)):
             raise ConfigurationError('dataconfigs must be a nonempty collection of reference sources')
         try:

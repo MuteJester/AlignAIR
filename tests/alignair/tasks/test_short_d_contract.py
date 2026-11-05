@@ -24,7 +24,7 @@ def reference(*, sentinel=False):
                          for gene, (names, sequences) in panels.items()}, has_d=True)
 
 
-@pytest.mark.parametrize('space', ['nucleotide', 'protein'])
+@pytest.mark.parametrize('space', ['nucleotide'])
 @pytest.mark.parametrize('sentinel', [False, True])
 def test_reference_bound_objectives_follow_explicit_d_label_identity(space, sentinel):
     source = reference(sentinel=sentinel)

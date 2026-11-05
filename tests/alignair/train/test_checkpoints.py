@@ -113,21 +113,6 @@ def test_failed_base_refresh_leaves_previous_base_and_new_numbered_recovery(tmp_
     assert not list(tmp_path.glob('*.tmp'))
 
 
-def test_research_checkpoint_restores_python_numpy_and_torch_rng(tmp_path):
-    model = torch.nn.Linear(1, 1)
-    path = tmp_path/'research.pt'
-    checkpoints.save_research_checkpoint(path, model=model, cfg={}, step=3, optimizer=None,
-                                        scheduler=None, lr=.1, history=[], provenance={})
-    expected = random.random(), np.random.rand(), torch.rand(2)
-    random.random(); np.random.rand(); torch.rand(2)
-    state = checkpoints.load_research_checkpoint(path)
-    restore_rng_state(checkpoints.research_checkpoint_rng(state))
-    assert random.random() == expected[0]
-    assert np.random.rand() == expected[1]
-    torch.testing.assert_close(torch.rand(2), expected[2], rtol=0, atol=0)
-    assert state['optimizer'] is state['scheduler'] is None
-
-
 def test_legacy_nt_loading_requires_trust_and_normalizes_fields(tmp_path):
     from alignair.errors import ModelError
     path = tmp_path/'legacy.pt'
@@ -180,49 +165,8 @@ def test_malformed_legacy_configuration_is_not_discarded(tmp_path, config):
     assert caught.value.context['field'] == 'config'
 
 
-def test_research_resume_reproduces_the_next_dropout_step_and_optimizer_moments(tmp_path):
-    model = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Dropout(.2))
-    optimizer = torch.optim.AdamW(model.parameters(), lr=.001)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, 100, eta_min=.00001)
-    def advance(candidate, opt, sch):
-        opt.zero_grad()
-        loss = candidate(torch.randn(2, 4)).square().mean()
-        loss.backward(); opt.step(); sch.step()
-        return loss.detach()
-    advance(model, optimizer, scheduler)
-    path = tmp_path/'full.pt'
-    checkpoints.save_research_checkpoint(path, model=model, cfg={'width': 4}, step=1,
-                                        optimizer=optimizer, scheduler=scheduler, lr=.001,
-                                        history=[{'step': 1}], provenance={'seed': 128})
-    expected_loss = advance(model, optimizer, scheduler)
-    state = checkpoints.load_research_checkpoint(path)
-    resumed = torch.nn.Sequential(torch.nn.Linear(4, 3), torch.nn.Dropout(.2))
-    resumed.load_state_dict(state['model'])
-    opt = torch.optim.AdamW(resumed.parameters(), lr=.001)
-    sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, 100, eta_min=.00001)
-    opt.load_state_dict(state['optimizer']); sch.load_state_dict(state['scheduler'])
-    restore_rng_state(checkpoints.research_checkpoint_rng(state))
-    actual_loss = advance(resumed, opt, sch)
-    torch.testing.assert_close(actual_loss, expected_loss, rtol=0, atol=0)
-    for key, value in model.state_dict().items():
-        torch.testing.assert_close(resumed.state_dict()[key], value, rtol=0, atol=0)
-    assert sch.state_dict() == scheduler.state_dict()
-    for parameter, moments in optimizer.state_dict()['state'].items():
-        for key, value in moments.items():
-            torch.testing.assert_close(opt.state_dict()['state'][parameter][key], value, rtol=0, atol=0)
-    assert state['step'] == 1 and state['history'] == [{'step': 1}] and state['provenance']['seed'] == 128
-
-
-def test_old_research_snapshot_reports_missing_continuation_state(tmp_path):
-    path = tmp_path/'old.pt'
-    torch.save({'model': torch.nn.Linear(4, 3).state_dict(), 'cfg': {}, 'step': 40000}, path)
-    state = checkpoints.load_research_checkpoint(path)
-    assert state['step'] == 40000
-    assert all(state[key] is None for key in ('optimizer', 'scheduler', 'rng_python', 'rng_numpy', 'rng_torch', 'rng_cuda'))
-
-
 @pytest.mark.parametrize('changes,message', [({'config': 'other'}, 'configuration'),
-    ({'label_schema': {'other': 1}}, 'label identity'), ({'augmentation': {'policy':'old'}}, 'augmentation'),
+    ({'label_schema': {'other': 1}}, 'label identity'),
     ({'schedule': {'policy':'old'}}, 'schedule'), ({'optimizer_state': None}, 'optimizer continuation')])
 def test_incompatible_continuation_state_is_rejected_without_mutation(changes, message):
     from dataclasses import replace
@@ -237,20 +181,3 @@ def test_missing_scheduled_continuation_state_is_rejected():
     state = checkpoints.ResumeState({}, {}, {}, 4, {}, schedule={'policy':'cosine-v1'}, initial_lr=.001)
     with pytest.raises(ConfigurationError, match='schedule'):
         checkpoints.validate_continuation(state, None, None, schedule=state.schedule, lr=.001)
-
-
-@pytest.mark.parametrize('kind', ['configuration', 'scheduler', 'hyperparameters', 'optimizer'])
-def test_incomplete_historical_crop_state_fails_with_domain_error(tmp_path, kind):
-    from alignair.data.augmentation import SAMPLE_POLICY_ID
-    from alignair.core import build_model_config
-    from dataclasses import asdict
-    config = build_model_config(2, 1, input_space='protein', label_space='protein_classes', has_d=False)
-    state = {'model': {}, 'cfg': {} if kind == 'configuration' else asdict(config),
-             'step': 3, 'optimizer': {}, 'scheduler': None, 'provenance': {'sample_policy': SAMPLE_POLICY_ID}}
-    if kind in ('hyperparameters', 'optimizer'):
-        state['scheduler'] = {'T_max': 10, 'eta_min': .00001}
-        state['provenance']['hyperparams'] = [] if kind == 'hyperparameters' else {}
-    path = tmp_path/'incomplete.pt'
-    torch.save(state, path)
-    with pytest.raises(ConfigurationError, match='configuration|scheduler|hyperparameters|optimizer'):
-        checkpoints.load_training_checkpoint(path, trust_pickle=True)

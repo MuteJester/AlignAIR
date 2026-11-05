@@ -509,7 +509,7 @@ class ParallelRecords(Iterator):
     """``training_records`` with each component generated in a worker process; close it to stop them."""
 
     def __init__(self, dataconfigs, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
-                 translated_only: bool = False, workers: int, provider: RecordSource = stream_records,
+                 workers: int, provider: RecordSource = stream_records,
                  chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS, start_step: int = 0):
         if not isinstance(dataconfigs, (str, bytes)):
             try:
@@ -518,8 +518,8 @@ class ParallelRecords(Iterator):
                 pass                                     # training_records reports the request
         self._source = RecordWorkers(dataconfigs, policy=policy, seed=seed, workers=workers, provider=provider,
                                      chunk_size=chunk_size, queue_chunks=queue_chunks, start_step=start_step)
-        self._records = training_records(dataconfigs, policy=policy, seed=seed, translated_only=translated_only,
-                                         record_source=self._source, start_step=start_step)
+        self._records = training_records(dataconfigs, policy=policy, seed=seed, record_source=self._source,
+                                         start_step=start_step)
 
     def __next__(self):
         if self._records is None:
@@ -539,9 +539,9 @@ class ParallelRecords(Iterator):
 
 
 def parallel_records(dataconfigs, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
-                     translated_only: bool = False, workers: int, provider: RecordSource = stream_records,
+                     workers: int, provider: RecordSource = stream_records,
                      chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS,
                      start_step: int = 0) -> ParallelRecords:
     """The ``training_records`` stream, with its component providers running in worker processes."""
-    return ParallelRecords(dataconfigs, policy=policy, seed=seed, translated_only=translated_only, workers=workers,
-                           provider=provider, chunk_size=chunk_size, queue_chunks=queue_chunks, start_step=start_step)
+    return ParallelRecords(dataconfigs, policy=policy, seed=seed, workers=workers, provider=provider,
+                           chunk_size=chunk_size, queue_chunks=queue_chunks, start_step=start_step)

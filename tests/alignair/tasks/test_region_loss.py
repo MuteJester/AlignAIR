@@ -31,7 +31,7 @@ def read_labels(batch_size=2, seed=0):
 
 def region_task(task_batch, labels, logits, boundary_mode='residue'):
     """The task batch of a nucleotide model with a D and the region head, given ``logits`` and ``labels``."""
-    cfg, out, targets = task_batch(protein=False, has_d=True)
+    cfg, out, targets = task_batch(has_d=True)
     cfg = replace(cfg, region_head=True, boundary_mode=boundary_mode)
     if boundary_mode == 'half_open':
         tokens = torch.zeros(labels.shape[0], 16, dtype=torch.long)

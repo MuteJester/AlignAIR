@@ -12,7 +12,6 @@ from alignair.core import AlignAIR
 from alignair.core.config import AlignAIRConfig
 from alignair.model_file import container as C, serialize
 from alignair.errors import ConfigurationError
-from tests.support.model_setup import protein_class_setup
 from alignair.core import prepare_model
 from alignair.errors import ModelError
 from alignair.reference import ReferenceSet
@@ -80,31 +79,6 @@ def test_convert_legacy_alignair_upgrades_to_safe(tmp_path):
     secs = mf.read_metadata(dst)["sections"]
     assert "reference_json" in secs and not any(k.startswith("dataconfig/") for k in secs)
     api.load_model(dst)                                              # now safe-loadable
-
-
-@pytest.mark.parametrize('has_schema', [False, True])
-def test_convert_protein_class_pt_preserves_explicit_labels_or_rejects_missing_metadata(tmp_path, has_schema, monkeypatch):
-    setup = protein_class_setup(embed_dim=4, filters=4, block_out=8)
-    model = setup.build_model()
-    payload = {'config': setup.config.__dict__, 'model': model.state_dict(), 'step': 3}
-    if has_schema:
-        payload['label_schema'] = setup.label_schema()
-    src, dst = tmp_path / 'protein.pt', tmp_path / 'protein.alignair'
-    torch.save(payload, src)
-    args = Namespace(src=src, dst=dst, dataconfig=['HUMAN_IGH_OGRDB'], trust_pickle=True)
-    if not has_schema:
-        def forbidden(*args, **kwargs):
-            raise AssertionError('converter allocated a model before binding preflight')
-        monkeypatch.setattr(AlignAIR, '__init__', forbidden)
-        with pytest.raises(ConfigurationError, match='ordered class labels'):
-            convert.run(args)
-        assert not dst.exists()
-    else:
-        assert convert.run(args) == 0
-        loaded = mf.load_model(dst)
-        assert loaded.metadata['model']['label_schema'] == payload['label_schema']
-        for name, weights in model.state_dict().items():
-            assert torch.equal(loaded.model.state_dict()[name], weights), name
 
 
 @pytest.mark.parametrize('field', ['sequences', 'allele_order', 'anchors', 'gapped', 'loci'])

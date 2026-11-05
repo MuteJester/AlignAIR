@@ -7,8 +7,7 @@ import pytest
 import torch
 
 from alignair.core import AlignAIR, AlignAIRConfig
-from alignair.data import NucleotideBatchAdapter, ProteinAlleleBatchAdapter, CategoricalBatchAdapter
-from alignair.data.adapters import translated_record_usable
+from alignair.data import NucleotideBatchAdapter
 from alignair.data.projection import translate_nt
 from alignair.errors import ConfigurationError, TrainingDataError
 from alignair.reference.reference_set import ReferenceSet, GeneReference
@@ -90,127 +89,23 @@ def test_orientation_is_repeatable_and_disabled_models_receive_forward_reads():
         NucleotideBatchAdapter(_reference(), _config(use_orientation=False), augment_orientation=True)([_record()])
 
 
-@pytest.mark.parametrize('inverted', [False, True])
-def test_protein_projection_preserves_full_allele_labels_and_masks_inverted_d(inverted):
-    record = _record()
-    assert translate_nt(record["sequence"]) == record["sequence_aa"]
-    record["d_inverted"] = inverted
-    reference = _reference()
-    gene = reference.gene('V')
-    gene.names.append('V*03')
-    gene.sequences.append(gene.sequences[0])
-    gene.index['V*03'] = 2
-    cfg = replace(_config(vocab_size=23, use_orientation=False), v_allele_count=3)
-    batch = ProteinAlleleBatchAdapter(reference, cfg)([record])
-    assert batch.inputs['tokenized_sequence'].shape == (1,128)
-    assert batch.lengths.tolist() == [8]
-    assert batch.targets['v_start'].item() == 0
-    assert batch.targets["v_end"].item() == 4 and batch.targets["j_start"].item() == 5
-    assert batch.targets["j_end"].item() == 8
-    assert batch.targets["v_allele"].tolist() == [[1., 1., 0.]]
-    assert batch.targets['j_allele'].tolist() == [[1.,0.]]
-    assert batch.targets['mutation_rate'].item() == pytest.approx(.05)
-    assert batch.targets['productive'].item() == 1.
-    assert batch.targets["d_supervise"].item() is not inverted
-    assert batch.targets["d_allele"].tolist() == ([[0.,0.]] if inverted else [[1.,0.]])
-
-
-def test_protein_prefix_window_and_translation_mismatch_are_explicit():
-    cfg = _config(5, vocab_size=23, use_orientation=False)
-    batch = ProteinAlleleBatchAdapter(_reference(), cfg)([_record()])
-    assert batch.lengths.tolist() == [5]
-    assert not batch.targets["j_supervise"].item()
-    record = _record()
-    record["sequence_aa"] += "Q"
-    assert not translated_record_usable(record)
-    with pytest.raises(TrainingDataError, match="translation length") as caught:
-        ProteinAlleleBatchAdapter(_reference(), cfg)([record])
-    assert caught.value.context["field"] == "sequence_aa"
-    assert caught.value.context["record_id"] == "annotated-read"
-
-
 @pytest.mark.parametrize("productive,policy,label,supervised", [
     (True, "masked", 1., True), (False, "masked", 0., True), (None, "masked", 0., False),
     (None, "negative", 0., True)])
-@pytest.mark.parametrize("protein", [False, True])
 def test_unknown_productivity_is_kept_as_an_unsupervised_row_under_the_masked_objective(
-        productive, policy, label, supervised, protein):
+        productive, policy, label, supervised):
     unknown = {**_record(), "productive": productive}
-    cfg = _config(use_orientation=False, vocab_size=23 if protein else 6, productive_unknown=policy)
-    adapter = ProteinAlleleBatchAdapter(_reference(), cfg) if protein else NucleotideBatchAdapter(_reference(), cfg)
+    cfg = _config(use_orientation=False, bank_orientation=False, productive_unknown=policy)
+    adapter = NucleotideBatchAdapter(_reference(), cfg)
     batch = adapter([unknown, _record()])
     assert batch.targets["productive"].reshape(-1).tolist() == [label, 1.]
     assert batch.targets["productive_supervise"].dtype == torch.bool
     assert batch.targets["productive_supervise"].tolist() == [supervised, True]
 
 
-def _sample():
-    return {"tokens": np.array([1, 2, 3]), "v_class": 0, "j_class": 1,
-            "v_start": 0, "v_end": 1, "j_start": 1, "j_end": 3,
-            "v_compatible": {0, 1}, "j_compatible": set(), "j_valid": 0.}
-
-
-def test_categorical_adapter_replaces_stage_specific_collation_and_keeps_all_masks():
-    cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False,
-                          max_seq_length=8).with_amino_acid_heads()
-    batch = CategoricalBatchAdapter.from_config(cfg)([_sample()])
-    assert batch.targets["v_compatible"].tolist() == [[1., 1.]]
-    assert batch.targets["j_compatible"].tolist() == [[0., 0.]]
-    assert batch.targets["j_valid"].tolist() == [0.]
-    assert batch.targets["v_class"].dtype == torch.long
-    assert batch.inputs["tokenized_sequence"].shape == (1, 8)
-
-
-def test_categorical_adapter_preserves_gene_supervision_and_defaults_only_missing_rows():
-    samples = [_sample(), _sample()]
-    samples[0]['v_supervise'] = False
-    cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False,
-                         max_seq_length=8).with_amino_acid_heads()
-    batch = CategoricalBatchAdapter.from_config(cfg)(samples)
-    assert batch.targets['v_supervise'].tolist() == [False,True]
-    assert batch.targets['v_supervise'].dtype == torch.bool
-    assert 'j_supervise' not in batch.targets
-
-
-@pytest.mark.parametrize('field', ['v_supervise', 'v_class_supervise'])
-def test_categorical_adapter_rejects_nonbinary_supervision_masks(field):
-    sample = _sample()
-    sample[field] = .5
-    cfg = AlignAIRConfig(v_allele_count=2, j_allele_count=2, has_d=False,
-                         max_seq_length=8).with_amino_acid_heads()
-    with pytest.raises(TrainingDataError) as caught:
-        CategoricalBatchAdapter.from_config(cfg)([sample])
-    assert caught.value.context['field'] == field
-    assert caught.value.context['record_index'] == 0
-
-
-@pytest.mark.parametrize("failure", ["empty", "class_type", "gene_set", "missing_set", "bad_set", "counts", "long"])
-def test_categorical_adapter_contract_errors_are_classified(failure):
-    samples = [_sample(), _sample()]
-    counts = {"v": 2, "j": 2}
-    if failure == "empty":
-        samples = []
-    elif failure == "class_type":
-        samples[0]["v_class"] = .5
-    elif failure == "gene_set":
-        del samples[1]["j_class"]
-    elif failure == "missing_set":
-        del samples[1]["v_compatible"]
-    elif failure == "bad_set":
-        samples[0]["v_compatible"] = {3}
-    elif failure == "counts":
-        counts = None
-    else:
-        samples[0]["tokens"] = np.ones(8, dtype=np.int64)
-    with pytest.raises(ConfigurationError if failure == "counts" else TrainingDataError):
-        CategoricalBatchAdapter(8, class_counts=counts)(samples)
-
-
-@pytest.mark.parametrize("protein", [False, True])
-def test_record_adapter_to_shared_model_and_task_loss_backpropagates(protein):
-    cfg = _config(embed_dim=4, filters=4, block_out=8, use_orientation=not protein,
-                   vocab_size=23 if protein else 6)
-    adapter = ProteinAlleleBatchAdapter(_reference(), cfg) if protein else NucleotideBatchAdapter(_reference(), cfg)
+def test_record_adapter_to_shared_model_and_task_loss_backpropagates():
+    cfg = _config(embed_dim=4, filters=4, block_out=8)
+    adapter = NucleotideBatchAdapter(_reference(), cfg)
     batch = adapter([_record(), _record()])
     model = AlignAIR(cfg)
     tasks = build_tasks(cfg)
@@ -220,41 +115,13 @@ def test_record_adapter_to_shared_model_and_task_loss_backpropagates(protein):
     assert model.branches["v"].cls_head.weight.grad is not None
 
 
-@pytest.mark.parametrize("kind", ["nucleotide", "protein"])
-def test_record_adapters_reject_the_wrong_objective_and_malformed_records(kind):
-    cfg = _config(use_orientation=False)
-    adapter = NucleotideBatchAdapter if kind == "nucleotide" else ProteinAlleleBatchAdapter
-    with pytest.raises(ConfigurationError, match="multilabel"):
-        adapter(_reference(), cfg.with_amino_acid_heads())([_record()])
+def test_record_adapters_reject_the_wrong_objective_and_malformed_records():
+    cfg = _config(use_orientation=False, bank_orientation=False)
+    adapter = NucleotideBatchAdapter
     with pytest.raises(TrainingDataError, match="mappings"):
         adapter(_reference(), cfg)([None])
     with pytest.raises(ConfigurationError, match="overflow"):
         adapter(_reference(), cfg, overflow="discard")([_record()])
-
-
-def test_protein_records_require_exported_translation_and_disable_nt_orientation():
-    with pytest.raises(ConfigurationError, match="orientation"):
-        ProteinAlleleBatchAdapter(_reference(), _config())([_record()])
-    for field, value in (("junction_start", None), ("sequence_aa", None), ("sequence_aa", "")):
-        record = _record()
-        record[field] = value
-        assert not translated_record_usable(record)
-        with pytest.raises(TrainingDataError, match="require a translation"):
-            ProteinAlleleBatchAdapter(_reference(), _config(use_orientation=False))([record])
-
-
-def test_categorical_residue_mode_accepts_an_exact_window_and_rejects_boolean_class_ids():
-    sample = _sample()
-    sample.pop("v_compatible")
-    sample.pop("j_compatible")
-    cfg = AlignAIRConfig(
-        max_seq_length=3, v_allele_count=2, j_allele_count=2, has_d=False,
-        classification_mode="categorical", boundary_mode="residue")
-    batch = CategoricalBatchAdapter.from_config(cfg)([sample])
-    assert batch.lengths.tolist() == [3]
-    sample["v_class"] = True
-    with pytest.raises(TrainingDataError, match="integers"):
-        CategoricalBatchAdapter.from_config(cfg)([sample])
 
 
 def test_raw_gym_view_retains_separate_teacher_and_germline_metadata():

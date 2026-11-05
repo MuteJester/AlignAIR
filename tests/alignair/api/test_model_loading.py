@@ -76,23 +76,3 @@ def test_legacy_reference_head_mismatch_fails_before_allocation(legacy_checkpoin
     assert caught.value.context['gene'] == 'v'
     assert caught.value.context['stage'] == 'model_binding'
     assert caught.value.context['path'] == str(path)
-
-
-@pytest.mark.parametrize('has_schema', [False, True])
-def test_legacy_protein_class_loading_uses_saved_labels_instead_of_allele_counts(legacy_checkpoint, has_schema):
-    path, reference, original = legacy_checkpoint
-    cfg = replace(original.cfg, vocab_size=23).with_amino_acid_heads()
-    model = AlignAIR(cfg)
-    payload = {'config': cfg.__dict__, 'model': model.state_dict()}
-    if has_schema:
-        payload['label_schema'] = {'schema_version': 1, 'input_space': 'protein',
-            'label_space': 'protein_classes', 'genes': {'v': [['V1']], 'j': [['J1']]}}
-    torch.save(payload, path)
-    if not has_schema:
-        with pytest.raises(ConfigurationError, match='ordered class labels'):
-            api_load(path, reference=reference, trust_pickle=True)
-    else:
-        loaded, bound = api_load(path, reference=reference, trust_pickle=True)
-        assert bound is reference
-        for name, weights in model.state_dict().items():
-            assert torch.equal(loaded.state_dict()[name], weights), name

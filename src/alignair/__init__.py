@@ -30,41 +30,12 @@ from .train.workflow import TrainingRun, run_training
 from .core import AlignAIR
 from .core.config import AlignAIRConfig
 from .predict import PredictConfig
-from alignair.predict.protein.loader import load_aa_model
 
 try:
     from importlib.metadata import version as _pkg_version
     __version__ = _pkg_version("AlignAIR")
 except Exception:                       # not pip-installed (e.g. run from a source tree)
     __version__ = "0+unknown"
-
-# Cache verified product predictors by model/device. Request batch size does not change model identity.
-_AA_PREDICTOR_CACHE: dict = {}
-
-
-def predict_aa(sequences, *, model: str = "alignair-aa-igh-human@2.0.0", coverage_group=None,
-               device: str = "auto", on_invalid: str = "error", batch_size: int = 64) -> list:
-    """Predict protein records as calibrated product results with amino-acid coordinates.
-
-    ``sequences`` is a single AA sequence string, an iterable of strings, or an iterable of
-    ``{"sequence_id", "sequence"}`` dicts — **sequences/records only, never a file path** (§9; file
-    parsing is the ``predict-aa`` CLI's job, see ``alignair.predict.protein.cli``). ``model`` defaults to the
-    current amino-acid model id and is resolved + verified via `load_aa_model` (cached per
-    ``(model, device)`` at module scope). ``coverage_group``/``on_invalid`` are passed straight through
-    to `AAPredictor.predict`. ``batch_size`` limits valid records per model forward (default 64).
-
-    Returns a plain ``list[dict]`` (already ``AAPrediction.to_dict()`` / ``ErrorResult.to_dict()``), one
-    per input record in original order — JSON-serializable as-is.
-    """
-    key = (str(model), str(device))
-    predictor = _AA_PREDICTOR_CACHE.get(key)
-    if predictor is None:
-        predictor = load_aa_model(model, device=device)
-        _AA_PREDICTOR_CACHE[key] = predictor
-    results = predictor.predict(sequences, coverage_group=coverage_group, on_invalid=on_invalid,
-                                batch_size=batch_size)
-    return [r.to_dict() for r in results]
-
 
 __all__ = [
     "AlignAIRError",
@@ -75,7 +46,5 @@ __all__ = [
     "AlignAIR", "AlignAIRConfig", "PredictConfig",
     "ReferenceSet", "read_sequences", "iter_sequences",
     "write_airr", "AirrWriter", "compare_airr", "DuplicateMetadataId", "PredictionCountMismatch",
-    # amino-acid inference product (design spec §9) — distinct from the nucleotide surface above
-    "load_aa_model", "predict_aa",
     "__version__",
 ]
