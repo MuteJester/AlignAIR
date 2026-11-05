@@ -23,8 +23,7 @@ class _Ref:
 
 def _preds(v_probs):
     return Predictions(start={}, end={}, allele={"v": np.array(v_probs, dtype=np.float64)},
-                       mutation_rate=np.zeros(len(v_probs)), indel_count=np.zeros(len(v_probs)),
-                       productive=np.zeros(len(v_probs)))
+                       mutation_rate=np.zeros(len(v_probs)), indel_count=np.zeros(len(v_probs)))
 
 
 def test_novel_allele_is_rejected_not_dropped():

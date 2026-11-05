@@ -1,4 +1,4 @@
-"""End-to-end overfit smoke: the faithful AlignAIR trains on a fixed tiny gym batch."""
+"""End-to-end overfit smoke: AlignAIR trains on a fixed tiny gym batch."""
 import itertools
 
 import pytest
@@ -37,6 +37,7 @@ def test_overfit_tiny_batch_learns():
 
     torch.manual_seed(0)
     model = AlignAIR(cfg)
+    model.bind_reference(ref)                              # the chip reads its bank from it
     result = overfit_one_batch(model, batch_in, targets, steps=121, lr=1e-3)
     assert result["final_loss"] < 0.7 * result["initial_loss"]
     assert len(result["history"]) == 121

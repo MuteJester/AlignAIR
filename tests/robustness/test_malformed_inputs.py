@@ -65,12 +65,12 @@ def test_raw_predictions_validated_before_use():
     from alignair.predict.state import Predictions
     bad_probs = Predictions(allele={"v": np.array([[np.nan, 0.2]])}, start={"v": np.array([0.0])},
                             end={"v": np.array([1.0])}, mutation_rate=np.zeros(1),
-                            indel_count=np.zeros(1), productive=np.ones(1))
+                            indel_count=np.zeros(1))
     with pytest.raises(ValueError, match="non-finite allele"):
         _validate_predictions(bad_probs)
     bad_coord = Predictions(allele={"v": np.array([[0.9, 0.1]])}, start={"v": np.array([np.inf])},
                             end={"v": np.array([1.0])}, mutation_rate=np.zeros(1),
-                            indel_count=np.zeros(1), productive=np.ones(1))
+                            indel_count=np.zeros(1))
     with pytest.raises(ValueError, match="non-finite start"):
         _validate_predictions(bad_coord)
 

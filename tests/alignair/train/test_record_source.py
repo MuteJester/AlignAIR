@@ -5,6 +5,7 @@ from itertools import islice
 import pytest
 
 from alignair import TrainingConfig, run_training
+from alignair.data.flanks import FlankPolicy
 from alignair.errors import ConfigurationError
 from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records, training_records
 from alignair.train.gym.workers import component_plan
@@ -18,12 +19,13 @@ STEPS, BATCH, SEED = 3, 4, 5
 def request(**options):
     return TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', **{
         'steps': STEPS, 'batch_size': BATCH, 'device': 'cpu', 'seed': SEED,
-        'model_options': {'embed_dim': 4, 'filters': 4, 'block_out': 8}, **options})
+        'model_options': {'embed_dim': 4, 'trunk_channels': 8}, **options})
 
 
 def stream(record_source=None):
+    """The training stream ``run_training`` draws: the default curriculum with the default library flanks."""
     import GenAIRR.data as gd
-    records = training_records((gd.HUMAN_IGH_OGRDB,), policy=CurriculumStreamPolicy(), seed=SEED,
+    records = training_records((gd.HUMAN_IGH_OGRDB,), policy=CurriculumStreamPolicy(flanks=FlankPolicy()), seed=SEED,
                                record_source=record_source)
     return list(islice(records, STEPS * BATCH))
 

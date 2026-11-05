@@ -8,13 +8,6 @@ from alignair.io.airr_validate import validate_airr_file
 pytestmark = pytest.mark.component
 
 
-def test_airr_productive_is_derived_from_frame_and_stop():
-    assert quality.airr_productive(True, False) is True         # in-frame, no stop -> productive
-    assert quality.airr_productive(True, True) is False         # stop codon -> not productive
-    assert quality.airr_productive(False, False) is False       # out of frame -> not productive
-    assert quality.airr_productive(None, False) is None         # unknown -> AIRR productive stays BLANK
-
-
 def test_segment_identity_generic_over_gaps():
     # 1 mismatch out of 4 non-gap germline positions; the '.' column is skipped
     assert quality.segment_identity("ACGT", "ACGA") == 0.75

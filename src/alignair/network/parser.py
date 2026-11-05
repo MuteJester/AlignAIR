@@ -25,7 +25,7 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from ..neural.heads.region import READ_REGIONS
+from ..core.regions import READ_REGIONS
 
 from .trunk import TRUNK_CHANNELS
 

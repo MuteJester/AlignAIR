@@ -1,12 +1,13 @@
-"""In-model orientation: token transforms (identity / reverse-complement /
-complement / reverse), a 4-class orientation head, and the bank orientation (the
-transform under which a read's k-mers are the bound reference's). All transforms
-are involutions, so canonicalizing = re-applying the predicted transform."""
+"""In-model orientation: the token transforms (identity / reverse-complement / complement / reverse), the 4-class
+orientation head on the shared embedding, and the bank orientation (the transform under which a read's k-mers are the
+bound reference's). All transforms are involutions, so canonicalizing = re-applying the predicted transform."""
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from alignair.errors import ConfigurationError
+from ..errors import ConfigurationError
 
 # Complement lookup by token id: A(1)<->T(2), G(3)<->C(4), N(5)->N, pad(0)->pad.
 _COMPLEMENT = torch.tensor([0, 2, 1, 4, 3, 5], dtype=torch.long)
@@ -42,21 +43,22 @@ def apply_orientation(tokens: torch.Tensor, mask: torch.Tensor,
     return variants[transform_ids, torch.arange(B, device=tokens.device)]
 
 
-class OrientationHead(nn.Module):
-    """Light encoder -> 4-class orientation logits."""
+class EmbeddingOrientationHead(nn.Module):
+    """4-class orientation logits from the model's shared initial embeddings.
 
-    def __init__(self, d: int = 64, vocab_size: int = 6):
+    Order-sensitive (a masked depthwise-ish conv) so forward vs reverse is distinguishable — a plain
+    mean-pool could not tell a read from its reverse. Feeds the in-model correct-and-re-embed step.
+    """
+
+    def __init__(self, embed_dim: int, num_orientations: int = 4):
         super().__init__()
-        self.emb = nn.Embedding(vocab_size, d, padding_idx=0)
-        self.conv = nn.Conv1d(d, d, 7, padding="same")
-        self.fc = nn.Linear(d, NUM_ORIENTATIONS)
+        self.conv = nn.Conv1d(embed_dim, embed_dim, 7, padding="same")
+        self.fc = nn.Linear(embed_dim, num_orientations)
 
-    def forward(self, tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        x = self.emb(tokens)
-        m = mask.unsqueeze(-1).to(x.dtype)
-        x = x * m
-        h = F.gelu(self.conv(x.transpose(1, 2))).transpose(1, 2) * m
-        pooled = h.sum(dim=1) / m.sum(dim=1).clamp(min=1.0)
+    def forward(self, emb: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:  # (B,L,C), (B,L)
+        m = mask.unsqueeze(-1).to(emb.dtype)
+        h = F.gelu(self.conv((emb * m).transpose(1, 2))).transpose(1, 2) * m
+        pooled = h.sum(1) / m.sum(1).clamp(min=1.0)
         return self.fc(pooled)
 
 

@@ -6,7 +6,6 @@ import pytest
 from alignair.predict.airr import build_airr
 from alignair.predict.airr.builder import AirrAssemblyError
 from alignair.predict.airr.alignment import build_sequence_alignment
-from alignair.predict.airr.regions import compute_junction
 
 pytestmark = pytest.mark.component
 
@@ -64,28 +63,18 @@ def test_build_airr_strict_raises_on_expected_error(monkeypatch):
         build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy", strict=True)
 
 
-def test_build_airr_productive_blank_when_not_derivable():
-    """A record that skips assembly (no v_call) leaves AIRR `productive` BLANK (unknown), keeping the
-    neural call only in `productive_prediction` — no guess presented as a derived fact."""
-    out = build_airr([{"sequence": "ACGT", "productive": True}], _FakeRef(), chain="heavy")[0]
-    assert out["productive"] is None                    # underivable -> blank/unknown
-    assert out["productive_prediction"] is True         # the neural prediction is preserved separately
+def test_build_airr_productive_blank_without_anchors():
+    """A record without predicted anchors has no junction, frame or productivity: AIRR `productive` is blank
+    (unknown), never a guess presented as a derived fact."""
+    out = build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy")[0]
+    assert out["productive"] is None and out["productive_prediction"] is None
+    assert "junction" not in out
 
 
 def test_sequence_alignment_inserts_imgt_gaps():
     # gapped V ref has gaps at positions 2 and 5; the query (== ungapped V) is re-gapped to match.
     aln = build_sequence_alignment("ACGTACGT", "AC.GT.ACGT", 0, 8, 0, 8, j_seq_end=8)
     assert aln == "AC.GT.ACGT"
-
-
-def test_junction_end_from_anchor():
-    seq_alignment = "A" * 400                      # no gaps -> offset 0
-    seq_aa = "K" * 133
-    j = compute_junction(seq_alignment, seq_aa, "J1", {"J1": 30},
-                         j_seq_start=350, v_seq_start=0, j_germ_start=0, j_alignment_end=400)
-    # junc_end = 350 - 0 + 0 + 30 - 0 + 3 = 383 ; junction = [309:383]
-    assert j["junction_length"] == 74
-    assert j["cdr3_start"] == 312 and j["cdr3_end"] == 380
 
 
 @pytest.mark.slow
@@ -104,7 +93,8 @@ def test_build_airr_end_to_end_produces_regions_and_junction():
            "d_germline_start": 0, "d_germline_end": 0,
            "j_sequence_start": len(v_seq) + 5, "j_sequence_end": len(read),
            "j_germline_start": 0, "j_germline_end": len(j_seq),
-           "productive": True, "indel_count": 0}
+           "indel_count": 0,
+           "v_anchor": ref.gene("V").anchors[v0], "j_anchor": len(v_seq) + 5 + ref.gene("J").anchors[j0]}
     out = build_airr([rec], ref, chain="heavy")[0]
     assert out["sequence_alignment"] is not None and "." in out["sequence_alignment"]  # V is IMGT-gapped
     assert out["fwr1"] is not None and out["cdr1"] is not None

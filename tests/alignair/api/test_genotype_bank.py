@@ -34,8 +34,9 @@ class BankCore(nn.Module):
 def make(monkeypatch):
     """``make(agnostic) -> (model, reference)`` and the pipeline call ``predict_sequences`` makes, recorded."""
     monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
-    register_architecture("test-bank-agnostic-v1", ModelComponents(core=BankCore, reference_agnostic=True))
-    register_architecture("test-bank-fixed-v1", ModelComponents(core=BankCore))
+    register_architecture("test-bank-agnostic-v1", ModelComponents(core=BankCore, objective=lambda cfg: None,
+                                                                    reference_agnostic=True))
+    register_architecture("test-bank-fixed-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
     calls = []
     monkeypatch.setattr(api, "_predict", lambda model, sequences, reference, cfg, device: calls.append(
         {"bound": model.core.reference, "reference": reference, "genotype": cfg.genotype}) or [])

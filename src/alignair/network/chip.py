@@ -106,7 +106,7 @@ class ChipCore(nn.Module):
                                      context={"missing": missing, "genes": list(self.genes)})
         self.counts = {gene: len(reference.gene(gene.upper())) for gene in self.genes}
         device = next(self.parameters()).device
-        self.bank = BankCompiler(reference).to(device)
+        self.bank = BankCompiler(reference).to(device).train(self.training)    # in the core's mode
 
     def forward(self, emb, mask, end_mask, *, tokens, batch):
         if self.bank is None:

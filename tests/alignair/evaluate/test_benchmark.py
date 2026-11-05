@@ -79,8 +79,9 @@ def test_run_benchmark_end_to_end_small():
     from alignair.core.config import AlignAIRConfig
     from alignair.evaluate import run_benchmark
     from alignair.reference.reference_set import ReferenceSet
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, embed_dim=4, trunk_channels=8)
     model, ref = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    model.bind_reference(ref)                              # the chip reads its bank from it
     results = run_benchmark(model, ref, gd.HUMAN_IGH_OGRDB, n=6, seed=0,
                             strata_names=["clean", "high_shm"], device="cpu", batch_size=6)
     assert set(results) == {"clean", "high_shm"}

@@ -5,7 +5,7 @@ import pytest
 import torch
 
 from alignair.errors import ConfigurationError, current_error_context
-from alignair.neural.weighting import UncertaintyWeight
+from tests.support.loss_weights import ClampedLogVar
 from alignair.train import build_training_engine
 
 pytestmark = pytest.mark.component
@@ -23,7 +23,7 @@ class ScalarModel(torch.nn.Module):
 def tasks_with_weight():
     def loss(output, targets, weights):
         return output + 2*weights['extra'].log_var, {'linear': output}
-    return SimpleNamespace(make_weights=lambda: torch.nn.ModuleDict({'extra': UncertaintyWeight()}), loss=loss)
+    return SimpleNamespace(make_weights=lambda: torch.nn.ModuleDict({'extra': ClampedLogVar()}), loss=loss)
 
 
 def test_default_adamw_binds_model_then_supplied_weights_and_preserves_objects():
@@ -208,7 +208,7 @@ def test_custom_scheduler_must_bind_the_same_optimizer(kind):
 
 def test_default_tasks_are_selected_from_the_shared_model_configuration():
     from alignair.core import AlignAIR,AlignAIRConfig
-    cfg=AlignAIRConfig(2,2,has_d=False,max_seq_length=128,embed_dim=4,filters=4,block_out=8)
+    cfg=AlignAIRConfig(2,2,has_d=False,max_seq_length=128,embed_dim=4,trunk_channels=8)
     model=AlignAIR(cfg)
     engine=build_training_engine(model)
     assert engine.tasks.config is model.cfg and engine.tasks.config == cfg and len(engine.weights)==0

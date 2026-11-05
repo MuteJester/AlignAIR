@@ -11,7 +11,7 @@ pytestmark = pytest.mark.component
 def _preds(v_probs):
     return Predictions(start={}, end={}, allele={"v": np.array(v_probs, dtype=np.float64)},
                        mutation_rate=np.zeros(len(v_probs)), indel_count=np.zeros(len(v_probs)),
-                       productive=np.zeros(len(v_probs)), orientation=None, chain_type=None)
+                       orientation=None)
 
 
 class _Gene:

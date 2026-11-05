@@ -54,7 +54,7 @@ STAGES = ("orientation", "segmentation", "allele_calls", "germline_alignment")
 STAGE_LABELS = {"orientation": "orientation", "segmentation": "segmentation", "allele_calls": "calls",
                 "germline_alignment": "germline"}
 # The metadata heads the summary shows, by summary column.
-METADATA_HEADS = {"Orientation": "head.orientation.correct", "Productive": "head.productive.correct",
+METADATA_HEADS = {"Orientation": "head.orientation.correct",
                   "Mutation rate abs. err": "head.mutation_rate_abs_err.read",
                   "Indel count abs. err": "head.indel_count_abs_err"}
 # A D presence head's columns of the summary's metadata table, shown when a suite's model has the head: its accuracy
@@ -76,7 +76,7 @@ _BOUNDARY_COLUMNS = (("exact", "soft"), ("exact", "argmax"), ("abs_err", "soft")
                      ("err", "soft"), ("err", "argmax"))
 _ALLELE_METRICS = ("allele_top1", "allele_top3", "allele_top5", "allele_top1_generative", "n_above_threshold")
 _META_METRICS = ("head.mutation_rate_abs_err.read", "head.mutation_rate_abs_err.record", "head.indel_count_abs_err",
-                 "head.productive.correct", "head.orientation.correct", "head.d.short_d_prob_ok",
+                 "head.orientation.correct", "head.d.short_d_prob_ok",
                  "head.d_presence.correct", "head.d_presence.callable_gated", "head.cropped")
 _READS = ("built", "diagnosed", "scored", "excluded", "cropped")
 

@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 def request(input_space='nucleotide', label_space='alleles', **options):
     return TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space=input_space, label_space=label_space,
         **{'steps': 2, 'batch_size': 2, 'device': 'cpu', 'grad_clip': 1.,
-           'model_options': {'embed_dim': 4, 'filters': 4, 'block_out': 8}, **options})
+           'model_options': {'embed_dim': 4, 'trunk_channels': 8}, **options})
 
 
 @pytest.mark.parametrize('has_d', [True, False])
@@ -34,9 +34,10 @@ def test_public_train_validate_reload_predict_path_is_shared(has_d, tmp_path):
     assert schema['input_space'] == space and schema['label_space'] == labels
     assert set(schema['genes']) == ({'v', 'd', 'j'} if has_d else {'v', 'j'})
     outputs = predictor.predict_raw(iter(['ACGTN', 'AC']))
-    for spec in predictor.model.cfg.gene_specs:
-        assert len(schema['genes'][spec.name]) == spec.allele_count
-        assert outputs[predictor.model.cfg.classification_key(spec.name)].shape == (2, spec.allele_count)
+    cfg = predictor.model.cfg
+    for gene in cfg.genes:
+        assert len(schema['genes'][gene]) == cfg.allele_count(gene)
+        assert outputs[cfg.classification_key(gene)].shape == (2, cfg.allele_count(gene))
     assert 'orientation' in outputs
     final = read_metadata(run.model_path)
     assert final['training']['steps'] == 2
@@ -71,10 +72,10 @@ def test_training_config_has_one_owner_and_snapshots_model_options():
     from alignair.train import TrainingConfig as owned_config, TrainingRun as owned_run, run_training as owned_train
     assert TrainingConfig is old_config is owned_config
     assert TrainingRun is old_run is owned_run and run_training is old_train is owned_train
-    options = {'filters': 4}
+    options = {'trunk_channels': 4}
     config = request(model_options=options)
-    options['filters'] = 999
-    assert config.model_options['filters'] == 4
+    options['trunk_channels'] = 999
+    assert config.model_options['trunk_channels'] == 4
     with pytest.raises(FrozenInstanceError):
         config.steps = 99
     assert config.with_(steps=3).steps == 3 and config.steps == 2
@@ -175,8 +176,7 @@ def test_without_an_init_seed_the_data_seed_draws_the_initial_weights(tmp_path, 
     monkeypatch.setattr(ModelSetup, 'build_model', build)
     run = run_training(request(seed=5, steps=1), output_dir=tmp_path)
     torch.manual_seed(5)
-    expected = original(prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), embed_dim=4, filters=4,
-                                      block_out=8)).state_dict()
+    expected = original(prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), embed_dim=4, trunk_channels=8)).state_dict()
     assert all(torch.equal(value, expected[key]) for key, value in built[0].items())
     assert read_metadata(run.model_path)['training']['train_args']['init_seed'] is None
 
@@ -197,7 +197,7 @@ def test_a_run_records_its_gradient_clip_how_it_started_and_its_genairr_source(t
     assert len(digest) == 64 and all(args['genairr_source_sha256'] == digest for args in found.values())
 
 
-@pytest.mark.parametrize('options', [{'model_options': {'classification_mode': 'categorical'}},
+@pytest.mark.parametrize('options', [{'model_options': {'filters': 4}},
                                     {'seed': -1}, {'seed': True}, {'val_every': -1}, {'lr': float('nan')},
                                     {'init_seed': -1}, {'init_seed': True}, {'init_seed': 2**32},
                                     {'init_seed': 1.0}, {'init_seed': '1'}])
@@ -246,7 +246,7 @@ def test_training_run_never_adopts_a_stale_best_checkpoint(tmp_path, monkeypatch
 
 
 def test_shared_raw_prediction_reserves_half_open_endpoint_for_nucleotide_models(tmp_path):
-    config = request(model_options={'embed_dim': 4, 'filters': 4, 'block_out': 8, 'boundary_mode': 'half_open'})
+    config = request(model_options={'embed_dim': 4, 'trunk_channels': 8})
     predictor = run_training(config, output_dir=tmp_path).best_aligner(device='cpu')
     outputs = predictor.predict_raw(['A' * 600])
     assert int(outputs['start_mask'].sum()) == 575

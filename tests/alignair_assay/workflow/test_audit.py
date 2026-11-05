@@ -898,7 +898,7 @@ def test_all_without_a_headline_metric_is_not_null(tmp_path, monkeypatch):
 def test_diagnose_of_a_small_model_file_against_itself_in_memory(tmp_path, make_small_model):
     # the real evaluator on S0 (10 reads): the file and the same weights in memory are two model keys
     import torch
-    from alignair.core.layers import EmbeddingOrientationHead
+    from alignair.network.orientation import EmbeddingOrientationHead
     from alignair.model_file import save_model
 
     model, _ = make_small_model(REFERENCE_NAME, seed=3)

@@ -55,7 +55,7 @@ def _suite(name="S1", *, reused=False) -> dict:
         "head.j.end_err.soft": _cell(-2.02), "head.j.end_err.argmax": _cell(-0.1),
         "head.v.allele_top1": _cell(0.927), "head.v.allele_top3": _cell(0.963), "head.v.allele_top5": _cell(0.977),
         "head.v.allele_top1_generative": _cell(0.8), "head.v.n_above_threshold": _cell(1.25),
-        "head.mutation_rate_abs_err.read": _cell(0.083), "head.productive.correct": _cell(0.906),
+        "head.mutation_rate_abs_err.read": _cell(0.083),
         "head.orientation.correct": _cell(0.997), "head.cropped": _cell(0.06),
     }
     calibration = {"v": {"gene": "v", "n": 10, "bins": _bins({8: (2, 0.85, 0.5), 9: (8, 0.95, 1.0)}),
@@ -218,7 +218,7 @@ def test_calls_boundaries_metadata_and_speed():
     assert "| Suite | V start | V end | D start | D end | J start | J end |" in boundaries
     assert "| S1 | 91→100 | — | — | — | — | 0→84 |" in boundaries
     metadata = _section(md, "Metadata heads")
-    assert "| S1 | 99.7% | 90.6% | 0.083 | — |" in metadata
+    assert "| S1 | 99.7% | 0.083 | — |" in metadata
     speed = _section(md, "Speed")
     assert "1103.4 reads/s on cuda (batch size 256, 1000 reads)." in speed
     assert "germline 58.5%, forward 24.9%, airr 16.6%" in speed and "other 80.0%, v.cls_tower 15.0%" in speed
@@ -288,10 +288,10 @@ def test_a_d_presence_head_shows_its_accuracy_its_gated_callable_ds_and_its_conf
                                "counts": [[3, 1, 0], [0, 4, 2], [1, 1, 18]]}
     report = _report({"S1": with_head, "S3": _suite("S3")})
     metadata = _section(diagnostics_markdown(report), "Metadata heads")
-    assert ("| Suite | Orientation | Productive | Mutation rate abs. err | Indel count abs. err | D presence | "
+    assert ("| Suite | Orientation | Mutation rate abs. err | Indel count abs. err | D presence | "
             "Callable D gated |") in metadata
-    assert "| S1 | 99.7% | 90.6% | 0.083 | — | 90.0% | 5.0% |" in metadata
-    assert "| S3 | 99.7% | 90.6% | 0.083 | — | — | — |" in metadata
+    assert "| S1 | 99.7% | 0.083 | — | 90.0% | 5.0% |" in metadata
+    assert "| S3 | 99.7% | 0.083 | — | — | — |" in metadata
     heads = _section(suite_markdown(report, "S1"), "Head metrics")
     assert "| head.d_presence.correct | 90.0% (n=10, 100%) |" in heads
     assert "| head.d_presence.callable_gated | 5.0% (n=10, 100%) |" in heads
@@ -315,7 +315,7 @@ def test_heads_show_soft_and_argmax_side_by_side():
     assert ("| V | 92.7% (n=10, 100%) | 96.3% (n=10, 100%) | 97.7% (n=10, 100%) | 80.0% (n=10, 100%) | "
             "1.250 (n=10, 100%) |") in heads
     assert "| head.mutation_rate_abs_err.read | 0.083 (n=10, 100%) |" in heads
-    assert "| head.productive.correct | 90.6% (n=10, 100%) |" in heads
+    assert "head.productive.correct" not in heads
 
 
 def test_stage_contributions_show_paired_means_beside_the_delta():

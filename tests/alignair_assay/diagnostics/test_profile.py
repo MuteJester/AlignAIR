@@ -38,8 +38,7 @@ def test_profile_cpu_covers_every_module_and_stage(small_model, s0_reads):
     assert profile["reads_per_second"] > 0
     expected = set(hooked_modules(model)) | {OTHER}
     assert set(profile["modules"]) == expected
-    assert {"embedding", "orientation_head", "meta_tower", "v.seg_tower", "d.cls_tower", "j.cls_head",
-            "meta_heads.mutation_rate"} <= expected
+    assert expected == {"embedding", "orientation_head", "core", OTHER}
     assert set(profile["stages"]) == set(STAGES)
     for name, entry in profile["modules"].items():
         if name != OTHER:  # the rest of the forward stage can be negligible on a tiny model
@@ -66,18 +65,18 @@ def test_hooks_are_removed_and_accuracy_rows_do_not_depend_on_profiling(small_mo
 def test_hooks_are_removed_when_the_run_fails(small_model, s0_reads):
     model, reference_set = small_model
     sequences, _ = _reads(s0_reads)
-    original = model.meta_tower.forward
+    original = model.core.forward
 
-    def broken(*_):
+    def broken(*_, **__):
         raise RuntimeError("broken tower")
 
-    model.meta_tower.forward = broken
+    model.core.forward = broken
     try:
         with pytest.raises(RuntimeError, match="broken tower"):
             profile_model(model, reference_set, sequences[:4], device="cpu", batch_size=BATCH, warmup_batches=0,
                           repeats=1)
     finally:
-        model.meta_tower.forward = original
+        model.core.forward = original
     assert _hook_counts(model) == 0
 
 
@@ -108,7 +107,7 @@ def test_the_profile_puts_the_model_back_on_its_device(make_small_model, s0_read
         moves.clear()
         with pytest.raises(ValueError, match="no sequences"):
             profile_model(model, reference_set, [], device="cpu", batch_size=BATCH)
-        model.meta_tower.forward = lambda *_: (_ for _ in ()).throw(RuntimeError("broken tower"))
+        model.core.forward = lambda *_, **__: (_ for _ in ()).throw(RuntimeError("broken tower"))
         with pytest.raises(RuntimeError, match="broken tower"):
             profile_model(model, reference_set, sequences[:4], device="cpu", batch_size=BATCH, warmup_batches=0,
                           repeats=1)
@@ -116,7 +115,7 @@ def test_the_profile_puts_the_model_back_on_its_device(make_small_model, s0_read
     finally:
         del model.to
         # Set only once the test gets that far: a failure before it must not be masked by an AttributeError.
-        vars(model.meta_tower).pop("forward", None)
+        vars(model.core).pop("forward", None)
 
 
 @pytest.mark.skipif(os.environ.get("ALIGNAIR_ASSAY_GPU") != "1", reason="set ALIGNAIR_ASSAY_GPU=1")

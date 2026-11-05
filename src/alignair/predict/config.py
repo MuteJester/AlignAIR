@@ -18,13 +18,11 @@ class PredictConfig:
     batch_size: int = 64
     airr: bool = True                 # assemble full AIRR fields (junction/CDR/FWR/np/identity); off = light records
     pad_mode: str = "right"           # our trainer right-pads (TF used "center")
-    boundary_mode: str = "residue"   # the model's: half_open reserves the window's last slot for a segment end at n
     genotype: Optional[dict] = None   # {gene: set(allele names)} enables genotype constraint (subset)
     genotype_method: str = "mask"  # mask | renormalize (Bayes posterior) | redistribute (legacy)
-    chain_types: Optional[tuple] = None  # ordered locus names; maps multi-chain chain_type index -> locus
-    allele_temperatures: Optional[dict] = None  # per-gene temperature for allele-confidence calibration
+    chain_types: Optional[tuple] = None  # ordered locus names of the reference; one locus labels every record
 
     @property
     def window(self) -> int:
-        """The longest read the model sees: the padded width, less the end slot a half-open model reserves."""
-        return read_window(self.max_seq_length, self.boundary_mode)
+        """The longest read the model sees: the padded width, less the reserved end slot."""
+        return read_window(self.max_seq_length)

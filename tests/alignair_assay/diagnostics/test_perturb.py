@@ -27,17 +27,17 @@ def checkpoint(tmp_path, make_small_model):
 
 def test_zeroing_a_module_changes_its_weights_and_nothing_else(tmp_path, checkpoint):
     out = tmp_path / "perturbed.alignair"
-    found = zero_module(checkpoint, out, "branches.j.end_head")
+    found = zero_module(checkpoint, out, "orientation_head.fc")
     decoded = serialize.state_dict_from_bytes(container.read_section(str(checkpoint), 'weights'))
-    expected = [name for name in decoded if name.startswith('branches.j.end_head.')]
-    assert set(expected) == {'branches.j.end_head.weight', 'branches.j.end_head.bias'}
+    expected = [name for name in decoded if name.startswith('orientation_head.fc.')]
+    assert set(expected) == {'orientation_head.fc.weight', 'orientation_head.fc.bias'}
     # sorted by name: safetensors hands the weights back in no fixed order (it varies from one load to the next)
-    assert found["parameters"] == ["branches.j.end_head.bias", "branches.j.end_head.weight"]
+    assert found["parameters"] == ["orientation_head.fc.bias", "orientation_head.fc.weight"]
     assert found["values"] > 0
     base, perturbed = load_model(str(checkpoint)).model, load_model(str(out)).model
     before, after = base.state_dict(), perturbed.state_dict()
     for name in before:
-        if name.startswith("branches.j.end_head."):
+        if name.startswith("orientation_head.fc."):
             assert torch.count_nonzero(after[name]) == 0 and torch.count_nonzero(before[name]) > 0
         else:
             assert torch.equal(before[name], after[name]), name
@@ -51,13 +51,13 @@ def test_zeroing_a_module_changes_its_weights_and_nothing_else(tmp_path, checkpo
 
 
 def test_the_perturbed_file_is_deterministic(tmp_path, checkpoint):
-    zero_module(checkpoint, tmp_path / "one.alignair", "branches.j.end_head")
-    zero_module(checkpoint, tmp_path / "two.alignair", "branches.j.end_head")
+    zero_module(checkpoint, tmp_path / "one.alignair", "orientation_head.fc")
+    zero_module(checkpoint, tmp_path / "two.alignair", "orientation_head.fc")
     assert (tmp_path / "one.alignair").read_bytes() == (tmp_path / "two.alignair").read_bytes()
     assert (tmp_path / "one.alignair").read_bytes() != checkpoint.read_bytes()
 
 
 def test_a_module_without_weights_is_refused(tmp_path, checkpoint):
-    with pytest.raises(ValueError, match="no parameter of module 'branches.x.end_head'"):
-        zero_module(checkpoint, tmp_path / "out.alignair", "branches.x.end_head")
+    with pytest.raises(ValueError, match="no parameter of module 'core.missing_unit'"):
+        zero_module(checkpoint, tmp_path / "out.alignair", "core.missing_unit")
     assert not (tmp_path / "out.alignair").exists()

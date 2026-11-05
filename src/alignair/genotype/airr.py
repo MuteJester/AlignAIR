@@ -8,6 +8,21 @@ Source: docs.airr-community.org/en/latest/datarep/germline.html.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+
+@dataclass
+class GeneCall:
+    """One gene's genotype call: its alleles (``[{"name": ...}]``), zygosity, whether the gene is a deletion
+    candidate, the reasons for the call, and novel-allele candidates."""
+    gene: str
+    alleles: list
+    zygosity: str          # homozygous | heterozygous | multi-allelic/duplication-candidate | deletion-candidate | none
+    deletion_candidate: bool
+    reasons: list
+    novel: list
+
+
 # Vendored structural schema (AIRR Genotype/GenotypeSet).
 _REQUIRED = {
     "GenotypeSet": ["receptor_genotype_set_id", "genotype_class_list"],

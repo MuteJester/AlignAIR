@@ -1,7 +1,7 @@
 """Genotype task 6: AIRR GenotypeSet emit + schema validation."""
 import pytest
 from alignair.genotype.airr import to_genotype_set, validate
-from alignair.genotype.zygosity import GeneCall
+from alignair.genotype.airr import GeneCall
 
 pytestmark = pytest.mark.component
 

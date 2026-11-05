@@ -1,5 +1,5 @@
-"""Shared alignment losses, metrics, and training-task contracts."""
-from .alignment import AlignmentTasks, TrainingTasks, build_tasks
+"""The training-task contract and the alignment metrics with explicit support counts."""
+from .alignment import TrainingTasks, build_tasks
 from .metrics import MetricAccumulator, MetricReport
 
-__all__ = ["AlignmentTasks", "TrainingTasks", "build_tasks", "MetricAccumulator", "MetricReport"]
+__all__ = ["TrainingTasks", "build_tasks", "MetricAccumulator", "MetricReport"]

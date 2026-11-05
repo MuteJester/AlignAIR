@@ -6,7 +6,7 @@ import math
 
 import torch
 
-from .supervision import productive_rows, supervised_rows
+from .supervision import supervised_rows
 
 
 @dataclass
@@ -64,19 +64,8 @@ def alignment_metrics(out: dict, targets: dict, genes, *, auxiliary: bool = True
 
 
 def _auxiliary_metrics(report, out, targets):
-    for output, target, name in (("orientation_logits", "orientation", "orientation_acc"),
-                                 ("chain_type_logits", "chain_type", "chain_type_acc")):
-        if output in out and target in targets:
-            report.add(name, out[output].argmax(-1) == targets[target])
+    if "orientation_logits" in out and "orientation" in targets:
+        report.add("orientation_acc", out["orientation_logits"].argmax(-1) == targets["orientation"])
     for key, name in (("mutation_rate", "mutation_mae"), ("indel_count", "indel_mae")):
         if key in out and key in targets:
             report.add(name, (out[key] - targets[key]).abs())
-    if "productive" in out and "productive" in targets:
-        report.add("productive_acc", (out["productive"] > 0.5) == (targets["productive"] > 0.5),
-                   productive_rows(targets, out["productive"]))
-    if "state_logits" in out and "state_labels" in targets:
-        prediction, labels = out["state_logits"].argmax(-1), targets["state_labels"]
-        valid = labels != -100
-        report.add("state_acc", prediction == labels, valid, keep_empty=True)
-        for name, index in (("sub", 1), ("ins", 2), ("del", 3)):
-            report.add(f"state_{name}_recall", prediction == labels, valid & (labels == index), keep_empty=True)

@@ -14,8 +14,7 @@ pytestmark = pytest.mark.component
 
 def test_chip_v1_builds_the_chip_with_the_configured_trunk_width():
     from alignair.network.chip import ChipCore
-    setup = prepare_model(toy_reference(), architecture="chip-v1", trunk_channels=8, max_seq_length=64,
-                          boundary_mode="half_open", anchor_heads=True, d_presence_head=True, chip_inputs=True)
+    setup = prepare_model(toy_reference(), architecture="chip-v1", trunk_channels=8, max_seq_length=64, anchor_heads=True, d_presence_head=True)
     model = setup.build_model()
     assert isinstance(model.core, ChipCore) and model.core.trunk.project.out_channels == 8
     assert model.reference_agnostic

@@ -2,7 +2,7 @@
 (``core.d_presence``): absent (0), too short to call (1) or callable (2), by the D's observed germline bases inside the
 window the model sees. The observed germline is the D germline from the first to the last aligned base of its
 alignment (CIGAR), internal deletions included and edge gaps left out, as the assay's truth measures a segment's
-observed length. With the flag off (conv-v1), a batch is as before."""
+observed length."""
 import itertools
 
 import pytest
@@ -11,7 +11,7 @@ import torch
 from alignair.core import AlignAIRConfig
 from alignair.core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
 from alignair.data import NucleotideBatchAdapter
-from alignair.neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 # a 37-nt read: V [2, 12), N1 [12, 14), D [14, 24), N2 [24, 26), J [26, 35)
@@ -73,13 +73,11 @@ def test_d_presence_is_the_ds_observed_germline_length(d, expected):
 
 
 @pytest.mark.component
-@pytest.mark.parametrize("boundary_mode,length,expected", [
-    ("residue", 64, CALLABLE), ("residue", 18, SHORT), ("residue", 14, ABSENT),
-    ("half_open", 19, SHORT), ("half_open", 15, ABSENT)])
-def test_d_presence_follows_the_window(boundary_mode, length, expected):
-    """A window of 18 bases (a half-open model keeps its last slot) shows D's first 4 bases: too short; one of 14
+@pytest.mark.parametrize("length,expected", [(64, CALLABLE), (19, SHORT), (15, ABSENT)])
+def test_d_presence_follows_the_window(length, expected):
+    """A window of 18 bases (the model keeps its last slot for an end) shows D's first 4 bases: too short; one of 14
     shows none: absent."""
-    assert _presence(_record(), _config(length, boundary_mode=boundary_mode)) == expected
+    assert _presence(_record(), _config(length)) == expected
 
 
 @pytest.mark.component
@@ -108,33 +106,3 @@ def test_d_presence_in_every_orientation():
     assert (apply_orientation(tokens, tokens != 0, orientation) == forward.inputs["tokenized_sequence"]).all()
     assert forward.targets["d_presence"].tolist() == [CALLABLE] * 8 + [SHORT] * 8
     assert torch.equal(batch.targets["d_presence"], forward.targets["d_presence"])
-
-
-@pytest.mark.component
-def test_conv_v1_has_no_d_presence_target():
-    """Off, the flag leaves a batch as it was; on, it adds the D presence target and its supervision mask only."""
-    off = AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=64)
-    without = NucleotideBatchAdapter(_reference(), off, augment_orientation=False)([_record()])
-    with_presence = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
-    assert set(with_presence.targets) - set(without.targets) == {"d_presence", "d_presence_supervise"}
-    assert all(torch.equal(without.targets[key], with_presence.targets[key]) for key in without.targets)
-    assert all(torch.equal(without.inputs[key], with_presence.inputs[key]) for key in without.inputs)
-
-
-@pytest.mark.integration
-def test_d_presence_classes_cover_every_component():
-    """On live HUMAN_IGH_OGRDB records of every component of the default training mix (300 from each first
-    unselected stream, 25 from each full-length component's first selected stream), all three classes occur: 604
-    absent (the amplicons lose D, and some recombinations trim it away), 89 too short, 1507 callable."""
-    import GenAIRR.data as gd
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
-    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    config = AlignAIRConfig.from_reference(reference, d_presence_head=True)
-    records = []
-    for component, streams in enumerate(CurriculumStreamPolicy().substreams_for(gd.HUMAN_IGH_OGRDB)):
-        for name, parameters in streams:
-            if name in ("unselected-0", "selected-0"):
-                count = 300 if name.startswith("unselected") else 25
-                records += itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, parameters, 7000 + component), count)
-    classes = NucleotideBatchAdapter(reference, config, augment_orientation=False)(records).targets["d_presence"]
-    assert torch.bincount(classes, minlength=3).tolist() == [604, 89, 1507]

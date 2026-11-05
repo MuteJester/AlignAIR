@@ -32,7 +32,7 @@ def test_the_recipe_stream_is_about_85_percent_indel_free_and_deterministic_per_
 def test_a_run_draws_its_components_from_its_indel_form_and_fraction_and_records_them(tmp_path, options, form):
     import GenAIRR.data as gd
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    setup = prepare_model(reference, embed_dim=4, filters=4, block_out=8)
+    setup = prepare_model(reference, embed_dim=4, trunk_channels=8)
     seen = []
 
     def watched(dataconfig, parameters, seed):

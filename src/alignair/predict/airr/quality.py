@@ -8,12 +8,6 @@ def stop_codon(seq_alignment_aa: Optional[str]) -> Optional[bool]:
     return ("*" in seq_alignment_aa) if seq_alignment_aa is not None else None
 
 
-def vj_in_frame(cdr3_start, cdr3_end, v_alignment_start) -> Optional[bool]:
-    if cdr3_start is None or cdr3_end is None or v_alignment_start is None:
-        return None
-    return (cdr3_end - v_alignment_start) % 3 == 0 and (cdr3_end - cdr3_start) % 3 == 0
-
-
 def segment_identity(seq_alignment: Optional[str], germ_alignment: Optional[str]) -> Optional[float]:
     """Fraction of matching nucleotides over the germline positions the read covers (any V/D/J segment): an IMGT gap
     column and germline the read does not reach (``.`` in either string) are skipped; a germline base the read lacks
@@ -33,12 +27,3 @@ def segment_identity(seq_alignment: Optional[str], germ_alignment: Optional[str]
 def v_identity(v_sequence_alignment: Optional[str], v_germline_alignment: Optional[str]) -> Optional[float]:
     """Back-compat alias of :func:`segment_identity` for the V segment."""
     return segment_identity(v_sequence_alignment, v_germline_alignment)
-
-
-def airr_productive(vj_in_frame: Optional[bool], stop_codon: Optional[bool]) -> Optional[bool]:
-    """The AIRR ``productive`` flag as a **derived fact** (not the model's neural prediction): the
-    rearrangement is in-frame and carries no stop codon. ``None`` when either input is unknown (the
-    heavy alignment math did not run for this record), in which case the caller keeps the prediction."""
-    if vj_in_frame is None or stop_codon is None:
-        return None
-    return bool(vj_in_frame) and not bool(stop_codon)

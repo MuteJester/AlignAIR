@@ -1,6 +1,4 @@
-"""Product core hooks: an architecture may supply its own network core and its own training objective."""
-from dataclasses import replace
-
+"""Architecture components: an architecture is its embedding, orientation head, network core and training objective."""
 import pytest
 import torch
 from torch import nn
@@ -10,7 +8,7 @@ import GenAIRR.data as gd
 from alignair.core import AlignAIR, ModelComponents, build_model_config, prepare_model, register_architecture
 from alignair.core import components
 from alignair.errors import ConfigurationError
-from alignair.neural.heads.orientation import apply_orientation
+from alignair.network.orientation import apply_orientation
 from alignair.reference.reference_set import ReferenceSet
 from alignair.tasks.alignment import build_tasks
 
@@ -43,14 +41,15 @@ def architecture(monkeypatch):
 
     def register(**factories):
         name = "test-core-hooks-v1"
-        register_architecture(name, replace(ModelComponents(), **factories))
+        register_architecture(name, ModelComponents(**{"core": ToyCore, "objective": lambda cfg: SENTINEL,
+                                                       **factories}))
         return name
     return register
 
 
 def config(**options):
-    return build_model_config(3, 2, 2, has_d=True, max_seq_length=128, embed_dim=4, filters=4, block_out=8,
-                              boundary_mode="half_open", **options)
+    options.setdefault("bank_orientation", False)        # the toy core binds no bank
+    return build_model_config(3, 2, 2, has_d=True, max_seq_length=128, embed_dim=4, **options)
 
 
 def batch(orientation=0):
@@ -62,8 +61,7 @@ def batch(orientation=0):
 def test_a_core_architecture_builds_only_embedding_orientation_and_core(architecture):
     model = AlignAIR(config(architecture=architecture(core=ToyCore))).eval()
     assert isinstance(model.core, ToyCore)
-    assert len(model.branches) == 0 and len(model.meta_heads) == 0 and len(model.trunk_heads) == 0
-    assert model.trunk is None and model.meta_tower is None and model.state_branch is None
+    assert set(dict(model.named_children())) == {"embedding", "orientation_head", "core"}
     with torch.no_grad():
         out = model(batch())
     assert {"toy", "start_mask", "end_mask", "orientation_logits"} <= set(out)
@@ -93,10 +91,17 @@ def test_anchor_and_d_presence_flags_are_allowed_with_a_core(architecture):
     assert isinstance(model.core, ToyCore)
 
 
-def test_an_architecture_without_a_core_has_none_and_binds_nothing():
-    model = AlignAIR(config())
-    assert model.core is None
-    model.bind_reference(object())          # a no-op without a core
+def test_an_architecture_needs_a_core_and_an_objective():
+    with pytest.raises(TypeError):
+        ModelComponents(core=ToyCore)
+    with pytest.raises(ConfigurationError, match="callable"):
+        ModelComponents(core=ToyCore, objective="not callable")
+
+
+def test_chip_v1_is_the_only_built_in_architecture():
+    assert set(components._ARCHITECTURES) == {"chip-v1"}
+    with pytest.raises(ConfigurationError, match="unknown model architecture"):
+        components.architecture_components("conv-v1")
 
 
 def test_a_prepared_model_binds_its_reference_to_the_core(architecture):
@@ -118,11 +123,11 @@ def test_a_reference_agnostic_model_takes_the_bound_references_allele_counts(arc
 
 def test_a_fixed_head_model_keeps_its_allele_counts_when_bound(architecture):
     model = AlignAIR(config(architecture=architecture(core=ToyCore)))
-    assert not model.reference_agnostic and not AlignAIR(config()).reference_agnostic
+    assert not model.reference_agnostic
     model.bind_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))
     assert (model.cfg.v_allele_count, model.cfg.j_allele_count, model.cfg.d_allele_count) == (3, 2, 2)
 
 
 def test_reference_agnostic_must_be_a_boolean():
     with pytest.raises(ConfigurationError):
-        ModelComponents(reference_agnostic="yes")
+        ModelComponents(core=ToyCore, objective=lambda cfg: SENTINEL, reference_agnostic="yes")

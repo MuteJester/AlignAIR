@@ -8,7 +8,7 @@ before the anchor moves it with the read. The anchor is observed when its segmen
 an aligned (not deleted) base, and its codon lies wholly inside the read the model sees (a crop can cut it). The
 defining base is the first base of the V Cys codon and the last base of the J Trp/Phe codon, as the assay's truth
 defines the junction. A visible anchor is observed even when the other is not. They are forward-frame positions, like
-the boundaries. With the flag off (conv-v1), a batch is as before."""
+the boundaries."""
 import itertools
 
 import pytest
@@ -16,7 +16,7 @@ import torch
 
 from alignair.core import AlignAIRConfig
 from alignair.data import NucleotideBatchAdapter
-from alignair.neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 # a 30-nt read: V [2, 12) with the Cys codon at 9, N1 [12, 14), D [14, 17), N2 [17, 19), J [19, 28) with the Trp
@@ -86,12 +86,12 @@ def test_a_j_anchored_read_missing_its_v_anchor_gives_its_j_anchor_alone(v):
 
 
 @pytest.mark.component
-@pytest.mark.parametrize("boundary_mode,length,window", [("residue", 12, 12), ("residue", 11, 11),
-                                                          ("half_open", 13, 12), ("half_open", 12, 11)])
-def test_an_anchor_codon_cut_by_the_window_is_not_observed(boundary_mode, length, window):
-    """The window keeps the read's first 12 (or 11) bases: the V codon at 9-11 is whole in 12 and cut in 11; the J
-    codon at 21 is outside both. The null slot is L, the model's max_seq_length, in both modes."""
-    config = _config(length, boundary_mode=boundary_mode)
+@pytest.mark.parametrize("length,window", [(13, 12), (12, 11)])
+def test_an_anchor_codon_cut_by_the_window_is_not_observed(length, window):
+    """The window keeps the read's first 12 (or 11) bases, the model's width less its terminal end slot: the V codon
+    at 9-11 is whole in 12 and cut in 11; the J codon at 21 is outside both. The null slot is L, the model's
+    max_seq_length."""
+    config = _config(length)
     assert _anchors(_record(), config=config) == ((9 if window == 12 else length), length)
 
 
@@ -167,52 +167,3 @@ def test_anchor_targets_follow_the_forward_frame_in_every_orientation():
     assert (corrected == forward.inputs["tokenized_sequence"]).all()
     assert batch.targets["v_anchor"].tolist() == [9] * 16 and batch.targets["j_anchor"].tolist() == [21] * 16
     assert not (tokens[orientation == 1] == forward.inputs["tokenized_sequence"]).all()
-
-
-@pytest.mark.component
-def test_conv_v1_has_no_anchor_targets():
-    """Off, the flag leaves a batch as it was; on, it adds the two anchor targets and their supervision masks only."""
-    off = AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=NULL)
-    assert off.architecture == "conv-v1" and not off.anchor_heads
-    without = NucleotideBatchAdapter(_reference(), off, augment_orientation=False)([_record()])
-    with_anchors = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
-    assert "v_anchor" not in without.targets
-    assert set(with_anchors.targets) - set(without.targets) == {"v_anchor", "j_anchor", "v_anchor_supervise",
-                                                                "j_anchor_supervise"}
-    assert all(torch.equal(without.targets[key], with_anchors.targets[key]) for key in without.targets)
-    assert all(torch.equal(without.inputs[key], with_anchors.inputs[key]) for key in without.inputs)
-
-
-@pytest.mark.integration
-def test_the_anchors_are_genairrs_junction_ends_and_each_visible_anchor_on_every_component():
-    """Live HUMAN_IGH_OGRDB records from every component of the default training mix (300 from each first unselected
-    stream, 25 from each full-length component's first selected stream), at the full 576-base window:
-
-    - where GenAIRR gives a junction, the anchors are its ``junction_start`` and ``junction_end - 3`` on every record
-      but 2, whose anchor's own defining base an indel deleted (a V CIGAR ``246M1D9M``, a J CIGAR ``16M1D22M``):
-      there GenAIRR still places a junction and the anchor is null, as the assay's truth has no junction;
-    - where GenAIRR gives none, 208 of the 752 reads still show one anchor, which is observed (none shows both)."""
-    import GenAIRR.data as gd
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
-    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    config = AlignAIRConfig.from_reference(reference, anchor_heads=True)
-    records = []
-    for component, streams in enumerate(CurriculumStreamPolicy().substreams_for(gd.HUMAN_IGH_OGRDB)):
-        for name, parameters in streams:
-            if name in ("unselected-0", "selected-0"):
-                count = 300 if name.startswith("unselected") else 25
-                records += itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, parameters, 7000 + component), count)
-    assert len(records) == 7 * 300 + 4 * 25 and max(len(record["sequence"]) for record in records) <= 576
-    batch = NucleotideBatchAdapter(reference, config, augment_orientation=False)(records)
-    v_anchors, j_anchors = batch.targets["v_anchor"].tolist(), batch.targets["j_anchor"].tolist()
-    deleted, lone, junctionless = [], 0, 0
-    for record, v, j in zip(records, v_anchors, j_anchors):
-        start = record["junction_start"]
-        if start is None:
-            junctionless += 1
-            lone += (v < 576) + (j < 576) == 1
-            assert not (v < 576 and j < 576), record["sequence_id"]
-        elif (v, j) != (start, record["junction_end"] - 3):
-            deleted.append((record["v_cigar"], record["j_cigar"], v == 576, j == 576))
-    assert sorted(deleted) == [("246M1D9M", "17M", True, False), ("291M", "16M1D22M", False, True)]
-    assert (junctionless, lone) == (752, 208)

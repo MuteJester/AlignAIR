@@ -108,9 +108,6 @@ class TrainingEngine:
             if self.grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(parameters, self.grad_clip, error_if_nonfinite=True)
             self.optimizer.step()
-            clamp = getattr(self.model, "clamp_params", None)
-            if clamp is not None:
-                clamp()
             for weight in self.weights.values():
                 constrain = getattr(weight, "apply_constraints", None)
                 if constrain is not None:

@@ -1,6 +1,6 @@
 """The V gate of the prediction pipeline (``predict.v_presence``): a read without a V gets an AIRR row without a V call
 or V coordinates, carrying ``v_presence`` ``"absent"``, partial (``no_v``), its D and J called as any read's; a read
-holding a V is not gated (the golden conv-v1 reads)."""
+holding a V is not gated (the golden reads)."""
 import json
 
 import pytest

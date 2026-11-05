@@ -21,7 +21,7 @@ from ..reference.identity import validate_reference_identity
 from ..reference.reference_set import ReferenceSet
 from . import container, serialize
 
-__all__ = ["save_model", "read_metadata", "update_card", "load_model", "load_training_state",
+__all__ = ["save_model", "read_metadata", "update_card", "load_model", "load_training_state", "v3_checkpoint_error",
            "read_training_state", "read_model_state", "read_dataconfig", "read_reference", "LoadedModel", "ModelStateData",
            "TrainingState", "TrainingStateData", "container"]
 
@@ -196,6 +196,13 @@ def update_card(src_path, dst_path, updates: dict) -> dict:
     new_header["_formats"] = formats
     container.write_container(dst_path, new_header, sections)
     return read_metadata(dst_path)
+
+
+def v3_checkpoint_error(path) -> ModelError:
+    """The refusal of a checkpoint that is not an ``.alignair`` model file (an AlignAIR 3 ``.pt``)."""
+    return ModelError(f"{path} is an AlignAIR 3 checkpoint (not an .alignair model file); AlignAIR 4 reads chip "
+                      "models only — use alignair<4 to run it", context={"path": str(path)},
+                      hint="pip install 'alignair<4' runs it.")
 
 
 @dataclass

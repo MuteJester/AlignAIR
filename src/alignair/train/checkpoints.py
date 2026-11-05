@@ -47,25 +47,8 @@ class ResumeState:
     initial_lr: float | None = None
 
 
-_PRODUCTIVE_OBJECTIVES = {'masked': 'the masked productive objective',
-                          'negative': 'the historical productive objective'}
-
-
 def validate_continuation(state, config, label_schema, *, schedule=None, lr=None):
     """Reject incompatible continuation before mutating model, optimizer or process RNG state."""
-    if (isinstance(config, AlignAIRConfig) and config.has_d and config.classification_mode == 'multilabel'
-            and getattr(state.config, 'short_d_penalty', True) != config.short_d_penalty):
-        raise ConfigurationError('resume Short-D loss contract differs from the requested training objective',
-                                 context={'field': 'short_d_penalty'},
-                                 hint='Use init_from for a weights-only warm start under the corrected label contract.')
-    saved = getattr(state.config, 'productive_unknown', 'negative')     # absent: the historical objective
-    if isinstance(config, AlignAIRConfig) and config.use_meta_heads and saved != config.productive_unknown:
-        raise ConfigurationError('resume productive-label contract differs from the requested training objective: '
-                                 f'the checkpoint trains unknown productivity as {saved!r}, '
-                                 f'this run as {config.productive_unknown!r}',
-                                 context={'field': 'productive_unknown'},
-                                 hint='Use init_from for a weights-only warm start under '
-                                      f'{_PRODUCTIVE_OBJECTIVES[config.productive_unknown]}.')
     if (state.config is not None and state.config != config
             or state.label_schema is not None and state.label_schema != label_schema):
         raise ConfigurationError('resume configuration or label identity differs from the requested model setup',
@@ -77,37 +60,19 @@ def validate_continuation(state, config, label_schema, *, schedule=None, lr=None
 
 
 def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> ResumeState:
-    """Decode checkpoint state without allocating a model; restoration validates weight compatibility.
-
-    Self-contained .alignair checkpoints use the trusted resume reader. Historical .pt files still
-    require explicit pickle consent. Neither reading path applies the recorded process RNG state.
-    """
+    """Decode a self-contained .alignair checkpoint without allocating a model; restoration validates weight
+    compatibility. The trusted resume reader decodes its pickle training sections; it does not apply the recorded
+    process RNG state. An AlignAIR 3 checkpoint (a .pt) is refused with the version that reads it."""
     from .. import model_file as mf
-    from ..errors import ModelError
 
     with error_context(stage="training_checkpoint_load", path=str(path)):
-        if mf.container.is_alignair_file(path):
-            state = mf.read_training_state(path, device=device)
-            return ResumeState(state.model_state, state.logvars_state, state.optimizer_state,
-                               state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'),
-                               state.scheduler_state,
-                               state.train_args.get('schedule'), state.train_args.get('lr'))
-        if not trust_pickle:
-            raise ModelError("resuming a legacy .pt checkpoint runs torch.load (arbitrary-code pickle); "
-                             "pass resume_trust_pickle=True only for a checkpoint you trust.")
-        state = torch.load(path, map_location=device, weights_only=False)
-        config = state.get('config')
-        if isinstance(config, dict):
-            try:
-                config = AlignAIRConfig(**config)
-            except (TypeError, ValueError) as exc:
-                raise ModelError('legacy training configuration is malformed', context={'field': 'config'}) from exc
-        elif config is not None and not isinstance(config, AlignAIRConfig):
-            raise ModelError('legacy training configuration must be an AlignAIRConfig or mapping',
-                             context={'field': 'config'})
-        return ResumeState(state["model"], state["logvars"], state.get("optimizer"),
-                           int(state.get("step", 0)), state.get("rng") or {}, config=config,
-                           label_schema=state.get('label_schema'))
+        if not mf.container.is_alignair_file(path):
+            raise mf.v3_checkpoint_error(path)
+        state = mf.read_training_state(path, device=device)
+        return ResumeState(state.model_state, state.logvars_state, state.optimizer_state,
+                           state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'),
+                           state.scheduler_state,
+                           state.train_args.get('schedule'), state.train_args.get('lr'))
 
 
 def save_snapshot(path, model, cfg, step):

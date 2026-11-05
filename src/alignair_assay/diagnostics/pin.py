@@ -26,8 +26,8 @@ from alignair.predict import forward, pipeline
 
 # The digest of each mirrored product function's code when the replay was last checked against it.
 PINNED = {
-    "alignair.predict.pipeline.predict": "2a91bbf6710aec8656707d59a83c0b34e4d83e6fb7843d9f95f6ff937823bf85",
-    "alignair.api.predict_sequences": "2cdcf372689395466c703b2bd61dec8532213b3ac5f133b01e26ef2e21052672",
+    "alignair.predict.pipeline.predict": "1a01f5c2a421bedb228cb7acbdc64824c6fcd4a70ab38f9260f44100ad83b84d",
+    "alignair.api.predict_sequences": "33237145de68943f803d0a99ec8ecbc183c2b026ccc0dfd8c56c26a0d281a42d",
     "alignair.predict.forward.run_model": "b0f4ef3f9a878d87f630bd26018bc34f5031b90849901a948ed50383e50d27ac",
 }
 # The name ``api.predict_sequences`` runs the pipeline through, which must be ``pipeline.predict``.

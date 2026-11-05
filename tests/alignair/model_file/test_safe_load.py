@@ -12,8 +12,11 @@ pytestmark = pytest.mark.integration
 
 
 def _model():
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
-    return AlignAIR(cfg).eval(), cfg
+    from alignair.reference import ReferenceSet
+    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=128, embed_dim=4, trunk_channels=8)
+    model = AlignAIR(cfg).eval()
+    model.bind_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))   # the chip reads its bank from it
+    return model, cfg
 
 
 def test_publish_artifact_has_no_pickle_sections(tmp_path):

@@ -37,16 +37,11 @@ def transfer_compatible_weights(target_model, source_state_dict: dict) -> tuple[
 
 def load_source_state_dict(source_path: str, device: str = "cpu", trust_pickle: bool = False) -> dict:
     """State_dict of another AlignAIR model (any reference/architecture), for backbone transfer."""
-    from ..errors import ModelError
-    from ..model_file import container, read_model_state
-    if container.is_alignair_file(source_path):
-        state = read_model_state(source_path, trust_pickle=trust_pickle).model_state
-        return {name: value.to(device) for name, value in state.items()}
-    if trust_pickle:
-        import torch
-        return torch.load(source_path, map_location=device, weights_only=False)['model']
-    raise ModelError("legacy warm-start checkpoints require trust_pickle=True for a file you trust",
-                     context={"stage": "warm_start_source", "path": str(source_path)})
+    from ..model_file import container, read_model_state, v3_checkpoint_error
+    if not container.is_alignair_file(source_path):
+        raise v3_checkpoint_error(source_path)
+    state = read_model_state(source_path, trust_pickle=trust_pickle).model_state
+    return {name: value.to(device) for name, value in state.items()}
 
 
 def summarize(transferred: list, skipped: list, depth: int = 2) -> str:

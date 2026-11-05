@@ -7,7 +7,7 @@ import GenAIRR.data as gd
 
 from alignair.core import AlignAIR, build_model_config
 from alignair.errors import ConfigurationError
-from alignair.neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import ReferenceSet
 from alignair.data.tokenizer import TOKEN_DICT
 
@@ -23,8 +23,7 @@ def reference():
 
 def _model(reference, *, bind=True, **options):
     torch.manual_seed(0)
-    cfg = build_model_config(3, 2, 2, has_d=True, max_seq_length=LENGTH, embed_dim=4, filters=4, block_out=8,
-                             boundary_mode="half_open", **options)
+    cfg = build_model_config(3, 2, 2, has_d=True, max_seq_length=LENGTH, embed_dim=4, trunk_channels=8, **options)
     model = AlignAIR(cfg).eval()
     if bind:
         model.bind_reference(reference)
@@ -83,7 +82,7 @@ def test_a_teacher_forced_orientation_is_applied_as_given(reference):
 
 
 def test_without_the_option_the_head_decides(reference):
-    model = _model(reference)
+    model = _model(reference, bank_orientation=False)
     _head_says(model, 0)
     forward = _tokens([reference.gene("V").sequences[0][-110:]])
     presented = apply_orientation(forward, forward != 0, torch.tensor([1]))

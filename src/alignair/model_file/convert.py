@@ -34,7 +34,7 @@ def convert_lab_chip(src: str, dst: str) -> dict:
     "to", "trunk_channels", "sha256"}`` (``sha256``: of ``dst``). ConfigurationError when ``src`` is not a lab chip."""
     from . import read_model_state
     header = container.read_header(src)
-    cfg = serialize.config_from_bytes(container.read_section(src, "config"))
+    cfg = serialize.lab_config_from_bytes(container.read_section(src, "config"))
     if cfg.architecture not in LAB_CHIPS:
         raise ConfigurationError(f"{src} is not a lab chip model file: its architecture is {cfg.architecture!r}",
                                  context={"path": src, "architecture": cfg.architecture},

@@ -14,7 +14,6 @@ import pytest
 
 pytest.importorskip("GenAIRR")
 
-from alignair.calibration import ece  # noqa: E402
 from alignair.predict.state import Predictions  # noqa: E402
 
 from alignair_assay.core.cases import read_cases, read_fasta  # noqa: E402
@@ -92,19 +91,18 @@ def _blank(truths, *, width=WIDTH, names=NAMES, allowed=None) -> StageOutputs:
     n = len(truths)
     raw = {}
     for g in names:
-        for edge in ("start", "end"):
-            raw[f"{g}_{edge}_logits"] = np.zeros((n, width), np.float32)
+        for edge in ("start", "end"):                      # the window plus the terminal end slot
+            raw[f"{g}_{edge}_logits"] = np.zeros((n, width + 1), np.float32)
             raw[f"{g}_{edge}"] = np.zeros((n, 1), np.float32)
         raw[f"{g}_allele"] = np.zeros((n, len(names[g])), np.float32)
     raw["orientation_logits"] = np.zeros((n, 4), np.float32)
-    for key in ("mutation_rate", "indel_count", "productive"):
+    for key in ("mutation_rate", "indel_count"):
         raw[key] = np.zeros((n, 1), np.float32)
     predictions = Predictions(allele={g: raw[f"{g}_allele"] for g in names},
                               start={g: raw[f"{g}_start"].reshape(-1) for g in names},
                               end={g: raw[f"{g}_end"].reshape(-1) for g in names},
                               mutation_rate=raw["mutation_rate"].reshape(-1),
-                              indel_count=raw["indel_count"].reshape(-1),
-                              productive=raw["productive"].reshape(-1) > 0.5, orientation=np.zeros(n, int))
+                              indel_count=raw["indel_count"].reshape(-1), orientation=np.zeros(n, int))
     return StageOutputs(ids=[t.case_id for t in truths], raw=raw, predictions=predictions,
                         canonical=[_window(t, width)[1] for t in truths], segments=None, calls={}, germline={},
                         records=[], airr_rows=[], seconds={}, allele_names={g: list(v) for g, v in names.items()},
@@ -148,7 +146,6 @@ def _oracle(truths, names, *, width=WIDTH):
         if "v" in t.segments:
             out.raw["mutation_rate"][i, 0] = t.v_mismatches / t.segments["v"].observed_length
         out.raw["indel_count"][i, 0] = sum(_indel_bases(seg.observed.cigar) for seg in t.segments.values())
-        out.raw["productive"][i, 0] = float(bool(t.productive))
     # a D presence head that gives the truth's D class
     out.raw["d_presence_logits"] = np.eye(3, dtype=np.float32)[[_d_class(t) for t in truths]] * 5
     return out
@@ -332,8 +329,7 @@ def test_metadata_heads():
               _truth("c", 60, {"v": _seg(0, 40, "V1*01"), "j": _seg(48, 58, "J1*01")}, unscorable={"j"}),
               _truth("d", 60, {"j": _seg(48, 58, "J1*01")})]
     out = _blank(truths)
-    rows = {"mutation_rate": (0.15, 0.0, 0.05, 0.2), "indel_count": (2.5, 0.0, 1.0, 0.0),
-            "productive": (0.7, 0.5, 0.2, 0.2)}
+    rows = {"mutation_rate": (0.15, 0.0, 0.05, 0.2), "indel_count": (2.5, 0.0, 1.0, 0.0)}
     for key, values in rows.items():
         out.raw[key][:, 0] = values
     out.raw["orientation_logits"][0, 1] = out.raw["orientation_logits"][1, 3] = 1.0
@@ -350,9 +346,7 @@ def test_metadata_heads():
     # Inserted plus deleted bases of the observed CIGARs: 1 + 2 + 1 for a; unknown for c (J unscorable).
     assert scores["a"]["head.indel_count_abs_err"] == pytest.approx(1.5)
     assert scores["b"]["head.indel_count_abs_err"] == 0.0 and "head.indel_count_abs_err" not in scores["c"]
-    # Productive: probability >= 0.5 against the truth flag, where the truth defines it.
-    assert scores["a"]["head.productive.correct"] == 1.0 and scores["b"]["head.productive.correct"] == 0.0
-    assert "head.productive.correct" not in scores["c"]
+    assert not any("head.productive.correct" in case for case in scores.values())   # the chip has no such head
     assert [scores[c]["head.orientation.correct"] for c in "abcd"] == [1.0, 0.0, 1.0, 1.0]
     assert all(case["head.cropped"] == 0.0 for case in scores.values())
 
@@ -402,10 +396,9 @@ def test_cropped_reads_score_only_the_edges_the_model_saw():
 
 # --- half-open models -------------------------------------------------------------------------------------------
 def _half_open(truths, width=WIDTH):
-    """Blank outputs of a half-open model with a ``width`` window: its reads are cropped to ``width - 1`` bases and its
-    end slots are 1..n."""
-    out = _blank(truths, width=width)
-    out.canonical[:] = [_window(t, width - 1)[1] for t in truths]
+    """Blank outputs of a model ``width`` slots wide, with its own masks: its reads are cropped to ``width - 1`` bases
+    and its end slots are 1..n."""
+    out = _blank(truths, width=width - 1)
     out.raw["start_mask"] = np.zeros((len(truths), width), bool)
     out.raw["end_mask"] = np.zeros((len(truths), width), bool)
     for i, read in enumerate(out.canonical):
@@ -536,7 +529,7 @@ def test_registry_classifies_every_head_metric():
     informational |= {"head.mutation_rate_abs_err.record", "head.cropped", "head.misoriented"}
     errors = {name for name in METRIC_NAMES if "_abs_err" in name} - informational
     errors |= {"head.d_presence.callable_gated"}                       # a failure rate: callable Ds gated away
-    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 61 and len(informational) == 21 and len(errors) == 15
+    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 60 and len(informational) == 21 and len(errors) == 15
     for name in METRIC_NAMES:
         assert name.startswith("head."), name
         if name in informational:
@@ -548,6 +541,17 @@ def test_registry_classifies_every_head_metric():
 
 
 # --- calibration --------------------------------------------------------------------------------------------------
+
+def _ece(top1, correct, bins: int) -> float:
+    """Equal-width ECE, computed independently: the first bin closed on both ends, later bins open-left/closed-right."""
+    top1, correct = np.asarray(top1, float), np.asarray(correct, float)
+    edges, error = np.linspace(0, 1, bins + 1), 0.
+    for i in range(bins):
+        chosen = (top1 > edges[i]) & (top1 <= edges[i + 1]) if i else (top1 >= 0) & (top1 <= edges[1])
+        if chosen.any():
+            error += chosen.sum() / len(top1) * abs(correct[chosen].mean() - top1[chosen].mean())
+    return float(error)
+
 
 def test_calibration_table():
     v = _seg(0, 40, "V1*01")
@@ -568,9 +572,9 @@ def test_calibration_table():
     assert table["bins"][1]["lo"] == pytest.approx(0.1) and table["bins"][1]["hi"] == pytest.approx(0.2)
     assert table["bins"][0] == {"lo": 0.0, "hi": pytest.approx(0.1), "n": 0, "confidence": None, "accuracy": None}
     assert table["ece"] == pytest.approx(0.25 * 0.05 + 0.25 * 0.85 + 0.5 * 0.365)
-    # The same expected calibration error as AlignAIR's own (right-closed bins, the first one closed).
+    # The equal-width expected calibration error (right-closed bins, the first one closed).
     conf = np.array([0.95, 0.85, 0.15, 0.12], np.float32)
-    assert table["ece"] == pytest.approx(ece(conf, [1.0, 0.0, 1.0, 0.0], 10))
+    assert table["ece"] == pytest.approx(_ece(conf, [1.0, 0.0, 1.0, 0.0], 10))
     assert table["accuracy"] == 0.5 and table["confidence"] == pytest.approx(np.mean(conf))
 
     # Bins are closed on the right: probability 1 falls in the last bin, 0.5 in (0.25, 0.5] and 0 in the first.
@@ -579,7 +583,7 @@ def test_calibration_table():
     out.predictions.allele["v"][2, 0] = 0.5
     edges = calibration_table(out, truths[:3], "v", bins=4)
     assert [b["n"] for b in edges["bins"]] == [1, 1, 0, 1]
-    assert edges["ece"] == pytest.approx(ece(np.array([1.0, 0.0, 0.5]), [1.0, 1.0, 1.0], 4))
+    assert edges["ece"] == pytest.approx(_ece(np.array([1.0, 0.0, 0.5]), [1.0, 1.0, 1.0], 4))
     empty = calibration_table(_blank(truths[4:5]), truths[4:], "v")  # a short V and an excluded case
     assert (empty["n"], empty["ece"], empty["confidence"], empty["accuracy"]) == (0, None, None, None)
     assert all(b["n"] == 0 and b["confidence"] is None and b["accuracy"] is None for b in empty["bins"])
@@ -591,10 +595,9 @@ def test_calibration_table():
 
 # --- on the replay ------------------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("variant", ["igh", "igh_igk"])
-def test_head_metrics_on_the_replay_agree_with_the_product(variant, make_shaped_model, shaped_spans, s0_reads,
-                                                           s0_truths, s0_cases):
-    model, reference_set = make_shaped_model(variant)
+def test_head_metrics_on_the_replay_agree_with_the_product(make_shaped_model, shaped_spans, s0_reads, s0_truths,
+                                                           s0_cases):
+    model, reference_set = make_shaped_model("igh")
     ids, seqs = [name for name, _ in s0_reads], [seq for _, seq in s0_reads]
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=16)
     lengths = np.array([len(s) for s in out.canonical])
@@ -609,18 +612,17 @@ def test_head_metrics_on_the_replay_agree_with_the_product(variant, make_shaped_
         # Argmax: the logits' peak, which the shaped heads put on their spans.
         starts, ends = decode_boundaries(out, g, "argmax")
         assert set(starts[long]) == {shaped_spans[g][0]} and set(ends[long]) == {shaped_spans[g][1]}
-        # The ranking's first allele is the product's top-1 call, among the read's allowed alleles.
+        # The ranking's first allele is the product's top-1 call, among the read's allowed alleles: the same allele, or
+        # a tie of it when more than 16 alleles pass the threshold (the selector's sort is then not stable).
         for i, ranking in enumerate(allele_ranking(out, g)):
-            call = out.calls[g][i].names
-            assert (out.allele_names[g][ranking[0]] if ranking.size else None) == (call[0] if call else None)
+            call, probs = out.calls[g][i].names, out.predictions.allele[g][i]
+            assert bool(ranking.size) == bool(call)
+            if call:
+                assert probs[ranking[0]] == probs[out.allele_names[g].index(call[0])]
 
     scores = head_scores(out, s0_truths, s0_cases)
     assert list(scores) == [t.case_id for t in s0_truths if t.excluded is None]
     assert set().union(*scores.values()) <= set(METRIC_NAMES)
-    if variant == "igh_igk":  # reads the model puts on IGK may call no D: their D top-k misses
-        no_d = [cid for i, cid in enumerate(out.ids) if not out.allowed["d"][i].any() and "head.d.allele_top5"
-                in scores.get(cid, {})]
-        assert no_d and all(scores[cid]["head.d.allele_top5"] == 0.0 for cid in no_d)
 
 
 @needs_model

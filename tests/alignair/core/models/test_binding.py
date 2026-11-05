@@ -20,7 +20,7 @@ def _setup(has_d=True):
     reference.gene('V').anchors = {name: 3 for name in reference.gene('V').names}
     reference.gene('J').anchors = {name: 0 for name in reference.gene('J').names}
     return prepare_model(reference, has_d=has_d,
-                         max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+                         max_seq_length=128, embed_dim=4, trunk_channels=8)
 
 
 @pytest.mark.parametrize('has_d', [False, True])

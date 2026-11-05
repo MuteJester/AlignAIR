@@ -1,4 +1,4 @@
-"""The chip's training inputs (``AlignAIRConfig.chip_inputs``): per-base targets from a GenAIRR record, and per-batch
+"""The chip's training inputs: per-base targets from a GenAIRR record, and per-batch
 bank masks and teacher inputs.
 
 Per record (``chip_record_targets``):
@@ -29,7 +29,7 @@ import math
 import numpy as np
 import torch
 
-from ..neural.heads.region import READ_REGIONS, REGION_INDEX
+from ..core.regions import READ_REGIONS, REGION_INDEX
 from .alignment import query_reference_map
 from .batching import PositionLabels
 from .coordinates import segment_spans

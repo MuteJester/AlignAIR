@@ -12,8 +12,9 @@ from alignair.errors import ConfigurationError
 pytestmark = pytest.mark.component
 
 PLUGIN = '''
-from alignair.core import ModelComponents, register_architecture
-register_architecture("test-plugin-v1", ModelComponents())
+from alignair.core import register_architecture
+from alignair.core.components import CHIP
+register_architecture("test-plugin-v1", CHIP)
 '''
 
 

@@ -21,7 +21,7 @@ def artifact(request, tmp_path):
     reference.gene('V').anchors = {'V2': 3, 'V1': 3}
     reference.gene('J').anchors = {'J1': 0}
     setup = prepare_model(reference, input_space=request.param, max_seq_length=128,
-                          embed_dim=4, filters=4, block_out=8)
+                          embed_dim=4, trunk_channels=8)
     header = {'reference': {'allele_order_sha256': serialize.allele_order_sha256(reference),
                             'reference_fasta_sha256': serialize.reference_fasta_sha256(reference)}}
     sections = {'reference_json': (serialize.reference_to_json(reference), 'zlib'),
@@ -42,7 +42,7 @@ def test_older_allele_artifact_loads_without_schema_when_head_dimensions_match(a
 
 @pytest.mark.parametrize('change,detail', [
     ({'v_allele_count': 5}, 'head size'), ({'d_allele_count': 5}, 'head size'),
-    ({'j_allele_count': 5}, 'head size'), ({'has_d': False}, 'disabled D'),
+    ({'j_allele_count': 5}, 'head size'), ({'has_d': False, 'd_presence_head': False}, 'disabled D'),
     ({'num_chain_types': 2}, 'chain count'), ({'vocab_size': 9}, 'vocabulary'),
     ({'max_seq_length': 0}, 'max_seq_length'),
 ])
@@ -76,7 +76,7 @@ def test_embedded_reference_contract_error_has_artifact_context(artifact):
 
 def test_trusted_legacy_container_still_verifies_available_reference_hashes(tmp_path):
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
-                          max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+                          max_seq_length=128, embed_dim=4, trunk_channels=8)
     path = tmp_path / 'legacy.alignair'
     model_file.save_model(path, setup.build_model(), dataconfigs=[gd.HUMAN_IGH_OGRDB], training={})
     header = container.read_header(path)
@@ -93,7 +93,7 @@ def test_trusted_legacy_container_still_verifies_available_reference_hashes(tmp_
 @pytest.mark.parametrize('problem', ['head_count'])
 def test_save_rejects_invalid_binding_before_touching_destination(problem, tmp_path):
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
-                          max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+                          max_seq_length=128, embed_dim=4, trunk_channels=8)
     cfg = replace(setup.config, v_allele_count=1)
     model = AlignAIR(cfg)
     path = tmp_path / 'existing.alignair'

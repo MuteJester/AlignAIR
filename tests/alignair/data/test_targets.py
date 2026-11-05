@@ -75,26 +75,25 @@ def test_invalid_germline_span_is_rejected(start, end):
 
 def test_batch_masks_removed_genes_in_training_and_metrics():
     from alignair.core.config import AlignAIRConfig
-    from alignair.train.trainer import build_batch, eval_metrics
-    import torch
+    from alignair.data.adapters import build_nucleotide_batch
+    from alignair.reference.reference_set import GeneReference, ReferenceSet
+    from alignair.tasks.metrics import alignment_metrics
 
-    reference = _reference()
-    reference.gene = lambda gene: SimpleNamespace(
-        names=[gene+"*01"], index={gene+"*01": 0}, sequences=["ACGTACGTACGT"])
-    cfg = AlignAIRConfig(max_seq_length=128, v_allele_count=1, j_allele_count=1,
-                         d_allele_count=1, has_d=True)
+    reference = ReferenceSet({gene: GeneReference([gene + "*01"], ["ACGTACGTACGT"], {gene + "*01": 0})
+                              for gene in ("V", "D", "J")}, has_d=True)
+    cfg = AlignAIRConfig(max_seq_length=128, v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True)
     removed = _record()
     removed.update(j_sequence_start=12, j_sequence_end=12,
                    j_germline_start=None, j_germline_end=None, j_cigar="")
-    _, targets = build_batch([_record(), removed], reference, cfg, augment_orientation=False)
+    _, targets = build_nucleotide_batch([_record(), removed], reference, cfg, augment_orientation=False)
     assert targets["j_supervise"].tolist() == [True, False]
     assert targets["v_supervise"].tolist() == [True, True]
     outputs = {key: value.clone() for key, value in targets.items()}
     outputs["j_start"][1] = 90
     outputs["j_end"][1] = 100
-    metrics = eval_metrics(outputs, targets, cfg)
+    metrics = alignment_metrics(outputs, targets, cfg.genes).means()
     assert metrics["j_allele_top1"] == 1.0
     assert metrics["j_seg_mae"] == 0.0
     targets["j_supervise"].zero_()
-    metrics = eval_metrics(outputs, targets, cfg)
+    metrics = alignment_metrics(outputs, targets, cfg.genes).means()
     assert "j_allele_top1" not in metrics and "j_seg_mae" not in metrics

@@ -2,54 +2,24 @@
 model) in a few lines, without touching the internal config/pipeline machinery.
 
     from alignair import load_model, predict_sequences
-    model, reference = load_model("model.pt", dataconfigs=["HUMAN_IGH_OGRDB"])
+    model, reference = load_model("model.alignair")
     records = predict_sequences(model, reference, ["CAGGTGCAGCTG..."])
     # records: AIRR-convention dicts (v_call/d_call/j_call, coordinates, CIGAR, productivity, ...)
 
     from alignair import train_model
-    train_model(["HUMAN_IGH_OGRDB"], out_path="my_model.pt", steps=100_000)
+    train_model(["HUMAN_IGH_OGRDB"], out_path="my_model.alignair", steps=100_000)
 """
 from __future__ import annotations
 
-import re
 from typing import Sequence
 
-import torch
+from .errors import ConfigurationError, InputError
 
-from .errors import ConfigurationError, InputError, ModelError, error_context
-
-from .core.config import AlignAIRConfig
-from .core import AlignAIR, validate_reference_binding
+from .core import AlignAIR
 from .predict import PredictConfig, predict as _predict
 from .reference.reference_set import ReferenceSet
 
 __all__ = ["load_model", "predict_sequences", "train_model"]
-
-# pre-unify SingleChain/MultiChain checkpoint keys -> unified AlignAIR keys (no-op for current models)
-_LEGACY_KEY_REWRITES = [
-    (r"seg_towers\.([vdj])\.(.*)", r"branches.\1.seg_tower.\2"),
-    (r"seg_heads\.([vdj])_(start|end)\.(.*)", r"branches.\1.\2_head.\3"),
-    (r"cls_towers\.([vdj])\.(.*)", r"branches.\1.cls_tower.\2"),
-    (r"cls_mid\.([vdj])\.(.*)", r"branches.\1.cls_mid.\2"),
-    (r"cls_head\.([vdj])\.(.*)", r"branches.\1.cls_head.\2"),
-    (r"mutation_rate_(mid|head)\.(.*)", r"meta_heads.mutation_rate.\1.\2"),
-    (r"indel_count_(mid|head)\.(.*)", r"meta_heads.indel_count.\1.\2"),
-    (r"productive_head\.(.*)", r"meta_heads.productive.head.\1"),
-    (r"chain_type_(mid|head)\.(.*)", r"meta_heads.chain_type_logits.\1.\2"),
-]
-
-
-def _remap_state_dict(state: dict) -> dict:
-    out = {}
-    for key, value in state.items():
-        new_key = key
-        for pattern, repl in _LEGACY_KEY_REWRITES:
-            if re.match(pattern, key):
-                new_key = re.sub(pattern, repl, key)
-                break
-        out[new_key] = value
-    return out
-
 
 def _build_reference(dataconfigs, reference):
     if reference is not None:
@@ -64,32 +34,18 @@ def _build_reference(dataconfigs, reference):
 
 def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSet | None = None,
                device: str = "cpu", trust_pickle: bool = False) -> tuple[AlignAIR, ReferenceSet]:
-    """Load a trained AlignAIR checkpoint into an eval-ready ``(model, reference)`` pair.
+    """Load a trained AlignAIR model file into an eval-ready ``(model, reference)`` pair.
 
-    A safe ``.alignair`` model file carries its own reference (rebuilt from the no-pickle
-    ``reference_json``), so ``dataconfigs`` are unnecessary and no ``trust_pickle`` is needed;
-    ``reference`` binds another reference to a reference-agnostic model (alleles it never trained on
-    included) and must be the embedded one for a fixed-head model. A legacy ``.pt`` checkpoint loads via ``torch.load`` (arbitrary-code pickle) and so is
-    refused unless ``trust_pickle=True`` — pass it only for a local file you trust, or convert the
-    checkpoint first (``alignair convert x.pt x.alignair --dataconfig … --trust-pickle``).
+    A ``.alignair`` model file carries its own reference (rebuilt from the no-pickle ``reference_json``), so
+    ``dataconfigs`` are unnecessary; ``reference`` binds another reference to a reference-agnostic model (alleles it
+    never trained on included) and must be the embedded one for a fixed-head model. An AlignAIR 3 checkpoint (a
+    ``.pt``, or a conv-v1 model file) is refused with the version that reads it.
     """
-    from .model_file import container, load_model as _load_alignair
-    if container.is_alignair_file(checkpoint_path):
-        lm = _load_alignair(checkpoint_path, device=device, trust_pickle=trust_pickle, reference=reference)
-        return lm.model, lm.reference
-    if not trust_pickle:
-        raise ModelError(
-            f"{checkpoint_path} is a legacy .pt checkpoint; loading it runs torch.load "
-            "(arbitrary-code pickle). Pass trust_pickle=True only for a local file you trust, or "
-            "convert it once: `alignair convert x.pt x.alignair --dataconfig … --trust-pickle`.")
-    ck = torch.load(checkpoint_path, map_location="cpu", weights_only=False)   # legacy .pt (trusted)
-    cfg = AlignAIRConfig(**ck["config"])
-    bound_reference = _build_reference(dataconfigs, reference)
-    with error_context(stage='model_binding', path=checkpoint_path):
-        validate_reference_binding(bound_reference, cfg, label_schema=ck.get('label_schema'))
-    model = AlignAIR.from_state_dict(cfg, _remap_state_dict(ck["model"]),
-                                     device=device, source=checkpoint_path)
-    return model, bound_reference
+    from .model_file import container, load_model as _load_alignair, v3_checkpoint_error
+    if not container.is_alignair_file(checkpoint_path):
+        raise v3_checkpoint_error(checkpoint_path)
+    lm = _load_alignair(checkpoint_path, device=device, trust_pickle=trust_pickle, reference=reference)
+    return lm.model, lm.reference
 
 
 def _genotype_bank(reference: ReferenceSet, genotype) -> ReferenceSet:
@@ -122,13 +78,11 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
             model.bind_reference(reference)
     device = device or next(model.parameters()).device.type
     cfg = model.cfg
-    # propagate the reference's ordered locus schema so the pipeline maps chain_type -> locus, masks
-    # cross-locus alleles, and labels each record's locus; None for a schema-less reference.
+    # the reference's ordered locus schema: one locus labels each record's locus; None for a schema-less reference.
     chain_types = reference.locus_names() or None if hasattr(reference, "locus_names") else None
     predict_overrides.setdefault("chain_types", chain_types)
     pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
-                         boundary_mode=getattr(cfg, "boundary_mode", "residue"),
-                         allele_temperatures=getattr(cfg, "allele_temperatures", None), **predict_overrides)
+                         **predict_overrides)
     return _predict(model, sequences, reference, pcfg, device=device)
 
 

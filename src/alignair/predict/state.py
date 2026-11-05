@@ -28,10 +28,7 @@ class Predictions:
     end: dict[str, np.ndarray]        # {gene: [N] float read position}
     mutation_rate: np.ndarray         # [N]
     indel_count: np.ndarray           # [N]
-    productive: Optional[np.ndarray]  # [N] bool: the learned productive head (None for a model with anchor heads)
     orientation: Optional[np.ndarray] = None   # [N] predicted orientation id (model self-corrects)
-    chain_type: Optional[np.ndarray] = None    # [N] predicted chain-type index (multi-chain only)
-    state_logits: Optional[np.ndarray] = None  # [N, L, 4] per-position edit-state logits (state head only)
     # {"v"/"j": [N] int} the decoded anchors (anchor heads only): the forward-frame read position of the V Cys / J
     # Trp-Phe codon's first base, -1 when the anchor is not observed
     anchors: Optional[dict[str, np.ndarray]] = None

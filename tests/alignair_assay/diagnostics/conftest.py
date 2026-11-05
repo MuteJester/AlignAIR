@@ -1,4 +1,4 @@
-"""Fixtures for the diagnostics tests: small random-init AlignAIR models shaped to cover the pipeline's paths (the
+"""Fixtures for the diagnostics tests: small random-init chips shaped to cover the pipeline's paths (the
 plain ones, ``make_small_model`` and ``small_model``, are shared from ``tests/alignair_assay/conftest.py``) and the
 reads, truth and cases of a built S0 suite."""
 from __future__ import annotations
@@ -28,40 +28,40 @@ class LengthOrientation(torch.nn.Module):
         return torch.nn.functional.one_hot(mask.sum(1) % 4, 4).float()
 
 
-class SplitChainType(torch.nn.Module):
-    """A chain-type head that puts each batch's reads on two loci, split at the median of one meta-tower feature."""
-
-    def forward(self, meta):
-        return torch.nn.functional.one_hot((meta[:, 0] > meta[:, 0].median()).long(), 2).float()
+def shape_core(model, spans, indel_count=None) -> None:
+    """Make the model's core put every read's segments at ``spans`` (gene -> (start, end)): a forward hook peaks each
+    boundary's logits there and sets the soft expectations to it, and with ``indel_count`` sets that output."""
+    def hook(module, args, out):
+        out = dict(out)
+        for g, (start, end) in spans.items():
+            for side, position in (("start", start), ("end", end)):
+                logits = torch.full_like(out[f"{g}_{side}_logits"], -30.0)
+                logits[:, position] = 30.0
+                out[f"{g}_{side}_logits"] = logits
+                out[f"{g}_{side}"] = torch.full_like(out[f"{g}_{side}"], float(position))
+        if indel_count is not None:
+            out["indel_count"] = torch.full_like(out["indel_count"], float(indel_count))
+        return out
+    model.core.register_forward_hook(hook)
 
 
 @pytest.fixture(scope="session")
 def make_shaped_model(make_small_model):
-    """``make(variant) -> (model, reference_set)``: a fresh small model whose segment heads put every read's V, D
-    and J at the positions of ``SPANS``, so the germline reader and the AIRR assembly work on spans of real size:
+    """``make(variant) -> (model, reference_set)``: a fresh small chip whose core puts every read's V, D and J at the
+    positions of ``SPANS`` (``shape_core``), so the germline reader and the AIRR assembly work on spans of real size:
 
-    - ``igh``: one locus, no indel predicted;
+    - ``igh``: no indel predicted;
     - ``igh_varied_orientation``: every orientation id (``LengthOrientation``) and about 4 indels per read;
-    - ``igh_igk``: two loci, with the reads of each batch split over them (``SplitChainType``), and about 4 indels;
-    - ``igk``: a light-chain model (no D head; V and J at ``LIGHT_SPANS``) and about 4 indels.
+    - ``igk``: a light-chain model (no D; V and J at ``LIGHT_SPANS``) and about 4 indels.
     """
     def make(variant: str):
-        names = {"igh_igk": ("HUMAN_IGH_OGRDB", "HUMAN_IGK_OGRDB"), "igk": ("HUMAN_IGK_OGRDB",)}.get(
-            variant, ("HUMAN_IGH_OGRDB",))
+        names = ("HUMAN_IGK_OGRDB",) if variant == "igk" else ("HUMAN_IGH_OGRDB",)
         # the varied orientations come from the head alone: no bank vote overrides it
         model, reference_set = make_small_model(*names, seed=1,
                                                 bank_orientation=variant != "igh_varied_orientation")
-        with torch.no_grad():
-            for g, (start, end) in (LIGHT_SPANS if variant == "igk" else SPANS).items():
-                for head, position in ((model.branches[g].start_head, start), (model.branches[g].end_head, end)):
-                    head.bias.zero_()
-                    head.bias[position] = 30.0
-            if variant != "igh":
-                model.meta_heads["indel_count"].head.bias.fill_(4.0)
+        shape_core(model, LIGHT_SPANS if variant == "igk" else SPANS, indel_count=None if variant == "igh" else 4.0)
         if variant == "igh_varied_orientation":
             model.orientation_head = LengthOrientation()
-        if variant == "igh_igk":
-            model.meta_heads["chain_type_logits"] = SplitChainType()
         return model, reference_set
 
     return make
@@ -118,8 +118,8 @@ def toy_chip_file(tmp_path_factory):
     import GenAIRR.data as gd
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     torch.manual_seed(0)
-    model = prepare_model(reference, architecture="lab-chipw64-v1", boundary_mode="half_open", anchor_heads=True,
-                          d_presence_head=True, chip_inputs=True, bank_orientation=True).build_model().eval()
+    model = prepare_model(reference, architecture="lab-chipw64-v1", anchor_heads=True,
+                          d_presence_head=True, bank_orientation=True).build_model().eval()
     path = tmp_path_factory.mktemp("golden") / "toy_chip.alignair"
     save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
     return str(path)

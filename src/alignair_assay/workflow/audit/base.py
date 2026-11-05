@@ -41,9 +41,9 @@ NULL_SUITES, DIAGNOSE_SUITES, NULL_SCALE = ("S1", "S7"), ("S1", "S3"), 0.05
 DIAGNOSE_BATCH = RunnerOptions().batch_size
 REAL_DONOR, REAL_CAP = "W-97", 2000
 # The positive control: the module zeroed in a copy of the checkpoint, and the head metric that must get worse. The
-# J end under the logits' argmax: the released model gets it right on most S1 reads (87 of 100), while its soft-argmax
-# J end is almost never exact (the decoder's bias), so a broken head could not make the soft metric worse.
-POSITIVE_MODULE, POSITIVE_METRIC = "branches.j.end_head", "head.j.end_exact.argmax"
+# chip's parser places every boundary, so with it zeroed the J end under the logits' argmax, which the model gets
+# right on most S1 reads, cannot stay exact.
+POSITIVE_MODULE, POSITIVE_METRIC = "core.parser", "head.j.end_exact.argmax"
 # The tool of ``all`` whose per-case scores must equal ``diagnose``'s (the checkpoint's second label).
 AGREEMENT_TOOL = f"alignair-local@{NULL_LABELS[1]}"
 # IgBLAST against independent evidence: its known answers on real reads, its S1 V top-1 (the P2 number) and speed.

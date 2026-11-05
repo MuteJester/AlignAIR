@@ -49,8 +49,6 @@ from alignair_assay.core.reference import Reference, dataconfig  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures"
 REFERENCE_NAME = "HUMAN_IGH_OGRDB"
-# Allele temperatures as a released checkpoint carries them, so the replay's calibration step runs.
-TEMPERATURES = {"v": 0.5, "d": 0.5, "j": 0.4}
 
 
 def pytest_configure(config):
@@ -97,9 +95,8 @@ def load_fixture():
 
 @pytest.fixture(scope="session")
 def make_small_model(genairr):
-    """``make(*dataconfig_names, seed=0, bank_orientation=True) -> (model, reference_set)``: a random-init AlignAIR
-    with narrow towers (embedding 8, 8 filters, 32 tower outputs; about 0.3 M parameters) on the dataconfigs'
-    reference, in eval mode on the CPU, with ``TEMPERATURES`` as its allele temperatures. With ``bank_orientation``
+    """``make(*dataconfig_names, seed=0, bank_orientation=True) -> (model, reference_set)``: a random-init chip
+    (embedding 8, an 8-channel trunk) bound to the dataconfigs' reference, in eval mode on the CPU. With ``bank_orientation``
     it orients a read by the reference's k-mers where they decide (``core.config.bank_orientation``), so a read the
     reference reads is in its V's frame as a trained orientation head puts it, and keeps its V call
     (``predict.v_presence``); the random-init head orients the rest."""
@@ -110,8 +107,7 @@ def make_small_model(genairr):
 
     def make(*names: str, seed: int = 0, bank_orientation: bool = True):
         configs = [dataconfig(name) for name in names]
-        cfg = AlignAIRConfig.from_dataconfigs(*configs, embed_dim=8, filters=8, block_out=32,
-                                              allele_temperatures=dict(TEMPERATURES),
+        cfg = AlignAIRConfig.from_dataconfigs(*configs, embed_dim=8, trunk_channels=8,
                                               bank_orientation=bank_orientation)
         torch.manual_seed(seed)
         model, reference_set = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(*configs)

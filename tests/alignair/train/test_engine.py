@@ -6,7 +6,7 @@ import torch
 
 from alignair.data import TrainingBatch
 from alignair.errors import ConfigurationError
-from alignair.neural.weighting import UncertaintyWeight
+from tests.support.loss_weights import ClampedLogVar
 from alignair.tasks import MetricReport
 from alignair.train import TrainingEngine, evaluation_mode
 from alignair.train.guards import NonFiniteLossError
@@ -25,7 +25,7 @@ class ScalarModel(torch.nn.Module):
 
 def test_step_clips_all_optimized_parameters_then_constrains_and_advances_scheduler():
     model = ScalarModel()
-    weights = torch.nn.ModuleDict({'extra': UncertaintyWeight(min_log_var=-.5)})
+    weights = torch.nn.ModuleDict({'extra': ClampedLogVar(min_log_var=-.5)})
     optimizer = torch.optim.SGD([*model.parameters(), *weights.parameters()], lr=1.)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=1, gamma=.5)
     tasks = SimpleNamespace(loss=lambda out, _, weights: (3*out + 4*weights['extra'].log_var, {'linear': out}))
@@ -42,7 +42,7 @@ def test_step_clips_all_optimized_parameters_then_constrains_and_advances_schedu
 @pytest.mark.parametrize('failure', ['task_gradient', 'loss', 'norm_overflow'])
 def test_rejected_step_does_not_update_weights_optimizer_or_scheduler(failure):
     model = ScalarModel()
-    weights = torch.nn.ModuleDict({'extra': UncertaintyWeight()})
+    weights = torch.nn.ModuleDict({'extra': ClampedLogVar()})
     optimizer = torch.optim.AdamW([*model.parameters(), *weights.parameters()], lr=.01)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1)
     def objective(out, _, weights):
@@ -79,7 +79,7 @@ def test_missing_task_parameters_and_wrong_scheduler_are_explicit_configuration_
     model = ScalarModel()
     optimizer = torch.optim.SGD(model.parameters(), lr=.1)
     with pytest.raises(ConfigurationError, match='every trainable task weight'):
-        TrainingEngine(model, optimizer, tasks=object(), weights={'extra': UncertaintyWeight()})
+        TrainingEngine(model, optimizer, tasks=object(), weights={'extra': ClampedLogVar()})
     other = torch.optim.SGD(model.parameters(), lr=.1)
     scheduler = torch.optim.lr_scheduler.StepLR(other, 1)
     with pytest.raises(ConfigurationError, match='scheduler'):
@@ -170,7 +170,7 @@ def test_module_dict_root_parameters_are_guarded_and_named_in_gradient_diagnosti
 
 def test_plain_weight_mapping_keeps_named_gradient_diagnostics():
     model=ScalarModel()
-    weights={'extra':UncertaintyWeight()}
+    weights={'extra':ClampedLogVar()}
     optimizer=torch.optim.SGD([*model.parameters(),*weights['extra'].parameters()],lr=.1)
     tasks=SimpleNamespace(loss=lambda output,_,weights: (output+weights['extra'].log_var.abs().sqrt(),{}))
     with pytest.raises(NonFiniteLossError) as caught:

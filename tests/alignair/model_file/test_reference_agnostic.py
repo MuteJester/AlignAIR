@@ -34,8 +34,9 @@ class BankCore(nn.Module):
 def saved(tmp_path, monkeypatch):
     """``save(architecture) -> path``: a fresh model of the architecture saved on HUMAN_IGH_OGRDB."""
     monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
-    register_architecture("test-bank-agnostic-v1", ModelComponents(core=BankCore, reference_agnostic=True))
-    register_architecture("test-bank-fixed-v1", ModelComponents(core=BankCore))
+    register_architecture("test-bank-agnostic-v1", ModelComponents(core=BankCore, objective=lambda cfg: None,
+                                                                    reference_agnostic=True))
+    register_architecture("test-bank-fixed-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
 
     def save(architecture):
         cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, architecture=architecture)

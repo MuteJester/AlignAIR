@@ -6,15 +6,22 @@ import torch
 
 from alignair.core import AlignAIR, build_model_config, restore_model_state
 from alignair.errors import ConfigurationError, ModelIntegrityError
+from alignair.reference import ReferenceSet
 
 pytestmark = pytest.mark.component
+
+
+def _reference(has_d=True):
+    genes = {"V": {"V1": "ATGTGTAAACCC", "V2": "ATGTGCAAACCC", "V3": "ATGTGTTTTCCC"}, "J": {"J1": "TGGAAA", "J2": "TGGTTT"}}
+    if has_d:
+        genes["D"] = {"D1": "TACGG", "D2": "ACGTT"}
+    return ReferenceSet.from_genotype(genes)
 
 
 def _config(input_space="nucleotide", label_space="alleles", has_d=True):
     return build_model_config(3, 2, 2 if has_d else 0, has_d=has_d,
                               input_space=input_space, label_space=label_space,
-                              max_seq_length=128, embed_dim=4, filters=4, block_out=8,
-                              state_head=True)
+                              max_seq_length=128, embed_dim=4, trunk_channels=8)
 
 
 @pytest.mark.parametrize("input_space,label_space", [
@@ -31,6 +38,8 @@ def test_restoration_preserves_weights_and_outputs_across_model_policies(input_s
     for name, weights in original.state_dict().items():
         assert torch.equal(restored.state_dict()[name], weights), name
         assert restored.state_dict()[name].data_ptr() != weights.data_ptr(), name
+    for model in (original, restored):                  # the chip reads its bank from a bound reference
+        model.bind_reference(_reference(has_d))
     tokens = torch.zeros(2, 128, dtype=torch.long)
     tokens[:, :12] = 1
     with torch.no_grad():

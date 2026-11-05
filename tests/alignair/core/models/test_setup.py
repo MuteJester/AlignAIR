@@ -24,16 +24,16 @@ def test_established_defaults_and_reference_derived_label_sizes():
     ref = _reference()
     setup = prepare_model(ref)
     cfg = setup.config
-    assert (cfg.vocab_size, cfg.use_orientation, cfg.classification_mode, cfg.boundary_mode,
-            cfg.use_meta_heads, cfg.reject_empty_sequences, cfg.max_seq_length) == (
-        6, True, 'multilabel', 'residue', True, False, 576)
+    assert (cfg.architecture, cfg.vocab_size, cfg.use_orientation, cfg.bank_orientation, cfg.anchor_heads,
+            cfg.d_presence_head, cfg.reject_empty_sequences, cfg.max_seq_length, cfg.trunk_channels) == (
+        'chip-v1', 6, True, True, True, True, False, 576, 64)
     assert setup.reference is ref and cfg.d_allele_count == 2
     assert setup.label_counts == {'v': 3, 'd': 2, 'j': 2}
     assert ref.gene('V').names == ['V2', 'V1', 'V3'] and ref.gene('D').index == {'D2': 0, 'D1': 1}
 
 
 def test_the_model_is_built_with_the_reference_output_vocabulary():
-    setup = prepare_model(_reference(), max_seq_length=192, embed_dim=4, filters=4, block_out=8)
+    setup = prepare_model(_reference(), max_seq_length=192, embed_dim=4, trunk_channels=8)
     model = setup.build_model().eval()
     assert type(model) is AlignAIR
     tokens = torch.zeros(2, 192, dtype=torch.long)
@@ -67,10 +67,10 @@ def test_preparation_does_not_allocate_model_parameters(monkeypatch):
 
 
 def test_head_choices_remain_independent_of_the_input_and_label_identity():
-    setup = prepare_model(_reference(), boundary_mode='half_open',
-                          use_orientation=False, use_meta_heads=False, state_head=True)
+    setup = prepare_model(_reference(), use_orientation=False, bank_orientation=False, anchor_heads=False,
+                          d_presence_head=False)
     assert setup.label_space == 'alleles' and setup.config.v_allele_count == 3
-    assert setup.config.boundary_mode == 'half_open' and setup.config.state_head
+    assert not (setup.config.use_orientation or setup.config.anchor_heads or setup.config.d_presence_head)
 
 
 def test_locus_head_count_comes_from_the_ordered_reference_schema():
@@ -136,11 +136,11 @@ def test_mutated_config_is_checked_again_before_allocation():
         setup.build_model()
 
 
-@pytest.mark.parametrize('config', [None, AlignAIRConfig(3, 2, has_d=False, d_allele_count=2),
-    AlignAIRConfig(3, 2, has_d=False, num_chain_types=2), AlignAIRConfig(3, 2, has_d='yes')])
+@pytest.mark.parametrize('config', [lambda: None, lambda: AlignAIRConfig(3, 2, has_d=False, d_allele_count=2),
+    lambda: AlignAIRConfig(3, 2, has_d=False, num_chain_types=2), lambda: AlignAIRConfig(3, 2, has_d='yes')])
 def test_hand_built_setup_cannot_bypass_binding_checks(config):
     with pytest.raises(ConfigurationError):
-        ModelSetup(_reference(), config, 'nucleotide', 'alleles')
+        ModelSetup(_reference(), config(), 'nucleotide', 'alleles')
 
 
 def test_reference_based_preparation_does_not_require_the_simulator(monkeypatch):

@@ -52,7 +52,8 @@ def test_a_one_hot_row_decodes_to_the_coordinate_the_floored_expectation_gave():
         logits = _row(length, **{f"p{k}": 60.0})
         expectation = (torch.softmax(logits, -1) * torch.arange(length)).sum(-1, keepdim=True)
         outputs = {"v_start_logits": logits, "v_end_logits": logits, "v_start": expectation, "v_end": expectation,
-                   "position_mask": torch.arange(length)[None] < seq_len}
+                   "start_mask": torch.arange(length)[None] < seq_len,
+                   "end_mask": torch.arange(length)[None] < seq_len + 1}
         start, end = decoded_boundaries(outputs, "v")
         soft, hard = expectation.numpy().reshape(-1), start.numpy()
         old = correct_segments({"v": soft, "j": soft}, {"v": soft, "j": soft}, lens, length)
@@ -60,14 +61,6 @@ def test_a_one_hot_row_decodes_to_the_coordinate_the_floored_expectation_gave():
         assert new.start["v"].tolist() == old.start["v"].tolist() == [k]
         assert new.end["v"].tolist() == old.end["v"].tolist()
         assert new.start["j"].tolist() == old.start["j"].tolist()
-
-
-def test_a_residue_end_may_sit_one_past_the_read():
-    # a segment that runs to the read end ends at n, the slot after the last base
-    outputs = {"v_start_logits": _row(p9=9.0, p10=3.0), "v_end_logits": _row(p10=9.0, p9=3.0),
-               "position_mask": torch.arange(12)[None] < 10}
-    start, end = decoded_boundaries(outputs, "v")
-    assert start.tolist() == [9] and end.tolist() == [10]
 
 
 def test_half_open_masks_are_used_as_given():
@@ -81,9 +74,10 @@ def test_half_open_masks_are_used_as_given():
 def test_clean_reports_the_argmax_and_keeps_the_expectation_without_logits():
     logits = _row(p2=4.0, p10=5.0)
     batch = {"v_allele": np.array([[0.1, 0.9]]), "v_start": np.array([[6.4]]), "v_end": np.array([[7.2]]),
-             "v_start_logits": logits.numpy(), "v_end_logits": logits.numpy(), "position_mask": np.ones((1, 12), bool),
+             "v_start_logits": logits.numpy(), "v_end_logits": logits.numpy(), "start_mask": np.ones((1, 12), bool),
+             "end_mask": np.ones((1, 12), bool),
              "j_allele": np.array([[0.5, 0.5]]), "j_start": np.array([[8.0]]), "j_end": np.array([[9.0]]),
-             "mutation_rate": np.array([[0.1]]), "indel_count": np.array([[0.0]]), "productive": np.array([[0.7]])}
+             "mutation_rate": np.array([[0.1]]), "indel_count": np.array([[0.0]])}
     preds = clean([batch], genes=("v", "j"))
     assert preds.start["v"].tolist() == [10] and preds.end["v"].tolist() == [10]
     assert preds.start["j"].tolist() == [8.0]

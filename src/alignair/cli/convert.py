@@ -1,63 +1,20 @@
-"""`alignair convert` — package a checkpoint into a safe, pickle-free `.alignair` for distribution.
+"""`alignair convert` — a lab chip model file becomes a safe, pickle-free ``chip-v1`` `.alignair`.
 
-Handles a lab chip model file (``lab-chip-v1``, ``lab-chipw64-v1``: ``model_file.convert``), which becomes a
-``chip-v1`` file without unpickling anything; a legacy `.pt` checkpoint and a legacy `.alignair` that predates the
-safe `reference_json` section, which read pickle (torch.load / the embedded dataconfig) and so require
-`--trust-pickle`. The output always carries a safe `reference_json` and NO pickle sections.
+A model file trained under a lab chip name (``lab-chip-v1``, ``lab-chipw64-v1``: ``model_file.convert``) is rewritten
+as ``chip-v1`` without unpickling anything. An AlignAIR 3 checkpoint (a `.pt`, or a conv-v1 `.alignair`) does not
+convert: AlignAIR 4 runs chip models only (``alignair<4`` runs it).
 """
 from __future__ import annotations
 
-import torch
-
-from .. import model_file as mf
-from ..api import _build_reference, _remap_state_dict
-from ..core import AlignAIR, validate_reference_binding
-from ..core.config import AlignAIRConfig
 from ..model_file import container
-from ..reference import ReferenceSet, validate_reference_identity
-from ..errors import ConfigurationError, error_context, report_error
+from ..errors import ConfigurationError, report_error
 
 
 def register(sub) -> None:
-    p = sub.add_parser("convert", help="package a lab chip model file, a .pt or a legacy .alignair into a safe, "
-                                       "pickle-free .alignair")
+    p = sub.add_parser("convert", help="convert a lab chip model file into a safe, pickle-free chip-v1 .alignair")
     p.add_argument("src")
     p.add_argument("dst")
-    p.add_argument("--dataconfig", nargs="+", default=None,
-                   help="GenAIRR dataconfig(s) the checkpoint was trained on; required for a .pt, "
-                        "read from the file for a legacy .alignair")
-    p.add_argument("--trust-pickle", action="store_true",
-                   help="required consent: converting reads pickle (torch.load / embedded dataconfig)")
     p.set_defaults(func=run)
-
-
-def _convert_legacy_alignair(src, dst) -> int:
-    lm = mf.load_model(src, trust_pickle=True)                 # rebuild model + reference (pickle path)
-    dcs = mf.read_dataconfig(src)                              # embedded dataconfig(s), pickle
-    dcs = dcs if isinstance(dcs, list) else [dcs]
-    with error_context(path=src):
-        validate_reference_identity(ReferenceSet.from_dataconfigs(*dcs), lm.reference)
-    md = lm.metadata
-    mf.save_model(dst, lm.model, dataconfigs=dcs, training=md.get("training", {"steps": 0, "batch_size": 0}),
-                  include_trusted_pickle=False, model_id=md.get("model_id"),
-                  model_version=md.get("model_version"), label_schema=md.get('model', {}).get('label_schema'))
-    return 0
-
-
-def _convert_pt(src, dst, dataconfig) -> int:
-    if not dataconfig:
-        return report_error(ConfigurationError(
-            "--dataconfig is required to convert a legacy .pt (the reference the model was trained on)"))
-    ck = torch.load(src, map_location="cpu", weights_only=False)   # pickle (trusted via --trust-pickle)
-    cfg = AlignAIRConfig(**ck["config"])
-    with error_context(stage='model_binding', path=src):
-        validate_reference_binding(_build_reference(dataconfig, None), cfg,
-                                   label_schema=ck.get('label_schema'))
-    model = AlignAIR.from_state_dict(cfg, _remap_state_dict(ck["model"]), source=src)
-    mf.save_model(dst, model, dataconfigs=dataconfig, include_trusted_pickle=False,
-                  training={"steps": int(ck.get("step", 0)), "batch_size": 0},
-                  label_schema=ck.get('label_schema'))
-    return 0
 
 
 def _lab_chip(path) -> bool:
@@ -66,23 +23,20 @@ def _lab_chip(path) -> bool:
     from ..model_file.convert import LAB_CHIPS
     if not container.is_alignair_file(path):
         return False
-    return serialize.config_from_bytes(container.read_section(path, "config")).architecture in LAB_CHIPS
+    return serialize.lab_config_from_bytes(container.read_section(path, "config")).architecture in LAB_CHIPS
 
 
 def run(args) -> int:
-    if _lab_chip(args.src):
-        from ..model_file.convert import convert_lab_chip
-        summary = convert_lab_chip(args.src, args.dst)
-        print(f"converted {args.src} ({summary['from']}) -> {args.dst} ({summary['to']}, trunk_channels "
-              f"{summary['trunk_channels']}; safe, pickle-free)")
-        return 0
-    if not args.trust_pickle:
+    if not container.is_alignair_file(args.src):
+        from ..model_file import v3_checkpoint_error
+        return report_error(v3_checkpoint_error(args.src))
+    if not _lab_chip(args.src):
+        from ..model_file.convert import LAB_CHIPS
         return report_error(ConfigurationError(
-            "converting reads pickle (torch.load for .pt, or the embedded dataconfig for a legacy "
-            ".alignair). Pass --trust-pickle only for a source you trust."))
-    is_alignair = container.is_alignair_file(args.src)
-    rc = _convert_legacy_alignair(args.src, args.dst) if is_alignair \
-        else _convert_pt(args.src, args.dst, args.dataconfig)
-    if rc == 0:
-        print(f"converted {args.src} -> {args.dst}  (safe, pickle-free)")
-    return rc
+            f"{args.src} is not a lab chip model file", context={"path": args.src},
+            hint=f"Only {', '.join(sorted(LAB_CHIPS))} model files convert to chip-v1."))
+    from ..model_file.convert import convert_lab_chip
+    summary = convert_lab_chip(args.src, args.dst)
+    print(f"converted {args.src} ({summary['from']}) -> {args.dst} ({summary['to']}, trunk_channels "
+          f"{summary['trunk_channels']}; safe, pickle-free)")
+    return 0

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS
 from ..core.d_presence import ABSENT, CALLABLE, D_CLASSES, D_PRESENCE
-from ..errors import ConfigurationError, NumericalError
+from ..errors import NumericalError
 from ..data.inputs import prepare_nucleotide_inputs
 
 import numpy as np
@@ -52,27 +52,6 @@ def _validate_predictions(preds, stage: str = "model forward") -> None:
             raise NumericalError(f"non-finite {name} after {stage}", context={"stage": stage, "field": name})
 
 
-def _locus_allowed(chain_type, reference, genes, genotype_allowed=None) -> dict:
-    """Per-read allele masks restricting each read to its predicted locus. Returns
-    ``{gene: (N, C) bool}``: row ``i`` is the locus mask for the locus at ``chain_type[i]``. When a
-    genotype constraint is also active, the per-read locus mask is AND-ed with the (broadcast) genotype
-    mask so both hold. A read's predicted locus with no ``gene`` (e.g. D on a light chain) yields an
-    all-False row -> an explicit no-call downstream."""
-    loci = reference.locus_names()
-    out: dict = {}
-    for g in genes:
-        rows = []
-        for c in chain_type:
-            ci = int(c)
-            locus = loci[ci] if 0 <= ci < len(loci) else (loci[0] if loci else "")
-            rows.append(reference.locus_mask(locus, g))
-        mask = np.stack(rows) if rows else np.zeros((0, 0), dtype=bool)
-        if genotype_allowed and genotype_allowed.get(g) is not None:
-            mask = mask & np.asarray(genotype_allowed[g], dtype=bool)[None, :]
-        out[g] = mask
-    return out
-
-
 def apply_input_policy(sequences, max_len: int) -> tuple[list, list]:
     """Compatibility entry point for shared nucleotide prediction preparation."""
     return prepare_nucleotide_inputs(sequences, max_len)
@@ -96,37 +75,17 @@ def _canonicalize(seq: str, orientation_id: int) -> str:
 
 
 def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
-    model_config = getattr(model, 'cfg', None)
-    if (getattr(model_config, 'input_space', 'nucleotide') != 'nucleotide'
-            or getattr(model_config, 'classification_mode', 'multilabel') != 'multilabel'):
-        raise ConfigurationError('AIRR prediction requires the nucleotide multilabel allele profile; use Aligner.predict_raw for shared model outputs')
-    if getattr(model_config, 'boundary_mode', 'residue') != cfg.boundary_mode:
-        raise ConfigurationError('the prediction config and the model disagree on boundary_mode',
-                                 context={'field': 'boundary_mode', 'model': getattr(model_config, 'boundary_mode', 'residue'),
-                                          'config': cfg.boundary_mode})
     genes = _genes(cfg)
     # Tokenization, orientation, alignment and reported coordinates share the same normalized read.
     sequences, was_cropped = prepare_nucleotide_inputs(sequences, cfg.window)
     preds = clean(run_model(model, sequences, cfg, device), genes)
     _validate_predictions(preds)  # raw outputs must be finite before any use
     allowed = None
-    if cfg.allele_temperatures:                    # post-hoc allele-confidence calibration
-        from ..calibration import apply_temperature
-        for g, T in cfg.allele_temperatures.items():
-            if g in preds.allele:
-                preds.allele[g] = apply_temperature(preds.allele[g], T)
-        _assert_finite(preds.allele, "temperature calibration")
     if cfg.genotype:
         from ..genotype.constraint import adjust_for_genotype, genotype_allowed_mask
         allowed = genotype_allowed_mask(cfg.genotype, reference, genes=set(preds.allele))  # validates
         preds = adjust_for_genotype(preds, cfg.genotype, reference, method=cfg.genotype_method)
         _assert_finite(preds.allele, "genotype constraint")
-    # multi-chain locus masking: each read's predicted locus restricts its callable alleles to
-    # that locus's index range, so a cross-locus call (e.g. an IGKV allele on an IGL read, or any D on a
-    # light-chain read) is impossible by construction. Produces a per-read (N, C) mask per gene, AND-ed
-    # with any genotype constraint.
-    if preds.chain_type is not None and getattr(reference, "loci", None):
-        allowed = _locus_allowed(preds.chain_type, reference, genes, allowed)
     # canonicalize each read to the model's forward frame so coords / germline / AIRR all agree
     orient = preds.orientation
     seqs = [_canonicalize(s, int(orient[i]) if orient is not None else 0)
@@ -168,7 +127,7 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
         rec = {"sequence": seq, "orientation_id": oid,
                "mutation_rate": float(preds.mutation_rate[i]),
                "indel_count": float(preds.indel_count[i]),
-               "productive": bool(preds.productive[i]) if anchors is None else None}
+               "productive": None}
         if anchors is not None:
             # a model with anchor heads: its record carries the anchors (forward frame, like `seq`) and the
             # productivity they give over the read's V start and J end (predict.junction), not a learned call
@@ -187,12 +146,7 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
             rec["segmentation_low_quality"] = bool(low_quality[i])
         if was_cropped is not None and was_cropped[i]:
             rec["length_cropped"] = True
-        if preds.chain_type is not None:                       # multi-chain: predicted locus
-            ct = int(preds.chain_type[i])
-            rec["chain_type_id"] = ct
-            if chain_types is not None and 0 <= ct < len(chain_types):
-                rec["locus"] = chain_types[ct]
-        elif chain_types is not None and len(chain_types) == 1:  # single-chain: the model's one locus
+        if chain_types is not None and len(chain_types) == 1:  # the reference's one locus
             rec["locus"] = chain_types[0]
         for g in genes:
             call, aln = calls[g][i], alignments[g][i]

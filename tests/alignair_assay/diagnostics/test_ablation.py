@@ -227,8 +227,9 @@ def test_baseline_rows_are_the_replay_and_score_like_the_product_tsv(make_shaped
 
 
 # The fields the AIRR assembly builds from the germline alignment, the calls and the orientation.
-FED = re.compile(r"(junction|clone_key)\.|[vdj]\.(seq|germ)_(start|end)_|[vdj]\.top1_in_set$|orientation\.|"
-                 r"airr\.sequence_ok$")
+# The junction and the clone key are not among them: the chip takes its junction from its predicted anchors, not from
+# the germline alignment the variant substitutes.
+FED = re.compile(r"[vdj]\.(seq|germ)_(start|end)_|[vdj]\.top1_in_set$|orientation\.|airr\.sequence_ok$")
 # Excluded from the equality check: the V germline coordinates. AlignAIR's AIRR assembly (compute_alignment_positions)
 # writes them in IMGT-gapped numbering, whatever germline alignment it is given. That is tracked on the AlignAIR
 # fix-list; this test neither asserts nor depends on it. When the assembly writes them in ungapped germline
@@ -239,8 +240,8 @@ REENCODED = re.compile(r"v\.germ_(start|end)_")
 
 def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped_model, s0_cases, s0_truths,
                                                                     reference):
-    # The "igh" shaped model predicts no indel, so the assembly's gate on the neural productive and indel
-    # predictions (non-productive with more than one indel: no junction) stays open.
+    # The "igh" shaped model predicts no indel, so the assembly's gate on the predicted productivity and indels
+    # (non-productive with more than one indel: no alignment math) stays open.
     model, reference_set = make_shaped_model("igh")
     results = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
                            batch_size=BATCH, variants=VARIANTS)
@@ -258,7 +259,7 @@ def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped
                 continue
             assert final[case_id][name] == value, (case_id, name)
             equal += 1
-    assert equal > 50 * 20
+    assert equal > 50 * 15
     # The model's own germline alignment (true calls, its matcher) scores like it too on S0's unmutated reads: the
     # matcher places every segment where the oracle does, a D shorter than its end anchor included.
     own = results["true_calls"].scores

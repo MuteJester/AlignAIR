@@ -208,7 +208,7 @@ class Aligner:
         from .core.setup import _input_config
         cfg = self.model.cfg
         _input_config(cfg)
-        window = read_window(cfg.max_seq_length, cfg.boundary_mode)
+        window = read_window(cfg.max_seq_length)
         values, _ = prepare_nucleotide_inputs(sequences, window)
         tokenizer = CenterPaddedTokenizer()
         adapter = SequenceInputAdapter(tokenizer, cfg.max_seq_length, self.device, vocab_size=cfg.vocab_size)

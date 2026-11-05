@@ -3,11 +3,10 @@
 ``profile_model`` replays AlignAIR's predict pipeline (``replay.replay``) on the given reads and reports two
 breakdowns, each as milliseconds per read and share of its total:
 
-- ``modules``: the network's leaf submodules, timed with forward hooks: ``embedding`` (called twice per forward, the
-  second time on the orientation-corrected read; both calls are summed), ``orientation_head``, ``meta_tower``,
-  ``meta_heads.<name>``, and per gene ``<g>.seg_tower``, ``<g>.start_head``, ``<g>.end_head``, ``<g>.cutout``,
-  ``<g>.cls_tower``, ``<g>.cls_mid`` and ``<g>.cls_head``. ``other`` is the rest of the forward stage (the
-  orientation transform, soft-argmax, tokenizing and the copies to the host): the forward stage's time not spent
+- ``modules``: the model's inspection points (``AlignAIR.component_modules``), timed with forward hooks:
+  ``embedding`` (called twice per forward, the second time on the orientation-corrected read; both calls are
+  summed), ``orientation_head`` and ``core`` (the chip). ``other`` is the rest of the forward stage (the
+  orientation transform, the bank vote, tokenizing and the copies to the host): the forward stage's time not spent
   inside a hooked module. Its shares sum to 1 over the forward stage's time.
 - ``stages``: the replay's stages (``replay.STAGES``), from ``StageOutputs.seconds``; ``forward`` is the whole
   network call. Its shares sum to 1 over the total.

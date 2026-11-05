@@ -31,10 +31,9 @@ still scored on its alleles, and the mutation rate and indel count still count t
 
 - ``soft``: the floor of the head's soft-argmax expectation (``{g}_start``/``{g}_end``), clipped to the read: the
   per-segment step of ``correct_segments`` without its min-span and ordering repair.
-- ``argmax``: the product's decoder (``alignair.predict.decode``) over the model's own boundary slots: a start lies on
-  a read base (``0..n-1``), an end-exclusive end on ``0..n`` (position ``n`` exists when the read is shorter than the
-  window; a half-open model's ends lie on ``1..n``). A segment that runs
-  to the read end has end ``n``, which the model's soft-argmax, masked to ``0..n-1``, cannot reach.
+- ``argmax``: the product's decoder (``alignair.predict.decode``) over the model's own half-open boundary slots: a
+  start lies on a read base (``0..n-1``), an end-exclusive end on ``1..n``. A segment that runs to the read end has
+  end ``n``.
 - ``exact``: 1.0 when the decoded edge is inside the truth equivalence interval; ``abs_err``: its distance to the
   interval; ``err`` (informational): the signed distance (negative before the interval).
 
@@ -58,10 +57,9 @@ gate dropped a D call the assay scores (its sum counts them). ``d_presence_confu
 (V observed with at least ``MIN_OBSERVED["v"]`` bases). ``head.mutation_rate_abs_err.record`` (informational, only
 with ``cases``): against the GenAIRR record's ``mutation_rate``, the training target. ``head.indel_count_abs_err``:
 against the inserted plus deleted bases of the truth's observed V, D and J CIGARs (GenAIRR's indels are single
-bases), when every gene's truth was built. ``head.productive.correct``: probability >= 0.5 matches the truth, where
-it is defined (not for a model with anchor heads, which has no productive head: its productivity is derived from the
-anchors and scored on the AIRR row as ``productive.correct``). ``head.orientation.correct``: the orientation logits'
-argmax is the truth orientation (0 or 1).
+bases), when every gene's truth was built. (The chip's productivity is derived from its anchors and scored on the
+AIRR row as ``productive.correct``.) ``head.orientation.correct``: the orientation logits' argmax is the truth
+orientation (0 or 1).
 ``head.cropped`` (informational): 1.0 for a read longer than the window, so its sum counts the crops;
 ``head.misoriented`` (informational): 1.0 for a read in another frame than the truth's, whose boundaries are not
 scored.
@@ -99,7 +97,7 @@ METRIC_NAMES: tuple[str, ...] = (
     *(f"head.{g}.{name}" for g in GENES for name in ("allele_top1_generative", "n_above_threshold")),
     "head.d.short_d_prob_ok", "head.d_presence.correct", "head.d_presence.callable_gated",
     "head.mutation_rate_abs_err.read", "head.mutation_rate_abs_err.record", "head.indel_count_abs_err",
-    "head.productive.correct", "head.orientation.correct", "head.cropped", "head.misoriented",
+    "head.orientation.correct", "head.cropped", "head.misoriented",
 )
 
 
@@ -145,8 +143,7 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
     pairs = _pairs(outputs, truths)
     records = _records(cases, pairs)
     width = _width(outputs)
-    raw = {key: _flat(outputs.raw[key]) for key in ("mutation_rate", "indel_count", "productive")
-           if key in outputs.raw}                       # a model with anchor heads has no productive head
+    raw = {key: _flat(outputs.raw[key]) for key in ("mutation_rate", "indel_count") if key in outputs.raw}
     genes = [g for g in GENES if f"{g}_start_logits" in outputs.raw]
     decoded = {g: {decoder: decode_boundaries(outputs, g, decoder) for decoder in DECODERS} for g in genes}
     alleles = [g for g in genes if g in outputs.allele_names]
@@ -190,8 +187,6 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
             indels = sum(n for seg in truth.segments.values() for n, op in parse_cigar(seg.observed.cigar)
                          if op in "ID")
             case["head.indel_count_abs_err"] = abs(float(raw["indel_count"][i]) - indels)
-        if truth.productive is not None and "productive" in raw:
-            case["head.productive.correct"] = float((float(raw["productive"][i]) >= THRESHOLD) == truth.productive)
         orientation = int(np.argmax(outputs.raw["orientation_logits"][i]))
         case["head.orientation.correct"] = float(orientation == truth.orientation)
         scores[truth.case_id] = case
@@ -293,19 +288,19 @@ def _flat(values) -> np.ndarray:
 
 def _slots(outputs: StageOutputs) -> tuple[torch.Tensor, torch.Tensor]:
     """The product's boundary slots of every read (``alignair.predict.decode.boundary_slots``) from the model's own
-    masks in ``raw``; for outputs without masks, a residue model's, from the length of each replayed read."""
+    masks in ``raw``; for outputs without masks, the half-open slots of each replayed read's length."""
     raw = outputs.raw
-    if "position_mask" in raw or "end_mask" in raw:
+    if "start_mask" in raw and "end_mask" in raw:
         return boundary_slots(raw)
     width = int(np.asarray(raw["v_start_logits"]).shape[1])
     lengths = torch.tensor([len(read) for read in outputs.canonical])
-    return boundary_slots({"position_mask": torch.arange(width)[None, :] < lengths[:, None]})
+    slots = torch.arange(width)[None, :]
+    return slots < lengths[:, None], (slots >= 1) & (slots <= lengths[:, None])     # ends lie on 1..n
 
 
 def _width(outputs: StageOutputs) -> int:
-    """The window the model saw: the length of its position logits, less the terminal slot of a half-open model."""
-    return model_window(int(np.asarray(outputs.raw["v_start_logits"]).shape[1]),
-                       "half_open" if "end_mask" in outputs.raw else "residue")
+    """The window the model saw: the length of its position logits, less the terminal end slot."""
+    return model_window(int(np.asarray(outputs.raw["v_start_logits"]).shape[1]))
 
 
 def _pairs(outputs: StageOutputs, truths: list[ObservableTruth]) -> list[tuple[ObservableTruth, int]]:

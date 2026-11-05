@@ -7,9 +7,8 @@
 2. ``forward``: the batched forward pass of ``alignair.predict.forward.run_model``, with each batch dict built here
    (``SequenceInputAdapter``, right-padded), which is where a teacher-forced ``batch["orientation"]`` goes.
 3. ``clean``: ``pipeline.clean`` and ``pipeline._validate_predictions``.
-4. ``masks``: the allele temperature calibration (``calibrate.apply_temperature``) and the per-read locus masks of a
-   multi-locus model (``pipeline._locus_allowed``). The genotype constraint needs a ``genotype`` override, which the
-   replay never sets.
+4. ``masks``: the alleles each read may be called with. Only the genotype constraint masks them, and it needs a
+   ``genotype`` override, which the replay never sets, so the stage gives no mask.
 5. ``canonicalize``: ``pipeline._canonicalize`` into the model's forward frame.
 6. ``segments``: ``pipeline.correct_segments``.
 7. ``alleles``: ``pipeline.select_alleles``.
@@ -21,8 +20,7 @@
 
 Every stage is AlignAIR's own function, looked up where ``pipeline.predict`` looks it up; none is re-implemented.
 Substitutions (``Substitutions``) happen only between stage calls. The private AlignAIR names called here
-(``pipeline._genes``, ``_validate_predictions``, ``_assert_finite``, ``_locus_allowed``, ``_canonicalize``,
-``_to_records``) are pinned by the replay's equivalence tests, which also pin the code of
+(``pipeline._genes``, ``_validate_predictions``, ``_canonicalize``, ``_to_records``) are pinned by the replay's equivalence tests, which also pin the code of
 the product functions the replay mirrors.
 
 **Substitutions**, each fed in between two stages (``Substitutions`` documents the fields):
@@ -34,11 +32,9 @@ the product functions the replay mirrors.
 - ``decoder="soft"``: the boundaries ``correct_segments`` receives are the model's soft-argmax expectations (the
   decoder the product used before it decoded by argmax) instead of the argmax of the position logits that
   ``pipeline.clean`` reports. The classifier reads the expectations either way.
-- ``spans``: replace the corrected ``Segments`` of the given reads and genes (``segment_spans``), and with
-  ``classifier_spans`` are fed to each gene's classifier (``model.branches[g].classify`` on the re-embedded read, the
-  public seam of ``AlignAIR.forward``, with the trunk's features of that read for a model with a trunk) in place of
-  the soft-argmax expectations; the new allele probabilities then go through the calibration, the masks and the
-  selector. ``low_quality`` keeps ``correct_segments``' meaning: a V or J of zero length. The given spans are not
+- ``spans``: replace the corrected ``Segments`` of the given reads and genes (``segment_spans``). ``classifier_spans``
+  would feed them to a per-gene classifier; the chip reads the whole read for its calls and has none, so its allele
+  probabilities stay its own. ``low_quality`` keeps ``correct_segments``' meaning: a V or J of zero length. The given spans are not
   re-ordered against the model's spans of other genes, so a truth span is never moved.
 - ``calls``: replace the selector's calls, before the germline alignment.
 - ``germline``: replace the matcher's alignments; the matcher runs only for the reads with a gene left to it.
@@ -60,10 +56,9 @@ from alignair.api import load_model
 from alignair.core.runtime import evaluation_mode
 from alignair.data import SequenceInputAdapter, prepare_nucleotide_inputs
 from alignair.data.tokenizer import CenterPaddedTokenizer
-from alignair.neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.network.orientation import NUM_ORIENTATIONS
 from alignair.predict import PredictConfig, forward, pipeline
 from alignair.predict.airr import build_airr
-from alignair.calibration import apply_temperature
 from alignair.predict.state import Segments
 
 from alignair_assay.core.reference import Reference
@@ -80,10 +75,9 @@ class StageOutputs:
     """Every stage's output for one replay, one entry per input read, in input order."""
 
     ids: list[str]
-    # every AlignAIR.forward output key (logits included), concatenated over the batches; with classifier_spans,
-    # {g}_allele is what the classifier gave on the substituted spans
+    # every AlignAIR.forward output key (logits included), concatenated over the batches
     raw: dict[str, np.ndarray]
-    # alignair.predict.state.Predictions after clean and the masks stage (calibrated allele probabilities)
+    # alignair.predict.state.Predictions after clean
     predictions: object
     # the reads in the model's forward frame (after the input policy and canonicalization)
     canonical: list[str]
@@ -101,8 +95,8 @@ class StageOutputs:
     seconds: dict[str, float]
     # gene -> allele names, index-aligned to the model's allele head ({g}_allele columns)
     allele_names: dict[str, list[str]]
-    # gene -> (reads, alleles) bool: the alleles each read may be called with (the per-read locus masks of a
-    # multi-locus model, which select_alleles applied); None when the selector ran unmasked
+    # gene -> (reads, alleles) bool: the alleles each read may be called with, which select_alleles applied; None
+    # when the selector ran unmasked
     allowed: dict[str, np.ndarray] | None = None
     # per read: whether it holds no V (pipeline.v_absent), so its record has no V call; None when not replayed
     no_v: list[bool] | None = None
@@ -124,7 +118,7 @@ class Substitutions:
     spans: dict[str, tuple[list[int | None], list[int | None]]] | None = None
     # use the spans as the corrected segments (False: they go to the classifier only)
     segment_spans: bool = True
-    # feed the spans into each gene's classifier instead of the soft-argmax expectations
+    # feed the spans into a per-gene classifier (the chip has none: its probabilities stay its own)
     classifier_spans: bool = False
     # gene -> alignair.predict.state.GeneCall per read
     calls: dict[str, list] | None = None
@@ -177,7 +171,7 @@ def load_model_checked(checkpoint_or_model, truth_reference: Reference, *, devic
 def unwrap_model(model):
     """The AlignAIR module a training loop's model wraps: ``torch.compile``'s ``_orig_mod`` and ``DataParallel``'s
     or ``DistributedDataParallel``'s ``module``, unwrapped repeatedly; the model itself when it wraps nothing. The
-    replay calls the model's own submodules (``embedding``, ``branches``), which a wrapper does not expose. The
+    replay reads the model's own attributes (its ``cfg``), which a wrapper does not expose. The
     wrapper shares the module's parameters, so moving the module moves the wrapper's weights too."""
     parallel = (torch.nn.DataParallel, torch.nn.parallel.DistributedDataParallel)
     while True:
@@ -208,14 +202,12 @@ def check_reference(reference_set, truth_reference: Reference) -> None:
 
 def predict_config(model, reference_set, *, batch_size: int, **overrides) -> PredictConfig:
     """The ``PredictConfig`` that ``alignair.api.predict_sequences`` builds for ``model``, ``reference_set``,
-    ``batch_size`` and ``overrides``: the model's window, D presence and allele temperatures, and the reference's
-    loci as the chain types unless ``overrides`` names them."""
+    ``batch_size`` and ``overrides``: the model's window and D presence, and the reference's loci as the chain types
+    unless ``overrides`` names them."""
     cfg = model.cfg
     chain_types = (reference_set.locus_names() or None) if hasattr(reference_set, "locus_names") else None
     overrides.setdefault("chain_types", chain_types)
-    return PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
-                         boundary_mode=cfg.boundary_mode,
-                         allele_temperatures=getattr(cfg, "allele_temperatures", None), **overrides)
+    return PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size, **overrides)
 
 
 def replay(model, reference_set, sequences: list[str], ids: list[str], *, device: str, batch_size: int,
@@ -243,8 +235,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
         reads, was_cropped = prepare_nucleotide_inputs(sequences, cfg.window)
     _check_spans(subs.spans, [len(read) for read in reads])  # orientation keeps a read's length
     with _timed(seconds, "forward"):
-        batches = _forward(model, reads, cfg, device, orientation=subs.orientation,
-                           spans=subs.spans if subs.classifier_spans else None)
+        batches = _forward(model, reads, cfg, device, orientation=subs.orientation)
     raw = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
     with _timed(seconds, "clean"):
         preds = pipeline.clean(batches, genes)
@@ -253,7 +244,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
             preds = replace(preds, orientation=np.array([int(p) if o is None else int(o) for o, p
                                                          in zip(subs.orientation, preds.orientation)], dtype=int))
     with _timed(seconds, "masks"):
-        allowed = _masks(preds, reference_set, cfg, genes)
+        allowed = None                       # no genotype: the selector runs unmasked
     with _timed(seconds, "canonicalize"):
         orient = preds.orientation
         canonical = [pipeline._canonicalize(s, int(orient[i]) if orient is not None else 0)
@@ -298,11 +289,9 @@ def _timed(seconds: dict[str, float], stage: str):
 
 
 @torch.no_grad()
-def _forward(model, reads: list[str], cfg: PredictConfig, device: str, *, orientation: list | None = None,
-             spans: dict | None = None) -> list[dict]:
+def _forward(model, reads: list[str], cfg: PredictConfig, device: str, *, orientation: list | None = None) -> list[dict]:
     """``run_model``'s batched forward pass: the same batches and tokens, each batch's outputs as numpy arrays.
-    ``orientation`` (per read, None for the model's own) is teacher-forced; with ``spans``, each gene's allele
-    probabilities are the classifier's on those spans (``_classify``)."""
+    ``orientation`` (per read, None for the model's own) is teacher-forced."""
     adapter = SequenceInputAdapter(CenterPaddedTokenizer(), cfg.max_seq_length, device, vocab_size=6)
     with evaluation_mode(model):
         outputs = []
@@ -313,8 +302,6 @@ def _forward(model, reads: list[str], cfg: PredictConfig, device: str, *, orient
             if orientation is not None:
                 batch["orientation"] = _forced_orientation(model, tokens, orientation[start:stop])
             out = forward.forward_batch(model, batch, expected_rows=stop - start)
-            if spans is not None:
-                _classify(model, tokens, batch.get("orientation", out["orientation"]), out, spans, start)
             outputs.append({key: forward.output_numpy(value) for key, value in out.items()})
         return outputs
 
@@ -326,26 +313,6 @@ def _forced_orientation(model, tokens: torch.Tensor, given: list) -> torch.Tenso
         own = model({"tokenized_sequence": tokens})["orientation"].tolist()
         given = [own[k] if o is None else o for k, o in enumerate(given)]
     return torch.tensor([int(o) for o in given], dtype=torch.long, device=tokens.device)
-
-
-def _classify(model, tokens: torch.Tensor, orientation: torch.Tensor, out: dict, spans: dict, offset: int) -> None:
-    """Replace the batch's ``{g}_allele`` with ``model.branches[g].classify`` on the given spans (the batch's
-    soft-argmax expectations for a None entry), on the read re-embedded in the frame of ``orientation``, as
-    ``AlignAIR.forward`` embeds it for its own classifier call. A model with a trunk gets the trunk's features of
-    that embedding (``features=``), computed as ``AlignAIR.forward`` computes them. A model with a core
-    (``ModelComponents.core``) reads the whole read for its calls and has no classifier to give spans: its
-    probabilities stay its own."""
-    if getattr(model, "core", None) is not None:
-        return
-    mask = out["position_mask"] if "position_mask" in out else out["start_mask"]   # the forward pass's `mask`
-    emb = model.embedding(apply_orientation(tokens, mask, orientation))
-    extra = {} if model.trunk is None else {"features": model.trunk(emb, mask)}
-    for g, (starts, ends) in spans.items():
-        s, e = out[f"{g}_start"].clone(), out[f"{g}_end"].clone()
-        for k in range(tokens.shape[0]):
-            if starts[offset + k] is not None:
-                s[k, 0], e[k, 0] = float(starts[offset + k]), float(ends[offset + k])
-        out[f"{g}_allele"] = model.branches[g].classify(emb, s, e, **extra)
 
 
 def _check_substitutions(subs: Substitutions, n: int, genes, names: dict[str, list[str]]) -> None:
@@ -457,17 +424,3 @@ def _align(canonical: list[str], segments: Segments, calls: dict, reference_set,
             for g in genes:
                 aligned[g][i] = matched[g][k]
     return _substitute(aligned, given)
-
-
-def _masks(preds, reference_set, cfg: PredictConfig, genes) -> dict | None:
-    """``pipeline.predict``'s calibration and locus masking: calibrates ``preds.allele`` in place and returns the
-    per-read allowed alleles of a multi-locus model (None otherwise)."""
-    allowed = None
-    if cfg.allele_temperatures:
-        for g, temperature in cfg.allele_temperatures.items():
-            if g in preds.allele:
-                preds.allele[g] = apply_temperature(preds.allele[g], temperature)
-        pipeline._assert_finite(preds.allele, "temperature calibration")
-    if preds.chain_type is not None and getattr(reference_set, "loci", None):
-        allowed = pipeline._locus_allowed(preds.chain_type, reference_set, genes, allowed)
-    return allowed

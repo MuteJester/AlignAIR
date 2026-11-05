@@ -10,8 +10,10 @@ pytestmark = pytest.mark.integration
 
 
 def _fresh_model():
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
-    return AlignAIR(cfg), cfg
+    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=128, embed_dim=4, trunk_channels=8)
+    model = AlignAIR(cfg)
+    model.bind_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))   # the chip reads its bank from it
+    return model, cfg
 
 
 def test_save_and_read_metadata(tmp_path):

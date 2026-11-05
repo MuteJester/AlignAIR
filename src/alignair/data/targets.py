@@ -7,8 +7,8 @@ from ..errors import AlignAIRError, TrainingDataError, error_context
 from .tokenizer import TOKEN_DICT
 from ..core.anchors import ANCHOR_GENES, CODON
 from ..core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
-from ..neural.heads.region import REGION_INDEX
-from ..neural.heads.state import STATE_INDEX
+from ..core.regions import REGION_INDEX
+from ..core.edit_states import STATE_INDEX
 from .coordinates import segment_spans
 from .alignment import parse_cigar, query_reference_map
 
@@ -192,14 +192,7 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         # and mask those terms (RC reference modelling is deferred).
         "d_inverted": bool(record.get("d_inverted", False)),
         "orientation_id": 0,  # forward-only gym for now
-        # locus index for the multi-chain chain_type head; the mixed-locus stream tags each record
-        # with its dataconfig position (== AlignAIRConfig chain_type order). Single-chain -> 0.
-        "chain_type": int(record.get("chain_type", 0)),
         "noise_count": float(record["n_quality_errors"] + record.get("n_pcr_errors", 0)),
         "mutation_rate": float(record["mutation_rate"]),
         "indel_count": float(record["n_indels"]),
-        "productive": 1.0 if record["productive"] else 0.0,
-        # GenAIRR leaves productivity unknown (None) when the read does not show it; the label above is
-        # then 0.0, and this flag lets the masked objective leave the read out of the productive loss.
-        "productive_known": record["productive"] is not None,
     }

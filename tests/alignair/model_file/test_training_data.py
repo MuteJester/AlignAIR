@@ -21,7 +21,7 @@ def checkpoint(request, tmp_path):
     space, labels = request.param
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
                           input_space=space, label_space=labels, max_seq_length=128,
-                          embed_dim=4, filters=4, block_out=8)
+                          embed_dim=4, trunk_channels=8)
     model = setup.build_model()
     weights = build_tasks(setup.config).make_weights()
     optimizer = torch.optim.AdamW(list(model.parameters()) + list(weights.parameters()), lr=.001)

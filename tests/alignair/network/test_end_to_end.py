@@ -1,6 +1,5 @@
 """The chip (chip-v1) end to end on the human IGH reference: it trains from GenAIRR, reloads through a model file bound to its
-reference, predicts AIRR rows and resumes. (The generic candidate contract in test_architectures assumes conv-v1's
-components and both alphabets; the chip is nucleotide-only and is checked here.)"""
+reference, predicts AIRR rows and resumes."""
 import numpy as np
 import pytest
 
@@ -10,8 +9,8 @@ from alignair.model_file import read_training_state
 
 pytestmark = pytest.mark.integration
 
-OPTIONS = {"architecture": "chip-v1", "embed_dim": 8, "boundary_mode": "half_open", "anchor_heads": True,
-           "d_presence_head": True, "chip_inputs": True}
+OPTIONS = {"architecture": "chip-v1", "embed_dim": 8, "anchor_heads": True,
+           "d_presence_head": True}
 
 
 @pytest.mark.parametrize("channels", [64, 16])

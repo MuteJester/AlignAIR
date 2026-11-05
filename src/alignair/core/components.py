@@ -8,100 +8,50 @@ from __future__ import annotations
 import importlib
 import os
 from dataclasses import dataclass, fields
-from collections.abc import Mapping
 from typing import Callable
 
-import torch
 from torch import nn
-from torch.nn import functional as F
 
 from ..errors import ConfigurationError, error_context
-from ..neural.heads.state import PerPositionStateBranch
-from .config import AlignAIRConfig, GeneSpec, _SEG_KERNELS
-from .gene_branch import GeneBranch, MetaHead, build_tower
-from .layers import EmbeddingOrientationHead, TokenAndPositionEmbedding
+from .config import AlignAIRConfig
 
 
 def _embedding(cfg):
+    from ..network.embedding import TokenAndPositionEmbedding
     return TokenAndPositionEmbedding(cfg.vocab_size, cfg.embed_dim, cfg.max_seq_length)
 
 
 def _orientation(cfg):
+    from ..network.orientation import EmbeddingOrientationHead
     return EmbeddingOrientationHead(cfg.embed_dim)
-
-
-def _meta_tower(cfg):
-    return build_tower(cfg, _SEG_KERNELS)
-
-
-def _state(cfg):
-    return PerPositionStateBranch(cfg.embed_dim)
-
-
-def build_meta_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
-    """The metadata heads on the meta tower's vector. With ``anchor_heads`` there is no productive head: productivity
-    is derived from the predicted anchors (``predict.junction``)."""
-    length = cfg.max_seq_length
-    heads = {
-        "mutation_rate": MetaHead(cfg.block_out, 1, mid_dim=length, out_act=F.relu, clamp=(0.0, 1.0)),
-        "indel_count": MetaHead(cfg.block_out, 1, mid_dim=length, out_act=F.relu, clamp=(0.0, 50.0)),
-    }
-    if not getattr(cfg, "anchor_heads", False):
-        heads["productive"] = MetaHead(cfg.block_out, 1, out_act=torch.sigmoid)
-    if cfg.num_chain_types > 1:
-        heads["chain_type_logits"] = MetaHead(cfg.block_out, cfg.num_chain_types, mid_dim=length)
-    return heads
-
-
-def no_trunk_heads(cfg: AlignAIRConfig) -> dict[str, nn.Module]:
-    return {}
 
 
 @dataclass(frozen=True)
 class ModelComponents:
-    """Factories for one architecture, independent of its alphabet and enabled tasks.
+    """Factories for one architecture.
 
-    Embeddings emit (batch, window, embed_dim). Gene branches implement segment, classify,
-    and component_modules. Their boundary tensors are (batch, window)/(batch, 1), and class
-    scores are (batch, labels). Auxiliary towers emit (batch, block_out).
-
-    An optional trunk maps (embedding, mask) to shared per-position features (batch, window, channels),
-    computed once per forward after orientation correction. When present, branches, the meta tower and
-    the trunk heads receive them (branches and the tower as ``features=``; a head is called
-    ``head(features, mask)`` and its result is written to the output under the head's name).
-
-    An optional core replaces everything after orientation correction: the model then builds only its embedding,
-    orientation head and core, and calls ``core(emb, mask, end_mask, *, tokens, batch)`` with the corrected
-    embedding, the read and end masks, the corrected tokens and the raw input batch; the core's outputs are written to
-    the model's output. A core that needs the reference defines ``bind_reference(reference)``; the model's builders
-    and loaders call it. An optional objective (``objective(config) -> TrainingTasks``) is the architecture's training
-    objective, which ``tasks.build_tasks`` returns in place of the built-in one.
+    The embedding emits (batch, window, embed_dim); the orientation head reads it with the read mask and gives the
+    4-class orientation logits. The core does everything after orientation correction: the model calls
+    ``core(emb, mask, end_mask, *, tokens, batch)`` with the corrected embedding, the read and end masks, the corrected
+    tokens and the raw input batch, and writes the core's outputs to its own. A core that needs the reference defines
+    ``bind_reference(reference)``; the model's builders and loaders call it. ``objective(config) -> TrainingTasks`` is
+    the architecture's training objective (``tasks.build_tasks``).
 
     ``reference_agnostic``: the architecture's alleles are an input, not weights (its core reads them from the bound
     reference), so it takes any reference with its genes, alleles it never trained on included, and its calls follow
     the bound reference's alleles; a fixed-head architecture (the default) is tied to the reference it trained on.
     """
+    core: Callable[[AlignAIRConfig], nn.Module]
+    objective: Callable[[AlignAIRConfig], object]
     embedding: Callable[[AlignAIRConfig], nn.Module] = _embedding
-    gene_branch: Callable[[GeneSpec, AlignAIRConfig], GeneBranch] = GeneBranch
     orientation_head: Callable[[AlignAIRConfig], nn.Module] = _orientation
-    meta_tower: Callable[[AlignAIRConfig], nn.Module] = _meta_tower
-    meta_heads: Callable[[AlignAIRConfig], dict[str, nn.Module]] = build_meta_heads
-    state_head: Callable[[AlignAIRConfig], nn.Module] = _state
-    trunk: Callable[[AlignAIRConfig], nn.Module] | None = None
-    trunk_heads: Callable[[AlignAIRConfig], Mapping[str, nn.Module]] = no_trunk_heads
-    core: Callable[[AlignAIRConfig], nn.Module] | None = None
-    objective: Callable[[AlignAIRConfig], object] | None = None
     reference_agnostic: bool = False
 
     def __post_init__(self):
         if type(self.reference_agnostic) is not bool:
             raise ConfigurationError("reference_agnostic must be a boolean", context={"component": "reference_agnostic"})
         for field in fields(self):
-            if field.name == "reference_agnostic":
-                continue
-            if field.name in ("trunk", "core", "objective") and getattr(self, field.name) is None:
-                continue
-            if not callable(getattr(self, field.name)):
+            if field.name != "reference_agnostic" and not callable(getattr(self, field.name)):
                 raise ConfigurationError(f"component factory {field.name!r} must be callable",
                                          context={"component": field.name})
 
@@ -119,8 +69,8 @@ def _chip_objective(cfg: AlignAIRConfig):
     return ChipObjective(cfg)
 
 
-_ARCHITECTURES = {"conv-v1": ModelComponents(),
-                  "chip-v1": ModelComponents(core=_chip_core, objective=_chip_objective, reference_agnostic=True)}
+CHIP = ModelComponents(core=_chip_core, objective=_chip_objective, reference_agnostic=True)
+_ARCHITECTURES = {"chip-v1": CHIP}
 # The environment variable naming the modules (comma-separated) that register architectures defined outside the package.
 ARCHITECTURE_MODULES = "ALIGNAIR_ARCHITECTURE_MODULES"
 

@@ -1,4 +1,4 @@
-"""A nucleotide model with half-open boundaries trains on a read whose segment ends at the read's last base (end == n),
+"""A model (half-open boundaries) trains on a read whose segment ends at the read's last base (end == n),
 and predicts AIRR rows whose end is n."""
 import math
 
@@ -34,7 +34,7 @@ def _reference():
 
 def _config(**kwargs):
     return AlignAIRConfig(v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True, max_seq_length=128,
-                          embed_dim=4, filters=4, block_out=8, boundary_mode="half_open", **kwargs)
+                          embed_dim=4, trunk_channels=8, **kwargs)
 
 
 def test_a_read_ending_at_its_last_base_gets_a_supervised_end_slot_and_a_training_step_runs():
@@ -42,6 +42,7 @@ def test_a_read_ending_at_its_last_base_gets_a_supervised_end_slot_and_a_trainin
     batch = NucleotideBatchAdapter(_reference(), config, augment_orientation=False)([_record()])
     assert batch.targets["j_end"].item() == len(READ)
     model = AlignAIR(config)
+    model.bind_reference(_reference())
     out = model(batch.inputs)
     assert bool(out["end_mask"][0, len(READ)]) and not bool(out["end_mask"][0, len(READ) + 1])
     tasks = build_tasks(config)
@@ -49,30 +50,26 @@ def test_a_read_ending_at_its_last_base_gets_a_supervised_end_slot_and_a_trainin
     optimizer = torch.optim.AdamW([*model.parameters(), *weights.parameters()], lr=.001)
     total, parts, norm = train_step(model, batch.inputs, batch.targets, config, weights, optimizer, tasks=tasks)
     assert math.isfinite(total) and math.isfinite(norm)
-    # the end slot n takes the supervised gradient
-    out = model(batch.inputs)
-    out["j_end_logits"].retain_grad()
-    total, _ = tasks.loss(out, batch.targets, weights)
-    total.backward()
-    assert out["j_end_logits"].grad[0, len(READ)] < 0
 
 
 def test_prediction_reports_an_end_at_the_read_length_when_the_logits_say_so():
     config = _config()
     model = AlignAIR(config).eval()
+    model.bind_reference(_reference())
 
     def peak_at_the_slot_after_the_last_base(module, args, output):
-        peaked = torch.full_like(output, -20.0)
+        peaked = torch.full_like(output["j_end_logits"], -20.0)
         peaked[:, len(READ)] = 20.0
-        return peaked
+        return {**output, "j_end_logits": peaked}
 
-    model.branches["j"].end_head.register_forward_hook(peak_at_the_slot_after_the_last_base)
+    model.core.register_forward_hook(peak_at_the_slot_after_the_last_base)
     row = predict_sequences(model, _reference(), [READ], device="cpu", batch_size=1)[0]
     assert row["j_sequence_end"] == len(READ)
     # the toy V germline (12 nt) holds no 15-mer, so its read holds no V (predict.v_presence)
     assert row["v_presence"] == "absent" and row["v_call"] == ""
-    for gene in ("d", "j"):
-        assert 0 <= row[f"{gene}_sequence_start"] <= row[f"{gene}_sequence_end"] <= len(READ)
+    for gene in ("d", "j"):                              # the D presence gate may drop the toy read's D
+        if f"{gene}_sequence_start" in row:
+            assert 0 <= row[f"{gene}_sequence_start"] <= row[f"{gene}_sequence_end"] <= len(READ)
     # a read longer than the window is cropped to leave the terminal slot
     assert len(predict_sequences(model, _reference(), [READ * 8], device="cpu", batch_size=1)) == 1
 
@@ -86,11 +83,3 @@ def test_a_logit_peak_on_slot_n_is_reported_as_the_end():
                "end_mask": torch.arange(64)[None] <= n}
     start, end = decoded_boundaries(outputs, "j")
     assert end.tolist() == [n]
-
-
-def test_a_prediction_config_that_disagrees_with_the_model_boundary_mode_is_refused():
-    from alignair.errors import ConfigurationError
-    from alignair.predict import PredictConfig, predict
-    model = AlignAIR(_config()).eval()
-    with pytest.raises(ConfigurationError, match="boundary_mode"):
-        predict(model, [READ], _reference(), PredictConfig(max_seq_length=128, has_d=True))

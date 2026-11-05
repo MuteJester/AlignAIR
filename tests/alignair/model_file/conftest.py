@@ -22,8 +22,7 @@ def save_toy_lab_chip(path, lab_name: str) -> str:
     from alignair.model_file import save_model
     from alignair.reference.reference_set import ReferenceSet
     torch.manual_seed(0)
-    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), architecture=lab_name,
-                          boundary_mode="half_open", anchor_heads=True, d_presence_head=True, chip_inputs=True,
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), architecture=lab_name, anchor_heads=True, d_presence_head=True,
                           bank_orientation=True)
     save_model(str(path), setup.build_model().eval(), dataconfigs=[gd.HUMAN_IGH_OGRDB],
                training={"steps": 7, "batch_size": 2}, include_trusted_pickle=True)

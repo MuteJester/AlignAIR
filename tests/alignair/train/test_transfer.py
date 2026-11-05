@@ -50,7 +50,7 @@ def test_safe_warm_start_decodes_weights_without_source_factories_or_rng_use(tmp
     from alignair.core import AlignAIR, prepare_model
     from alignair.core import components
     from alignair.reference import ReferenceSet
-    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), embed_dim=4, filters=4, block_out=8)
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), embed_dim=4, trunk_channels=8)
     model = setup.build_model()
     path = tmp_path / 'source.alignair'
     model_file.save_model(path, model, dataconfigs=[gd.HUMAN_IGH_OGRDB], training={},
@@ -66,12 +66,10 @@ def test_safe_warm_start_decodes_weights_without_source_factories_or_rng_use(tmp
     assert torch.equal(torch.get_rng_state(), rng)
 
 
-def test_legacy_warm_start_keeps_explicit_pickle_consent(tmp_path):
+@pytest.mark.parametrize('trust_pickle', [False, True])
+def test_a_pt_warm_start_source_is_refused(tmp_path, trust_pickle):
     from alignair.errors import ModelError
     path = tmp_path / 'source.pt'
-    weights = _Net(3).state_dict()
-    torch.save({'model': weights}, path)
-    with pytest.raises(ModelError, match='trust_pickle'):
-        load_source_state_dict(path)
-    actual = load_source_state_dict(path, trust_pickle=True)
-    assert all(torch.equal(value, weights[key]) for key, value in actual.items())
+    torch.save({'model': _Net(3).state_dict()}, path)
+    with pytest.raises(ModelError, match=r'AlignAIR 3 checkpoint .*alignair<4'):
+        load_source_state_dict(path, trust_pickle=trust_pickle)

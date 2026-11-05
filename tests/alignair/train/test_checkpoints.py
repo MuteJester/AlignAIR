@@ -113,16 +113,14 @@ def test_failed_base_refresh_leaves_previous_base_and_new_numbered_recovery(tmp_
     assert not list(tmp_path.glob('*.tmp'))
 
 
-def test_legacy_nt_loading_requires_trust_and_normalizes_fields(tmp_path):
+@pytest.mark.parametrize('trust_pickle', [False, True])
+def test_a_pt_checkpoint_is_refused_with_the_version_that_resumes_it(tmp_path, trust_pickle):
     from alignair.errors import ModelError
     path = tmp_path/'legacy.pt'
     torch.save({'model': {'weight': torch.tensor(2.)}, 'logvars': {}, 'step': 9}, path)
-    with pytest.raises(ModelError, match='resume_trust_pickle') as caught:
-        checkpoints.load_training_checkpoint(path)
+    with pytest.raises(ModelError, match=r'AlignAIR 3 checkpoint .*alignair<4') as caught:
+        checkpoints.load_training_checkpoint(path, trust_pickle=trust_pickle)
     assert caught.value.context['path'] == str(path)
-    state = checkpoints.load_training_checkpoint(path, trust_pickle=True)
-    assert state.step == 9 and state.weight_state == {} and state.optimizer_state is None
-    assert state.rng == {} and state.model_state['weight'].item() == 2.
 
 
 def test_retention_failure_reports_the_problem_but_keeps_a_valid_new_checkpoint(tmp_path, monkeypatch, caplog):
@@ -139,30 +137,6 @@ def test_retention_failure_reports_the_problem_but_keeps_a_valid_new_checkpoint(
     assert torch.load(base, weights_only=True)['step'] == 2
     assert 'Could not remove old checkpoint' in caplog.text
     assert 'cannot delete old file' in caplog.text
-
-
-@pytest.mark.parametrize('mapping', [False, True])
-def test_trusted_legacy_reader_retains_explicit_configuration_and_label_contract(tmp_path, mapping):
-    from dataclasses import asdict
-    from alignair.core import AlignAIRConfig
-    cfg = AlignAIRConfig(1, 1, 1, has_d=True, short_d_penalty=False)
-    schema = {'genes': {'v': ['V1'], 'd': ['D1'], 'j': ['J1']}}
-    path = tmp_path / 'legacy.pt'
-    torch.save({'model': {}, 'logvars': {}, 'optimizer': {}, 'config': asdict(cfg) if mapping else cfg,
-                'label_schema': schema}, path)
-    state = checkpoints.load_training_checkpoint(path, trust_pickle=True)
-    assert state.config == cfg and state.label_schema == schema
-    checkpoints.validate_continuation(state, cfg, schema)
-
-
-@pytest.mark.parametrize('config', [17, {}, {'v_allele_count': 1, 'j_allele_count': 1, 'short_d_penalty': 'true'}])
-def test_malformed_legacy_configuration_is_not_discarded(tmp_path, config):
-    from alignair.errors import ModelError
-    path = tmp_path / 'legacy.pt'
-    torch.save({'model': {}, 'logvars': {}, 'config': config}, path)
-    with pytest.raises(ModelError) as caught:
-        checkpoints.load_training_checkpoint(path, trust_pickle=True)
-    assert caught.value.context['field'] == 'config'
 
 
 @pytest.mark.parametrize('changes,message', [({'config': 'other'}, 'configuration'),

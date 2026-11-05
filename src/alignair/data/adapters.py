@@ -11,8 +11,7 @@ import numpy as np
 import torch
 
 from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
-from ..neural.heads.orientation import NUM_ORIENTATIONS, apply_orientation
-from ..neural.heads.region import READ_REGIONS, REGION_INDEX
+from ..network.orientation import NUM_ORIENTATIONS, apply_orientation
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, CODON
 from ..core.d_presence import ABSENT, D_PRESENCE
 from ..core.boundaries import read_window
@@ -51,12 +50,6 @@ def _alleles(reference, gene, calls):
             [[name.strip() for name in calls]], vocabulary.index, len(vocabulary.names), strict=True)[0])
 
 
-def _productive_supervise(known, config):
-    """A known productivity label is supervised; an unknown one (labelled 0) only under the historical objective,
-    which trains it as non-productive (``AlignAIRConfig.productive_unknown``)."""
-    return torch.tensor(bool(known) or getattr(config, "productive_unknown", "negative") == "negative")
-
-
 def _window(sample, width, genes, null_slot=None):
     """Retain a prefix and intersect model targets with it; source records remain untouched. An anchor target whose
     codon the prefix cuts becomes ``null_slot`` (not observed)."""
@@ -81,7 +74,7 @@ def _window(sample, width, genes, null_slot=None):
 
 
 def _limit(sample, config, genes, overflow):
-    width = read_window(config.max_seq_length, getattr(config, "boundary_mode", "residue"))
+    width = read_window(config.max_seq_length)
     if overflow not in ("prefix", "error"):
         raise ConfigurationError("overflow must be 'prefix' or 'error'")
     if len(sample.tokens) > width and overflow == "error":
@@ -107,7 +100,7 @@ def _d_presence_targets(record, config) -> dict:
     """``d_presence``: the class of the D the model's window shows (the crop cuts the read to it); and
     ``d_presence_supervise``, False for an unscorable D (its alignment cannot be mapped), which the loss leaves out
     (its target is absent, never read)."""
-    klass = read_d_presence(record, read_window(config.max_seq_length, getattr(config, "boundary_mode", "residue")))
+    klass = read_d_presence(record, read_window(config.max_seq_length))
     return {D_PRESENCE: torch.tensor(ABSENT if klass == UNSCORABLE else klass, dtype=torch.long),
             f"{D_PRESENCE}_supervise": torch.tensor(klass != UNSCORABLE)}
 
@@ -121,12 +114,9 @@ class NucleotideBatchAdapter:
     overflow: str = "prefix"
 
     def __call__(self, records) -> TrainingBatch:
-        if getattr(self.config, "classification_mode", "multilabel") != "multilabel":
-            raise ConfigurationError("nucleotide record adaptation requires multilabel targets")
         samples = []
         genes = _genes(self.config)
-        chip = getattr(self.config, "chip_inputs", False)
-        frames = gene_frames(self.reference) if chip else None
+        frames = gene_frames(self.reference)
         for i, record in enumerate(records):
             with _record_context(i, record):
                 bundle = build_targets(record, self.reference, self.config.has_d)
@@ -140,29 +130,20 @@ class NucleotideBatchAdapter:
                     targets[f"{gene}_supervise"] = torch.tensor(supervise)
                     targets[f"{gene}_allele"] = _alleles(
                         self.reference, gene, bundle["calls"].get(gene.upper(), ()) if supervise else ())
-                for key in ("mutation_rate", "indel_count", "productive"):
+                for key in ("mutation_rate", "indel_count"):
                     targets[key] = torch.tensor([bundle[key]], dtype=torch.float32)
-                targets["productive_supervise"] = _productive_supervise(bundle["productive_known"], self.config)
-                if getattr(self.config, "num_chain_types", 1) > 1:
-                    targets["chain_type"] = torch.tensor(bundle["chain_type"], dtype=torch.long)
                 targets["state_labels"] = PositionLabels(bundle["state_labels"])
-                if getattr(self.config, "region_head", False):
-                    # forward frame, like the boundaries; the head's classes are READ_REGIONS (no pad label)
-                    targets["region_labels"] = PositionLabels(bundle["region_labels"] - REGION_INDEX[READ_REGIONS[0]])
-                if getattr(self.config, "anchor_heads", False):
+                if self.config.anchor_heads:
                     targets.update(_anchor_targets(read_anchors(record, self.reference), self.config))   # forward frame
-                if getattr(self.config, "d_presence_head", False):
+                if self.config.d_presence_head:
                     targets.update(_d_presence_targets(record, self.config))
-                if chip:
-                    targets.update(chip_record_targets(record, self.reference, frames, bundle["region_labels"]))
+                targets.update(chip_record_targets(record, self.reference, frames, bundle["region_labels"]))
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
-        batch = collate_samples(samples, max_length=self.config.max_seq_length,
-                                reserve_terminal_slot=getattr(self.config, "boundary_mode", "residue") == "half_open",
+        batch = collate_samples(samples, max_length=self.config.max_seq_length, reserve_terminal_slot=True,
                                 reject_empty_sequences=self.config.reject_empty_sequences)
-        if chip:                                            # forward frame, like the targets
-            batch.inputs.update(chip_batch_inputs(batch.targets, self.reference))
-        if getattr(self.config, "use_orientation", True):
+        batch.inputs.update(chip_batch_inputs(batch.targets, self.reference))   # forward frame, like the targets
+        if self.config.use_orientation:
             augment = True if self.augment_orientation is None else self.augment_orientation
             labels = (torch.randint(0, NUM_ORIENTATIONS, (len(samples),)) if augment
                       else torch.zeros(len(samples), dtype=torch.long))

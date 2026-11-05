@@ -1,26 +1,34 @@
 """Public loading rejects overrides that change allele biology or locus interpretation."""
 from copy import deepcopy
+from dataclasses import replace
 
 import GenAIRR.data as gd
 import pytest
 
 from alignair import load_model, model_file
-from alignair.core import prepare_model
+from alignair.core import components, prepare_model
 from alignair.errors import DataContractError, ModelError
 from alignair.reference import ReferenceSet
 
 pytestmark = pytest.mark.integration
 
 
+# A fixed-head copy of the chip: a model whose alleles are weights is tied to the reference it trained on, which an
+# override may not change the meaning of (the chip itself is reference-agnostic and takes any reference).
+FIXED = "test-fixed-chip-v1"
+
+
 @pytest.fixture(scope='module')
 def artifact(tmp_path_factory):
+    components._ARCHITECTURES[FIXED] = replace(components.CHIP, reference_agnostic=False)
     configs = [gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB]
     reference = ReferenceSet.from_dataconfigs(*configs)
-    setup = prepare_model(reference, max_seq_length=128, embed_dim=4, filters=4, block_out=8)
+    setup = prepare_model(reference, max_seq_length=128, embed_dim=4, trunk_channels=8, architecture=FIXED)
     path = tmp_path_factory.mktemp('reference-identity') / 'model.alignair'
     model_file.save_model(path, setup.build_model(), dataconfigs=configs, training={},
                           include_trusted_pickle=False)
-    return path, reference
+    yield path, reference
+    del components._ARCHITECTURES[FIXED]
 
 
 def test_matching_override_is_returned_with_the_model(artifact):

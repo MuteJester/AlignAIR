@@ -107,18 +107,20 @@ class Forward(torch.nn.Module):
         return torch.nn.functional.one_hot(torch.zeros_like(mask[:, 0], dtype=torch.long), 4).float()
 
 
-class Callable(torch.nn.Module):
-    """A D presence head (a trunk head: ``head(features, mask)``) that calls every read's D callable."""
-
-    def forward(self, features, mask):
-        return torch.nn.functional.one_hot(torch.full_like(mask[:, 0], 2, dtype=torch.long), 3).float() * 5
+def _calls_every_d_callable(model) -> None:
+    """Make the chip's D presence head call every read's D callable (a forward hook on its core's outputs)."""
+    def hook(module, args, out):
+        logits = torch.zeros_like(out["d_presence_logits"])
+        logits[:, 2] = 5.0
+        return {**out, "d_presence_logits": logits}
+    model.core.register_forward_hook(hook)
 
 
 def test_a_d_presence_head_is_diagnosed_with_its_confusion(built, make_small_model):
     """A model with a D presence head gets its head metrics and its truth × head confusion in each suite's result;
     a head that calls every D callable gates none away, and its accuracy is the share of callable Ds."""
     model, reference_set = make_small_model(REFERENCE, seed=0)
-    model.trunk_heads["d_presence_logits"] = Callable()
+    _calls_every_d_callable(model)
     result = evaluate((model, reference_set), built, ["S0"], device="cpu", batch_size=32, variants=())
     suite = result.suites["S0"]
     confusion = suite["d_presence"]
@@ -144,7 +146,7 @@ def test_end_to_end_report_renders_every_section(built, make_small_model):
         assert set(suite["calibration"]) == {"v", "d", "j"}
         assert {"head.v.start_exact.soft", "head.v.start_exact.argmax", "head.orientation.correct"} <= set(
             suite["heads"])
-        assert suite["d_presence"] is None and "head.d_presence.correct" not in suite["heads"]   # no such head
+        assert suite["d_presence"] is not None and "head.d_presence.correct" in suite["heads"]   # the chip's head
         # The suite's primary metrics lead the compared family.
         primary = {"S0": ["v.top1_in_set", "j.top1_in_set", "junction.nt_exact"],
                    "S1": ["clone_key.exact", "junction.nt_exact"]}[name]

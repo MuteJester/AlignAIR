@@ -7,7 +7,7 @@ from typing import Literal
 
 from ..errors import ConfigurationError, error_context
 from ..reference.reference_set import ReferenceSet
-from .config import AlignAIRConfig, _reference_productive_unknown, _reference_short_d_penalty
+from .config import AlignAIRConfig
 from .model import AlignAIR
 
 InputSpace = Literal['nucleotide']
@@ -114,7 +114,7 @@ class ModelSetup:
     def label_schema(self) -> dict:
         """Portable output-column identity: each gene's alleles in the reference's order."""
         self.validate()
-        genes = {spec.name: list(self.reference.gene(spec.name.upper()).names) for spec in self.config.gene_specs}
+        genes = {gene: list(self.reference.gene(gene.upper()).names) for gene in self.config.genes}
         return {'schema_version': 1, 'input_space': self.input_space, 'label_space': self.label_space,
                 'genes': genes}
 
@@ -124,14 +124,14 @@ def validate_label_schema(schema, reference, config) -> None:
     if (not isinstance(schema, dict) or schema.get('schema_version') != 1
             or schema.get('input_space') != config.input_space or schema.get('label_space') != config.label_space
             or not isinstance(schema.get('genes'), dict)
-            or set(schema['genes']) != {spec.name for spec in config.gene_specs}):
+            or set(schema['genes']) != set(config.genes)):
         raise ConfigurationError('label schema disagrees with the model input/label spaces or genes')
-    for spec in config.gene_specs:
-        labels = schema['genes'][spec.name]
-        if not isinstance(labels, list) or len(labels) != spec.allele_count:
-            raise ConfigurationError('label schema length disagrees with the model head', context={'gene': spec.name})
-        if labels != list(reference.gene(spec.name.upper()).names):
-            raise ConfigurationError('allele label order disagrees with the source reference', context={'gene': spec.name})
+    for gene in config.genes:
+        labels = schema['genes'][gene]
+        if not isinstance(labels, list) or len(labels) != config.allele_count(gene):
+            raise ConfigurationError('label schema length disagrees with the model head', context={'gene': gene})
+        if labels != list(reference.gene(gene.upper()).names):
+            raise ConfigurationError('allele label order disagrees with the source reference', context={'gene': gene})
 
 
 def validate_reference_binding(reference, config, *, label_schema=None) -> None:
@@ -143,15 +143,15 @@ def validate_reference_binding(reference, config, *, label_schema=None) -> None:
     _spaces(config.input_space, config.label_space)
     if type(config.has_d) is not bool or config.has_d and not reference.has_d:
         raise ConfigurationError('model D selection disagrees with the reference', context={'field': 'has_d'})
-    reference.validate(genes=tuple(spec.name.upper() for spec in config.gene_specs))
+    reference.validate(genes=tuple(gene.upper() for gene in config.genes))
     if label_schema is not None:
         validate_label_schema(label_schema, reference, config)
-    for spec in config.gene_specs:
-        expected = _count(len(reference.gene(spec.name.upper())), f'{spec.name}_label_count')
-        actual = _count(spec.allele_count, f'{spec.name}_allele_count')
+    for gene in config.genes:
+        expected = _count(len(reference.gene(gene.upper())), f'{gene}_label_count')
+        actual = _count(config.allele_count(gene), f'{gene}_allele_count')
         if actual != expected:
             raise ConfigurationError('model head size disagrees with its reference labels',
-                                     context={'gene': spec.name, 'expected': expected, 'actual': actual})
+                                     context={'gene': gene, 'expected': expected, 'actual': actual})
     if not config.has_d and _count(config.d_allele_count, 'd_allele_count', 0) != 0:
         raise ConfigurationError('a disabled D head must have zero labels', context={'field': 'd_allele_count'})
     _count(config.max_seq_length, 'max_seq_length')
@@ -187,9 +187,4 @@ def prepare_model(reference: ReferenceSet, *, input_space: InputSpace = 'nucleot
     config = build_model_config(counts['V'], counts['J'], counts.get('D', 0), input_space=input_space,
         label_space=label_space, has_d=selected_d, num_chain_types=max(1, len(reference.loci)),
         max_seq_length=max_seq_length, **config_options)
-    if 'short_d_penalty' not in config_options:
-        config = replace(config, short_d_penalty=_reference_short_d_penalty(reference,
-            has_d=config.has_d, classification_mode=config.classification_mode))
-    if 'productive_unknown' not in config_options:
-        config = replace(config, productive_unknown=_reference_productive_unknown(use_meta_heads=config.use_meta_heads))
     return ModelSetup(reference, config, input_space, label_space)

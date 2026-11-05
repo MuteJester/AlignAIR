@@ -1,4 +1,5 @@
-""".pt pickle-gating in api.load_model + convert upgrade paths."""
+"""AlignAIR 3 checkpoints are refused with the version that reads them, by ``api.load_model`` and by ``alignair
+convert``; a safe model file needs no pickle consent."""
 from argparse import Namespace
 
 import GenAIRR.data as gd
@@ -8,10 +9,6 @@ import torch
 from alignair import api
 from alignair import model_file as mf
 from alignair.cli import convert
-from alignair.core import AlignAIR
-from alignair.core.config import AlignAIRConfig
-from alignair.model_file import container as C, serialize
-from alignair.errors import ConfigurationError
 from alignair.core import prepare_model
 from alignair.errors import ModelError
 from alignair.reference import ReferenceSet
@@ -20,119 +17,41 @@ pytestmark = pytest.mark.integration
 
 
 def _model():
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
-    return AlignAIR(cfg).eval(), cfg
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128, embed_dim=4,
+                          trunk_channels=8)
+    return setup.build_model().eval()
 
 
-def _legacy_pt(tmp_path):
-    model, cfg = _model()
-    p = str(tmp_path / "legacy.pt")
-    torch.save({"config": cfg.__dict__, "model": model.state_dict(), "step": 7}, p)
-    return p
+def _v3_pt(tmp_path):
+    path = str(tmp_path / "legacy.pt")
+    torch.save({"config": {"v_allele_count": 2, "j_allele_count": 2}, "model": {}, "step": 7}, path)
+    return path
 
 
-def test_api_load_pt_requires_trust_pickle(tmp_path):
-    p = _legacy_pt(tmp_path)
-    with pytest.raises(ValueError, match="trust"):
-        api.load_model(p, dataconfigs=["HUMAN_IGH_OGRDB"])            # default refuses pickle
-    m, ref = api.load_model(p, dataconfigs=["HUMAN_IGH_OGRDB"], trust_pickle=True)
-    assert m is not None and ref.gene("V").names
+@pytest.mark.parametrize("trust_pickle", [False, True])
+def test_api_load_refuses_a_pt_checkpoint_whatever_the_consent(tmp_path, trust_pickle):
+    with pytest.raises(ModelError, match=r"AlignAIR 3 checkpoint .*alignair<4"):
+        api.load_model(_v3_pt(tmp_path), dataconfigs=["HUMAN_IGH_OGRDB"], trust_pickle=trust_pickle)
 
 
 def test_api_load_no_pickle_alignair_needs_no_trust(tmp_path):
-    model, _ = _model()
     p = str(tmp_path / "m.alignair")
-    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, _model(), dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
     m, ref = api.load_model(p)                                       # no trust, no dataconfig needed
     assert m is not None and ref.gene("V").gapped
 
 
-def test_convert_pt_to_no_pickle_alignair(tmp_path):
-    src = _legacy_pt(tmp_path)
-    dst = str(tmp_path / "out.alignair")
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=["HUMAN_IGH_OGRDB"],
-                                 trust_pickle=False)) == 1           # refuse without trust
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=["HUMAN_IGH_OGRDB"],
-                                 trust_pickle=True)) == 0
-    secs = mf.read_metadata(dst)["sections"]
-    assert "reference_json" in secs and not any(k.startswith("dataconfig/") for k in secs)
-    m, ref = api.load_model(dst)                                     # safe-loadable, no trust
-    assert m is not None
+def test_convert_refuses_a_pt_checkpoint(tmp_path, capsys):
+    rc = convert.run(Namespace(src=_v3_pt(tmp_path), dst=str(tmp_path / "out.alignair")))
+    assert rc != 0 and "alignair<4" in capsys.readouterr().err
+    assert not (tmp_path / "out.alignair").exists()
 
 
-def test_convert_legacy_alignair_upgrades_to_safe(tmp_path):
-    # craft a legacy .alignair WITH pickle dataconfig but NO reference_json, then upgrade it
-    model, cfg = _model()
-    header = {"format_version": 1, "model_class": "AlignAIR",
-              "training": {"steps": 3, "batch_size": 2},
-              "reference": {"dataconfigs": [{"index": 0, "section": "dataconfig/0", "name": "HUMAN_IGH_OGRDB"}]},
-              "_formats": {"config": "json", "weights": "safetensors", "dataconfig/0": "python-pickle"}}
-    src = str(tmp_path / "legacy.alignair")
-    C.write_container(src, header, {
-        "config": (serialize.config_to_bytes(cfg), "zlib"),
-        "weights": (serialize.state_dict_to_bytes(model.state_dict()), "none"),
-        "dataconfig/0": (serialize.dataconfig_to_bytes(gd.HUMAN_IGH_OGRDB), "zstd")})
-    dst = str(tmp_path / "upgraded.alignair")
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=False)) == 1
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=True)) == 0
-    secs = mf.read_metadata(dst)["sections"]
-    assert "reference_json" in secs and not any(k.startswith("dataconfig/") for k in secs)
-    api.load_model(dst)                                              # now safe-loadable
-
-
-@pytest.mark.parametrize('field', ['sequences', 'allele_order', 'anchors', 'gapped', 'loci'])
-def test_conversion_rejects_conflicting_embedded_provider_reference_without_overwriting_output(tmp_path, field):
-    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    setup = prepare_model(reference, max_seq_length=128, embed_dim=4, filters=4, block_out=8)
-    src, dst = tmp_path / 'source.alignair', tmp_path / 'export.alignair'
-    mf.save_model(src, setup.build_model(), dataconfigs=[gd.HUMAN_IGH_OGRDB], training={})
-    # Change only the authoritative safe reference; trusted legacy provider sections retain the
-    # original panel. Recompute available hashes so generic artifact integrity is internally valid.
-    header = C.read_header(src)
-    header.pop('_sections_base', None)
-    sections = {name: (C.read_section(src, name), info['codec']) for name, info in header['sections'].items()}
-    rows = reference.gene('V')
-    if field == 'sequences':
-        sequence = rows.sequences[0]
-        rows.sequences[0] = ('A' if sequence[0] != 'A' else 'T') + sequence[1:]
-    elif field == 'allele_order':
-        rows.names.reverse()
-        rows.sequences.reverse()
-        rows.index = {name: i for i, name in enumerate(rows.names)}
-    elif field == 'anchors':
-        rows.anchors[next(iter(rows.anchors))] += 1
-    elif field == 'gapped':
-        rows.gapped[next(iter(rows.gapped))] += '.'
-    else:
-        start, end = reference.loci[0].ranges['V']
-        reference.loci[0].ranges['V'] = (start, end - 1)
-    sections['reference_json'] = (serialize.reference_to_json(reference), 'zlib')
-    header['reference']['allele_order_sha256'] = serialize.allele_order_sha256(reference)
-    header['reference']['reference_fasta_sha256'] = serialize.reference_fasta_sha256(reference)
-    C.write_container(src, header, sections)
-    # The model/reference binding is readable; conversion must still detect the provider conflict.
-    mf.load_model(src)
-    dst.write_bytes(b'previous completed export')
-    with pytest.raises(ModelError) as caught:
-        convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=True))
-    assert caught.value.context['field'] == field
-    assert caught.value.context['stage'] == 'reference_identity'
-    assert caught.value.context['path'] == str(src)
-    assert dst.read_bytes() == b'previous completed export'
-
-
-def test_conversion_preserves_matching_reference_and_model_identity(tmp_path):
-    configs = [gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB]
-    setup = prepare_model(ReferenceSet.from_dataconfigs(*configs), max_seq_length=128,
-                          embed_dim=4, filters=4, block_out=8)
-    original = setup.build_model()
-    src, dst = tmp_path / 'source.alignair', tmp_path / 'export.alignair'
-    mf.save_model(src, original, dataconfigs=configs, training={}, model_id='fixture', model_version='1')
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=True)) == 0
-    exported = mf.load_model(dst)
-    assert exported.reference.to_serializable() == setup.reference.to_serializable()
-    assert exported.metadata['model_id'] == 'fixture' and exported.metadata['model_version'] == '1'
-    assert not any(key.startswith('dataconfig/') for key in exported.metadata['sections'])
-    for name, weights in original.state_dict().items():
-        assert torch.equal(exported.model.state_dict()[name], weights), name
+def test_convert_refuses_a_model_file_that_is_not_a_lab_chip(tmp_path, capsys):
+    p = str(tmp_path / "m.alignair")
+    mf.save_model(p, _model(), dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+                  include_trusted_pickle=False)
+    rc = convert.run(Namespace(src=p, dst=str(tmp_path / "out.alignair")))
+    assert rc != 0 and "not a lab chip model file" in capsys.readouterr().err
+    assert not (tmp_path / "out.alignair").exists()

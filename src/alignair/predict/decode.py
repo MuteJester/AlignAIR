@@ -1,9 +1,8 @@
 """Boundary decoding: a boundary is the argmax of its masked position logits.
 
-The model's soft-argmax expectation lands between the modes of a bimodal distribution; the argmax lands on one.
-Training still needs the expectation (the differentiable soft cutout), so it stays a model output, but what predict
-reports is the argmax. The integer position means the same coordinate the floored expectation of a sharp
-distribution gave, so ``correct_segments`` consumes it unchanged.
+The model's soft-argmax expectation lands between the modes of a bimodal distribution; the argmax lands on one. The
+expectation stays a model output, but what predict reports is the argmax. The integer position means the same
+coordinate the floored expectation of a sharp distribution gave, so ``correct_segments`` consumes it unchanged.
 """
 from __future__ import annotations
 
@@ -52,25 +51,15 @@ def decoded_anchors(outputs: Mapping) -> dict[str, torch.Tensor] | None:
 
 
 def boundary_slots(outputs: Mapping) -> tuple[torch.Tensor, torch.Tensor]:
-    """The (start, end) slot masks of a model's outputs. A half-open model gives both. A residue model gives the read's
-    bases for the start, and for the end-exclusive end those bases plus the slot after the last one, where a segment
-    that runs to the read end stops. That slot is unsupervised in residue mode: the end cross-entropy masks it
-    (``tasks/losses.py``, ``tasks/functional.py``), so its logit there is extrapolated from the neighbouring slots,
-    not trained. A half-open model supervises its end slot n."""
-    if "start_mask" in outputs and "end_mask" in outputs:
-        return _bool(outputs["start_mask"]), _bool(outputs["end_mask"])
-    valid = _bool(outputs["position_mask"])
-    after = torch.zeros_like(valid)
-    after[:, 1:] = valid[:, :-1]
-    return valid, valid | after
+    """The (start, end) half-open slot masks of a model's outputs (``core.boundaries.boundary_masks``)."""
+    return _bool(outputs["start_mask"]), _bool(outputs["end_mask"])
 
 
 def decoded_boundaries(outputs: Mapping, gene: str) -> tuple[torch.Tensor, torch.Tensor] | None:
     """One gene's reported ``(start, end)`` from a model's outputs (tensors or arrays), or None when the outputs
     carry no logits or masks to decode (the caller keeps the model's expectations)."""
     keys = (f"{gene}_start_logits", f"{gene}_end_logits")
-    if not all(key in outputs for key in keys) or not (
-            "position_mask" in outputs or {"start_mask", "end_mask"} <= outputs.keys()):
+    if not all(key in outputs for key in keys) or not {"start_mask", "end_mask"} <= outputs.keys():
         return None
     start_slots, end_slots = boundary_slots(outputs)
     return decode_boundaries(torch.as_tensor(outputs[keys[0]]), torch.as_tensor(outputs[keys[1]]),

@@ -58,7 +58,7 @@ def watched_run(tmp_path, dataconfig, **options):
     """Train one step on ``dataconfig`` with ``train`` ``options``; return whether each stream drew under
     productive_only(), and the run's train_args."""
     reference = ReferenceSet.from_dataconfigs(dataconfig)
-    setup = prepare_model(reference, embed_dim=4, filters=4, block_out=8)
+    setup = prepare_model(reference, embed_dim=4, trunk_channels=8)
     seen = []
 
     def watched(dataconfig, parameters, seed):

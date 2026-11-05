@@ -62,11 +62,11 @@ def test_normalized_read_reaches_tokens_alignment_and_record_coordinates(monkeyp
         return {gene: [None] * len(sequences) for gene in ('v', 'j')}
     monkeypatch.setattr(pipeline, 'align_germline', align)
     result = Aligner(model, reference()).predict(iter(['  ac?pT  ']), airr=False)
-    assert model.tokens == [[[1, 4, 5, 5]]]
+    assert model.tokens == [[[1, 4, 5, 0]]]           # a 3-base window: the width less the terminal end slot
     assert len(result) == 1
     record = result.records[0]
-    assert record['input_sequence'] == 'ACNN' and record['length_cropped'] is True
-    assert record['sequence'] == pipeline._canonicalize('ACNN', orientation)
+    assert record['input_sequence'] == 'ACN' and record['length_cropped'] is True
+    assert record['sequence'] == pipeline._canonicalize('ACN', orientation)
     assert alignment_reads == [record['sequence']]
     assert model.training
 
@@ -76,17 +76,3 @@ def test_eager_batch_preflight_stops_before_model_even_with_valid_earlier_rows()
     with pytest.raises(InputError) as caught:
         Aligner(model, reference()).predict((value for value in ('AC', '', 'GT')), airr=False)
     assert model.tokens == [] and caught.value.context['record_index'] == 1
-
-
-def test_genotype_repertoire_probabilities_records_and_lengths_share_prepared_reads(monkeypatch):
-    from alignair.genotype.aggregate import align_repertoire
-    from alignair.predict import pipeline
-    monkeypatch.setattr(pipeline, 'align_germline', lambda sequences, *args, **kwargs:
-                        {gene: [None] * len(sequences) for gene in ('v', 'j')})
-    model = ObservedModel()
-    result = align_repertoire(model, reference(), iter([' ac?pT ', 'g']), device='cpu')
-    assert result.sequences == ['ACNN', 'G'] and result.read_lengths.tolist() == [4, 1]
-    assert [record['input_sequence'] for record in result.records] == result.sequences
-    assert result.records[0]['length_cropped'] is True
-    assert model.tokens == [[[1, 4, 5, 5], [3, 0, 0, 0]], [[1, 4, 5, 5], [3, 0, 0, 0]]]
-    assert result.allele_probs['v'].shape == (2, 1)

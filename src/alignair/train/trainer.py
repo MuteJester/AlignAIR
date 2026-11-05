@@ -1,8 +1,7 @@
-"""Training loop for the faithful AlignAIR model on the GenAIRR gym stream.
+"""Training loop for the AlignAIR model on the GenAIRR gym stream.
 
-``build_batch`` is a compatibility import of the shared data adapter. ``train_step`` runs one
-optimizer step and applies the TF weight *constraints* (analysis-head kernel clamps + Kendall
-log-var clamps) after ``optimizer.step()``.
+``build_batch`` is a compatibility import of the shared data adapter. ``train_step`` runs one optimizer step and then
+applies the task weights' constraints (``apply_constraints``) after ``optimizer.step()``.
 """
 from __future__ import annotations
 

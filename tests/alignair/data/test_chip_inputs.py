@@ -1,4 +1,4 @@
-"""Chip inputs: with ``AlignAIRConfig.chip_inputs`` on, the nucleotide adapter gives every base its germline column in
+"""Chip inputs: the nucleotide adapter gives every base its germline column in
 its gene's frame and the set of regions the read cannot tell apart at it, and every batch a bank mask per gene and
 the teacher inputs (true regions and columns)."""
 import numpy as np
@@ -8,10 +8,9 @@ import torch
 import GenAIRR.data as gd
 
 from alignair.core import AlignAIRConfig
-from alignair.core.config import ConfigurationError
 from alignair.data import NucleotideBatchAdapter
 from alignair.data.chip_inputs import chip_batch_inputs, chip_record_targets
-from alignair.neural.heads.region import READ_REGIONS, REGION_INDEX
+from alignair.core.regions import READ_REGIONS, REGION_INDEX
 from alignair.reference.frames import gene_frames
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
@@ -181,22 +180,12 @@ def test_unsupervised_rows_add_no_true_allele():
 
 
 def _config(**options):
-    return AlignAIRConfig(v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True, max_seq_length=32,
-                          boundary_mode="half_open", **options)
+    return AlignAIRConfig(v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True, max_seq_length=32, **options)
 
 
-def test_the_adapter_adds_chip_inputs_only_with_the_flag():
-    plain = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
-    assert not any(key.startswith(("bank_mask", "teacher_")) for key in plain.inputs)
-    assert "coord_v" not in plain.targets
-    batch = NucleotideBatchAdapter(_reference(), _config(chip_inputs=True), augment_orientation=False)([_record()])
+def test_the_adapter_adds_the_chip_inputs():
+    batch = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
     assert batch.targets["coord_v"].shape == (1, 32) and batch.targets["region_allowed"].shape == (1, 32)
     assert torch.equal(batch.inputs["teacher_coord_v"], batch.targets["coord_v"])
     assert torch.equal(batch.inputs["teacher_region"], batch.targets["region"])
     assert batch.inputs["bank_mask_v"].shape == (1, 1) and batch.inputs["bank_mask_v"].all()
-
-
-def test_chip_inputs_needs_half_open_boundaries():
-    with pytest.raises(ConfigurationError):
-        AlignAIRConfig(v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True, max_seq_length=32,
-                       chip_inputs=True)

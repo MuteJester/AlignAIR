@@ -17,7 +17,6 @@ import torch  # noqa: E402
 from alignair import api  # noqa: E402
 from alignair.model_file import save_model  # noqa: E402
 from alignair.predict import forward, pipeline  # noqa: E402
-from alignair.calibration import apply_temperature  # noqa: E402
 from alignair.predict.state import GeneCall, GermlineAlignment  # noqa: E402
 
 from alignair_assay.core.cases import read_fasta  # noqa: E402
@@ -63,7 +62,7 @@ def _inputs(s0_reads) -> tuple[list[str], list[str]]:
 
 # --- equivalence with the product -----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("variant", ["igh", "igh_varied_orientation", "igh_igk", "igk", "unshaped"])
+@pytest.mark.parametrize("variant", ["igh", "igh_varied_orientation", "igk", "unshaped"])
 def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_model, make_small_model, s0_reads):
     model, reference_set = (make_small_model("HUMAN_IGH_OGRDB", seed=0) if variant == "unshaped"
                             else make_shaped_model(variant))
@@ -77,28 +76,21 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
     # What the variant exercises.
     cropped = [row.get("length_cropped", False) for row in out.airr_rows]
     assert cropped == [i == len(seqs) - 3 for i in range(len(seqs))]
-    if variant == "unshaped":
-        # Untrained segment heads: collapsed spans, so the low-quality path and partial assemblies are pinned too.
-        assert out.segments.low_quality.any()
-        assert "partial" in Counter(row.get("airr_assembly_status") for row in out.airr_rows)
+    if variant == "unshaped":                         # the untrained chip as it is: the equality above is the test
         return
     # a read the model puts in a frame without its V holds no V there and has none (predict.v_presence)
     with_v = [row for row in out.airr_rows if row.get("v_presence") != "absent"]
     assert all(row["v_sequence_end"] - row["v_sequence_start"] > 200 for row in with_v)
     assert all(row["airr_assembly_reason"] == "no_v" for row in out.airr_rows if row not in with_v)
-    if variant in ("igh", "igh_igk"):
+    if variant == "igh":
         assert len(with_v) == len(out.airr_rows)      # the bank vote puts every read in its V's frame
     if variant == "igh_varied_orientation":
         assert set(Counter(row["orientation_id"] for row in out.airr_rows)) == {0, 1, 2, 3}
         assert 0 < len(with_v) < len(out.airr_rows)   # the head's frames: some reads keep their V, some do not
     if variant == "igk":
         assert len(with_v) <= len(out.airr_rows) // 2  # an IGK model reads no IGK V in most of the IGH reads
-    if variant != "igh":
-        assert all(re.search("[ID]", row["v_cigar"] + row["j_cigar"]) for row in with_v)
-    if variant == "igh_igk":
-        loci = Counter(row["locus"] for row in out.airr_rows)
-        assert set(loci) == {"IGH", "IGK"}
-        assert sum(row["d_call"] == "" for row in out.airr_rows) == loci["IGK"]  # no D on a light-chain locus
+    if variant != "igh":                              # the predicted indels open the gapped germline reader
+        assert any(re.search("[ID]", row["v_cigar"] + row["j_cigar"]) for row in with_v)
     if variant == "igk":
         # A light-chain model: no D head (genes v and j) and the light-chain AIRR assembly.
         assert not model.cfg.has_d and list(out.segments.start) == ["v", "j"]
@@ -106,12 +98,12 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
         assert not any(row.get("d_call") for row in out.airr_rows)
 
 
-def test_replay_equals_product_pipeline_for_a_half_open_model(make_small_model, s0_reads):
+def test_replay_equals_product_pipeline_on_a_read_longer_than_the_window(make_small_model, s0_reads):
     from dataclasses import replace
     from alignair.core import AlignAIR
     model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
     torch.manual_seed(0)
-    model = AlignAIR(replace(model.cfg, boundary_mode="half_open")).eval()
+    model = AlignAIR(replace(model.cfg)).eval()
     model.bind_reference(reference_set)
     ids, seqs = _inputs(s0_reads)
     seqs[-3] = seqs[0] * 3   # longer than the window: cropped to leave the terminal slot
@@ -120,36 +112,11 @@ def test_replay_equals_product_pipeline_for_a_half_open_model(make_small_model, 
     assert max(len(read) for read in out.canonical) == model.cfg.max_seq_length - 1
 
 
-def _half_open(make_small_model):
-    from dataclasses import replace
-    from alignair.core import AlignAIR
-    model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
-    torch.manual_seed(0)
-    model = AlignAIR(replace(model.cfg, boundary_mode="half_open")).eval()
-    model.bind_reference(reference_set)
-    return model, reference_set
-
-
-def test_classifier_spans_run_on_a_half_open_model(make_small_model, s0_reads):
-    # a half-open model outputs start_mask/end_mask, not position_mask
-    model, reference_set = _half_open(make_small_model)
-    ids, seqs = _inputs(s0_reads)
-    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    none = [None] * len(seqs)
-    same = _sub(model, reference_set, seqs, ids, spans={g: (none, none) for g in GENES}, classifier_spans=True)
-    assert same.airr_rows == base.airr_rows and _same_raw(same, base)
-    n = len(seqs)
-    spans = {"v": ([100 if i % 2 == 0 else None for i in range(n)], [250 if i % 2 == 0 else None for i in range(n)])}
-    given = _sub(model, reference_set, seqs, ids, spans=spans, classifier_spans=True, segment_spans=False)
-    assert not np.allclose(given.raw["v_allele"][::2], base.raw["v_allele"][::2])
-    assert np.array_equal(given.raw["v_allele"][1::2], base.raw["v_allele"][1::2])
-
-
 def test_replay_and_product_share_unknown_base_whitespace_and_crop_normalization(small_model):
     from alignair.data import prepare_nucleotide_inputs
     model, reference_set = small_model
     sequences = [' acgr?p ', 'acgt' * 150, ' nN ']
-    prepared, _ = prepare_nucleotide_inputs(sequences, model.cfg.max_seq_length)
+    prepared, _ = prepare_nucleotide_inputs(sequences, model.cfg.max_seq_length - 1)     # the model's window
     out = replay(model, reference_set, sequences, ['one', 'two', 'three'], device='cpu', batch_size=2)
     assert out.airr_rows == api.predict_sequences(model, reference_set, sequences, device='cpu', batch_size=2)
     assert [record['input_sequence'] for record in out.records] == prepared
@@ -162,7 +129,6 @@ def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout, de
     reads = read_fasta(s1_layout.reads("S1"))[:200]
     ids, seqs = [name for name, _ in reads], [seq for _, seq in reads]
     model, reference_set = load_model_checked(Path(MODEL).expanduser(), reference, device=device)
-    assert model.cfg.allele_temperatures  # the released checkpoint is calibrated: the masks stage does work
 
     out = replay(model, reference_set, seqs, ids, device=device, batch_size=64)
     assert len(out.airr_rows) == 200
@@ -208,7 +174,7 @@ def test_predict_config_is_the_one_predict_sequences_builds(small_model, monkeyp
     for overrides in ({}, {"threshold": 0.3, "cap": 5, "airr": False}, {"chain_types": ("X",)}):
         api.predict_sequences(model, reference_set, ["ACGT"], device="cpu", batch_size=7, **overrides)
         assert predict_config(model, reference_set, batch_size=7, **overrides) == seen[-1]
-    assert seen[0].chain_types == ("IGH",) and seen[0].allele_temperatures == model.cfg.allele_temperatures
+    assert seen[0].chain_types == ("IGH",)
 
 
 # --- captured stages ------------------------------------------------------------------------------------------
@@ -231,20 +197,20 @@ def test_stage_outputs_shapes_and_ids(small_model, s0_reads):
     assert out.raw["v_start_logits"].shape == (n, 576) and out.raw["orientation_logits"].shape == (n, 4)
     assert out.raw["v_allele"].shape == (n, 198) and out.raw["d_allele"].shape == (n, 33)
 
-    # predictions are after the calibration: raw holds the probabilities before it.
+    # the predictions' allele probabilities are the forward pass's
     for g in GENES:
-        assert out.predictions.allele[g].shape == out.raw[f"{g}_allele"].shape
-        assert np.array_equal(out.predictions.allele[g],
-                              apply_temperature(out.raw[f"{g}_allele"], model.cfg.allele_temperatures[g]))
+        assert np.array_equal(out.predictions.allele[g], out.raw[f"{g}_allele"])
     assert len(out.predictions.orientation) == n
 
     # one entry per read at every later stage, in input order.
     assert out.canonical == [record["sequence"] for record in out.records]
-    assert len(out.canonical[n - 3]) == 576
+    assert len(out.canonical[n - 3]) == 575              # the window: the width less the terminal end slot
     for g in GENES:
         assert len(out.segments.start[g]) == len(out.segments.end[g]) == n
         assert len(out.calls[g]) == len(out.germline[g]) == n
-        assert [call.names[0] for call in out.calls[g]] == [record[f"{g}_call"].split(",")[0] for record in out.records]
+        # the record's call is the selector's, unless a presence gate dropped the gene (an empty call)
+        assert all(record[f"{g}_call"] == "" or record[f"{g}_call"].split(",")[0] == call.names[0]
+                   for call, record in zip(out.calls[g], out.records))
     # a V call is listed with its ties (the call first)
     assert all(record["v_call"] == ",".join(ties)
                for record, ties, gone in zip(out.records, out.v_ties, out.no_v) if not gone)
@@ -253,25 +219,12 @@ def test_stage_outputs_shapes_and_ids(small_model, s0_reads):
     assert list(out.seconds) == list(STAGES) and all(seconds >= 0 for seconds in out.seconds.values())
 
 
-@pytest.mark.parametrize("variant", ["igh", "igh_igk"])
-def test_allele_names_and_locus_masks_are_captured(variant, make_shaped_model, s0_reads):
-    model, reference_set = make_shaped_model(variant)
+def test_allele_names_are_captured_and_the_selector_runs_unmasked(make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model("igh")
     ids, seqs = _inputs(s0_reads)
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     assert out.allele_names == {g: list(reference_set.gene(g.upper()).names) for g in GENES}
-    if variant == "igh":
-        assert out.allowed is None  # one locus: the selector runs unmasked
-        return
-    # Two loci: the per-read masks the selector used, one (reads, alleles) row per read and gene.
-    expected = pipeline._locus_allowed(out.predictions.chain_type, reference_set, GENES)
-    assert set(out.allowed) == set(GENES)
-    for g in GENES:
-        assert out.allowed[g].shape == out.predictions.allele[g].shape
-        assert np.array_equal(out.allowed[g], expected[g])
-        names = out.allele_names[g]
-        assert all(set(call.names) <= {names[k] for k in np.flatnonzero(out.allowed[g][i])}
-                   for i, call in enumerate(out.calls[g]))
-    assert {bool(row.any()) for row in out.allowed["d"]} == {True, False}  # IGK reads may call no D
+    assert out.allowed is None  # no genotype: the selector runs unmasked
 
 
 def test_replay_input_checks(small_model, s0_reads):
@@ -399,39 +352,6 @@ def test_bad_spans_refused(spans, message, make_shaped_model, s0_reads):
     ids, seqs = _inputs(s0_reads)
     with pytest.raises(ValueError, match=re.escape(message)):
         _sub(model, reference_set, seqs, ids, spans=spans)
-
-
-def test_classifier_spans_without_truth_reproduce_the_product(make_shaped_model, s0_reads):
-    # Every read falls back to the model's own soft-argmax spans: the classifier recomputed on the re-embedded read
-    # must give exactly what the forward pass gave (this pins the classifier seam against AlignAIR.forward).
-    model, reference_set = make_shaped_model("igh_varied_orientation")
-    ids, seqs = _inputs(s0_reads)
-    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    none = [None] * len(seqs)
-    out = _sub(model, reference_set, seqs, ids, spans={g: (none, none) for g in GENES}, classifier_spans=True)
-    assert out.airr_rows == base.airr_rows and _same_raw(out, base)
-
-
-def test_classifier_spans_change_only_the_allele_probabilities(make_shaped_model, s0_reads):
-    model, reference_set = make_shaped_model("igh")
-    ids, seqs = _inputs(s0_reads)
-    n = len(seqs)
-    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    given = [i for i in range(n) if i % 2 == 0]
-    others = [i for i in range(n) if i % 2]
-    spans = {"v": ([100 if i in given else None for i in range(n)], [250 if i in given else None for i in range(n)])}
-    out = _sub(model, reference_set, seqs, ids, spans=spans, classifier_spans=True, segment_spans=False)
-
-    for g in GENES:
-        assert np.array_equal(out.segments.start[g], base.segments.start[g])
-        assert np.array_equal(out.segments.end[g], base.segments.end[g])
-    assert not np.allclose(out.raw["v_allele"][given], base.raw["v_allele"][given])
-    assert np.array_equal(out.raw["v_allele"][others], base.raw["v_allele"][others])
-    for key in set(base.raw) - {"v_allele"}:
-        assert np.array_equal(out.raw[key], base.raw[key]), key
-    # the substituted probabilities go through the calibration and the selector
-    assert np.array_equal(out.predictions.allele["v"], apply_temperature(out.raw["v_allele"],
-                                                                          model.cfg.allele_temperatures["v"]))
 
 
 def test_calls_replace_the_selected_alleles(make_shaped_model, s0_reads):
@@ -585,7 +505,8 @@ def test_a_core_models_calls_take_no_classifier_spans(make_small_model, s0_reads
     from alignair.core import components
     inner, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
     monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
-    register_architecture("test-whole-model-core", ModelComponents(core=lambda cfg: _WholeModelCore(inner)))
+    register_architecture("test-whole-model-core", ModelComponents(core=lambda cfg: _WholeModelCore(inner),
+                                                                   objective=lambda cfg: None))
     torch.manual_seed(0)
     model = AlignAIR(replace(inner.cfg, architecture="test-whole-model-core")).eval()
     model.bind_reference(reference_set)

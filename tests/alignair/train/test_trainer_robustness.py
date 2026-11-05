@@ -7,17 +7,24 @@ import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
-from alignair.tasks.losses import make_loss_weights
+from alignair.tasks import build_tasks
 from alignair.train.guards import TrainingConfigError
 from alignair.train.trainer import train
 
 pytestmark = pytest.mark.integration
 
 
+def _bound(cfg, reference):
+    """A chip model bound to ``reference`` (the chip reads its bank from it)."""
+    model = AlignAIR(cfg)
+    model.bind_reference(reference)
+    return model
+
+
 def _tiny_model():
     cfg = AlignAIRConfig(max_seq_length=576, has_d=True,
                          v_allele_count=4, d_allele_count=3, j_allele_count=2)
-    return cfg, AlignAIR(cfg), make_loss_weights(cfg)
+    return cfg, AlignAIR(cfg), build_tasks(cfg).make_weights()
 
 
 def test_train_rejects_bad_config_before_training():
@@ -43,10 +50,10 @@ def test_resume_below_checkpoint_step_is_rejected(tmp_path):
     cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
     torch.manual_seed(0)
     out = str(tmp_path / "m.alignair")
-    train(AlignAIR(cfg), ref, [gd.HUMAN_IGH_OGRDB], cfg, make_loss_weights(cfg), steps=4, batch_size=4,
+    train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, build_tasks(cfg).make_weights(), steps=4, batch_size=4,
           lr=1e-3, save_path=out, save_every=100, log_every=100)
     with pytest.raises(ValueError, match="not beyond the checkpoint"):   # steps <= checkpoint step
-        train(AlignAIR(cfg), ref, [gd.HUMAN_IGH_OGRDB], cfg, make_loss_weights(cfg), steps=2, batch_size=4,
+        train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, build_tasks(cfg).make_weights(), steps=2, batch_size=4,
               lr=1e-3, save_path=out, resume_path=out, log_every=100)
 
 
@@ -57,14 +64,14 @@ def test_train_saves_best_and_resumes(tmp_path):
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
     torch.manual_seed(0)
-    model, logvars = AlignAIR(cfg), make_loss_weights(cfg)
+    model, logvars = _bound(cfg, ref), build_tasks(cfg).make_weights()
     out = str(tmp_path / "m.alignair")
     train(model, ref, [gd.HUMAN_IGH_OGRDB], cfg, logvars, steps=6, batch_size=4, lr=1e-3,
           save_path=out, save_every=3, val_every=3, val_batches=1, grad_clip=1.0, log_every=100)
     # best-checkpoint selection wrote <stem>.best.alignair
     assert glob.glob(str(tmp_path / "m.best.alignair"))
     # resume continues from the saved step (exercises RNG restore + state load)
-    model2, logvars2 = AlignAIR(cfg), make_loss_weights(cfg)
+    model2, logvars2 = _bound(cfg, ref), build_tasks(cfg).make_weights()
     train(model2, ref, [gd.HUMAN_IGH_OGRDB], cfg, logvars2, steps=9, batch_size=4, lr=1e-3,
           save_path=out, resume_path=out, save_every=3, log_every=100)
     assert glob.glob(str(tmp_path / "m.step9.alignair"))

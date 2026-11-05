@@ -44,18 +44,18 @@ def test_prefix_window_clips_coordinates_and_masks_lost_genes_without_mutating_s
     record = _record()
     original = deepcopy(record)
     batch = NucleotideBatchAdapter(_reference(), _config(14), augment_orientation=False)([record])
-    assert batch.lengths.tolist() == [14]
-    assert batch.targets["d_end"].item() == 14
+    assert batch.lengths.tolist() == [13]
+    assert batch.targets["d_end"].item() == 13
     assert batch.targets["j_start"].item() == batch.targets["j_end"].item() == 0
     assert not batch.targets["j_supervise"].item()
     assert batch.targets["j_allele"].sum().item() == 0
-    assert batch.targets["state_labels"].shape == (1, 14)
+    assert batch.targets["state_labels"].shape == (1, 14)              # padded to the model width
     assert batch.targets["d_supervise"].dtype == torch.bool
     assert record == original
 
 
 def test_half_open_record_window_leaves_a_terminal_slot():
-    batch = NucleotideBatchAdapter(_reference(), _config(14, boundary_mode="half_open"),
+    batch = NucleotideBatchAdapter(_reference(), _config(14),
                                    augment_orientation=False)([_record()])
     assert batch.lengths.tolist() == [13]
     assert batch.inputs["tokenized_sequence"][0, 13] == 0
@@ -83,36 +83,24 @@ def test_orientation_is_repeatable_and_disabled_models_receive_forward_reads():
     second = adapter([_record(), _record()])
     torch.testing.assert_close(first.inputs["tokenized_sequence"], second.inputs["tokenized_sequence"])
     torch.testing.assert_close(first.inputs["orientation"], first.targets["orientation"])
-    disabled = NucleotideBatchAdapter(_reference(), _config(use_orientation=False))([_record()])
+    unoriented = _config(use_orientation=False, bank_orientation=False)
+    disabled = NucleotideBatchAdapter(_reference(), unoriented)([_record()])
     assert "orientation" not in disabled.inputs and "orientation" not in disabled.targets
     with pytest.raises(ConfigurationError, match="requires"):
-        NucleotideBatchAdapter(_reference(), _config(use_orientation=False), augment_orientation=True)([_record()])
-
-
-@pytest.mark.parametrize("productive,policy,label,supervised", [
-    (True, "masked", 1., True), (False, "masked", 0., True), (None, "masked", 0., False),
-    (None, "negative", 0., True)])
-def test_unknown_productivity_is_kept_as_an_unsupervised_row_under_the_masked_objective(
-        productive, policy, label, supervised):
-    unknown = {**_record(), "productive": productive}
-    cfg = _config(use_orientation=False, bank_orientation=False, productive_unknown=policy)
-    adapter = NucleotideBatchAdapter(_reference(), cfg)
-    batch = adapter([unknown, _record()])
-    assert batch.targets["productive"].reshape(-1).tolist() == [label, 1.]
-    assert batch.targets["productive_supervise"].dtype == torch.bool
-    assert batch.targets["productive_supervise"].tolist() == [supervised, True]
+        NucleotideBatchAdapter(_reference(), unoriented, augment_orientation=True)([_record()])
 
 
 def test_record_adapter_to_shared_model_and_task_loss_backpropagates():
-    cfg = _config(embed_dim=4, filters=4, block_out=8)
+    cfg = _config(embed_dim=4, trunk_channels=8)
     adapter = NucleotideBatchAdapter(_reference(), cfg)
     batch = adapter([_record(), _record()])
     model = AlignAIR(cfg)
+    model.bind_reference(_reference())
     tasks = build_tasks(cfg)
     loss, _ = tasks.loss(model(batch.inputs), batch.targets, tasks.make_weights())
     assert torch.isfinite(loss)
     loss.backward()
-    assert model.branches["v"].cls_head.weight.grad is not None
+    assert model.embedding.token.weight.grad is not None
 
 
 def test_record_adapters_reject_the_wrong_objective_and_malformed_records():
@@ -122,36 +110,6 @@ def test_record_adapters_reject_the_wrong_objective_and_malformed_records():
         adapter(_reference(), cfg)([None])
     with pytest.raises(ConfigurationError, match="overflow"):
         adapter(_reference(), cfg, overflow="discard")([_record()])
-
-
-def test_raw_gym_view_retains_separate_teacher_and_germline_metadata():
-    from alignair.data.targets import build_targets
-    from alignair.train.gym.collate import gym_collate
-
-    reference = _reference()
-    bundle = build_targets(_record(), reference, True)
-    bundle["teacher_tokens"] = np.array([1, 2, 3])
-    second = deepcopy(bundle)
-    second["teacher_tokens"] = np.array([4, 5])
-    raw = gym_collate([bundle, second], reference, True)
-    assert raw["teacher_tokens"].tolist() == [[1, 2, 3], [4, 5, 0]]
-    assert raw["teacher_mask"].tolist() == [[True, True, True], [True, True, False]]
-    assert raw["v_germline_end"].tolist() == [12, 12]
-    assert raw["v_allele"].tolist() == [[1., 1.], [1., 1.]]
-    with pytest.raises(TrainingDataError, match="empty gym"):
-        gym_collate([], reference, True)
-
-
-def test_raw_gym_view_marks_unknown_productivity_unsupervised():
-    from alignair.data.targets import build_targets
-    from alignair.train.gym.collate import gym_collate
-
-    reference = _reference()
-    bundles = [build_targets({**_record(), "productive": value}, reference, True) for value in (None, True, False)]
-    raw = gym_collate(bundles, reference, True)
-    assert raw["productive"].tolist() == [[0.], [1.], [0.]]
-    assert raw["productive_supervise"].dtype == torch.bool
-    assert raw["productive_supervise"].tolist() == [False, True, True]
 
 
 def test_historical_imports_use_the_shared_implementations():

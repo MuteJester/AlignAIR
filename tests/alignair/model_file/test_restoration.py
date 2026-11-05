@@ -16,7 +16,7 @@ def artifact(request, tmp_path):
     reference = ReferenceSet.from_genotype({"V": {"V2": "ATGTGTAAA", "V1": "ATGTGCAAA"},
                                             "J": {"J1": "TGGAAA"}})
     setup = prepare_model(reference, input_space=request.param, max_seq_length=128,
-                           embed_dim=4, filters=4, block_out=8)
+                           embed_dim=4, trunk_channels=8)
     model = setup.build_model().eval()
     header = {"model": {"label_schema": setup.label_schema()}, "reference": {
         "allele_order_sha256": serialize.allele_order_sha256(reference),

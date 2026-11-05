@@ -1,7 +1,7 @@
 """A deterministically perturbed copy of an AlignAIR model file: the positive control of the readiness audit.
 
 ``zero_module(checkpoint, out, module)`` writes ``out``: the ``.alignair`` file ``checkpoint`` with every parameter
-of one module of the model (a dotted name, e.g. ``branches.j.end_head``) set to zero, and every other byte of the
+of one module of the model (a dotted name, e.g. ``core.parser``) set to zero, and every other byte of the
 file as it was: the header and every other section are re-emitted unchanged (as ``alignair.model_file.update_card``
 re-emits them), only the ``weights`` section is rewritten. The same input gives the same bytes, so the perturbed model
 has one weights digest, and its model key changes only with the input or the module.

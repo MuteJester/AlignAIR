@@ -24,8 +24,7 @@ class _FakeRef:
 def test_drops_non_genotype_and_redistributes():
     ref = _FakeRef({"V": _FakeGene(["V1", "V2", "V3"])})
     preds = Predictions(allele={"v": np.array([[0.6, 0.3, 0.1]])}, start={}, end={},
-                        mutation_rate=np.array([0.0]), indel_count=np.array([0.0]),
-                        productive=np.array([True]))
+                        mutation_rate=np.array([0.0]), indel_count=np.array([0.0]))
     adjust_for_genotype(preds, {"v": {"V1", "V2"}}, ref)
     row = preds.allele["v"][0]
     assert row[2] == 0.0                         # V3 dropped

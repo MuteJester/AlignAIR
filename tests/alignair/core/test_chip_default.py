@@ -18,8 +18,7 @@ pytestmark = pytest.mark.integration
 def test_a_reference_alone_prepares_the_chip():
     config = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)).config
     assert config.architecture == "chip-v1" and config.trunk_channels == 64
-    assert config.boundary_mode == "half_open" and config.anchor_heads and config.d_presence_head
-    assert config.chip_inputs and config.bank_orientation and not config.use_meta_heads
+    assert config.anchor_heads and config.d_presence_head and config.bank_orientation and config.use_orientation
 
 
 def test_a_light_chain_reference_prepares_a_chip_without_d_and_predicts():

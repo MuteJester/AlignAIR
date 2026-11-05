@@ -126,7 +126,8 @@ def test_numpy_snapshots_are_independent_and_bfloat16_is_representable():
 def test_nucleotide_forward_uses_shared_normalization_unknowns_and_cropping():
     model = Echo()
     batches = run_model(model,['acgtn?','a?p','nn'],PredictConfig(max_seq_length=4,batch_size=2))
-    assert batches[0]['tokenized_sequence'].tolist() == [[1,4,3,2],[1,5,5,0]]
+    # the window is 3 bases: the model's width less the terminal end slot
+    assert batches[0]['tokenized_sequence'].tolist() == [[1,4,3,0],[1,5,5,0]]
     assert batches[1]['tokenized_sequence'].tolist() == [[5,5,0,0]]
     assert model.training
 

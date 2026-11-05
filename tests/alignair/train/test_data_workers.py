@@ -18,7 +18,7 @@ pytestmark = pytest.mark.integration
 def request(**options):
     return TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', **{
         'steps': 3, 'batch_size': 4, 'device': 'cpu', 'seed': 5,
-        'model_options': {'embed_dim': 4, 'filters': 4, 'block_out': 8}, **options})
+        'model_options': {'embed_dim': 4, 'trunk_channels': 8}, **options})
 
 
 def weights(path):
