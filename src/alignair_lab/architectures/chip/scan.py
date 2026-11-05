@@ -52,8 +52,12 @@ class BankScan(nn.Module):
 
 def allele_log_posterior(row_logits: torch.Tensor, row_allele: torch.Tensor, n_alleles: int) -> torch.Tensor:
     """(B, R) row logits -> (B, n_alleles) log posterior over alleles: an allele's rows (D's forward and reverse
-    complement) add their probabilities; an allele with no row in the bank is ``OUT``."""
-    owner = torch.full((row_logits.shape[1], n_alleles), OUT, device=row_logits.device, dtype=row_logits.dtype)
-    owner[torch.arange(row_logits.shape[1], device=row_logits.device), row_allele] = 0.
-    allele = torch.logsumexp(row_logits.unsqueeze(-1) + owner, dim=1)
+    complement) add their probabilities; an allele with no row in the bank is ``OUT``. Each allele's rows are summed
+    relative to its own best row (a scatter, not a rows-by-alleles matrix), so an allele far behind the best keeps its
+    finite score."""
+    index = row_allele.expand_as(row_logits)
+    best = row_logits.new_full((row_logits.shape[0], n_alleles), OUT).scatter_reduce(
+        1, index, row_logits, "amax", include_self=False)
+    mass = row_logits.new_zeros(best.shape).scatter_add(1, index, torch.exp(row_logits - best.gather(1, index)))
+    allele = torch.log(mass) + best
     return (allele - torch.logsumexp(allele, -1, keepdim=True)).masked_fill(allele <= OUT / 2, OUT)

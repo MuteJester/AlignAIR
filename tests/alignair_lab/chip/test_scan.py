@@ -6,7 +6,7 @@ import torch
 from alignair.data.tokenizer import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 from alignair_lab.architectures.chip.bank import BankCompiler, reverse_complement
-from alignair_lab.architectures.chip.scan import BankScan, allele_log_posterior
+from alignair_lab.architectures.chip.scan import OUT, BankScan, allele_log_posterior
 
 pytestmark = pytest.mark.component
 
@@ -90,6 +90,35 @@ def test_posterior_rows_of_one_allele_combine():
     logits = torch.tensor([[0., 0., 0., 0.]])
     posterior = allele_log_posterior(logits, torch.tensor([0, 1, 0, 1]), 2)
     assert torch.allclose(posterior.exp(), torch.tensor([[0.5, 0.5]]))
+
+
+def _dense_allele_log_posterior(row_logits, row_allele, n_alleles):
+    """The rows-by-alleles definition: an allele's rows' probabilities summed, normalized over the alleles."""
+    owner = torch.full((row_logits.shape[1], n_alleles), OUT)
+    owner[torch.arange(row_logits.shape[1]), row_allele] = 0.
+    allele = torch.logsumexp(row_logits.unsqueeze(-1) + owner, dim=1)
+    return (allele - torch.logsumexp(allele, -1, keepdim=True)).masked_fill(allele <= OUT / 2, OUT)
+
+
+def test_the_allele_posterior_is_the_rows_by_alleles_definition_with_its_gradients():
+    """Rows out of the bank, an allele whose rows are all out, an allele with no row and an allele 300 nats behind the
+    best: the posterior and its gradients are the dense definition's."""
+    torch.manual_seed(0)
+    row_allele = torch.tensor([0, 1, 0, 1, 2, 3, 4, 4])                  # allele 5 has no row
+    logits = torch.randn(3, 8) * 4
+    logits[0, [2, 3]] = OUT
+    logits[1, [4]] = OUT                                                  # allele 2's only row is out
+    logits[2, [6, 7]] = logits[2].max() - 300.
+    upstream = torch.randn(3, 6)
+    results = []
+    for fn in (_dense_allele_log_posterior, allele_log_posterior):
+        rows = logits.clone().requires_grad_(True)
+        posterior = fn(rows, row_allele, 6)
+        (posterior.masked_fill(posterior <= OUT / 2, 0.) * upstream).sum().backward()
+        results.append((posterior.detach(), rows.grad))
+    (dense, dense_grad), (posterior, grad) = results
+    assert torch.allclose(posterior, dense, atol=1e-4) and torch.allclose(grad, dense_grad, atol=1e-5)
+    assert posterior[:, 5].eq(OUT).all() and posterior[1, 2] == OUT and posterior[2, 4] > OUT / 2
 
 
 def test_gradients_reach_weights_m_and_probs():
