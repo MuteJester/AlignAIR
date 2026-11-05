@@ -99,7 +99,14 @@ def test_an_architecture_needs_a_core_and_an_objective():
 
 
 def test_chip_v1_is_the_only_built_in_architecture():
-    assert set(components._ARCHITECTURES) == {"chip-v1"}
+    """In a fresh process (other tests register architectures of their own in this one)."""
+    import os
+    import subprocess
+    import sys
+    env = {key: value for key, value in os.environ.items() if key != "ALIGNAIR_ARCHITECTURE_MODULES"}
+    code = "from alignair.core import components; print(sorted(components._ARCHITECTURES))"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=env, check=True)
+    assert out.stdout.strip() == "['chip-v1']"
     with pytest.raises(ConfigurationError, match="unknown model architecture"):
         components.architecture_components("conv-v1")
 
