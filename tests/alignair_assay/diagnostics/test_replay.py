@@ -17,6 +17,7 @@ import torch  # noqa: E402
 from alignair import api  # noqa: E402
 from alignair.model_file import save_model  # noqa: E402
 from alignair.predict import forward, pipeline  # noqa: E402
+from alignair.data import prepare_nucleotide_inputs  # noqa: E402
 from alignair.predict.state import GeneCall, GermlineAlignment  # noqa: E402
 
 from alignair_assay.core.cases import read_fasta  # noqa: E402
@@ -197,7 +198,7 @@ def test_stage_outputs_shapes_and_ids(small_model, s0_reads):
 
     # raw: every forward output, stacked over the batches, equal to the product's batched forward pass.
     cfg = predict_config(model, reference_set, batch_size=BATCH)
-    cropped, _ = pipeline.apply_input_policy(seqs, cfg.max_seq_length)
+    cropped, _ = prepare_nucleotide_inputs(seqs, cfg.max_seq_length)
     batches = forward.run_model(model, cropped, cfg, "cpu")
     assert len(batches) == 4 and set(out.raw) == set(batches[0])
     for key, value in out.raw.items():

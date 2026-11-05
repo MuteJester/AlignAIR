@@ -10,7 +10,7 @@ from alignair.core import AlignAIR, AlignAIRConfig
 from alignair.data import NucleotideBatchAdapter
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 from alignair.tasks import build_tasks
-from alignair.train.engine import train_step
+from alignair.train.engine import TrainingEngine
 
 pytestmark = pytest.mark.integration
 
@@ -45,10 +45,8 @@ def test_a_read_ending_at_its_last_base_gets_a_supervised_end_slot_and_a_trainin
     model.bind_reference(_reference())
     out = model(batch.inputs)
     assert bool(out["end_mask"][0, len(READ)]) and not bool(out["end_mask"][0, len(READ) + 1])
-    tasks = build_tasks(config)
-    weights = tasks.make_weights()
-    optimizer = torch.optim.AdamW([*model.parameters(), *weights.parameters()], lr=.001)
-    total, parts, norm = train_step(model, batch.inputs, batch.targets, config, weights, optimizer, tasks=tasks)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=.001)
+    total, parts, norm = TrainingEngine(model, optimizer, tasks=build_tasks(config)).step((batch.inputs, batch.targets))
     assert math.isfinite(total) and math.isfinite(norm)
 
 

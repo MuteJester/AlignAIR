@@ -136,9 +136,7 @@ def test_real_optimizer_and_scheduler_advance_once_for_each_complete_batch():
         def forward(self, inputs):
             return self.weight * inputs['x']
     class Tasks:
-        def make_weights(self):
-            return {}
-        def loss(self, output, targets, weights):
+        def loss(self, output, targets):
             loss = (output - targets['y']).square().mean()
             return loss, {'regression': loss}
     def adapt(rows):

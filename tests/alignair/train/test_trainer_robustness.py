@@ -7,7 +7,6 @@ import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
-from alignair.tasks import build_tasks
 from alignair.train.guards import TrainingConfigError
 from alignair.train.trainer import train
 
@@ -24,22 +23,22 @@ def _bound(cfg, reference):
 def _tiny_model():
     cfg = AlignAIRConfig(max_seq_length=576, has_d=True,
                          v_allele_count=4, d_allele_count=3, j_allele_count=2)
-    return cfg, AlignAIR(cfg), build_tasks(cfg).make_weights()
+    return cfg, AlignAIR(cfg)
 
 
 def test_train_rejects_bad_config_before_training():
     """A bad request aborts up front (TrainingConfigError) — no long run on invalid hyperparameters."""
-    cfg, model, logvars = _tiny_model()
+    cfg, model = _tiny_model()
     ref = SimpleNamespace(gene=lambda g: [0] * 4)          # non-empty V/J
     with pytest.raises(TrainingConfigError, match="steps"):
-        train(model, ref, [object()], cfg, logvars, steps=0)     # steps=0 -> invalid, raises immediately
+        train(model, ref, [object()], cfg, steps=0)     # steps=0 -> invalid, raises immediately
 
 
 def test_train_rejects_empty_reference():
-    cfg, model, logvars = _tiny_model()
+    cfg, model = _tiny_model()
     ref = SimpleNamespace(gene=lambda g: [])               # empty V/J allele set
     with pytest.raises(TrainingConfigError, match="empty V"):
-        train(model, ref, [object()], cfg, logvars, steps=10)
+        train(model, ref, [object()], cfg, steps=10)
 
 
 @pytest.mark.slow
@@ -50,10 +49,10 @@ def test_resume_below_checkpoint_step_is_rejected(tmp_path):
     cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
     torch.manual_seed(0)
     out = str(tmp_path / "m.alignair")
-    train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, build_tasks(cfg).make_weights(), steps=4, batch_size=4,
+    train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=4, batch_size=4,
           lr=1e-3, save_path=out, save_every=100, log_every=100)
     with pytest.raises(ValueError, match="not beyond the checkpoint"):   # steps <= checkpoint step
-        train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, build_tasks(cfg).make_weights(), steps=2, batch_size=4,
+        train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=2, batch_size=4,
               lr=1e-3, save_path=out, resume_path=out, log_every=100)
 
 
@@ -64,14 +63,14 @@ def test_train_saves_best_and_resumes(tmp_path):
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
     torch.manual_seed(0)
-    model, logvars = _bound(cfg, ref), build_tasks(cfg).make_weights()
+    model = _bound(cfg, ref)
     out = str(tmp_path / "m.alignair")
-    train(model, ref, [gd.HUMAN_IGH_OGRDB], cfg, logvars, steps=6, batch_size=4, lr=1e-3,
+    train(model, ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=6, batch_size=4, lr=1e-3,
           save_path=out, save_every=3, val_every=3, val_batches=1, grad_clip=1.0, log_every=100)
     # best-checkpoint selection wrote <stem>.best.alignair
     assert glob.glob(str(tmp_path / "m.best.alignair"))
     # resume continues from the saved step (exercises RNG restore + state load)
-    model2, logvars2 = _bound(cfg, ref), build_tasks(cfg).make_weights()
-    train(model2, ref, [gd.HUMAN_IGH_OGRDB], cfg, logvars2, steps=9, batch_size=4, lr=1e-3,
+    model2 = _bound(cfg, ref)
+    train(model2, ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=9, batch_size=4, lr=1e-3,
           save_path=out, resume_path=out, save_every=3, log_every=100)
     assert glob.glob(str(tmp_path / "m.step9.alignair"))

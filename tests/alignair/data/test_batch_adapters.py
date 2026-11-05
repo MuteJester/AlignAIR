@@ -1,14 +1,11 @@
 """Source-to-model batch adaptation with independent, hand-written annotations."""
 from copy import deepcopy
-from dataclasses import replace
 
-import numpy as np
 import pytest
 import torch
 
 from alignair.core import AlignAIR, AlignAIRConfig
 from alignair.data import NucleotideBatchAdapter
-from alignair.data.projection import translate_nt
 from alignair.errors import ConfigurationError, TrainingDataError
 from alignair.reference.reference_set import ReferenceSet, GeneReference
 from alignair.tasks import build_tasks
@@ -97,7 +94,7 @@ def test_record_adapter_to_shared_model_and_task_loss_backpropagates():
     model = AlignAIR(cfg)
     model.bind_reference(_reference())
     tasks = build_tasks(cfg)
-    loss, _ = tasks.loss(model(batch.inputs), batch.targets, tasks.make_weights())
+    loss, _ = tasks.loss(model(batch.inputs), batch.targets)
     assert torch.isfinite(loss)
     loss.backward()
     assert model.embedding.token.weight.grad is not None

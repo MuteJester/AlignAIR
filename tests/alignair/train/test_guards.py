@@ -55,11 +55,11 @@ def test_grad_clip_must_be_finite():
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf"), None],
                          ids=["nan-loss", "positive-infinite-loss", "negative-infinite-loss", "non-finite-gradient"])
-def test_train_step_rejects_non_finite_loss_or_gradient_before_optimizer(monkeypatch, bad):
+def test_a_training_step_rejects_non_finite_loss_or_gradient_before_optimizer(monkeypatch, bad):
     """Invalid loss or gradient must abort the real training step before weights change."""
     import torch
 
-    from alignair.train.trainer import train_step
+    from alignair.train import TrainingEngine
 
     class _M(torch.nn.Module):
         def __init__(self):
@@ -68,9 +68,6 @@ def test_train_step_rejects_non_finite_loss_or_gradient_before_optimizer(monkeyp
 
         def forward(self, x):
             return self.p
-
-        def clamp_params(self):
-            pass
 
     m = _M()
     opt = torch.optim.SGD(m.parameters(), lr=0.1)
@@ -85,7 +82,7 @@ def test_train_step_rejects_non_finite_loss_or_gradient_before_optimizer(monkeyp
         return original_step(*args, **kwargs)
     monkeypatch.setattr(opt, "step", optimizer_step)
     with pytest.raises(NonFiniteLossError, match="non-finite (loss|gradient)") as caught:
-        train_step(m, {}, {}, object(), {}, opt, step=17, tasks=tasks)
+        TrainingEngine(m, opt, tasks=tasks).step(({}, {}), step=17)
     assert caught.value.code == "ALIGNAIR_TRAINING_NONFINITE"
     assert caught.value.context["stage"] == ("training_gradient" if bad is None else "training_loss")
     assert caught.value.context["step"] == 17

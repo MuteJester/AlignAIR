@@ -21,7 +21,6 @@ from __future__ import annotations
 import math
 
 import torch
-from torch import nn
 from torch.nn import functional as F
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
@@ -83,10 +82,7 @@ class ChipObjective:
         self.config = config
         self.genes = ("v", "d", "j") if config.has_d else ("v", "j")
 
-    def make_weights(self) -> nn.ModuleDict:
-        return nn.ModuleDict()
-
-    def loss(self, outputs: dict, targets: dict, weights=None):
+    def loss(self, outputs: dict, targets: dict):
         mask = outputs["start_mask"]
         parts = {}
         if "orientation_logits" in outputs and "orientation" in targets:

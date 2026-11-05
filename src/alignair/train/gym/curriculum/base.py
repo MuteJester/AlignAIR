@@ -84,10 +84,6 @@ class Curriculum:
             "indel_count": self.indel_count(p),
             "seq_error_rate": _lerp(0.0, 0.02, p),
             "ambiguous_count": (0, int(round(_lerp(0, 5, p)))),
-            "crop_prob": 0.0,   # post-hoc gym crop retired; read length is GenAIRR end-loss (above)
-            # fraction of reads presented in a non-forward orientation (revcomp /
-            # complement / reverse); the model must detect and canonicalize them.
-            "orient_prob": _lerp(0.0, 0.5, p),
         }
 
     def stage(self, p: float) -> int:
@@ -101,4 +97,4 @@ class Curriculum:
         return (f"curriculum stage {self.stage(p) + 1}/{self.stages} (p={p:.2f}): "
                 f"mut≤{pr['mutation_rate']:.3f}, end_loss≤{pr['end_loss_5'][1]}/{pr['end_loss_3'][1]}, "
                 f"{indel}, seq_err≤{pr['seq_error_rate']:.3f}, "
-                f"N≤{pr['ambiguous_count'][1]}, orient({100*pr['orient_prob']:.0f}%)")
+                f"N≤{pr['ambiguous_count'][1]}")

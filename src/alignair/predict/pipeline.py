@@ -64,11 +64,6 @@ def _called_loci(v_calls, reference, no_v) -> list[str] | None:
             for i, call in enumerate(v_calls)]
 
 
-def apply_input_policy(sequences, max_len: int) -> tuple[list, list]:
-    """Compatibility entry point for shared nucleotide prediction preparation."""
-    return prepare_nucleotide_inputs(sequences, max_len)
-
-
 _COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 

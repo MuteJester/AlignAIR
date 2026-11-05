@@ -221,7 +221,7 @@ def test_a_milestone_of_another_model_family_is_refused_before_anything_runs(rig
     milestones = tmp_path / 'milestones'
     milestones.mkdir()
     train_args = read_metadata(rig.milestones / 'model.step2.alignair')['training']['train_args']
-    save_checkpoint(str(milestones / 'model.step2.alignair'), setup.config, setup.build_model(), None, 2,
+    save_checkpoint(str(milestones / 'model.step2.alignair'), setup.config, setup.build_model(), 2,
                     dataconfigs=list(DATACONFIGS), train_args=train_args, label_schema=setup.label_schema())
     assert main([*arguments(rig, 'other-family'), '--against-milestone', str(milestones)]) == 2
     assert "architecture 'lab-null-v2', not 'chip-v1'" in capsys.readouterr().err

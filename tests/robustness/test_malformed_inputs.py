@@ -76,7 +76,7 @@ def test_raw_predictions_validated_before_use():
 
 
 def test_oversized_sequence_is_cropped_not_truncated_silently():
-    from alignair.predict.pipeline import apply_input_policy
+    from alignair.data import prepare_nucleotide_inputs
     long_read = "ACGT" * 500                                # 2000 nt, window 576
-    seqs, cropped = apply_input_policy([long_read], max_len=576)
+    seqs, cropped = prepare_nucleotide_inputs([long_read], 576)
     assert len(seqs[0]) == 576 and cropped == [True] # cropped + FLAGGED, never silent

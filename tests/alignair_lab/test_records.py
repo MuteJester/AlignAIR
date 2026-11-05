@@ -75,7 +75,7 @@ def data():
 @pytest.fixture(scope='module')
 def serial_run(data):
     """The trainer's serial run of 20 steps over the live unselected stream."""
-    stream = TrainingStream(DATACONFIGS, UNSELECTED, SEED, data, augment=True, prepare_seed=SEED)
+    stream = TrainingStream(DATACONFIGS, UNSELECTED, SEED, data)
     return stream, run(serial_records(stream), data.batch_adapter, start_step=0, steps=20, batch_size=BATCH_SIZE)
 
 

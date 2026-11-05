@@ -25,7 +25,7 @@ __all__ = ["save_model", "read_metadata", "update_card", "load_model", "load_tra
            "read_training_state", "read_model_state", "read_dataconfig", "read_reference", "LoadedModel", "ModelStateData",
            "TrainingState", "TrainingStateData", "container"]
 
-_DEFAULT_CODECS = {"config": "zlib", "weights": "none", "logvars": "none",
+_DEFAULT_CODECS = {"config": "zlib", "weights": "none",
                    "reference": "zlib", "train_state": "zstd", "dataconfig": "zstd"}
 
 
@@ -81,7 +81,7 @@ _RESERVED_CARD_KEYS = {"format_version", "model_format_version", "model_class", 
                        "inference", "provenance", "created", "created_by_alignair"}
 
 
-def save_model(path, model, *, dataconfigs, training, inference=None, logvars=None,
+def save_model(path, model, *, dataconfigs, training, inference=None,
                optimizer=None, rng=None, description="", include_trusted_pickle=True,
                model_id=None, model_version=None, card=None, label_schema=None, scheduler=None) -> None:
     """Write an .alignair model file. ``include_trusted_pickle=True`` (default) keeps the pickled
@@ -105,8 +105,6 @@ def save_model(path, model, *, dataconfigs, training, inference=None, logvars=No
 
     add("config", serialize.config_to_bytes(cfg), "json")
     add("weights", serialize.state_dict_to_bytes(model.state_dict()), "safetensors")
-    if logvars is not None:
-        add("logvars", serialize.state_dict_to_bytes(logvars.state_dict()), "safetensors")
     add("reference", serialize.reference_fasta(reference).encode("utf-8"), "fasta")
     add("reference_json", serialize.reference_to_json(reference), "json")   # safe inference load source
     if include_trusted_pickle:                                             # only in trusted checkpoints
@@ -307,7 +305,6 @@ class TrainingState:
     model: AlignAIR
     reference: ReferenceSet
     config: AlignAIRConfig
-    logvars_state: dict | None
     optimizer_state: dict | None
     step: int
     rng: dict
@@ -322,7 +319,6 @@ class TrainingStateData:
     model_state: dict
     reference: ReferenceSet
     config: AlignAIRConfig
-    logvars_state: dict | None
     optimizer_state: dict | None
     step: int
     rng: dict
@@ -336,7 +332,7 @@ def read_training_state(path, *, device="cpu") -> TrainingStateData:
 
     Section checksums and reference/label bindings are checked here. Architecture-specific weight
     keys/shapes are checked when restoring into a model. Model tensors are mapped to ``device``;
-    optimizer, scheduler, task-weight and RNG state retain their serialized values. Like
+    optimizer, scheduler and RNG state retain their serialized values. Like
     ``load_training_state``, this is a trusted resume flow that decodes pickle training sections.
     """
     with error_context(stage="training_checkpoint_load", path=path):
@@ -345,11 +341,9 @@ def read_training_state(path, *, device="cpu") -> TrainingStateData:
         if "train_state" not in md["sections"]:
             raise ModelError("no train_state section; this model file cannot resume training")
         st = serialize.train_state_from_bytes(container.read_section(path, "train_state"))
-        logvars_state = (serialize.state_dict_from_bytes(container.read_section(path, "logvars"))
-                         if "logvars" in md["sections"] else None)
         model_state = {name: value.to(device) for name, value in model_state.items()}
         return TrainingStateData(model_state=model_state, reference=reference, config=cfg,
-                                 logvars_state=logvars_state, optimizer_state=st.get("optimizer"),
+                                 optimizer_state=st.get("optimizer"),
                                  step=int(st.get("step", 0)), rng=st.get("rng", {}),
                                  train_args=st.get("train_args", {}), metadata=md,
                                  scheduler_state=st.get('scheduler'))
@@ -361,7 +355,7 @@ def load_training_state(path, *, device="cpu") -> TrainingState:
     model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
     model.bind_reference(data.reference)
     return TrainingState(model=model, reference=data.reference, config=model.cfg,
-                         logvars_state=data.logvars_state, optimizer_state=data.optimizer_state,
+                         optimizer_state=data.optimizer_state,
                          step=data.step, rng=data.rng, train_args=data.train_args,
                          metadata=data.metadata, scheduler_state=data.scheduler_state)
 

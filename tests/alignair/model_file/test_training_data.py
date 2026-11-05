@@ -9,7 +9,6 @@ from alignair.core import AlignAIR, prepare_model
 from alignair.errors import ModelIntegrityError, ModelError
 from alignair.model_file import container, serialize
 from alignair.reference import ReferenceSet
-from alignair.tasks import build_tasks
 from alignair.train.checkpoints import load_training_checkpoint
 from alignair.train.random_state import capture_rng_state
 
@@ -23,8 +22,7 @@ def checkpoint(request, tmp_path):
                           input_space=space, label_space=labels, max_seq_length=128,
                           embed_dim=4, trunk_channels=8)
     model = setup.build_model()
-    weights = build_tasks(setup.config).make_weights()
-    optimizer = torch.optim.AdamW(list(model.parameters()) + list(weights.parameters()), lr=.001)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=.001)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=9, eta_min=.00001)
     for group in optimizer.param_groups:
         for parameter in group['params']:
@@ -34,11 +32,11 @@ def checkpoint(request, tmp_path):
     rng = capture_rng_state(include_cuda=False)
     arguments = {'lr': .001, 'schedule': {'total_steps': 9, 'min_lr': .00001}}
     path = tmp_path / 'resume.alignair'
-    model_file.save_model(path, model, dataconfigs=[gd.HUMAN_IGH_OGRDB], logvars=weights,
+    model_file.save_model(path, model, dataconfigs=[gd.HUMAN_IGH_OGRDB],
                           training={'steps': 1, 'batch_size': 2, 'train_args': arguments},
                           optimizer=optimizer, scheduler=scheduler, rng=rng,
                           label_schema=setup.label_schema())
-    return path, setup, model, weights, optimizer, scheduler, rng, arguments
+    return path, setup, model, optimizer, scheduler, rng, arguments
 
 
 def _equal(actual, expected):
@@ -68,7 +66,7 @@ def _rewrite(path, mutate):
 
 
 def test_decode_preserves_all_state_without_model_construction_or_rng_consumption(checkpoint, monkeypatch):
-    path, setup, model, weights, optimizer, scheduler, rng, arguments = checkpoint
+    path, setup, model, optimizer, scheduler, rng, arguments = checkpoint
     before = capture_rng_state(include_cuda=False)
     def forbidden(*args, **kwargs):
         raise AssertionError('checkpoint decoding constructed a temporary model')
@@ -84,7 +82,6 @@ def test_decode_preserves_all_state_without_model_construction_or_rng_consumptio
         _equal(data.rng, rng)
     decoded = model_file.read_training_state(path)
     assert isinstance(decoded, model_file.TrainingStateData)
-    _equal(decoded.logvars_state, weights.state_dict())
     assert decoded.train_args == arguments
     assert decoded.metadata['model']['label_schema'] == setup.label_schema()
     assert decoded.reference.to_serializable() == setup.reference.to_serializable()
@@ -92,7 +89,7 @@ def test_decode_preserves_all_state_without_model_construction_or_rng_consumptio
 
 
 def test_existing_model_bearing_api_still_restores_an_evaluation_model(checkpoint):
-    path, setup, model, weights, optimizer, scheduler, rng, arguments = checkpoint
+    path, setup, model, optimizer, scheduler, rng, arguments = checkpoint
     restored = model_file.load_training_state(path)
     assert isinstance(restored, model_file.TrainingState)
     assert isinstance(restored.model, AlignAIR) and not restored.model.training
@@ -101,7 +98,6 @@ def test_existing_model_bearing_api_still_restores_an_evaluation_model(checkpoin
     _equal(restored.model.state_dict(), model.state_dict())
     _equal(restored.optimizer_state, optimizer.state_dict())
     _equal(restored.scheduler_state, scheduler.state_dict())
-    _equal(restored.logvars_state, weights.state_dict())
     _equal(restored.rng, rng)
     assert restored.train_args == arguments
 

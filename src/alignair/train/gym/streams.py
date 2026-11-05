@@ -14,7 +14,7 @@ from collections.abc import Iterable, Iterator, Mapping
 
 from ...errors import ConfigurationError, error_context
 from ...data.flanks import FlankPolicy, flank_records
-from ...reference.reference_set import _locus_of, is_tcr
+from ...reference.reference_set import is_tcr
 from .curriculum import Curriculum
 from .curriculum.base import INDEL_FRACTION, indel_form_name, indel_fraction_range
 from .experiment import build_experiment
@@ -310,7 +310,6 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
 
     def generate():
         resolved = tuple(_resolve_reference(value) for value in references)
-        loci = list(dict.fromkeys(_locus_of(reference.metadata.chain_type) for reference in resolved))
         provider = stream_records if record_source is None else record_source
         plans = [[[(parameters, seed_block(seed, purpose, start_step, position, component, name))
                    for name, parameters in streams]
@@ -331,9 +330,7 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
             components = [chain.from_iterable(zip(*[iter(flanked(provider(reference, params, block), block))
                                                     for params, block in streams]))
                           for streams in plan]
-            locus_class = loci.index(_locus_of(reference.metadata.chain_type))
-            for record in chain.from_iterable(zip(*components)):
-                yield {**record, 'chain_type': locus_class} if len(resolved) > 1 else record
+            yield from chain.from_iterable(zip(*components))
 
         panels = [panel_records(reference, plan) for reference, plan in zip(resolved, plans)]
         yield from chain.from_iterable(zip(*panels))

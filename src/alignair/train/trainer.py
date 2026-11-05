@@ -1,7 +1,6 @@
-"""Training loop for the AlignAIR model on the GenAIRR gym stream.
+"""Training loop for the AlignAIR model on GenAIRR record streams.
 
-``build_batch`` is a compatibility import of the shared data adapter. ``train_step`` runs one optimizer step and then
-applies the task weights' constraints (``apply_constraints``) after ``optimizer.step()``.
+``build_batch`` is a compatibility import of the shared data adapter.
 """
 from __future__ import annotations
 
@@ -20,7 +19,7 @@ from ..tasks import TrainingTasks, build_tasks
 from .gym.curriculum.base import INDEL_FRACTION
 from .gym.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
                           selection_supported, training_records)
-from .engine import train_step, validate
+from .engine import validate
 from .setup import build_training_engine
 from .loop import training_iterations
 from .checkpoints import (save_checkpoint, save_rotating, latest_checkpoint, load_training_checkpoint,
@@ -83,7 +82,7 @@ class TrainingOutcome:
     validations: tuple = ()
 
 
-def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, batch_size=32,
+def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, init_seed=None, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
           mutation_cap=None, init_from=None, init_trust_pickle=False,
@@ -163,17 +162,14 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         print(f"selection unavailable for {', '.join(unselectable)}: GenAIRR cannot draw productive records from "
               "it, so the run draws no selected records", flush=True)
 
-    def _build_stream(purpose, *, augment=False, start_step=0):
+    def _build_stream(purpose, *, start_step=0):
         # every stream draws its own seed blocks: training (a resume from (seed, step)) and validation
-        records = training_records(dataconfigs, policy=source_policy, seed=seed, purpose=purpose,
-                                   start_step=start_step,
-                                   record_source=record_source)
-        return data.prepare_records(records, augment=augment, seed=seed, start_step=start_step)
+        return training_records(dataconfigs, policy=source_policy, seed=seed, purpose=purpose,
+                                start_step=start_step, record_source=record_source)
 
-    engine = build_training_engine(model, tasks=tasks, weights=logvars, device=device,
-                                   lr=lr, grad_clip=grad_clip,
+    engine = build_training_engine(model, tasks=tasks, device=device, lr=lr, grad_clip=grad_clip,
                                    scheduler_factory=schedule.build if schedule is not None else None)
-    opt, logvars = engine.optimizer, engine.weights
+    opt = engine.optimizer
 
     start = start_step
     resume_from = latest_checkpoint(resume_path) if resume_path else None
@@ -183,8 +179,6 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         state = load_training_checkpoint(resume_from, device=device, trust_pickle=resume_trust_pickle)
         validate_continuation(state, cfg, schema, schedule=schedule_metadata, lr=lr)
         restore_model_state(model, state.model_state, source=resume_from)
-        if state.weight_state is not None:
-            logvars.load_state_dict(state.weight_state)
         if state.optimizer_state is not None:
             opt.load_state_dict(state.optimizer_state)
             if schedule is None:
@@ -232,7 +226,7 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
             _train_args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
 
     def _checkpoint(path, step, **extra):
-        save_checkpoint(path, cfg, model, logvars, step, opt, dataconfigs=_dcs,
+        save_checkpoint(path, cfg, model, step, opt, dataconfigs=_dcs,
                         train_args={**_train_args, **extra}, label_schema=schema, scheduler=engine.scheduler)
 
     observation = StudySession(study, model, _checkpoint) if study is not None else None
@@ -257,13 +251,12 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
         from .gym.streams import stream_records
         workers = parallel_training_data(
             TrainingStream(tuple(dataconfigs), source_policy, seed,
-                           prepare_training_data(setup, device='cpu'),
-                           augment=True, prepare_seed=seed, start_step=start),
+                           prepare_training_data(setup, device='cpu'), start_step=start),
             batch_size=batch_size, workers=data_workers, device=device,
             provider=stream_records if record_source is None else record_source)
         stream, batch_adapter = workers.records, workers.batch_adapter
     else:
-        stream = _build_stream('training', augment=True, start_step=start)
+        stream = _build_stream('training', start_step=start)
         batch_adapter = data.batch_adapter
     try:
         for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
@@ -288,13 +281,13 @@ def train(model, reference_set, dataconfigs, cfg, logvars=None, *, steps=2000, b
                     best_path = f"{stem}.best{ext}"
                     _checkpoint(best_path, step, val_score=vscore)
             if save_path and save_every and step % save_every == 0:
-                save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args,
+                save_rotating(save_path, cfg, model, step, opt, dataconfigs=_dcs, train_args=_train_args,
                               label_schema=schema, scheduler=engine.scheduler)
     finally:
         if workers is not None:                    # finished, failed or interrupted: no worker outlives the run
             workers.close()
     if save_path:                                  # save the ACTUAL completed step, not the requested one
-        save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args,
+        save_rotating(save_path, cfg, model, completed, opt, dataconfigs=_dcs, train_args=_train_args,
                       label_schema=schema, scheduler=engine.scheduler)
     return TrainingOutcome(model, completed, best_path, observation.checkpoints if observation else {},
                            tuple(observation.validations) if observation else ())

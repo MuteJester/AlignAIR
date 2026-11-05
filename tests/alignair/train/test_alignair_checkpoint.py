@@ -3,7 +3,6 @@ import GenAIRR.data as gd
 import torch
 from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
-from alignair.tasks import build_tasks
 from alignair.train.checkpoints import save_checkpoint, load_training_checkpoint
 from alignair import model_file as mf
 
@@ -13,11 +12,10 @@ pytestmark = pytest.mark.integration
 def test_trainer_save_checkpoint_writes_alignair(tmp_path):
     cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
     model = AlignAIR(cfg)
-    logvars = build_tasks(cfg).make_weights()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4)
     opt.step()
     p = tmp_path / "m.alignair"
-    save_checkpoint(str(p), cfg, model, logvars, step=1000, opt=opt,
+    save_checkpoint(str(p), cfg, model, step=1000, opt=opt,
                     dataconfigs=[gd.HUMAN_IGH_OGRDB], train_args={"lr": 1e-4, "batch_size": 64})
     assert mf.container.is_alignair_file(str(p))
     md = mf.read_metadata(str(p))

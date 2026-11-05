@@ -23,7 +23,7 @@ CLAIM_TESTS = {
     "the CLI and Python API agree on the same input":
         "tests/alignair/cli/test_cli_api_parity.py::test_cli_matches_python_api",
     "training aborts on a non-finite loss":
-        "tests/alignair/train/test_guards.py::test_train_step_rejects_non_finite_loss_or_gradient_before_optimizer",
+        "tests/alignair/train/test_guards.py::test_a_training_step_rejects_non_finite_loss_or_gradient_before_optimizer",
     "concurrent cache access is mutually exclusive":
         "tests/alignair/registry/test_lock.py::test_excl_lock_serializes_concurrent_holders",
 }

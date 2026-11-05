@@ -23,11 +23,7 @@ def reference():
 def test_training_and_validation_adapters_follow_the_same_model_setup(reference):
     setup = prepare_model(reference)
     data = prepare_training_data(setup)
-    record = {'sequence': 'ATGTGTTGG', 'junction_start': 3,
-              'v_sequence_start': 0, 'v_sequence_end': 6, 'j_sequence_start': 6, 'j_sequence_end': 9,
-              'v_call': 'V1', 'j_call': 'J1', 'productive': False, 'mutation_rate': 0.}
-    rows = list(data.prepare_records([record]))
-    assert len(rows) == 1 and rows[0] is record
+    assert data.batch_adapter.config is data.validation_adapter.config is setup.config
     schema = setup.label_schema()
     validate_label_schema(schema, reference, setup.config)
     assert schema['genes']['v'] == ['V1', 'V2']

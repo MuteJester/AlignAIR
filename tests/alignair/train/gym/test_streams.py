@@ -184,24 +184,14 @@ def test_a_component_ends_with_its_last_complete_period():
     assert pulled == [*((block, 0) for block in blocks), (blocks[0], 1), (blocks[1], 1)]
 
 
-def test_multiple_panels_use_independent_seed_blocks_and_distinct_locus_class_ids():
+def test_multiple_panels_use_independent_seed_blocks():
     policy = CurriculumStreamPolicy((.3,), 0., selected_fraction=0)
     rows=list(islice(training_records((reference(),reference('TRA','TCR_ALPHA'),reference('IGH2')),
         policy=policy,seed=17,record_source=provider),12))
-    assert [row['chain_type'] for row in rows]==[0,1,0]*4
     blocks = [blocks_of(policy, 17, panel=panel, force_mixture=True) for panel in range(3)]
     assert [row['seed'] for row in rows]==[blocks[panel][component][0] for component in range(4) for panel in range(3)]
     assert {row['rate'] for row in rows if row['panel']=='TRA'}=={0.}
     assert all(row['rate']>0 for row in rows if row['panel']!='TRA')
-
-
-def test_locus_tagging_does_not_mutate_or_relabel_the_providers_own_record():
-    original={'source':1}
-    def shared(*args):yield original
-    rows=list(training_records((reference(),reference('TRB','TCR_BETA')),
-         policy=CurriculumStreamPolicy((.3,),0.),record_source=shared))
-    assert {row['chain_type'] for row in rows}=={0,1}
-    assert original=={'source':1} and all(row is not original for row in rows)
 
 
 def test_source_factory_failure_preserves_type_and_attempted_seed():

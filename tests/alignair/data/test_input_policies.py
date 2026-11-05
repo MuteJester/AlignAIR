@@ -150,9 +150,8 @@ def test_record_acceptance_is_explicit_and_invalid_option_is_eager():
         normalize_sequence_inputs([], policy, allow_records=None)
 
 
-def test_io_and_pipeline_compatibility_interfaces_delegate_to_shared_data_owners():
+def test_io_compatibility_interfaces_delegate_to_shared_data_owners():
     from alignair.io.sequence_reader import validate_sequence, validate
     from alignair.data.inputs import validate_nucleotide
-    from alignair.predict.pipeline import apply_input_policy
     assert validate_sequence is validate_nucleotide_sequence and validate is validate_nucleotide
-    assert apply_input_policy(['acgtac'], max_len=4) == (['ACGT'], [True])
+    assert prepare_nucleotide_inputs(['acgtac'], 4) == (['ACGT'], [True])

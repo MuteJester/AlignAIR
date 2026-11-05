@@ -37,7 +37,7 @@ def synthetic(adapter=record_workers.ordinal_batch, start=0):
     from types import SimpleNamespace
     data = TrainingDataSetup(adapter, adapter)
     panel = SimpleNamespace(name='IGH', metadata=SimpleNamespace(chain_type='BCR_HEAVY'))
-    return TrainingStream((panel,), RECIPE, 0, data, augment=True, prepare_seed=0, start_step=start)
+    return TrainingStream((panel,), RECIPE, 0, data, start_step=start)
 
 
 def children():
@@ -48,7 +48,7 @@ def children():
 @pytest.mark.parametrize('in_worker', [True, False])
 def test_parallel_batches_equal_the_serial_trainer_batches(igh, start, in_worker):
     dataconfig, data = igh
-    stream = TrainingStream((dataconfig,), RECIPE, 0, data, augment=True, prepare_seed=0, start_step=start)
+    stream = TrainingStream((dataconfig,), RECIPE, 0, data, start_step=start)
     serial = run(serial_records(stream), data.batch_adapter, start_step=start, steps=4, batch_size=16)
     with parallel_training_data(stream, batch_size=16, workers=3, device='cpu', assemble_in_worker=in_worker) as batches:
         parallel = run(batches.records, batches.batch_adapter, start_step=start, steps=4, batch_size=16)
@@ -87,10 +87,8 @@ def test_a_batch_failure_carries_the_serial_stage_and_step(in_worker):
 
 def serial_records_with(stream, provider):
     from alignair.train.gym.streams import training_records
-    records = training_records(stream.dataconfigs, policy=stream.policy, seed=stream.seed,
-                               start_step=stream.start_step, record_source=provider)
-    return stream.data.prepare_records(records, augment=stream.augment, seed=stream.prepare_seed,
-                                       start_step=stream.start_step)
+    return training_records(stream.dataconfigs, policy=stream.policy, seed=stream.seed,
+                            start_step=stream.start_step, record_source=provider)
 
 
 def test_a_cpu_random_draw_inside_the_step_is_refused_rather_than_silently_diverging():

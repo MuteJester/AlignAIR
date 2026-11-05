@@ -44,16 +44,12 @@ class TrainingStream:
     policy: CurriculumStreamPolicy
     seed: int
     data: TrainingDataSetup
-    augment: bool = False
-    prepare_seed: int = 0
     start_step: int = 0
 
     def records(self, record_source: RecordSource | None = None):
-        """Curriculum records prepared for the model, built as ``train`` builds its training stream."""
-        records = training_records(self.dataconfigs, policy=self.policy, seed=self.seed, start_step=self.start_step,
-                                   record_source=record_source)
-        return self.data.prepare_records(records, augment=self.augment, seed=self.prepare_seed,
-                                         start_step=self.start_step)
+        """The curriculum's records, built as ``train`` builds its training stream."""
+        return training_records(self.dataconfigs, policy=self.policy, seed=self.seed, start_step=self.start_step,
+                                record_source=record_source)
 
 
 def _count(value, field):

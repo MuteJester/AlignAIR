@@ -76,8 +76,7 @@ def test_data_workers_never_build_a_model(scratch_registry, tmp_path):
     assert trained.steps == 2
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), architecture='lab-training-process-only-v1',
                           **SMALL)
-    stream = TrainingStream((gd.HUMAN_IGH_OGRDB,), POLICY, SEED, prepare_training_data(setup, device='cpu'),
-                            augment=True, prepare_seed=SEED)
+    stream = TrainingStream((gd.HUMAN_IGH_OGRDB,), POLICY, SEED, prepare_training_data(setup, device='cpu'))
     with parallel_training_data(stream, batch_size=BATCH_SIZE, workers=2, device='cpu', assemble_in_worker=True) \
             as batches:
         records = tuple(next(batches.records) for _ in range(BATCH_SIZE))
