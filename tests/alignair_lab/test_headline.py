@@ -137,7 +137,7 @@ def test_a_calibration_without_the_secondary_metric_leaves_it_uncalibrated_and_s
 # A screen's and a report's title lines as they are written, the longest over 132 columns.
 LONG_TITLE = [
     'Replicates trunk-v2-s20000: lab-trunk-v2 with {"boundary_mode": "half_open"}, 20000 steps (cosine schedule), init '
-    'seeds 0, 1, 2, each against the baseline screen baseline-igh-v3-seed0-40k-s20000-cosine-init0 (lab-null-v1, '
+    'seeds 0, 1, 2, each against the baseline screen baseline-igh-v3-seed0-40k-s20000-cosine-init0 (lab-null-v2, '
     'init seed 0).',
     'Candidate 84c55a76557c-98ec631407e5 (/media/thomas/NVMe_Data/alignair_arch/screens/trunk-v2-s20000/train/'
     'model.alignair); baseline f4175bf24847-98ec631407e5 (/media/thomas/NVMe_Data/alignair_arch/screens/'
@@ -220,7 +220,7 @@ def test_boundaries_show_both_decoders_and_each_column_tallies_its_verdicts():
 def test_the_headline_says_its_verdicts_leave_out_training_noise():
     """Two GPU runs of one architecture on the same records differ at 20k steps by more than the read CIs."""
     text = single(comparison())
-    assert "run-to-run training noise" in text and "lab-null-v1" in text
+    assert "run-to-run training noise" in text and "lab-null-v2" in text
 
 
 def rows(text):

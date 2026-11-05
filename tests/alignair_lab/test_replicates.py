@@ -214,7 +214,7 @@ def test_replicates_of_another_request_than_the_one_asked_for_are_refused():
 @pytest.fixture
 def replicate_root(rig, baseline, tmp_path):
     """A screens directory holding the registered baseline screen, a null band of its protocol (baseline screens of
-    init seeds 0, 1 and 2) and the candidate screen ``rep`` (the small conv-v1 of init seed 0) trained on the rig."""
+    init seeds 0, 1 and 2) and the candidate screen ``rep`` (the small chip-v1 of init seed 0) trained on the rig."""
     root = tmp_path / "screens"
     shutil.copytree(baseline, root / "base0")
     write_null_band(rig, root, json.loads((baseline / "screen.json").read_text())["protocol"])

@@ -29,7 +29,7 @@ from alignair_lab.noise import recentred, seed_values
 from alignair_lab.secondary import METRIC, cached_seed_values
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, DATACONFIGS, recipe_train_args
 
-NULL_ARCHITECTURE = "lab-null-v1"         # ``architectures.null``: its screens are the baseline screens
+NULL_ARCHITECTURE = "lab-null-v2"         # ``architectures.null``: its screens are the baseline screens
 BASELINE_INIT_SEED = 0                    # the init seed of the registered baseline screen
 CHECKPOINT = Path("train") / "model.alignair"   # a screen's trained model, under its directory
 SCREEN_RECORD = "screen.json"
@@ -40,11 +40,9 @@ NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _MILESTONE = re.compile(r"model\.step(\d+)\.alignair")
 # The width fields of a model configuration, recorded with a baseline's provenance; every configuration field,
 # these among them, is compared with the recipe's.
-CAPACITY_FIELDS = ("embed_dim", "filters", "block_out", "latent_size_factor", "v_allele_latent_size",
-                   "d_allele_latent_size", "j_allele_latent_size", "cls_scale_multiplier", "cls_dim_min", "cls_dim_max",
-                   "cls_filter_cap")
+CAPACITY_FIELDS = ("embed_dim", "trunk_channels")
 _V3_HINT = ("Its training records were drawn otherwise (other seeds, no selection, the uniform indel form), so it is "
-            "no baseline for a candidate trained from a v3 record cache: screen against the milestones of a conv-v1 "
+            "no baseline for a candidate trained from a v3 record cache: screen against the milestones of a chip "
             "baseline trained with recipe v3 (--against-milestone DIR), or against a baseline screen.")
 
 
@@ -156,7 +154,7 @@ def check_baseline(path: Path, steps: int, *, schedule=None, options: Mapping | 
 
 def baseline_milestone(milestones: Path, steps: int, options: Mapping | None = None, *, schedule=None) -> dict:
     """The baseline's milestone at ``steps`` in ``milestones`` (``milestone``), checked (``check_baseline``: of
-    conv-v1, under ``schedule``); its provenance, of kind ``milestone``."""
+    chip-v1, under ``schedule``); its provenance, of kind ``milestone``."""
     return {"kind": "milestone",
             **check_baseline(milestone(Path(milestones), steps), steps, schedule=schedule, options=options)}
 
@@ -219,7 +217,7 @@ def _screen_records(out_root: Path):
 
 def is_baseline_screen(record: Mapping) -> bool:
     """Whether a screen record is a baseline screen's: of ``NULL_ARCHITECTURE`` and compared with nothing (its role
-    ``baseline``). A lab-null-v1 screen that compared with a baseline, a sanity check or Tier 2, is a candidate."""
+    ``baseline``). A lab-null-v2 screen that compared with a baseline, a sanity check or Tier 2, is a candidate."""
     role = record.get("role", "baseline" if record.get("baseline") is None else "candidate")
     return record.get("architecture") == NULL_ARCHITECTURE and role == "baseline"
 

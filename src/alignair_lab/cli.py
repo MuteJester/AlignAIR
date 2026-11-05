@@ -20,9 +20,9 @@
       [--igblast-run DIR] [--suites S1,S3] [--device cuda] [--dev-build DIR] [--out-root DIR]
 
 ``screen`` trains an architecture with the recipe (``recipe``) from the record cache and compares it with a baseline
-at the same step (``screen.run_screen``): a screen of lab-null-v1 is a baseline screen, which compares with nothing;
+at the same step (``screen.run_screen``): a screen of lab-null-v2 is a baseline screen, which compares with nothing;
 any other compares with the registered baseline screen of its protocol (or the one ``--against-screen`` names), or
-with the baseline's milestone (``--against-milestone``, Tier 2; its directory defaults to the conv-v1 baseline's).
+with the baseline's milestone (``--against-milestone``, Tier 2; its directory defaults to the chip baseline's).
 ``calibrate`` trains the baseline screens of several init seeds (reusing those of the protocol already finished) and
 writes the null band and the baseline seeds' values of their protocol, which the headlines of its screens weigh their
 Δs against (``calibrate.run_calibration``). ``replicates`` screens a candidate from several init seeds, reusing the
@@ -77,7 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     against = run.add_mutually_exclusive_group()
     against.add_argument("--against-screen", metavar="NAME",
                          help="the baseline screen to compare with (default: the registered baseline screen of the "
-                              "protocol: lab-null-v1, init seed 0)")
+                              "protocol: lab-null-v2, init seed 0)")
     against.add_argument("--against-milestone", nargs="?", const=str(screen.MILESTONES), metavar="DIR",
                          help="compare with the baseline's milestone at the same step in DIR, model.step<N>.alignair "
                               f"(Tier 2; DIR defaults to {screen.MILESTONES}); its run kept a constant rate")

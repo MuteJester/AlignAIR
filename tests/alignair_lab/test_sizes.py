@@ -1,5 +1,5 @@
-"""A model's size by component (``sizes``): its parameters and Conv1d layers, read from its inspection points, grouped
-into segmentation, trunk, classification, meta and other, and summed into one compact headline line."""
+"""A model's size by component (``sizes``): its parameters and Conv1d layers, read from its inspection points and its
+core's units, grouped into trunk, parser, reader, scans, heads and other, and summed into one compact headline line."""
 import pytest
 import torch
 
@@ -11,7 +11,7 @@ from alignair_lab.sizes import GROUPS, checkpoint_size, model_size, size_line
 
 pytestmark = pytest.mark.component
 
-GENES = ('v', 'd', 'j')
+UNITS = ('core.trunk', 'core.parser', 'core.anchors', 'core.reader', 'core.scans', 'core.d_presence')
 
 
 @pytest.fixture(scope='module')
@@ -19,76 +19,56 @@ def reference():
     return ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
 
 
-def build(reference, architecture, **options):
+def build(reference, **options):
     torch.manual_seed(0)
-    return prepare_model(reference, architecture=architecture, **options).build_model()
+    return prepare_model(reference, **options).build_model()
 
 
-def test_conv_v1s_size_by_component(reference):
-    size = model_size(build(reference, 'conv-v1'))
-    assert (size['parameters'], size['conv1d']) == (14_306_909, 104)
+def test_the_chips_size_by_component(reference):
+    size = model_size(build(reference))
+    assert (size['parameters'], size['conv1d']) == (314_812, 22)
     components = size['components']
-    assert set(components) == {'embedding', 'orientation_head', 'meta_tower', 'meta_heads.mutation_rate',
-                               'meta_heads.indel_count', 'meta_heads.productive',
-                               *(f'{g}.{part}' for g in GENES for part in ('segmentation', 'classification'))}
-    for g in GENES:   # a segmentation tower (13 Conv1d) and two Linear(576, 576) boundary heads
-        assert components[f'{g}.segmentation'] == {'parameters': 1_854_656 + 2 * 332_352, 'conv1d': 13}
-    assert components['meta_tower'] == {'parameters': 1_854_656, 'conv1d': 13}
+    assert set(components) == {'embedding', 'orientation_head', *UNITS}     # the bound bank holds no weights
+    assert components['core.trunk'] == {'parameters': 250_176, 'conv1d': 13}
     assert components['embedding'] == {'parameters': 18_624, 'conv1d': 0}
     groups = size['groups']
     assert list(groups) == list(GROUPS) and sum(groups.values()) == size['parameters']
-    assert (groups['segmentation'], groups['trunk']) == (7_558_080, 0)
-    assert groups['meta'] == 1_854_656 + sum(components[f'meta_heads.{name}']['parameters']
-                                            for name in ('mutation_rate', 'indel_count', 'productive'))
-    assert sum(component['conv1d'] for component in components.values()) == 104
+    assert groups['trunk'] == 250_176 and groups['heads'] == (components['core.anchors']['parameters']
+                                                             + components['core.d_presence']['parameters'])
+    assert sum(component['conv1d'] for component in components.values()) == 22
 
 
-def test_lab_trunk_v1s_size_by_component(reference):
-    import alignair_lab.architectures  # noqa: F401  (registers lab-trunk-v1)
-    size = model_size(build(reference, 'lab-trunk-v1'))
-    assert (size['parameters'], size['conv1d']) == (7_741_475, 81)
-    components = size['components']
-    assert components['trunk'] == {'parameters': 991_872, 'conv1d': 13}
-    for g in GENES:   # the 1x1 boundary convolution
-        assert components[f'{g}.segmentation'] == {'parameters': 258, 'conv1d': 1}
-    groups = size['groups']
-    assert (groups['segmentation'], groups['trunk']) == (774, 991_872)
-    assert sum(groups.values()) == size['parameters']
+def test_a_light_chain_chip_has_no_d_presence_unit(reference):
+    size = model_size(build(ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB)))
+    assert 'core.d_presence' not in size['components']
+    assert sum(component['parameters'] for component in size['components'].values()) == size['parameters']
 
 
-def test_the_layers_no_inspection_point_holds_are_unattributed(reference):
-    """lab-trunk-v2's components hold all of its parameters and Conv1d layers; a Conv1d attached outside every
-    inspection point is counted as unattributed, its parameters and its layer, so the components still add up to
-    the model's totals."""
-    import alignair_lab.architectures  # noqa: F401  (registers lab-trunk-v2)
-    model = build(reference, 'lab-trunk-v2', boundary_mode='half_open')
-    size = model_size(model)
-    assert 'unattributed' not in size['components']
-    assert sum(component['conv1d'] for component in size['components'].values()) == size['conv1d'] == 81
+def test_the_layers_no_component_holds_are_unattributed(reference):
+    """A Conv1d attached outside every component is counted as unattributed, its parameters and its layer, so the
+    components still add up to the model's totals."""
+    model = build(reference)
+    assert 'unattributed' not in model_size(model)['components']
     model.stray = torch.nn.Conv1d(4, 2, 3)
     size = model_size(model)
     assert size['components']['unattributed'] == {'parameters': 4 * 2 * 3 + 2, 'conv1d': 1}
-    assert sum(component['conv1d'] for component in size['components'].values()) == size['conv1d'] == 82
+    assert sum(component['conv1d'] for component in size['components'].values()) == size['conv1d'] == 23
     assert sum(component['parameters'] for component in size['components'].values()) == size['parameters']
 
 
 def test_a_model_file_is_sized_as_its_model(reference, tmp_path):
     from alignair.train.checkpoints import save_checkpoint
-    model = build(reference, 'conv-v1', embed_dim=4, filters=4, block_out=8)
+    model = build(reference, embed_dim=4, trunk_channels=8)
     path = tmp_path / 'model.alignair'
     save_checkpoint(path, model.cfg, model, None, 1, dataconfigs=[gd.HUMAN_IGH_OGRDB])
-    assert checkpoint_size(path) == {**model_size(model), 'architecture': 'conv-v1'}
+    assert checkpoint_size(path) == {**model_size(model), 'architecture': 'chip-v1'}
 
 
 def test_the_size_line_gives_the_groups_in_millions_the_conv_count_and_the_rate(reference):
-    import alignair_lab.architectures  # noqa: F401  (registers lab-trunk-v1)
-    conv = {**model_size(build(reference, 'conv-v1')), 'architecture': 'conv-v1'}
-    trunk = {**model_size(build(reference, 'lab-trunk-v1')), 'architecture': 'lab-trunk-v1'}
-    assert size_line('baseline', conv, 5.31) == (
-        'Size of the baseline (conv-v1): 14.307M parameters (segmentation 7.558M, classification '
-        f"{conv['groups']['classification'] / 1e6:.3f}M, meta {conv['groups']['meta'] / 1e6:.3f}M, other "
-        f"{conv['groups']['other'] / 1e6:.3f}M), 104 Conv1d, 5.31 steps/s.")
-    line = size_line('candidate', trunk, None)
-    assert line.startswith('Size of the candidate (lab-trunk-v1): 7.741M parameters (segmentation 0.001M, trunk '
-                           '0.992M, classification ')
-    assert line.endswith(', 81 Conv1d, steps/s not recorded.')
+    chip = {**model_size(build(reference)), 'architecture': 'chip-v1'}
+    groups = chip['groups']
+    assert size_line('baseline', chip, 5.31) == (
+        'Size of the baseline (chip-v1): 0.315M parameters (trunk 0.250M, parser '
+        f"{groups['parser'] / 1e6:.3f}M, reader {groups['reader'] / 1e6:.3f}M, scans {groups['scans'] / 1e6:.3f}M, "
+        f"heads {groups['heads'] / 1e6:.3f}M, other {groups['other'] / 1e6:.3f}M), 22 Conv1d, 5.31 steps/s.")
+    assert size_line('candidate', chip, None).endswith(', 22 Conv1d, steps/s not recorded.')

@@ -24,7 +24,7 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
     printed = capsys.readouterr().out
     screen = rig.screens / 'smoke'
     record = json.loads((screen / 'screen.json').read_text())
-    assert record['status'] == 'done' and record['steps'] == 2 and record['architecture'] == 'lab-null-v1'
+    assert record['status'] == 'done' and record['steps'] == 2 and record['architecture'] == 'lab-null-v2'
     assert record['model_options'] == SMALL and record['suites'] == ['S0'] and record['variants'] == ['baseline']
     assert (record['schedule'], record['init_seed'], record['role']) == ('constant', 0, 'candidate')
     milestone = read_metadata(rig.milestones / 'model.step2.alignair')
@@ -62,7 +62,7 @@ def test_a_screen_trains_from_the_cache_and_compares_with_the_milestone_at_its_s
 
 
 def test_the_null_candidate_reproduces_the_baselines_weights_on_the_cpu(rig):
-    """lab-null-v1 is conv-v1, trained from the cache with a data worker: on the CPU, the baseline trained serially
+    """lab-null-v2 is chip-v1, trained from the cache with a data worker: on the CPU, the baseline trained serially
     on live GenAIRR records from the same init seed, weight for weight."""
     import torch
     from alignair.model_file import load_model
@@ -177,7 +177,7 @@ def test_a_baseline_without_a_digest_is_compared_with_the_version_of_the_genairr
 def test_a_milestone_of_another_capacity_is_refused_unless_the_screen_is_told_its_options(rig, capsys):
     assert main(arguments(rig, 'other-capacity', baseline_options=False)) == 2
     error = capsys.readouterr().err
-    assert 'embed_dim 4, not 32' in error and 'filters 4, not 128' in error and 'block_out 8, not 576' in error
+    assert 'embed_dim 4, not 32' in error and 'trunk_channels 8, not 64' in error
     assert not (rig.screens / 'other-capacity').exists()
 
 
@@ -212,18 +212,18 @@ def test_a_cosine_screen_against_a_milestone_of_a_constant_rate_is_refused(rig, 
 
 def test_a_milestone_of_another_model_family_is_refused_before_anything_runs(rig, tmp_path, capsys):
     import GenAIRR.data as gd
-    import alignair_lab.architectures  # noqa: F401  (registers lab-null-v1)
+    import alignair_lab.architectures  # noqa: F401  (registers lab-null-v2)
     from alignair.core import prepare_model
     from alignair.reference.reference_set import ReferenceSet
     from alignair.train.checkpoints import save_checkpoint
-    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), architecture='lab-null-v1', **SMALL)
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), architecture='lab-null-v2', **SMALL)
     milestones = tmp_path / 'milestones'
     milestones.mkdir()
     train_args = read_metadata(rig.milestones / 'model.step2.alignair')['training']['train_args']
     save_checkpoint(str(milestones / 'model.step2.alignair'), setup.config, setup.build_model(), None, 2,
                     dataconfigs=list(DATACONFIGS), train_args=train_args, label_schema=setup.label_schema())
     assert main([*arguments(rig, 'other-family'), '--against-milestone', str(milestones)]) == 2
-    assert "architecture 'lab-null-v1', not 'conv-v1'" in capsys.readouterr().err
+    assert "architecture 'lab-null-v2', not 'chip-v1'" in capsys.readouterr().err
     assert not (rig.screens / 'other-family').exists()
 
 
@@ -243,7 +243,7 @@ def test_a_screen_the_cache_cannot_feed_is_refused_before_anything_runs(rig, tmp
 
 @pytest.mark.parametrize('extra,problem', [(('--architecture', 'lab-absent-v1'), 'unknown model architecture'),
                                            (('--model-option', 'no_such_option=1'), 'invalid model configuration'),
-                                           (('--model-option', 'filters'), 'KEY=VALUE'),
+                                           (('--model-option', 'trunk_channels'), 'KEY=VALUE'),
                                            (('--suites', 'S1'), 'suite S1 is not built')])
 def test_a_request_that_cannot_run_is_refused_before_anything_runs(rig, capsys, extra, problem):
     assert main([*arguments(rig, 'refused'), *extra]) == 2

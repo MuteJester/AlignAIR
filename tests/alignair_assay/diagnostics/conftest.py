@@ -110,16 +110,15 @@ def s0_cases(s0_layout):
 
 @pytest.fixture(scope="session")
 def toy_chip_file(tmp_path_factory):
-    """A random-init w64 chip on HUMAN_IGH_OGRDB, saved as an inference model file (the golden records' tests)."""
-    import alignair_lab.architectures  # noqa: F401  (registers the lab chips)
+    """A random-init chip (chip-v1, 64 channels) on HUMAN_IGH_OGRDB, saved as an inference model file (the golden
+    records' tests)."""
     from alignair.core import prepare_model
     from alignair.model_file import save_model
     from alignair.reference.reference_set import ReferenceSet
     import GenAIRR.data as gd
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     torch.manual_seed(0)
-    model = prepare_model(reference, architecture="lab-chipw64-v1", anchor_heads=True,
-                          d_presence_head=True, bank_orientation=True).build_model().eval()
+    model = prepare_model(reference).build_model().eval()
     path = tmp_path_factory.mktemp("golden") / "toy_chip.alignair"
     save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
     return str(path)

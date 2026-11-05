@@ -25,7 +25,7 @@ no read pairs; ``n/a``: the suite does not compare the metric. Plain text, no IO
 
 The verdicts treat both checkpoints as fixed and resample reads only. Training is not reproducible on the GPU (cuDNN's
 default kernels are not deterministic), and at a constant learning rate two runs of one architecture on the same
-records drift apart: a 20k-step screen of ``lab-null-v1`` against the conv-v1 milestone showed junction Δs of +6 and
+records drift apart: a 20k-step screen of AlignAIR 3's null candidate against its milestone showed junction Δs of +6 and
 +13 pp judged significant, and boundary Δs up to 23 pp. The legend says so, and the decision rows measure a
 candidate's Δs against the null band of baseline screens (``calibrate``).
 
@@ -50,7 +50,7 @@ DECODERS = (("soft", "Boundary exact rates, the soft-argmax decoder:"),
 MARKS = {"b_better": "+", "a_better": "-", "tie_or_inconclusive": "="}
 LEGEND = ("Δ = candidate − baseline (pp) [95% CI], verdict (+ better, - worse, = tie, ? few clusters), reads fixed/broken. "
           "These omit",
-          "run-to-run training noise, weighed below: pooled/band (lab-null-v1), seeds mean±SD n, diff z p agree (p: "
+          "run-to-run training noise, weighed below: pooled/band (lab-null-v2), seeds mean±SD n, diff z p agree (p: "
           "two-sided, Student's t).",
           "Better: one-sided p<=.025, none regress. One seed: its spread is assumed the baseline seeds' (sc = sb); a "
           "noisier candidate makes",

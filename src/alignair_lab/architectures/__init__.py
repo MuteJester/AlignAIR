@@ -17,7 +17,7 @@ import pkgutil
 from alignair.core.components import ModelComponents, register_architecture
 from alignair.errors import ConfigurationError
 
-# A candidate's name: lower-case words joined by hyphens, ending in its version, e.g. ``lab-null-v1``.
+# A candidate's name: lower-case words joined by hyphens, ending in its version, e.g. ``lab-null-v2``.
 NAME = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*-v[0-9]+"
 _REGISTERED: list[str] = []
 
@@ -27,7 +27,7 @@ def register(name: str, components: ModelComponents) -> None:
     does: an existing name is refused."""
     import re
     if not isinstance(name, str) or not re.fullmatch(NAME, name):
-        raise ConfigurationError(f"a candidate architecture needs a versioned name such as 'lab-null-v1', got {name!r}",
+        raise ConfigurationError(f"a candidate architecture needs a versioned name such as 'lab-null-v2', got {name!r}",
                                  context={"field": "architecture"})
     register_architecture(name, components)
     _REGISTERED.append(name)

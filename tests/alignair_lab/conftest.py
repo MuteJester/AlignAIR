@@ -11,7 +11,7 @@ def rig(tmp_path_factory):
 
 @pytest.fixture(scope='session')
 def baseline(rig):
-    """The rig's registered baseline screen, ``base0``: the small lab-null-v1 of init seed 0, cosine schedule."""
+    """The rig's registered baseline screen, ``base0``: the small lab-null-v2 of init seed 0, cosine schedule."""
     from alignair_lab.cli import main
     if not (rig.screens / 'base0' / 'screen.json').is_file():
         assert main(rigging.baseline_arguments(rig, 'base0')) == 0

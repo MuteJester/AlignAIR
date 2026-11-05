@@ -1,6 +1,6 @@
 """The screens' test rig, built once per test session in a temporary directory: a dev build of S0 (2 reads), a small
-conv-v1 baseline trained 2 steps at the recipe's constant rate from init seed 0 and kept as its step-2 milestone, and
-a record cache of the recipe for 2 steps. A baseline screen of the small lab-null-v1 (init seed 0, cosine schedule)
+chip-v1 baseline trained 2 steps at the recipe's constant rate from init seed 0 and kept as its step-2 milestone, and
+a record cache of the recipe for 2 steps. A baseline screen of the small lab-null-v2 (init seed 0, cosine schedule)
 is trained in the rig's screens directory when a test first asks for it.
 
 Every screen of these tests is of the small model (``SMALL``), on the CPU, with one data worker."""
@@ -14,7 +14,7 @@ from alignair.model_file import read_metadata, update_card
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED, training_config
 from alignair_lab.records import write_record_cache
 
-SMALL = {'embed_dim': 4, 'filters': 4, 'block_out': 8}
+SMALL = {'embed_dim': 4, 'trunk_channels': 8}
 REMOVED = object()
 
 
@@ -43,7 +43,7 @@ def common(rig, out_root=None):
             '--dev-build', str(rig.dev), '--out-root', str(out_root or rig.screens)]
 
 
-def arguments(rig, name, *extra, steps=2, baseline_options=True, architecture='lab-null-v1'):
+def arguments(rig, name, *extra, steps=2, baseline_options=True, architecture='lab-null-v2'):
     """A Tier-2 screen of the small ``architecture`` against the rig's milestone, at its constant rate, told the
     milestone's options."""
     told = options('--baseline-model-option') if baseline_options else []
@@ -53,12 +53,12 @@ def arguments(rig, name, *extra, steps=2, baseline_options=True, architecture='l
 
 
 def baseline_arguments(rig, name, *extra, init_seed=0, out_root=None):
-    """A baseline screen of the small lab-null-v1 of ``init_seed``, at the default (cosine) schedule."""
-    return ['screen', '--name', name, '--steps', '2', '--architecture', 'lab-null-v1', '--init-seed', str(init_seed),
+    """A baseline screen of the small lab-null-v2 of ``init_seed``, at the default (cosine) schedule."""
+    return ['screen', '--name', name, '--steps', '2', '--architecture', 'lab-null-v2', '--init-seed', str(init_seed),
             *options('--model-option'), *common(rig, out_root), *extra]
 
 
-def candidate_arguments(rig, name, *extra, out_root=None, architecture='conv-v1'):
+def candidate_arguments(rig, name, *extra, out_root=None, architecture='chip-v1'):
     """A screen of the small ``architecture`` against the registered baseline screen, told its options."""
     return ['screen', '--name', name, '--steps', '2', '--architecture', architecture, *options('--model-option'),
             *options('--baseline-model-option'), *common(rig, out_root), *extra]

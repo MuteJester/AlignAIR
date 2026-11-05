@@ -1,7 +1,7 @@
 """A screen: an architecture trained with the recipe (``recipe``) from the record cache, then compared by the assay with
 a baseline at the same step. A yes or no on a candidate in under half an hour, several at once.
 
-**Baseline screens.** A screen of ``baselines.NULL_ARCHITECTURE`` (lab-null-v1: conv-v1 under a lab name) compared
+**Baseline screens.** A screen of ``baselines.NULL_ARCHITECTURE`` (lab-null-v2: chip-v1 under a lab name) compared
 with nothing is a baseline screen: one replicate of the baseline, of its ``init_seed``. A screen of another
 architecture compares with the registered baseline screen of its protocol (``baselines``: the recipe id, the record
 cache's content identity, the steps and the schedule), or with the baseline screen it names (``against_screen``).
@@ -102,7 +102,7 @@ ARCH_ROOT = Path("/media/thomas/NVMe_Data/alignair_arch")
 SCREENS = ARCH_ROOT / "screens"
 CACHE = ARCH_ROOT / "cache" / "igh-v3-seed0-40k"
 DEV_BUILD = Path("/home/thomas/Desktop/AlignAIR/.private/arch/iter_dev")
-MILESTONES = Path("/home/thomas/Desktop/AlignAIR/.private/arch/baseline_conv_v1/milestones")
+MILESTONES = Path("/home/thomas/Desktop/AlignAIR/.private/arch/baseline_chip_v1/milestones")
 DEFAULT_STEPS = 20_000
 DEFAULT_VARIANTS = ("baseline",)
 DEFAULT_DATA_WORKERS = 2

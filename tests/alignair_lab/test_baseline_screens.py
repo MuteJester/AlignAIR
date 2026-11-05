@@ -1,4 +1,4 @@
-"""Baseline screens: screens of lab-null-v1, one per init seed, which the screens of candidates compare with.
+"""Baseline screens: screens of lab-null-v2, one per init seed, which the screens of candidates compare with.
 
 A baseline screen trains with a cosine cooldown and compares with nothing. A candidate compares with the registered
 baseline screen of its protocol (the recipe, the record cache, the steps, the schedule) and its baseline's options,
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.integration
 def test_a_baseline_screen_cools_its_rate_down_and_compares_with_nothing(baseline):
     from alignair.train.checkpoints import load_training_checkpoint
     record = json.loads((baseline / 'screen.json').read_text())
-    assert (record['status'], record['role'], record['architecture']) == ('done', 'baseline', 'lab-null-v1')
+    assert (record['status'], record['role'], record['architecture']) == ('done', 'baseline', 'lab-null-v2')
     assert (record['init_seed'], record['schedule'], record['baseline']) == (0, 'cosine', None)
     assert record['protocol'] == {'recipe': 'v3', 'cache': record['cache']['identity'], 'steps': 2,
                                   'schedule': {'policy': 'cosine-v1', 'total_steps': 2, 'min_lr': MIN_LR}}
@@ -69,7 +69,7 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
                               'alignair_assay': code_identity(Path(alignair_assay.__file__).parent)['code_sha256']}
     assert record['null_band'] is None and set(record['decisions']) >= {'clone_key.exact', 'junction.nt_exact'}
     headline = (screen / 'headline.txt').read_text()
-    assert 'against the baseline screen base0 (lab-null-v1, init seed 0) at step 2' in flat(headline)
+    assert 'against the baseline screen base0 (lab-null-v2, init seed 0) at step 2' in flat(headline)
     noise = next(line for line in headline.splitlines() if line.startswith('noise '))
     assert 'Null band: none' in flat(headline) and noise.split()[1:] == ['uncalibrated'] * 5
     # the calibration it suggests makes a band this screen would use: of its protocol, options, build and cases; the
@@ -79,8 +79,7 @@ def test_a_candidate_compares_with_the_registered_baseline_screen_of_its_protoco
     assert shlex.split(command) == [
         'python', '-m', 'alignair_lab', 'calibrate', '--steps', '2', '--init-seeds', '0,1,2', '--schedule', 'cosine',
         '--cache', str(rig.cache.resolve()), '--out-root', str(rig.screens.resolve()), '--dev-build',
-        str(rig.dev.resolve()), '--suites', 'S0', '--model-option', 'embed_dim=4', '--model-option', 'filters=4',
-        '--model-option', 'block_out=8']
+        str(rig.dev.resolve()), '--suites', 'S0', '--model-option', 'embed_dim=4', '--model-option', 'trunk_channels=8']
     # both models' sizes, and each one's training rate: the baseline's from its baseline screen
     base_rate = json.loads((baseline / 'screen.json').read_text())['candidate']['steps_per_second']
     assert reference['steps_per_second'] == base_rate
@@ -116,14 +115,14 @@ def test_without_a_registered_baseline_screen_a_candidate_is_refused_with_the_co
     assert main(candidate_arguments(rig, 'orphan', out_root=root)) == 2
     error = capsys.readouterr().err
     assert 'no baseline screen' in error
-    assert (f"python -m alignair_lab screen --name baseline-cache-s2-cosine-init0 --architecture lab-null-v1 "
+    assert (f"python -m alignair_lab screen --name baseline-cache-s2-cosine-init0 --architecture lab-null-v2 "
             f"--init-seed 0 --steps 2 --schedule cosine --cache {rig.cache.resolve()} --out-root {root}") in error
-    assert "--model-option embed_dim=4 --model-option filters=4 --model-option block_out=8" in error
+    assert "--model-option embed_dim=4 --model-option trunk_channels=8" in error
     assert 'python -m alignair_lab calibrate --steps 2 --init-seeds 0,1,2 --schedule cosine' in error
     assert not (root / 'orphan').exists()
 
 
-@pytest.mark.parametrize('changes', [{'init_seed': 1}, {'status': 'failed'}, {'architecture': 'conv-v1'},
+@pytest.mark.parametrize('changes', [{'init_seed': 1}, {'status': 'failed'}, {'architecture': 'chip-v1'},
                                      {'role': 'candidate'}, {'role': REMOVED, 'baseline': {'kind': 'milestone'}},
                                      {'model_options': {}}, {'protocol.steps': 3}, {'protocol.schedule': None},
                                      {'protocol.cache': '0' * 64}, {'protocol.recipe': 'v2'}, {'protocol': REMOVED}])
@@ -136,7 +135,7 @@ def test_a_screen_of_another_protocol_seed_or_model_is_not_the_registered_baseli
 
 
 def test_a_null_screen_that_compared_with_a_baseline_is_not_one(rig, baseline, tmp_path):
-    """A lab-null-v1 screen run against a baseline (a sanity check, or Tier 2 against a milestone) is a candidate:
+    """A lab-null-v2 screen run against a baseline (a sanity check, or Tier 2 against a milestone) is a candidate:
     the registered baseline screen stays the one baseline screen of the protocol."""
     from alignair_lab.baselines import baseline_screen
     root = screens_with(tmp_path, baseline, 'base0')
@@ -157,8 +156,8 @@ def test_two_registered_baseline_screens_are_refused_unless_the_candidate_names_
 
 @pytest.mark.parametrize('name,changes,problem', [
     ('absent', {}, 'no screen named absent'),
-    ('base0', {'architecture': 'conv-v1'}, 'not a baseline screen'),
-    ('base0', {'status': 'training lab-null-v1 for 2 steps from the record cache'}, 'has not finished'),
+    ('base0', {'architecture': 'chip-v1'}, 'not a baseline screen'),
+    ('base0', {'status': 'training lab-null-v2 for 2 steps from the record cache'}, 'has not finished'),
     ('base0', {'protocol.steps': 3}, 'steps 3, not 2')])
 def test_a_named_baseline_screen_must_be_a_finished_baseline_screen_of_the_protocol(rig, baseline, tmp_path, capsys,
                                                                                     name, changes, problem):

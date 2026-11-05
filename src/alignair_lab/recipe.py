@@ -1,9 +1,8 @@
-"""The training recipe of every screen and record cache, and of the conv-v1 baseline they are compared with: the 1.0.0
+"""The training recipe of every screen and record cache, and of the chip baseline they are compared with: the 1.0.0
 recipe's settings under the product's record recipe v3 (``alignair.train.trainer.RECIPE``).
 
 - Data: HUMAN_IGH_OGRDB, nucleotide input, allele labels.
-- Model: conv-v1 with its default options. Unknown productivity is masked and the Short-D loss is the corrected one,
-  both chosen by the reference-bound model setup (``prepare_model``), never passed.
+- Model: the chip (chip-v1) with its default options, chosen by the reference-bound model setup (``prepare_model``).
 - Optimization: batch 64 at a learning rate of 3e-4, seed 0. The recipe's runs, the baseline's milestones among them,
   keep the rate constant (no schedule). A screen cools it down by default (``schedule``: cosine to ``MIN_LR``, a
   hundredth of it, over the screen's steps), so that two runs of one architecture end close to each other.
@@ -36,7 +35,7 @@ BATCH_SIZE = 64
 LR = 3e-4
 MIN_LR = LR / 100                       # where a screen's cosine schedule ends
 SCHEDULES = ("cosine", "constant")
-BASELINE_ARCHITECTURE = "conv-v1"
+BASELINE_ARCHITECTURE = "chip-v1"
 
 
 def schedule(name: str, steps: int) -> CosineSchedule | None:
@@ -51,7 +50,7 @@ def training_config(*, steps: int, architecture: str = BASELINE_ARCHITECTURE, mo
                     device: str = "cuda", data_workers: int = 0, schedule: CosineSchedule | None = None,
                     init_seed: int | None = None) -> TrainingConfig:
     """The recipe's ``TrainingConfig`` for ``steps`` steps of ``architecture`` with ``model_options``, under
-    ``schedule`` (None: a constant rate) and from ``init_seed``'s initial weights (None: the seed's): with conv-v1, no
+    ``schedule`` (None: a constant rate) and from ``init_seed``'s initial weights (None: the seed's): with chip-v1, no
     options and no schedule, the baseline's model on the baseline's training batches. The architecture is named by
     ``architecture`` only."""
     options = dict(model_options or {})

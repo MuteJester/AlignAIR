@@ -18,8 +18,8 @@ pytestmark = pytest.mark.integration
 @pytest.mark.parametrize("lab_name, channels", [("lab-chipw64-v1", 64), ("lab-chip-v1", 128)])
 def test_a_converted_lab_chip_is_chip_v1_and_predicts_the_same_rows(tmp_path, lab_name, channels, reads):
     assert LAB_CHIPS == {"lab-chip-v1": 128, "lab-chipw64-v1": 64}
-    src = save_toy_lab_chip(tmp_path / "lab.alignair", lab_name)
-    before = predict_rows(src, reads)
+    src = save_toy_lab_chip(tmp_path / "lab.alignair", lab_name, chip_copy=tmp_path / "before.alignair")
+    before = predict_rows(str(tmp_path / "before.alignair"), reads)
     summary = convert_lab_chip(src, str(tmp_path / "v4.alignair"))
     assert summary["from"] == lab_name and summary["to"] == "chip-v1" and summary["trunk_channels"] == channels
     after = rows_in_clean_process(tmp_path / "v4.alignair", reads)
@@ -29,6 +29,13 @@ def test_a_converted_lab_chip_is_chip_v1_and_predicts_the_same_rows(tmp_path, la
     assert header["provenance"]["converted_from"]["architecture"] == lab_name
     assert header["reference"] == read_metadata(src)["reference"] | {
         "dataconfigs": [dict(d, section=None) for d in read_metadata(src)["reference"]["dataconfigs"]]}
+
+
+def test_a_lab_chip_file_is_refused_until_converted(tmp_path):
+    from alignair.errors import ModelError
+    from alignair.model_file import load_model
+    with pytest.raises(ModelError, match="lab chip model file .*convert it"):
+        load_model(save_toy_lab_chip(tmp_path / "lab.alignair", "lab-chipw64-v1"))
 
 
 def test_a_non_chip_model_file_is_refused(tmp_path):
