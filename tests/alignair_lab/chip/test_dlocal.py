@@ -46,3 +46,31 @@ def test_the_junction_is_the_read_between_the_v_end_and_the_j_start_with_a_flank
     crop = junction(_tokens(read), _tokens(read) != 0, torch.tensor([30]), torch.tensor([38]))
     kept = "".join("?ATGCN"[t] for t in crop[0].tolist() if t)
     assert kept == "AAAAAA" + "CCCCGGGG" + "TTTTTT"                        # FLANK = 6 bases each side
+
+
+def _reference_local_scores(crop, rows, m):
+    """Each row's best ungapped local alignment score as written first: Kadane along the row, base by base."""
+    from torch.nn import functional as F
+    width = rows.shape[1]
+    windows = F.pad(crop, (width - 1, width - 1)).unfold(1, width, 1)
+    match, mismatch = torch.log(4 * (1 - m))[..., None], torch.log(4 * m / 3)[..., None]
+    running = torch.zeros(crop.shape[0], rows.shape[0], windows.shape[1])
+    best = torch.zeros_like(running)
+    for k in range(width):
+        read, germline = windows[:, None, :, k], rows[None, :, k, None]
+        both = (read > 0) & (germline > 0)
+        ratio = torch.where(both & (read == germline), match, torch.where(both, mismatch, 0.))
+        running = (running + ratio).clamp_min(0.)
+        best = torch.maximum(best, running)
+    return best.amax(-1)
+
+
+def test_local_scores_are_the_base_by_base_definition():
+    """Random crops and rows with pads (0) and N (5) on both sides, a mutation rate per read: the scores are the
+    definition's."""
+    generator = torch.Generator().manual_seed(0)
+    crop = torch.randint(0, 6, (3, 30), generator=generator)
+    rows = torch.randint(1, 6, (7, 12), generator=generator)
+    rows[2, 9:] = 0
+    m = torch.tensor([[0.02], [0.1], [0.25]])
+    assert torch.allclose(local_scores(crop, rows, m), _reference_local_scores(crop, rows, m), atol=1e-4)

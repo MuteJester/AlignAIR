@@ -48,20 +48,23 @@ def junction(tokens: torch.Tensor, mask: torch.Tensor, v_end: torch.Tensor, j_st
 
 def local_scores(crop: torch.Tensor, rows: torch.Tensor, m: torch.Tensor) -> torch.Tensor:
     """(B, R) each row's best ungapped local alignment score against the crop; ``m`` (B, 1) the mutation rate.
-    Kadane along the row: every (read, row, diagonal) carries its best stretch ending at the row base reached."""
+    Kadane along the row: every (read, diagonal, row) carries its best stretch ending at the row base reached. A
+    pair's ratio is one small product: the read base as (mismatch if a base, (match - mismatch) x its one-hot), the
+    row base as (1 if a base, its one-hot), so a match gives match, a mismatch mismatch and a pad 0, for every
+    (diagonal, row) of a row base at once."""
     width = rows.shape[1]
-    windows = F.pad(crop, (width - 1, width - 1)).unfold(1, width, 1)                       # (B, offsets, W)
-    match = torch.log(4 * (1 - m))[..., None]                                               # (B, 1, 1)
-    mismatch = torch.log(4 * m / 3)[..., None]
-    running = torch.zeros(crop.shape[0], rows.shape[0], windows.shape[1], dtype=match.dtype, device=crop.device)
+    match, mismatch = torch.log(4 * (1 - m)), torch.log(4 * m / 3)                         # (B, 1)
+    padded = F.pad(crop, (width - 1, width - 1))                                           # (B, offsets + W - 1)
+    read = torch.cat([mismatch[..., None] * (padded > 0)[..., None],
+                      (match - mismatch)[..., None] * F.one_hot(padded, 6)[..., 1:]], -1).to(match.dtype)
+    germline = torch.cat([(rows > 0)[..., None], F.one_hot(rows, 6)[..., 1:]], -1).to(match.dtype)   # (R, W, 6)
+    offsets = padded.shape[1] - width + 1
+    running = torch.zeros(crop.shape[0], offsets, rows.shape[0], dtype=match.dtype, device=crop.device)
     best = torch.zeros_like(running)
     for k in range(width):
-        read, germline = windows[:, None, :, k], rows[None, :, k, None]                    # (B, 1, O), (1, R, 1)
-        both = (read > 0) & (germline > 0)
-        ratio = torch.where(both & (read == germline), match, torch.where(both, mismatch, 0.))
-        running = (running + ratio).clamp_min(0.)
+        running = (running + read[:, k:k + offsets] @ germline[:, k].t()).clamp_min_(0.)  # (B, O, R)
         best = torch.maximum(best, running)
-    return best.amax(-1)
+    return best.amax(1)
 
 
 @torch.no_grad()
