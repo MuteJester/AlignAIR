@@ -1,12 +1,11 @@
-"""The conv-v1 model and reads of the golden AIRR rows (``fixtures/conv_v1_rows.json``), shared by the test and the
-script that wrote the fixture.
+"""The test chip and the golden reads of the product's integration tests: the model (``tests/alignair/fixtures/
+test_chip.alignair``, built by ``tests.alignair.fixtures.build_test_chip``), the reads (``fixtures/golden_reads.json``:
+GenAIRR reads drawn once) and the chip's rows of them (``FIXTURE``, ``tests/alignair/fixtures/test_chip_rows.json``),
+and short amplicon reads whose V the chip ties with sibling alleles (``TIE_READS``, ``fixtures/tie_reads.json``: the
+first six of a GenAIRR draw whose complete rows list ties), for the tests of ties and of the genotype pass.
 
-The model is Task 1's golden conv-v1 (``tests/alignair/core/test_trunk_hooks.py``: HUMAN_IGH_OGRDB, random init from
-seed 0) with its boundary heads shaped so every read's V, D and J fall on spans of real size, so the germline reader
-and the AIRR assembly run on real alignments. The reads are GenAIRR reads drawn once and stored in the fixture.
-
-Rewrite the fixture only for a deliberate change of conv-v1's rows:
-``python -m tests.alignair.predict.golden_rows`` (frozen GenAIRR on PYTHONPATH).
+Redraw the reads only for a deliberate change of the read set: ``python -m tests.alignair.predict.golden_rows``
+(frozen GenAIRR on PYTHONPATH), then rewrite the rows (``build_test_chip.write_rows``).
 """
 from __future__ import annotations
 
@@ -14,27 +13,17 @@ import itertools
 import json
 from pathlib import Path
 
-import torch
-
-FIXTURE = Path(__file__).parent / "fixtures" / "conv_v1_rows.json"
-# forward-frame spans the shaped boundary heads give every read (0-based, end-exclusive)
-SPANS = {"v": (0, 290), "d": (300, 316), "j": (322, 360)}
+GOLDEN_READS = Path(__file__).parent / "fixtures" / "golden_reads.json"
+TIE_READS = Path(__file__).parent / "fixtures" / "tie_reads.json"
+TEST_CHIP = Path(__file__).parents[1] / "fixtures" / "test_chip.alignair"
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "test_chip_rows.json"
 
 
 def golden_model():
-    """``(model, reference_set)``: the shaped golden conv-v1, in eval mode on the CPU."""
-    import GenAIRR.data as gd
-    from alignair.core import prepare_model
-    from alignair.reference.reference_set import ReferenceSet
-    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    torch.manual_seed(0)
-    model = prepare_model(reference).build_model().eval()
-    with torch.no_grad():
-        for g, (start, end) in SPANS.items():
-            for head, position in ((model.branches[g].start_head, start), (model.branches[g].end_head, end)):
-                head.bias.zero_()
-                head.bias[position] = 30.0
-    return model, reference
+    """``(model, reference_set)``: the test chip, in eval mode on the CPU, bound to its embedded reference."""
+    from alignair.model_file import load_model
+    loaded = load_model(str(TEST_CHIP))
+    return loaded.model.eval(), loaded.reference
 
 
 def draw_reads() -> list[str]:
@@ -59,9 +48,6 @@ def predict_rows(model, reference, reads) -> list[dict]:
 
 
 if __name__ == "__main__":
-    model, reference = golden_model()
     reads = draw_reads()
-    FIXTURE.parent.mkdir(exist_ok=True)
-    FIXTURE.write_text(json.dumps({"reads": reads, "rows": predict_rows(model, reference, reads)}, sort_keys=True,
-                                  indent=1))
-    print(FIXTURE, len(reads), "reads")
+    GOLDEN_READS.write_text(json.dumps({"reads": reads}, indent=1) + "\n")
+    print(GOLDEN_READS, len(reads), "reads")

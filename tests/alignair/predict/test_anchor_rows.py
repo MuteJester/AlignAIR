@@ -1,6 +1,6 @@
 """The AIRR rows of a model with anchor heads take their junction, frame, stop codon and productivity from the decoded
-anchors (``predict.junction.derive_junction``, over the row's own V start and J end); a model without them, conv-v1,
-gives the rows it gave before the anchors existed.
+anchors (``predict.junction.derive_junction``, over the row's own V start and J end); the test chip's rows are the
+rows recorded for it.
 
 A decoded anchor is the argmax of its logits over the read's positions and the null slot L; the null slot means the
 anchor is not observed (None)."""
@@ -56,19 +56,17 @@ def test_anchors_refuse_a_non_finite_logit_on_an_allowed_slot():
 
 
 @pytest.mark.integration
-def test_conv_v1_rows_are_unchanged(golden):
-    """The golden conv-v1's rows on the fixture's reads (full length, with and without a V indel, J-anchored
-    amplicons, a read longer than the window) are the rows recorded before the anchor heads existed, which already
-    had their CDR3 positions in the read: the junction keeps its two paths, productive its derivation from the
-    alignment, and productive_prediction the learned head's call."""
+def test_the_test_chips_rows_are_unchanged(golden):
+    """The test chip's rows on the golden reads (full length, with and without a V indel, J-anchored amplicons, a
+    read longer than the window, a reverse-complemented read) are the rows recorded for it, each with its anchors."""
     fixture = json.loads(FIXTURE.read_text())
     rows = predict_rows(*golden, fixture["reads"])
     assert rows == fixture["rows"]
-    assert all("v_anchor" not in row for row in rows)
+    assert all("v_anchor" in row and "j_anchor" in row for row in rows)
 
 
 class AnchorStub(torch.nn.Module):
-    """The shaped golden conv-v1 with anchor heads in place of its productive head: its outputs less ``productive``,
+    """The test chip with its anchors given: its outputs (less a learned ``productive``, should it have one),
     the orientation ``orientations`` gives each read (the forward one, 0, by default), and V and J anchor logits peaked
     at the positions ``anchors`` gives each read (None: the null slot). Both are keyed by the read's encoded bases as
     presented; the anchors are positions in the forward frame the orientation corrects the read to, as a model's
@@ -81,7 +79,7 @@ class AnchorStub(torch.nn.Module):
 
     def forward(self, batch):
         out = self.inner(batch)
-        del out["productive"]
+        out.pop("productive", None)
         tokens = batch["tokenized_sequence"]
         rows, length = tokens.shape
         reads = [tuple(tokens[row][tokens[row] != 0].tolist()) for row in range(rows)]

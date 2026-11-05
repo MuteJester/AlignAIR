@@ -1,4 +1,4 @@
-"""On the golden conv-v1 rows (``golden_rows``: reads with V indels, V starting inside its germline), each assembled D
+"""On the test chip's rows (``golden_rows``: reads with V indels, V starting inside its germline), each assembled D
 and J sequence alignment is the read's own bases at that segment's coordinates, whatever the V before it."""
 import json
 

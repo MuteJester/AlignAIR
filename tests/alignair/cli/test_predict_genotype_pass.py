@@ -1,31 +1,26 @@
 """``alignair predict --infer-genotype``: the donor's V genotype inferred from the reads' own calls, the reads it moves
-re-called under it, every other row as a plain run writes it, and the genotype written as an AIRR GenotypeSet."""
+re-called under it, every other row as a plain run writes it, and the genotype written as an AIRR GenotypeSet. On the
+test chip, with the golden reads and the tie reads (short amplicons whose V the chip ties with sibling alleles)."""
 import csv
 import json
 
 import pytest
 
-from alignair.genotype.lean import GenotypeEvidence
+from alignair.genotype.lean import GenotypeEvidence, gene_of
 
-from tests.alignair.predict.golden_rows import FIXTURE, golden_model
+from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP, TIE_READS
 
 pytestmark = pytest.mark.integration
 
-CALL = "IGHVF10-G52*04"              # the golden model's V call for every read, mostly with tied alleles
-
 
 @pytest.fixture(scope="module")
-def model_file(tmp_path_factory):
-    from alignair.model_file import save_model
-    model, _ = golden_model()
-    path = tmp_path_factory.mktemp("model") / "golden.alignair"
-    save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
-    return str(path)
+def model_file():
+    return str(TEST_CHIP)
 
 
 @pytest.fixture(scope="module")
 def fasta(tmp_path_factory):
-    reads = json.loads(FIXTURE.read_text())["reads"] * 2
+    reads = (json.loads(FIXTURE.read_text())["reads"] + json.loads(TIE_READS.read_text())["reads"]) * 2
     path = tmp_path_factory.mktemp("reads") / "reads.fasta"
     path.write_text("".join(f">r{i}\n{read}\n" for i, read in enumerate(reads)))
     return str(path)
@@ -42,6 +37,11 @@ def _rows(path):
         return list(csv.DictReader(handle, delimiter="\t"))
 
 
+def _labels(path):
+    genotype = json.loads(path.read_text())
+    return {allele["label"] for entry in genotype["genotype_class_list"] for allele in entry["documented_alleles"]}
+
+
 @pytest.fixture(scope="module")
 def plain(model_file, fasta, tmp_path_factory):
     out = tmp_path_factory.mktemp("plain") / "plain.tsv"
@@ -49,35 +49,53 @@ def plain(model_file, fasta, tmp_path_factory):
     return _rows(out)
 
 
-def test_a_genotype_that_allows_every_call_moves_no_row(model_file, fasta, plain, tmp_path):
+@pytest.fixture(scope="module")
+def tie(plain):
+    """``(gene, call, other)``: the first plain row whose V call ties another allele of its own gene."""
+    for row in plain:
+        call, *tied = row["v_call"].split(",")
+        same = [allele for allele in tied if gene_of(allele) == gene_of(call)]
+        if same:
+            return gene_of(call), call, same[0]
+    pytest.fail("no plain row ties its V call with an allele of the same gene")
+
+
+def _excluding(tie):
+    """The genotype that keeps only ``other`` of the tie's gene, and which alleles it allows (other genes are open)."""
+    gene, _, other = tie
+    return {gene: [other]}, lambda allele: gene_of(allele) != gene or allele == other
+
+
+def test_a_genotype_that_allows_every_call_moves_no_row(model_file, fasta, plain, tmp_path, monkeypatch):
+    called = {}
+    for row in plain:
+        for allele in filter(None, row["v_call"].split(",")):
+            called.setdefault(gene_of(allele), set()).add(allele)
+    genotype = {gene: sorted(alleles) for gene, alleles in called.items()}
+    monkeypatch.setattr(GenotypeEvidence, "genotype", lambda self, **rule: genotype)
     out = tmp_path / "pass.tsv"
-    assert _predict(model_file, fasta, out, "--infer-genotype", "--genotype-min-reads", "1") == 0
+    assert _predict(model_file, fasta, out, "--infer-genotype") == 0
     assert _rows(out) == plain
-    genotype = json.loads((tmp_path / "pass.tsv.genotype.json").read_text())
-    labels = [a["label"] for a in genotype["genotype_class_list"][0]["documented_alleles"]]
-    assert labels == [CALL]
+    assert _labels(tmp_path / "pass.tsv.genotype.json") == set().union(*called.values())
 
 
-def test_the_rows_a_genotype_moves_are_re_called_under_it_and_the_rest_are_unchanged(model_file, fasta, plain,
+def test_the_rows_a_genotype_moves_are_re_called_under_it_and_the_rest_are_unchanged(model_file, fasta, plain, tie,
                                                                                     tmp_path, monkeypatch):
-    other = "IGHVF10-G52*05"
-    monkeypatch.setattr(GenotypeEvidence, "genotype", lambda self, **rule: {"IGHVF10-G52": [other]})
+    genotype, allowed = _excluding(tie)
+    monkeypatch.setattr(GenotypeEvidence, "genotype", lambda self, **rule: genotype)
     out, genotype_out = tmp_path / "pass.tsv", tmp_path / "donor.json"
     assert _predict(model_file, fasta, out, "--infer-genotype", "--genotype-out", str(genotype_out)) == 0
     rows = _rows(out)
-
-    def allowed(allele):                                     # every other gene has no evidence, so stays open
-        return not allele.startswith("IGHVF10-G52*") or allele == other
-    moving = [i for i, row in enumerate(plain) if any(map(allowed, row["v_call"].split(",")[1:]))]
+    moving = [i for i, row in enumerate(plain) if row["v_call"] and not allowed(row["v_call"].split(",")[0])
+              and any(map(allowed, row["v_call"].split(",")[1:]))]
     assert moving and len(rows) == len(plain)
     for i, (row, before) in enumerate(zip(rows, plain)):
         if i in moving:
             assert row["sequence_id"] == before["sequence_id"]
-            assert row["v_call"].split(",")[0] != CALL          # the excluded allele is no longer the call
+            assert allowed(row["v_call"].split(",")[0])            # the call is one the genotype allows
         else:
             assert row == before
-    labels = [a["label"] for a in json.loads(genotype_out.read_text())["genotype_class_list"][0]["documented_alleles"]]
-    assert labels == [other]
+    assert _labels(genotype_out) == {tie[2]}
 
 
 @pytest.mark.parametrize("extra", [["--genotype", "donor.json"], ["--input", "-"], ["--out", "-"]])
@@ -95,12 +113,13 @@ def test_the_pass_is_refused_with_a_given_genotype_or_a_stream(model_file, fasta
     assert main(argv) != 0
 
 
-def test_the_run_metadata_records_the_pass_and_counts_the_rows_written(model_file, fasta, plain, tmp_path,
+def test_the_run_metadata_records_the_pass_and_counts_the_rows_written(model_file, fasta, plain, tie, tmp_path,
                                                                        monkeypatch):
     from collections import Counter
 
     from alignair.cli.main import main
-    monkeypatch.setattr(GenotypeEvidence, "genotype", lambda self, **rule: {"IGHVF10-G52": ["IGHVF10-G52*05"]})
+    genotype, _ = _excluding(tie)
+    monkeypatch.setattr(GenotypeEvidence, "genotype", lambda self, **rule: genotype)
     out = tmp_path / "pass.tsv"
     assert main(["predict", "--model", model_file, "--input", fasta, "--out", str(out), "--offline", "--quiet",
                  "--device", "cpu", "--batch-size", "4", "--chunk-size", "7", "--infer-genotype"]) == 0
@@ -108,7 +127,7 @@ def test_the_run_metadata_records_the_pass_and_counts_the_rows_written(model_fil
     rows = _rows(out)
     moved = sum(row != before for row, before in zip(rows, plain))
     assert run["genotype_pass"]["moved_rows"] >= moved > 0
-    assert run["genotype_pass"]["genotype"] == {"IGHVF10-G52": ["IGHVF10-G52*05"]}
+    assert run["genotype_pass"]["genotype"] == genotype
     statuses = Counter(row["airr_assembly_status"] for row in rows)
     assert run["counts"]["complete_assemblies"] == statuses["complete"]
     assert run["counts"]["partial_assemblies"] == statuses["partial"]

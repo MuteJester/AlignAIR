@@ -1,12 +1,11 @@
-"""``v_call`` lists the V call, then the alleles the read cannot tell from it (``predict.ties``): on the golden conv-v1
-reads, every row's ``v_call`` starts with the selector's top-1 and names distinct V alleles of the reference; a read
-whose V the call's alignment shows only in part lists more than the call (the random-init model's calls are no best
-fit of their reads)."""
+"""``v_call`` lists the V call, then the alleles the read cannot tell from it (``predict.ties``): on the golden reads and
+the tie reads, every row's ``v_call`` starts with the selector's top-1 and names distinct V alleles of the reference;
+a short amplicon whose V the call's alignment shows only in part lists more than the call."""
 import json
 
 import pytest
 
-from tests.alignair.predict.golden_rows import FIXTURE, golden_model
+from tests.alignair.predict.golden_rows import FIXTURE, TIE_READS, golden_model
 
 pytestmark = pytest.mark.integration
 
@@ -19,7 +18,8 @@ def golden():
 def test_v_call_lists_the_call_then_its_ties(golden):
     from alignair.api import predict_sequences
     model, reference = golden
-    rows = predict_sequences(model, reference, json.loads(FIXTURE.read_text())["reads"], device="cpu")
+    reads = json.loads(FIXTURE.read_text())["reads"] + json.loads(TIE_READS.read_text())["reads"]
+    rows = predict_sequences(model, reference, reads, device="cpu")
     names = set(reference.gene("V").names)
     called = [row for row in rows if row["v_call"]]
     assert called

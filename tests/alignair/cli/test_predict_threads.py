@@ -5,18 +5,14 @@ import json
 
 import pytest
 
-from tests.alignair.predict.golden_rows import FIXTURE, golden_model
+from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
-def model_file(tmp_path_factory):
-    from alignair.model_file import save_model
-    model, _ = golden_model()
-    path = tmp_path_factory.mktemp("model") / "golden.alignair"
-    save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
-    return str(path)
+def model_file():
+    return str(TEST_CHIP)
 
 
 @pytest.fixture(scope="module")
@@ -61,3 +57,22 @@ def test_predict_starts_the_workers_forkserver_first_only_when_it_will_use_worke
                         classmethod(lambda cls, *a, **k: events.append("load") or load(cls, *a, **k)))
     assert _predict(model_file, fasta, tmp_path / "out.tsv", "--threads", threads) == 0
     assert events[:2] == (["prestart", "load"] if starts else ["load"]) and ("prestart" in events) == starts
+
+
+def test_threads_without_the_lab_on_the_path_give_the_one_process_rows(model_file, fasta, tmp_path, monkeypatch):
+    """The workers load chip-v1 from the product alone: no ALIGNAIR_ARCHITECTURE_MODULES."""
+    monkeypatch.delenv("ALIGNAIR_ARCHITECTURE_MODULES", raising=False)
+    assert _predict(model_file, fasta, tmp_path / "one.tsv", "--threads", "1") == 0
+    assert _predict(model_file, fasta, tmp_path / "two.tsv", "--threads", "2") == 0
+    assert _rows(tmp_path / "two.tsv") == _rows(tmp_path / "one.tsv")
+
+
+def test_a_genotype_keeps_the_chips_v_calls_inside_it(model_file, fasta, tmp_path):
+    """--genotype masks the chip's bank: every V call names only the genotype's alleles (or no V at all)."""
+    from alignair.model_file import load_model
+    names = load_model(model_file).reference.gene("V").names
+    genotype = tmp_path / "donor.json"
+    genotype.write_text(json.dumps({"v": names[:2]}))
+    assert _predict(model_file, fasta, tmp_path / "geno.tsv", "--genotype", str(genotype)) == 0
+    rows = _rows(tmp_path / "geno.tsv")
+    assert rows and all(set(filter(None, row["v_call"].split(","))) <= set(names[:2]) for row in rows)

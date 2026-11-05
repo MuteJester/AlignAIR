@@ -5,8 +5,7 @@
 - too short to call: the D call is empty (an abstention) and the D's span is kept;
 - callable: the row is the ungated one.
 
-The row carries the class (``d_presence``). A model without the head gives the rows it gave before (the golden conv-v1
-rows of ``test_anchor_rows.py``)."""
+The row carries the class (``d_presence``). The stub wraps the test chip, whose own head it overrides."""
 from dataclasses import replace
 
 import pytest
@@ -30,7 +29,7 @@ def golden():
 
 
 class DPresenceStub(torch.nn.Module):
-    """The golden conv-v1 with a D presence head: its outputs plus D presence logits peaked at the class ``classes``
+    """The test chip with its D presence logits replaced: peaked at the class ``classes``
     gives each read (keyed by its encoded bases)."""
 
     def __init__(self, inner, classes: dict):
@@ -122,6 +121,7 @@ def test_a_callable_d_row_is_the_ungated_row(golden):
     ungated, gated = _rows(golden, 2)
     for before, row in zip(ungated, gated):
         assert row.pop("d_presence") == "callable"
+        before.pop("d_presence", None)            # the chip's own head classes its rows too
         assert row == before
 
 
