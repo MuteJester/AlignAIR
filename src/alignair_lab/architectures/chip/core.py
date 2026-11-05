@@ -6,7 +6,9 @@ region (the log of the parser's region marginal is added to its position logits,
 other); the SHM reader gives each base its mutation and insertion probability and its columns; per gene, the router
 weights each base by its soft region weight (through a gradient valve: the scans move the parser's boundaries at
 ``ROUTE_VALVE`` of their full pull) and by 1 - P(inserted), and the bank scan scores every row of the bound bank
-(``bind_reference``) that the batch's genotype (``bank_mask_{gene}``, every allele when absent) allows.
+(``bind_reference``) that the batch's genotype (``bank_mask_{gene}``, every allele when absent) allows. At inference
+a gene's columns are read only over each read's window of bases whose region marginal for the gene is over
+``SUPPORT`` (``ShmReader.top_columns``): a base outside it would weigh at most that in the scan.
 
 Outputs, under the product's keys: the parser's boundary logits and their expectations, the V end and J start refined
 by the called alleles' germlines from the anchors (``refiner``, with the anchor heads); at inference, the D posterior
@@ -48,7 +50,8 @@ from .vrescore import rescore_v
 ROUTE_VALVE = 0.1
 P_TEACHER = 0.5
 TOP_K = 3
-_COUNT = {"v": "v_allele_count", "d": "d_allele_count", "j": "j_allele_count"}
+SUPPORT = 1e-8            # at inference, the region marginal over which a base's columns are read for the gene's scan
+_COUNT ={"v": "v_allele_count", "d": "d_allele_count", "j": "j_allele_count"}
 
 
 class _Valve(torch.autograd.Function):
@@ -143,9 +146,11 @@ class ChipCore(nn.Module):
         return out
 
     def _forward(self, emb, mask, end_mask, *, tokens, batch):
+        chip_batch = "teacher_region" in batch
+        windowed = not (self.training or chip_batch)     # inference: each gene's columns only where the parse puts it
         features = self.trunk(emb, mask)
         parsed = self.parser(features, mask)
-        reading = self.reader(features, mask)
+        reading = self.reader(features, mask, coordinates=not windowed)
         out = dict(parsed.boundary_logits)
         for gene in self.genes:
             out[f"{gene}_start"] = _expectation(out[f"{gene}_start_logits"], mask)
@@ -159,13 +164,16 @@ class ChipCore(nn.Module):
                 out[ANCHOR_LOGITS[gene]] = torch.cat(
                     [logits[:, :length] + log_region[..., STATE_OF[gene]], logits[:, length:]], -1)
 
-        chip_batch = "teacher_region" in batch
         teach = (torch.rand(mask.shape[0], device=mask.device) < P_TEACHER
                  if self.training and chip_batch else None)
         keep = (1 - reading.inserted) * mask
         for gene in self.genes:
             weights = valve(parsed.marginals[..., STATE_OF[gene]], ROUTE_VALVE)
-            columns, probs = top_coordinates(reading.coord_logits[gene], TOP_K)
+            if windowed:
+                columns, probs = self.reader.top_columns(features, gene, parsed.marginals[..., STATE_OF[gene]] > SUPPORT,
+                                                         TOP_K)
+            else:
+                columns, probs = top_coordinates(reading.coord_logits[gene], TOP_K)
             if teach is not None:
                 true_region = (batch["teacher_region"] == STATE_OF[gene]).to(weights.dtype)
                 true_column = batch[f"teacher_coord_{gene}"]

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from alignair.reference.frames import FRAME_WIDTHS
 
@@ -47,7 +48,33 @@ class ShmReader(nn.Module):
         self.edit = nn.Conv1d(channels, len(EDIT_STATES), 1)
         self.coords = nn.ModuleDict({gene: nn.Conv1d(channels, FRAME_WIDTHS[gene], 1) for gene in genes})
 
-    def forward(self, features: torch.Tensor, mask: torch.Tensor) -> ReaderOutput:
+    def forward(self, features: torch.Tensor, mask: torch.Tensor, coordinates: bool = True) -> ReaderOutput:
+        """The edit logits and, with ``coordinates``, every base's column logits for every gene."""
         x = features.transpose(1, 2)
         return ReaderOutput(self.edit(x).transpose(1, 2),
-                            {gene: head(x).transpose(1, 2) for gene, head in self.coords.items()})
+                            {gene: head(x).transpose(1, 2) for gene, head in self.coords.items()} if coordinates
+                            else {})
+
+    def top_columns(self, features: torch.Tensor, gene: str, support: torch.Tensor,
+                    k: int = 3) -> tuple[torch.Tensor, torch.Tensor]:
+        """``top_coordinates`` of ``gene`` (B, L, k) read only over each read's window from its first to its last
+        ``support``ed base (B, L): the columns there are the whole read's; outside the window, and in a read with no
+        supported base, the probabilities are 0. A gene's bases are a small part of a read (D and J most of all), so
+        this skips most of the column logits and their top-k."""
+        batch, length, channels = features.shape
+        position = torch.arange(length, device=features.device)
+        first = torch.where(support, position, length).amin(1)
+        span = (torch.where(support, position, -1).amax(1) - first + 1).clamp_min(0)
+        columns = torch.zeros(batch, length + 1, k, dtype=torch.long, device=features.device)
+        probs = features.new_zeros(batch, length + 1, k)
+        width = int(span.max())
+        if width:
+            offset = torch.arange(width, device=features.device)
+            index = (first[:, None] + offset).clamp_max(length - 1)                        # (B, width)
+            window = features.gather(1, index.unsqueeze(-1).expand(-1, -1, channels))
+            head = self.coords[gene]
+            top, weight = top_coordinates(F.linear(window, head.weight[..., 0], head.bias), k)
+            slot = torch.where(offset < span[:, None], index, length).unsqueeze(-1).expand(-1, -1, k)  # past: dropped
+            columns.scatter_(1, slot, top)
+            probs.scatter_(1, slot, weight)
+        return columns[:, :length], probs[:, :length]

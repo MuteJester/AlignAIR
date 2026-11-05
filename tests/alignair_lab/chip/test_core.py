@@ -191,6 +191,25 @@ def test_the_chip_reads_only_up_to_the_batchs_longest_read_and_gives_the_same_ou
         assert torch.allclose(trimmed_parts[name], value, atol=1e-5), name
 
 
+def test_at_inference_each_genes_columns_are_read_only_where_the_parse_puts_the_gene(chip, monkeypatch):
+    """At inference a gene's columns come only from each read's window of bases whose parse marginal for the gene is
+    over ``SUPPORT`` (a base outside it would weigh at most that in the gene's scan): the outputs are those of reading
+    every base."""
+    model, batch, _ = chip
+    model.eval()
+    inputs = {key: value for key, value in batch.inputs.items() if not key.startswith(("teacher_", "bank_mask_"))}
+    calls = []
+    top_columns = model.core.reader.top_columns
+    monkeypatch.setattr(model.core.reader, "top_columns",
+                        lambda features, gene, support, k: calls.append(gene) or top_columns(features, gene, support, k))
+    windowed = model(inputs)
+    assert sorted(calls) == ["d", "j", "v"]
+    monkeypatch.setattr(chip_core, "SUPPORT", -1.)                            # every base, pads included
+    every = model(inputs)
+    for key, value in every.items():
+        assert torch.allclose(windowed[key], value, atol=1e-5), key
+
+
 def test_a_reference_without_one_of_the_chips_genes_is_refused(chip):
     model, _, _ = chip
     toy = toy_reference()
