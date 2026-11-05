@@ -52,9 +52,10 @@ def test_prediction_result_io(tmp_path):
     assert rows[0]["v_call"] == "IGHV1-1*01" and rows[0]["locus"] == "IGH"
 
 
-@pytest.mark.model_validation
-def test_aligner_predict_parity_with_functional_api(igh_model):
+def test_aligner_predict_parity_with_functional_api():
+    from pathlib import Path
     from alignair.api import load_model, predict_sequences
+    igh_model = str(Path(__file__).resolve().parents[1] / "fixtures" / "test_chip.alignair")   # the trained chip
     seqs = ["CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCCTGCAAGGCT",
             "GAGGTGCAGCTGGTGGAGTCTGGGGGAGGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCC"]
     aligner = Aligner.from_pretrained(igh_model, device="cpu")

@@ -1,10 +1,13 @@
 """The CLI and the Python API produce identical predictions on the same fixture (the CLI is a
-thin client of the Aligner object), using the pinned public IGH artifact."""
+thin client of the Aligner object), with the trained test chip (``tests/alignair/fixtures``)."""
 import csv
+from pathlib import Path
 
 import pytest
 
-pytestmark = [pytest.mark.model_validation, pytest.mark.integration]
+pytestmark = pytest.mark.integration
+
+TEST_CHIP = str(Path(__file__).resolve().parents[1] / "fixtures" / "test_chip.alignair")
 
 _SEQS = ["CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCCTGCAAGGCT",
          "GAGGTGCAGCTGGTGGAGTCTGGGGGAGGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCC"]
@@ -15,7 +18,8 @@ def _read(path):
         return list(csv.DictReader(f, delimiter="\t"))
 
 
-def test_cli_matches_python_api(tmp_path, igh_model):
+def test_cli_matches_python_api(tmp_path):
+    igh_model = TEST_CHIP
     from alignair import Aligner
     from alignair.cli.main import main
 

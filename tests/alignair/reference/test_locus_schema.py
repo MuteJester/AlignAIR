@@ -67,6 +67,8 @@ def test_same_locus_panels_merge_into_one_contiguous_locus():
 
 
 @pytest.mark.model_validation
+@pytest.mark.skip(reason="pending: the pinned IGK+IGL model is an AlignAIR 3 file, which AlignAIR 4 refuses; no "
+                         "AlignAIR 4 multi-locus model is published yet (a release blocker of the v4 release)")
 def test_real_multichain_model_locus_schema_matches_training(igkl_model):
     """The shipped IGK+IGL model's embedded reference (schema inferred from names, saved before the
     schema existed) yields chain-class order (IGK, IGL) with masks that partition the head — matching
