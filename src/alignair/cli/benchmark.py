@@ -13,7 +13,7 @@ import json
 
 def register(sub) -> None:
     p = sub.add_parser("benchmark", help="evaluate a model on generated GenAIRR reads (per stratum)")
-    p.add_argument("--model", required=True, help="a .alignair/.pt path or a shipped registry id")
+    p.add_argument("--model", required=True, help="a .alignair path or a shipped registry id")
     p.add_argument("--dataconfig", nargs="+", default=None,
                    help="GenAIRR dataconfig(s) to generate from (default: the model card's)")
     p.add_argument("--n", type=int, default=200, help="reads per stratum")

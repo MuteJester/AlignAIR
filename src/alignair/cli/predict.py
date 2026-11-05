@@ -21,10 +21,9 @@ from ._errors import fail
 def register(sub) -> None:
     p = sub.add_parser("predict", help="align reads with a trained model -> AIRR TSV")
     p.add_argument("--model", required=True,
-                   help="trained model: a .alignair/.pt path, or a shipped registry id / id@version")
+                   help="trained model: a .alignair path, or a shipped registry id / id@version")
     p.add_argument("--dataconfig", nargs="+", default=None,
-                   help="GenAIRR dataconfig(s) for the germline reference; optional for a .alignair "
-                        "model (it carries its own), required for a legacy .pt")
+                   help="GenAIRR dataconfig(s) for the germline reference; a .alignair model carries its own")
     p.add_argument("--input", required=True, help="reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)")
     p.add_argument("--out", required=True, help="output AIRR TSV path")
     p.add_argument("--sequence-column", default=None, help="sequence column name (CSV/TSV input)")
@@ -81,7 +80,7 @@ def register(sub) -> None:
     p.add_argument("--offline", action="store_true", help="never touch the network")
     p.add_argument("--quiet", action="store_true", help="suppress the update-available notice")
     p.add_argument("--trust-pickle", action="store_true",
-                   help="allow loading a legacy .pt / pre-safe .alignair (runs pickle); path-only")
+                   help="allow reading pickled model-file sections (runs pickle); path-only")
     p.add_argument("--no-run-metadata", action="store_true", help="do not write the <out>.run.json sidecar")
     p.add_argument("--max-assembly-failures", type=float, default=0.01,
                    help="fail the job if the AIRR-assembly FAILURE rate exceeds this fraction "
@@ -274,8 +273,9 @@ def run(args) -> int:
     except (AlignAIRError, OSError, ValueError) as e:
         return fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
                     context={"model_id": args.model})
-    if not container.is_alignair_file(model_path) and not args.dataconfig:
-        return report_error(ConfigurationError("--dataconfig is required for legacy .pt models"))
+    if not container.is_alignair_file(model_path):      # an AlignAIR 3 checkpoint: refused with the version that runs it
+        from ..model_file import v3_checkpoint_error
+        return report_error(v3_checkpoint_error(model_path))
     try:  # the CLI is a thin client of the stable Aligner API
         aligner = Aligner.from_pretrained(model_path, device=device, dataconfigs=args.dataconfig,
                                           trust_pickle=args.trust_pickle)

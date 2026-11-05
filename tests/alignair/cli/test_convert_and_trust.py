@@ -55,3 +55,15 @@ def test_convert_refuses_a_model_file_that_is_not_a_lab_chip(tmp_path, capsys):
     rc = convert.run(Namespace(src=p, dst=str(tmp_path / "out.alignair")))
     assert rc != 0 and "not a lab chip model file" in capsys.readouterr().err
     assert not (tmp_path / "out.alignair").exists()
+
+
+@pytest.mark.parametrize("dataconfig", [[], ["--dataconfig", "HUMAN_IGH_OGRDB"]])
+def test_predict_refuses_a_pt_checkpoint_with_the_version_that_runs_it(tmp_path, capsys, dataconfig):
+    from alignair.cli.main import main
+    reads = tmp_path / "reads.fasta"
+    reads.write_text(">r\nACGT\n")
+    rc = main(["predict", "--model", _v3_pt(tmp_path), "--input", str(reads), "--out", str(tmp_path / "out.tsv"),
+               "--offline", "--quiet", *dataconfig])
+    err = capsys.readouterr().err
+    assert rc != 0 and "AlignAIR 3 checkpoint" in err and "alignair<4" in err
+    assert not (tmp_path / "out.tsv").exists()
