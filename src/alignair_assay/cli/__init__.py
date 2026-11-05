@@ -50,6 +50,7 @@ from alignair_assay.cli import (
     compare,
     diagnose,
     freeze_genairr,
+    golden,
     real,
     report,
     run,
@@ -60,7 +61,7 @@ from alignair_assay.cli import (
 )
 
 COMMANDS = (all_command, report, build, run, speed, diagnose, real, audit, show, freeze_genairr, truth, score,
-            compare)
+            compare, golden)
 
 
 def main(argv: list[str] | None = None) -> int:

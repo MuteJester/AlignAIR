@@ -106,3 +106,33 @@ def s0_truths(s0_layout):
 def s0_cases(s0_layout):
     """Every S0 case (read, GenAIRR record, labels), in file order."""
     return read_cases(s0_layout.cases("S0"))
+
+
+@pytest.fixture(scope="session")
+def toy_chip_file(tmp_path_factory):
+    """A random-init w64 chip on HUMAN_IGH_OGRDB, saved as an inference model file (the golden records' tests)."""
+    import alignair_lab.architectures  # noqa: F401  (registers the lab chips)
+    from alignair.core import prepare_model
+    from alignair.model_file import save_model
+    from alignair.reference.reference_set import ReferenceSet
+    import GenAIRR.data as gd
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    torch.manual_seed(0)
+    model = prepare_model(reference, architecture="lab-chipw64-v1", boundary_mode="half_open", anchor_heads=True,
+                          d_presence_head=True, chip_inputs=True, bank_orientation=True).build_model().eval()
+    path = tmp_path_factory.mktemp("golden") / "toy_chip.alignair"
+    save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
+    return str(path)
+
+
+@pytest.fixture(scope="session")
+def toy_reads_fasta(tmp_path_factory):
+    """Three GenAIRR heavy-chain reads, ``r0`` to ``r2``."""
+    import itertools
+    import GenAIRR.data as gd
+    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    component = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)[1]
+    reads = [record["sequence"] for record in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, component, 21), 3)]
+    path = tmp_path_factory.mktemp("golden_reads") / "reads.fasta"
+    path.write_text("".join(f">r{i}\n{read}\n" for i, read in enumerate(reads)))
+    return str(path)
