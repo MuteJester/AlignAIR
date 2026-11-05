@@ -74,8 +74,9 @@ def test_the_null_candidate_reproduces_the_baselines_weights_on_the_cpu(rig):
     assert all(torch.equal(value, baseline[key]) for key, value in candidate.items())
 
 
-def test_a_milestone_comparison_is_not_weighed_against_a_null_band(rig, tmp_path):
-    """A null band measures baseline screens of a protocol; a long run's milestone is another regime of noise."""
+def test_a_milestone_comparison_is_not_weighed_against_a_null_band(rig, baseline, tmp_path):
+    """A null band measures baseline screens of a protocol; a long run's milestone is another regime of noise. (The
+    band's seed-0 screen is the rig's baseline screen, ``baseline``.)"""
     from alignair_lab.baselines import protocol
     from alignair_lab.records import CachedRecordSource
     from tests.alignair_lab.rig import write_null_band
