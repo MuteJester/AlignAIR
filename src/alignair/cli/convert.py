@@ -1,7 +1,8 @@
 """`alignair convert` — package a checkpoint into a safe, pickle-free `.alignair` for distribution.
 
-Handles both a legacy `.pt` checkpoint and a legacy `.alignair` that predates the safe
-`reference_json` section. Both read pickle (torch.load / the embedded dataconfig), so both require
+Handles a lab chip model file (``lab-chip-v1``, ``lab-chipw64-v1``: ``model_file.convert``), which becomes a
+``chip-v1`` file without unpickling anything; a legacy `.pt` checkpoint and a legacy `.alignair` that predates the
+safe `reference_json` section, which read pickle (torch.load / the embedded dataconfig) and so require
 `--trust-pickle`. The output always carries a safe `reference_json` and NO pickle sections.
 """
 from __future__ import annotations
@@ -18,7 +19,8 @@ from ..errors import ConfigurationError, error_context, report_error
 
 
 def register(sub) -> None:
-    p = sub.add_parser("convert", help="package a .pt / legacy .alignair into a safe, pickle-free .alignair")
+    p = sub.add_parser("convert", help="package a lab chip model file, a .pt or a legacy .alignair into a safe, "
+                                       "pickle-free .alignair")
     p.add_argument("src")
     p.add_argument("dst")
     p.add_argument("--dataconfig", nargs="+", default=None,
@@ -58,7 +60,22 @@ def _convert_pt(src, dst, dataconfig) -> int:
     return 0
 
 
+def _lab_chip(path) -> bool:
+    """Whether ``path`` is a model file whose configuration (JSON, read without unpickling) names a lab chip."""
+    from ..model_file import serialize
+    from ..model_file.convert import LAB_CHIPS
+    if not container.is_alignair_file(path):
+        return False
+    return serialize.config_from_bytes(container.read_section(path, "config")).architecture in LAB_CHIPS
+
+
 def run(args) -> int:
+    if _lab_chip(args.src):
+        from ..model_file.convert import convert_lab_chip
+        summary = convert_lab_chip(args.src, args.dst)
+        print(f"converted {args.src} ({summary['from']}) -> {args.dst} ({summary['to']}, trunk_channels "
+              f"{summary['trunk_channels']}; safe, pickle-free)")
+        return 0
     if not args.trust_pickle:
         return report_error(ConfigurationError(
             "converting reads pickle (torch.load for .pt, or the embedded dataconfig for a legacy "
