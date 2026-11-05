@@ -5,8 +5,7 @@
 orchestrates the ``diagnostics`` layer over a run directory: for each suite it replays AlignAIR's predict pipeline on
 the suite's reads (all of them, or ``max_cases`` evenly spaced: ``select_cases``, the speed protocol's rule) and:
 
-1. scores the raw heads against the truth (``heads.head_scores``, with the cases' GenAIRR records) and the
-   reliability of each gene's top-1 allele probability (``heads.calibration_table``);
+1. scores the raw heads against the truth (``heads.head_scores``, with the cases' GenAIRR records);
 2. replays and scores the truth-substitution ``variants`` on the same reads (``ablation.run_variants``, with the
    replay above as its baseline, and with the donors' genotypes for a suite with donors, as ``all`` scores it), and
    compares them: the cumulative chain step by step (``ablation.stage_contributions``) and each single swap with
@@ -100,7 +99,7 @@ from alignair_assay.diagnostics.ablation import (
     stage_contributions,
     swap_effects,
 )
-from alignair_assay.diagnostics.heads import METRIC_NAMES, calibration_table, d_presence_confusion, head_scores
+from alignair_assay.diagnostics.heads import METRIC_NAMES, d_presence_confusion, head_scores
 from alignair_assay.diagnostics.identity import (
     ALIGNAIR_DIR,
     KEY_DIGITS,
@@ -134,7 +133,7 @@ T = TypeVar("T")
 # What a cached suite result and a cached profile are; bump the version when their content or meaning changes.
 SUITE_KIND = "alignair_assay.diagnostics_suite"
 PROFILE_KIND = "alignair_assay.diagnostics_profile"
-CACHE_VERSION = "3"
+CACHE_VERSION = "4"
 # What a suite record's per-case scores file is (its header line).
 CASES_KIND = "alignair_assay.diagnostics_cases"
 # A model key (``diagnostics.identity.model_key``), as ``against`` tells one from a checkpoint path.
@@ -226,14 +225,14 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     clusters of two or more diagnosed reads, their ``keys`` of ``scoring.clusters.CLUSTER_KEYS``, and how many
     ``clusters`` and ``cases``);
     ``heads`` and each variant's ``scores`` (metric -> ``mean``, ``n``, ``n_applicable``, ``coverage``);
-    ``calibration`` (gene -> ``heads.calibration_table``); ``d_presence`` (``heads.d_presence_confusion``, None for a
+    ``d_presence`` (``heads.d_presence_confusion``, None for a
     model without a D presence head); ``metrics`` (the compared family, ``compared_metrics``);
     ``variants`` (name -> ``scores``, ``fallbacks``, per-stage ``seconds``, ``substituted``); ``contributions``
     (``ablation.stage_contributions``) and ``swaps`` (``ablation.swap_effects``), clustered by
     ``scoring.clusters.cluster_ids`` of the suite's truths; the ``seconds`` it took; and ``case_scores``, its per-case
     file's ``file`` name, ``cases`` and ``sha256`` (see Per-case scores).
     ``variants`` are run in ``ablation.DEFAULT_VARIANTS`` order (``variant_set``: the baseline is added to any
-    other); none runs the heads, the calibration and the profile only. Raises as the module docstring says.
+    other); none runs the heads and the profile only. Raises as the module docstring says.
 
     **Against a baseline** (``against``; see the module docstring's Comparison): a ``.alignair`` checkpoint path, an
     in-memory ``(model, reference_set)`` pair, or the model key of a model already diagnosed in ``layout``
@@ -523,7 +522,6 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
     try:
         baseline = replay(model, reference_set, sequences, ids, device=device, batch_size=batch_size)
         heads = head_scores(baseline, truths, cases)
-        calibration = {gene: calibration_table(baseline, truths, gene) for gene in baseline.allele_names}
         results = (run_variants(model, reference_set, cases, truths, reference=reference, device=device,
                                 batch_size=batch_size, variants=variants, genotypes=genotypes, _baseline=baseline)
                    if variants else {})
@@ -538,7 +536,7 @@ def _diagnose_suite(name: str, key: dict, model, reference_set, reference: Refer
                   "cropped": sum(bool(record.get("length_cropped")) for record in baseline.records),
                   "misoriented": int(sum(case.get("head.misoriented", 0.0) for case in heads.values()))},
         "clusters": cluster_counts(truths, clusters),
-        "heads": _summary(heads), "calibration": calibration, "d_presence": d_presence_confusion(baseline, truths),
+        "heads": _summary(heads), "d_presence": d_presence_confusion(baseline, truths),
         "metrics": family,
         "variants": {variant: {"scores": _summary(found.scores), "fallbacks": found.fallbacks,
                                "seconds": found.seconds, "substituted": list(found.substituted)}

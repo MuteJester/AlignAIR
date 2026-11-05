@@ -12,7 +12,7 @@ may also run as checkpoint variants, ``alignair-api@<label>`` with ``checkpoints
 each a tool of its own on both arms. The comparisons (``compared_pairs``) are igblast with each AlignAIR tool (on the
 shared arm, and on the genotype arm for a genotype-arm tool), then every two tools of one AlignAIR base: two
 checkpoints on the same reads (``kind`` ``checkpoint``, with the reads the second fixes and breaks), the model
-comparison; with the default tools they are ``PAIRS``. Each tool's genotype arm against its shared arm (the arm
+comparison. Each tool's genotype arm against its shared arm (the arm
 delta) is informational. Every tool and arm is classified against the whole shared
 reference with one ``SupportIndex`` per donor and the same truth per read. The R1 primary applies no gene-support
 threshold; two sensitivity variants are reported beside it: R1 with Mikelov et al. 2024's gene-support thresholds,
@@ -109,9 +109,6 @@ GENOTYPE_TOOLS = ("igblast", "alignair-api")
 # The tools that may run as checkpoint variants here (``<tool>@<label>``).
 VARIANT_TOOLS = ("alignair-api",)
 ARMS = ("shared", "genotype")
-# The comparisons of the default tools (``compared_pairs(TOOLS)``).
-PAIRS = (("igblast", "alignair", "shared"), ("igblast", "alignair-api", "shared"),
-         ("igblast", "alignair-api", "genotype"))
 # The ``kind`` of a comparison of two checkpoints of one AlignAIR tool.
 CHECKPOINT_PAIR = "checkpoint"
 SPLITS = ("dev", "test")
@@ -502,7 +499,7 @@ def is_checkpoint_pair(a: str, b: str) -> bool:
 def compared_pairs(tools: Iterable[str]) -> list[tuple[str, str, str]]:
     """The ``(a, b, arm)`` comparisons of ``tools`` (``ordered_tools``): igblast with each AlignAIR tool, on the shared
     arm and, for a genotype-arm tool, on the genotype arm; then every two tools of one AlignAIR base
-    (``is_checkpoint_pair``, a first) on each arm they run. With the default ``TOOLS`` they are ``PAIRS``."""
+    (``is_checkpoint_pair``, a first) on each arm they run."""
     tools = ordered_tools(tools)
     genotype = set(genotype_tools(tools))
 

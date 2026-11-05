@@ -21,7 +21,6 @@ from alignair_assay.core.cigar import parse_cigar  # noqa: E402
 from alignair_assay.diagnostics.heads import (  # noqa: E402
     METRIC_NAMES,
     allele_ranking,
-    calibration_table,
     decode_boundaries,
     head_scores,
 )
@@ -41,7 +40,6 @@ WIDTH = 60
 NAMES = {"v": ["V1*01", "V1*02", "V2*01", "V3*01", "V4*01", "V5*01", "V6*01"],
          "d": ["D1*01", "D2*01", "D3*01"],
          "j": ["J1*01", "J2*01", "J3*01"]}
-WITH_SHORT_D = {**NAMES, "d": [*NAMES["d"], "Short-D"]}
 GENES = ("v", "d", "j")
 DECODERS = ("soft", "argmax")
 
@@ -126,8 +124,7 @@ def _indel_bases(cigar):
 
 def _oracle(truths, names, *, width=WIDTH):
     """Oracle-shaped outputs: each truth edge's logits peak on the edge and its expectation sits a quarter base past
-    it, probability 1 on the primary allele, and the metadata heads give the truth (Short-D at 1 exactly when the D
-    is shorter than its minimum)."""
+    it, probability 1 on the primary allele, and the metadata heads give the truth."""
     out = _blank(truths, width=width, names=names)
     for i, t in enumerate(truths):
         lo, seen = _window(t, width)
@@ -138,9 +135,6 @@ def _oracle(truths, names, *, width=WIDTH):
                     _edge(out, i, g, edge, soft=p + 0.25, argmax=p)
             if seg.alleles.primary in names[g]:
                 out.predictions.allele[g][i, names[g].index(seg.alleles.primary)] = 1.0
-        if "Short-D" in names.get("d", ()):
-            d = t.segments.get("d")
-            out.predictions.allele["d"][i, -1] = float(d is None or d.observed_length < MIN_OBSERVED["d"])
         out.raw["orientation_logits"][i, t.orientation] = 5.0
         out.predictions.orientation[i] = t.orientation
         if "v" in t.segments:
@@ -263,25 +257,13 @@ def test_allele_ranking_ties_and_allowed_masks():
     assert all(ranking.tolist() == list(range(20)) for ranking in allele_ranking(out, "v"))
 
 
-def test_short_d_probability_only_for_a_model_with_the_sentinel():
+def test_a_d_below_its_minimum_gets_no_d_head_metric():
     d_short, d_long = _seg(30, 35, "D1*01"), _seg(30, 42, "D1*01")  # 5 and 12 observed bases (minimum 8)
     v = _seg(0, 25, "V1*01")
-    truths = [_truth("short_yes", 60, {"v": v, "d": d_short}), _truth("long_yes", 60, {"v": v, "d": d_long}),
-              _truth("absent_no", 60, {"v": v}), _truth("long_no", 60, {"v": v, "d": d_long}),
-              _truth("unscorable", 60, {"v": v}, unscorable={"d"})]
-    out = _blank(truths, names=WITH_SHORT_D)
-    for i, p in enumerate((0.7, 0.6, 0.2, 0.1, 0.9)):
-        _probs(out, i, "d", **{"Short-D": p})
-    scores = head_scores(out, truths)
-    assert {cid: case.get("head.d.short_d_prob_ok") for cid, case in scores.items()} == {
-        "short_yes": 1.0, "long_yes": 0.0, "absent_no": 0.0, "long_no": 1.0, "unscorable": None}
-    # A D below its minimum gets no boundary or allele head metric.
-    assert not any(name.startswith("head.d.") and name != "head.d.short_d_prob_ok" for name in scores["short_yes"])
-    assert "head.d.allele_top1" in scores["long_no"]
-
-    # The released IGH model has no Short-D output: the metric does not apply.
-    plain = _blank(truths)
-    assert not any("head.d.short_d_prob_ok" in case for case in head_scores(plain, truths).values())
+    truths = [_truth("short", 60, {"v": v, "d": d_short}), _truth("long", 60, {"v": v, "d": d_long})]
+    scores = head_scores(_blank(truths), truths)
+    assert not any(name.startswith("head.d.") for name in scores["short"])
+    assert "head.d.allele_top1" in scores["long"]
 
 
 def test_the_d_presence_head_is_scored_against_the_truths_d_class():
@@ -497,7 +479,7 @@ def _hand_built_truths():
 
 def test_oracle_shaped_outputs_score_perfectly():
     truths = _hand_built_truths()
-    out = _oracle(truths, WITH_SHORT_D)
+    out = _oracle(truths, NAMES)
     cases = [{"case_id": t.case_id, "record": {"mutation_rate": 0.05}} for t in truths]
     scores = head_scores(out, truths, cases)
     _assert_perfect(scores)
@@ -519,7 +501,7 @@ def test_oracle_shaped_outputs_score_perfectly_on_s0_truths(s0_truths, s0_cases,
     _assert_perfect(scores)
     counts = {name: sum(name in case for case in scores.values()) for name in METRIC_NAMES}
     assert min(counts[f"head.{g}.start_exact.argmax"] for g in GENES) >= 10
-    assert counts["head.mutation_rate_abs_err.record"] == len(scored) and counts["head.d.short_d_prob_ok"] == 0
+    assert counts["head.mutation_rate_abs_err.record"] == len(scored)
 
 
 def test_registry_classifies_every_head_metric():
@@ -529,68 +511,15 @@ def test_registry_classifies_every_head_metric():
     informational |= {"head.mutation_rate_abs_err.record", "head.cropped", "head.misoriented"}
     errors = {name for name in METRIC_NAMES if "_abs_err" in name} - informational
     errors |= {"head.d_presence.callable_gated"}                       # a failure rate: callable Ds gated away
-    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 60 and len(informational) == 21 and len(errors) == 15
+    assert len(METRIC_NAMES) == len(set(METRIC_NAMES)) == 59 and len(informational) == 21 and len(errors) == 15
     for name in METRIC_NAMES:
         assert name.startswith("head."), name
         if name in informational:
             assert is_informational(name), name
         elif name in errors:
             assert lower_is_better(name) and not is_informational(name), name
-        else:  # accuracies: exact edges, top-k, Short-D, D presence, productive, orientation
+        else:  # accuracies: exact edges, top-k, D presence, orientation
             assert not lower_is_better(name) and not is_informational(name), name
-
-
-# --- calibration --------------------------------------------------------------------------------------------------
-
-def _ece(top1, correct, bins: int) -> float:
-    """Equal-width ECE, computed independently: the first bin closed on both ends, later bins open-left/closed-right."""
-    top1, correct = np.asarray(top1, float), np.asarray(correct, float)
-    edges, error = np.linspace(0, 1, bins + 1), 0.
-    for i in range(bins):
-        chosen = (top1 > edges[i]) & (top1 <= edges[i + 1]) if i else (top1 >= 0) & (top1 <= edges[1])
-        if chosen.any():
-            error += chosen.sum() / len(top1) * abs(correct[chosen].mean() - top1[chosen].mean())
-    return float(error)
-
-
-def test_calibration_table():
-    v = _seg(0, 40, "V1*01")
-    truths = [_truth(f"r{k}", 50, {"v": v}) for k in range(4)]
-    truths += [_truth("short", 50, {"v": _seg(0, 12, "V1*01")}),
-               _truth("excluded", 50, {"v": v}, excluded="non_biological_orientation")]
-    out = _blank(truths)
-    for i, (name, p) in enumerate((("V1*01", 0.95), ("V2*01", 0.85), ("V1*01", 0.15), ("V2*01", 0.12),
-                                   ("V1*01", 0.9), ("V1*01", 0.9))):
-        out.predictions.allele["v"][i, NAMES["v"].index(name)] = p
-    table = calibration_table(out, truths, "v")
-
-    assert table["gene"] == "v" and table["n"] == 4 and len(table["bins"]) == 10
-    by_bin = {k: (b["n"], b["confidence"], b["accuracy"]) for k, b in enumerate(table["bins"]) if b["n"]}
-    assert by_bin.keys() == {1, 8, 9}
-    assert by_bin[9] == (1, pytest.approx(0.95), 1.0) and by_bin[8] == (1, pytest.approx(0.85), 0.0)
-    assert by_bin[1] == (2, pytest.approx(0.135), 0.5)
-    assert table["bins"][1]["lo"] == pytest.approx(0.1) and table["bins"][1]["hi"] == pytest.approx(0.2)
-    assert table["bins"][0] == {"lo": 0.0, "hi": pytest.approx(0.1), "n": 0, "confidence": None, "accuracy": None}
-    assert table["ece"] == pytest.approx(0.25 * 0.05 + 0.25 * 0.85 + 0.5 * 0.365)
-    # The equal-width expected calibration error (right-closed bins, the first one closed).
-    conf = np.array([0.95, 0.85, 0.15, 0.12], np.float32)
-    assert table["ece"] == pytest.approx(_ece(conf, [1.0, 0.0, 1.0, 0.0], 10))
-    assert table["accuracy"] == 0.5 and table["confidence"] == pytest.approx(np.mean(conf))
-
-    # Bins are closed on the right: probability 1 falls in the last bin, 0.5 in (0.25, 0.5] and 0 in the first.
-    out = _blank(truths[:3])
-    out.predictions.allele["v"][0, 0] = 1.0
-    out.predictions.allele["v"][2, 0] = 0.5
-    edges = calibration_table(out, truths[:3], "v", bins=4)
-    assert [b["n"] for b in edges["bins"]] == [1, 1, 0, 1]
-    assert edges["ece"] == pytest.approx(_ece(np.array([1.0, 0.0, 0.5]), [1.0, 1.0, 1.0], 4))
-    empty = calibration_table(_blank(truths[4:5]), truths[4:], "v")  # a short V and an excluded case
-    assert (empty["n"], empty["ece"], empty["confidence"], empty["accuracy"]) == (0, None, None, None)
-    assert all(b["n"] == 0 and b["confidence"] is None and b["accuracy"] is None for b in empty["bins"])
-    with pytest.raises(ValueError, match="at least one bin"):
-        calibration_table(out, truths, "v", bins=0)
-    with pytest.raises(ValueError, match="no allele head for gene 'x'"):
-        calibration_table(out, truths, "x")
 
 
 # --- on the replay ------------------------------------------------------------------------------------------------
@@ -638,8 +567,8 @@ def test_head_metrics_of_the_released_checkpoint_agree_with_the_product(referenc
 
     assert len(scores) == len(truths) == 200
     names = set().union(*scores.values())
-    assert names <= set(METRIC_NAMES) and "head.d.short_d_prob_ok" not in names  # 33 D outputs, no Short-D
-    assert "Short-D" not in out.allele_names["d"] and len(out.allele_names["d"]) == 33
+    assert names <= set(METRIC_NAMES)
+    assert len(out.allele_names["d"]) == 33
     for g in GENES:
         # Saturated calibrated probabilities can tie: the ranking still starts with the selector's call.
         for ranking, call in zip(allele_ranking(out, g), out.calls[g]):

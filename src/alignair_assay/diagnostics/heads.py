@@ -1,8 +1,8 @@
 """Head-level metrics: AlignAIR's raw head outputs, as the replay captured them, scored against observable truth.
 
 ``head_scores(outputs, truths, cases=None)`` gives each scored case a ``CaseScores`` of ``head.*`` metrics (absent
-key: not applicable), and ``calibration_table`` the reliability of one gene's top-1 allele probability. Both are
-pure functions of a ``StageOutputs`` and the truths; a case is matched to its replayed read by id.
+key: not applicable), a pure function of a ``StageOutputs`` and the truths; a case is matched to its replayed read
+by id.
 
 **Frame.** The segment heads work on the read the model saw, in its forward frame, padded on the right to the logits
 width (576 for the released model). A read longer than that is cropped by AlignAIR to the first ``width`` bases of
@@ -44,8 +44,7 @@ and allele metrics' rule), when its whole interval lies inside the cropped windo
 the read's allowed alleles, ties to the lower index): ``head.{g}.allele_top{1,3,5}`` (the top k meet the scored
 truth set), ``head.{g}.allele_top1_generative`` (informational: the top-1 is in the generative set) and
 ``head.{g}.n_above_threshold`` (informational: allowed alleles at probability >= 0.5), for the same segments as the
-boundaries. ``head.d.short_d_prob_ok`` applies only to a model whose D head has a Short-D output (the released IGH
-model has none): P(Short-D) >= 0.5 exactly when the read's D is absent or shorter than ``MIN_OBSERVED["d"]``.
+boundaries.
 
 **D presence** (a model with a D presence head, ``d_presence_logits``; the product gates the D call on its argmax):
 ``head.d_presence.correct``, the head's class is the truth's (``d_class``: absent, short below ``MIN_OBSERVED["d"]``
@@ -72,7 +71,6 @@ import numpy as np
 import torch
 from alignair.core.boundaries import read_window as model_window
 from alignair.core.d_presence import ABSENT, CALLABLE, D_CLASSES, D_PRESENCE_LOGITS, SHORT
-from alignair.predict.airr.constants import SHORT_D_SENTINEL
 from alignair.predict.decode import boundary_slots, decode_boundaries as product_decode
 
 from alignair_assay.core.cigar import parse_cigar
@@ -86,7 +84,7 @@ from alignair_assay.truth.model import ObservableTruth, SegmentTruth
 GENES = ("v", "d", "j")
 EDGES = ("start", "end")
 TOP_K = (1, 3, 5)
-# AlignAIR's allele selection threshold (``select_alleles``' default) and its productivity threshold.
+# AlignAIR's allele selection threshold (``select_alleles``' default).
 THRESHOLD = 0.5
 
 # Every name head_scores can give.
@@ -95,7 +93,7 @@ METRIC_NAMES: tuple[str, ...] = (
       for decoder in DECODERS),
     *(f"head.{g}.allele_top{k}" for g in GENES for k in TOP_K),
     *(f"head.{g}.{name}" for g in GENES for name in ("allele_top1_generative", "n_above_threshold")),
-    "head.d.short_d_prob_ok", "head.d_presence.correct", "head.d_presence.callable_gated",
+    "head.d_presence.correct", "head.d_presence.callable_gated",
     "head.mutation_rate_abs_err.read", "head.mutation_rate_abs_err.record", "head.indel_count_abs_err",
     "head.orientation.correct", "head.cropped", "head.misoriented",
 )
@@ -149,7 +147,6 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
     alleles = [g for g in genes if g in outputs.allele_names]
     ranking = {g: allele_ranking(outputs, g) for g in alleles}
     probs = {g: np.asarray(outputs.predictions.allele[g]) for g in alleles}
-    short_d = _short_d_index(outputs)
     presence = _d_presence(outputs)
     frames = model_frames(outputs)
 
@@ -166,10 +163,6 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
                 case.update(_boundary_scores(g, seg, i, decoded[g], window))
             if g in ranking:
                 case.update(_allele_scores(g, seg, ranking[g][i], probs[g][i], outputs.allele_names[g]))
-        if short_d is not None and "d" not in truth.unscorable:
-            d = truth.segments.get("d")
-            short = d is None or d.observed_length < MIN_OBSERVED["d"]
-            case["head.d.short_d_prob_ok"] = float((probs["d"][i, short_d] >= THRESHOLD) == short)
         want = None if presence is None else d_class(truth, width)
         if want is not None:
             got = int(presence[i])
@@ -227,50 +220,6 @@ def _d_presence(outputs: StageOutputs) -> np.ndarray | None:
     """The D presence head's class per read (the argmax of its logits, the class the product gates on), or None."""
     logits = outputs.raw.get(D_PRESENCE_LOGITS)
     return None if logits is None else np.asarray(logits).argmax(-1)
-
-
-def calibration_table(outputs: StageOutputs, truths: list[ObservableTruth], gene: str, bins: int = 10) -> dict:
-    """Reliability of ``gene``'s top-1 calibrated allele probability against the top-1 being in the scored truth
-    set, over the cases its allele head metrics apply to (a read with no allowed allele has no top-1 and is left
-    out).
-
-    The ``bins`` equal-width bins are closed on the right and the first is closed on both sides, as in AlignAIR's
-    ``calibrate.ece``. Returns ``gene``, ``n``, ``bins`` (per bin ``lo``, ``hi``, ``n``, mean ``confidence`` and
-    ``accuracy``, None when empty), the expected calibration error ``ece`` (the bins' count-weighted
-    |accuracy - confidence|) and the overall ``confidence`` and ``accuracy`` (None without a case). ValueError for
-    fewer than one bin or a gene without an allele head.
-    """
-    if bins < 1:
-        raise ValueError(f"a calibration table needs at least one bin, got {bins}")
-    if gene not in outputs.allele_names:
-        raise ValueError(f"the model has no allele head for gene {gene!r}")
-    ranking = allele_ranking(outputs, gene)
-    probs = np.asarray(outputs.predictions.allele[gene], dtype=np.float64)
-    names = outputs.allele_names[gene]
-    confidence, correct = [], []
-    for truth, i in _pairs(outputs, truths):
-        seg = _scored_segment(truth, gene)
-        if seg is None or ranking[i].size == 0:
-            continue
-        top = int(ranking[i][0])
-        confidence.append(probs[i, top])
-        correct.append(float(names[top] in seg.alleles.alleles))
-    conf, corr = np.asarray(confidence), np.asarray(correct)
-    edges = np.linspace(0.0, 1.0, bins + 1)
-    which = np.clip(np.searchsorted(edges, conf, side="left") - 1, 0, bins - 1)
-    table, ece = [], 0.0
-    for b in range(bins):
-        members = which == b
-        k = int(members.sum())
-        mean_conf = float(conf[members].mean()) if k else None
-        mean_acc = float(corr[members].mean()) if k else None
-        table.append({"lo": float(edges[b]), "hi": float(edges[b + 1]), "n": k, "confidence": mean_conf,
-                      "accuracy": mean_acc})
-        if k:
-            ece += k / len(conf) * abs(mean_acc - mean_conf)
-    n = len(conf)
-    return {"gene": gene, "n": n, "bins": table, "ece": ece if n else None,
-            "confidence": float(conf.mean()) if n else None, "accuracy": float(corr.mean()) if n else None}
 
 
 def model_frames(outputs: StageOutputs) -> np.ndarray:
@@ -382,8 +331,3 @@ def _allele_scores(g: str, seg: SegmentTruth, ranking: np.ndarray, probs: np.nda
     scores[f"head.{g}.n_above_threshold"] = float(np.count_nonzero(probs[ranking] >= THRESHOLD))
     return scores
 
-
-def _short_d_index(outputs: StageOutputs) -> int | None:
-    """The D head's Short-D column, or None when the model has no such output."""
-    names = outputs.allele_names.get("d") or []
-    return names.index(SHORT_D_SENTINEL) if SHORT_D_SENTINEL in names else None

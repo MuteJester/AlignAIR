@@ -8,19 +8,19 @@ donors' genotypes when given).
 
 1. ``baseline``: the product pipeline, nothing substituted.
 2. ``true_orientation``: the truth orientation, teacher-forced in the network and used to canonicalize the read.
-3. ``true_spans``: the truth read spans of the observed segments, as the segments and as the classifier's input (a
-   model with a core reads the whole read for its calls: only its segments change).
+3. ``true_spans``: the truth read spans of the observed segments, as the segments (the chip reads the whole read for
+   its calls: only its segments change).
 4. ``true_calls``: the truth (primary) allele as each observed segment's call.
 5. ``true_germline``: the truth germline alignment (allele, read and germline coordinates, CIGAR) of each observed
    segment, in place of the germline matcher.
 
-What still differs from the oracle after ``true_germline`` comes from the metadata heads (the productive and indel
-predictions that gate the assembly) and the AIRR assembly itself. A model with anchor heads takes its junction and
+What still differs from the oracle after ``true_germline`` comes from the metadata heads and the AIRR assembly
+itself. A model with anchor heads takes its junction and
 flags from its anchors instead: only ``true_orientation`` moves them (the anchors are recomputed in the true frame),
 the later steps move only the coding span the stop is searched over, and what differs after ``true_germline`` is the
-anchor heads' error (the README's "Truth-substitution ablations" has the detail). The single swaps (``SINGLE_SWAPS``) change one
-thing on the baseline: ``soft_decoder`` (segments from the soft-argmax expectations, the decoder the product used before it decoded
-by argmax; the classifier unchanged) and ``true_classifier_spans`` (truth spans into the classifier only; the segments stay the model's).
+anchor heads' error (the README's "Truth-substitution ablations" has the detail). The single swap (``SINGLE_SWAPS``) changes one
+thing on the baseline: ``soft_decoder`` (segments from the soft-argmax expectations instead of the position logits'
+argmax).
 
 **Truth in AlignAIR's terms** (``substitutions_for``). AlignAIR works on the read it saw: the first 576 bases of the
 presented read (the canonical prefix of a forward read, the canonical suffix of a reverse-complemented one), in its
@@ -81,17 +81,16 @@ from alignair_assay.truth.model import ObservableTruth
 
 # The cumulative chain, in order, and the single swaps on the baseline.
 VARIANTS: tuple[str, ...] = ("baseline", "true_orientation", "true_spans", "true_calls", "true_germline")
-SINGLE_SWAPS: tuple[str, ...] = ("soft_decoder", "true_classifier_spans")
+SINGLE_SWAPS: tuple[str, ...] = ("soft_decoder",)
 DEFAULT_VARIANTS: tuple[str, ...] = VARIANTS + SINGLE_SWAPS
 # The stage whose truth each step of the chain adds.
 STAGE_OF = {"true_orientation": "orientation", "true_spans": "segmentation", "true_calls": "allele_calls",
             "true_germline": "germline_alignment"}
-# What each variant substitutes ("classifier": the spans into the classifier).
-_CHAIN = ({"orientation"}, {"spans", "classifier"}, {"calls"}, {"germline"})
+# What each variant substitutes.
+_CHAIN = ({"orientation"}, {"spans"}, {"calls"}, {"germline"})
 _FIELDS: dict[str, frozenset[str]] = {
     **{name: frozenset().union(*_CHAIN[:k]) for k, name in enumerate(VARIANTS)},
     "soft_decoder": frozenset({"decoder"}),
-    "true_classifier_spans": frozenset({"classifier"}),
 }
 # The likelihood written for a substituted (truth) call.
 TRUE_CALL_LIKELIHOOD = 1.0
@@ -140,7 +139,7 @@ def substitutions_for(variant: str, truths: Sequence[ObservableTruth], outputs_b
     by_id = {t.case_id: t for t in truths}
     fallbacks: Counter[str] = Counter()
     orientation = [None] * n if "orientation" in fields else None
-    spans = {g: ([None] * n, [None] * n) for g in genes} if fields & {"spans", "classifier"} else None
+    spans = {g: ([None] * n, [None] * n) for g in genes} if "spans" in fields else None
     calls = {g: [None] * n for g in genes} if "calls" in fields else None
     germline = {g: [None] * n for g in genes} if "germline" in fields else None
     built = {field: target for field, target in (("spans", spans), ("calls", calls), ("germline", germline))
@@ -175,8 +174,7 @@ def substitutions_for(variant: str, truths: Sequence[ObservableTruth], outputs_b
         # keeps the replay from running a second forward pass for those reads.
         own = out.predictions.orientation
         orientation = [int(own[i]) if o is None else o for i, o in enumerate(orientation)]
-    substitutions = Substitutions(orientation=orientation, spans=spans, segment_spans="spans" in fields,
-                                  classifier_spans="classifier" in fields, calls=calls, germline=germline,
+    substitutions = Substitutions(orientation=orientation, spans=spans, calls=calls, germline=germline,
                                   decoder=decoder)
     return substitutions, dict(sorted(fallbacks.items()))
 

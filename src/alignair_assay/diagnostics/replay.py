@@ -32,10 +32,9 @@ the product functions the replay mirrors.
   records are in that frame.
 - ``decoder="soft"``: the boundaries ``correct_segments`` receives are the model's soft-argmax expectations (the
   decoder the product used before it decoded by argmax) instead of the argmax of the position logits that
-  ``pipeline.clean`` reports. The classifier reads the expectations either way.
-- ``spans``: replace the corrected ``Segments`` of the given reads and genes (``segment_spans``). ``classifier_spans``
-  would feed them to a per-gene classifier; the chip reads the whole read for its calls and has none, so its allele
-  probabilities stay its own. ``low_quality`` keeps ``correct_segments``' meaning: a V or J of zero length. The given spans are not
+  ``pipeline.clean`` reports.
+- ``spans``: replace the corrected ``Segments`` of the given reads and genes; the chip reads the whole read for its
+  calls, so its allele probabilities stay its own. ``low_quality`` keeps ``correct_segments``' meaning: a V or J of zero length. The given spans are not
   re-ordered against the model's spans of other genes, so a truth span is never moved.
 - ``calls``: replace the selector's calls, before the germline alignment.
 - ``germline``: replace the matcher's alignments; the matcher runs only for the reads with a gene left to it.
@@ -109,18 +108,13 @@ class StageOutputs:
 class Substitutions:
     """Values fed to the pipeline between stage calls in place of the model's output (see the module docstring).
     Each per-read list has one entry per input read, in input order; a None entry keeps the model's value for that
-    read. The defaults substitute nothing, which is a pure replay. ValueError for an unknown decoder,
-    ``classifier_spans`` without ``spans``, or ``spans`` fed nowhere."""
+    read. The defaults substitute nothing, which is a pure replay. ValueError for an unknown decoder."""
 
     # per read: the orientation id (0 identity, 1 reverse complement, 2 complement, 3 reverse)
     orientation: list[int | None] | None = None
     # gene -> (starts, ends) per read, on the read in the model's forward frame (after the crop and the orientation),
     # 0-based, end-exclusive
     spans: dict[str, tuple[list[int | None], list[int | None]]] | None = None
-    # use the spans as the corrected segments (False: they go to the classifier only)
-    segment_spans: bool = True
-    # feed the spans into a per-gene classifier (the chip has none: its probabilities stay its own)
-    classifier_spans: bool = False
     # gene -> alignair.predict.state.GeneCall per read
     calls: dict[str, list] | None = None
     # gene -> alignair.predict.state.GermlineAlignment per read: forward-frame read coordinates, ungapped germline
@@ -131,18 +125,10 @@ class Substitutions:
     def __post_init__(self) -> None:
         if self.decoder not in DECODERS:
             raise ValueError(f"decoder {self.decoder!r} is not one of {', '.join(DECODERS)}")
-        if self.classifier_spans and self.spans is None:
-            raise ValueError("classifier_spans needs spans to feed the classifier")
-        if self.spans is not None and not (self.segment_spans or self.classifier_spans):
-            raise ValueError("spans are fed nowhere: set segment_spans or classifier_spans")
 
     def active(self) -> tuple[str, ...]:
-        """Names of the fields that substitute something (``spans`` only when they replace the segments); empty for
-        a pure replay."""
-        names = [name for name in ("orientation", "spans", "calls", "germline") if getattr(self, name) is not None
-                 and (name != "spans" or self.segment_spans)]
-        if self.classifier_spans:
-            names.append("classifier_spans")
+        """Names of the fields that substitute something; empty for a pure replay."""
+        names = [name for name in ("orientation", "spans", "calls", "germline") if getattr(self, name) is not None]
         if self.decoder != "argmax":
             names.append("decoder")
         return tuple(names)
@@ -257,7 +243,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
             start = {g: raw[f"{g}_start"].reshape(-1) for g in genes}
             end = {g: raw[f"{g}_end"].reshape(-1) for g in genes}
         segments = pipeline.correct_segments(start, end, seq_lens, cfg.max_seq_length, cfg.pad_mode)
-        if subs.spans is not None and subs.segment_spans:
+        if subs.spans is not None:
             segments = _substitute_spans(segments, subs.spans)
     with _timed(seconds, "alleles"):
         calls = pipeline.select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector, allowed=allowed)

@@ -143,7 +143,6 @@ def test_end_to_end_report_renders_every_section(built, make_small_model):
         assert list(suite["variants"]) == list(DEFAULT_VARIANTS)
         assert [step["to"] for step in suite["contributions"]] == list(VARIANTS[1:])
         assert [swap["to"] for swap in suite["swaps"]] == list(SINGLE_SWAPS)
-        assert set(suite["calibration"]) == {"v", "d", "j"}
         assert {"head.v.start_exact.soft", "head.v.start_exact.argmax", "head.orientation.correct"} <= set(
             suite["heads"])
         assert suite["d_presence"] is not None and "head.d_presence.correct" in suite["heads"]   # the chip's head
@@ -620,7 +619,7 @@ def test_the_baseline_is_always_scored_with_another_variant(built, tmp_path, sma
     result = evaluate(small_model, layout, ["S0"], **{**FAST, "variants": ("soft_decoder",)})
     assert list(result.suites["S0"]["variants"]) == ["baseline", "soft_decoder"]
     assert [swap["to"] for swap in result.suites["S0"]["swaps"]] == ["soft_decoder"]
-    # No variant at all: the heads, the calibration and the profile only.
+    # No variant at all: the heads and the profile only.
     result = evaluate(small_model, layout, ["S0"], **{**FAST, "variants": ()})
     suite = result.suites["S0"]
     assert suite["variants"] == {} and suite["contributions"] == [] and suite["heads"]

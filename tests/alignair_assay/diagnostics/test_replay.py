@@ -277,15 +277,11 @@ def _same_raw(a: StageOutputs, b: StageOutputs) -> bool:
 def test_substitutions_name_what_they_substitute():
     spans = {"v": ([0], [10])}
     assert Substitutions().active() == ()
-    assert Substitutions(orientation=[0], spans=spans, classifier_spans=True, calls={"v": [None]},
+    assert Substitutions(orientation=[0], spans=spans, calls={"v": [None]},
                          germline={"v": [None]}, decoder="soft").active() == (
-        "orientation", "spans", "calls", "germline", "classifier_spans", "decoder")
-    # spans fed into the classifier only: the segments keep the model's
-    assert Substitutions(spans=spans, classifier_spans=True, segment_spans=False).active() == ("classifier_spans",)
-    with pytest.raises(ValueError, match="classifier_spans needs spans"):
-        Substitutions(classifier_spans=True)
-    with pytest.raises(ValueError, match="fed nowhere"):
-        Substitutions(spans=spans, segment_spans=False)
+        "orientation", "spans", "calls", "germline", "decoder")
+    with pytest.raises(ValueError, match="decoder"):
+        Substitutions(decoder="other")
 
 
 def test_orientation_forced_to_the_models_own_ids_is_the_product(make_shaped_model, s0_reads):
@@ -492,37 +488,3 @@ def test_wrapped_models_are_unwrapped(make_small_model, reference):
         assert checked is model and checked_reference_set is reference_set
         assert weights_sha256((wrapped, reference_set)) == weights_sha256((model, reference_set))
     assert unwrap_model(model) is model
-
-
-class _WholeModelCore(torch.nn.Module):
-    """A core (``ModelComponents.core``) that runs a model without one on the corrected read: a core model with the
-    product's outputs."""
-
-    def __init__(self, inner):
-        super().__init__()
-        self.inner = inner
-
-    def forward(self, emb, mask, end_mask, *, tokens, batch):
-        forward_frame = torch.zeros(tokens.shape[0], dtype=torch.long, device=tokens.device)
-        out = self.inner({"tokenized_sequence": tokens, "orientation": forward_frame})
-        return {key: value for key, value in out.items() if not key.startswith("orientation")}
-
-
-def test_a_core_models_calls_take_no_classifier_spans(make_small_model, s0_reads, monkeypatch):
-    # a core reads the whole read for its calls: given spans move its segments only, never its allele probabilities
-    from dataclasses import replace
-    from alignair.core import AlignAIR, ModelComponents, register_architecture
-    from alignair.core import components
-    inner, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=0)
-    monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
-    register_architecture("test-whole-model-core", ModelComponents(core=lambda cfg: _WholeModelCore(inner),
-                                                                   objective=lambda cfg: None))
-    torch.manual_seed(0)
-    model = AlignAIR(replace(inner.cfg, architecture="test-whole-model-core")).eval()
-    model.bind_reference(reference_set)
-    ids, seqs = _inputs(s0_reads)
-    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    n = len(seqs)
-    spans = {"v": ([100 if i % 2 == 0 else None for i in range(n)], [250 if i % 2 == 0 else None for i in range(n)])}
-    given = _sub(model, reference_set, seqs, ids, spans=spans, classifier_spans=True, segment_spans=False)
-    assert _same_raw(given, base)

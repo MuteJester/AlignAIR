@@ -18,7 +18,7 @@ rendered by ``report.diagnostics_against``. Three renderings here:
   5. **Speed**: reads per second and the top stages and modules;
   6. **Flags**: at most ``MAX_FLAGS`` bullets on what qualifies the numbers above.
 - ``suite_markdown``: one suite's detail, ``<S>/report.md``: its reads, then ``SUITE_SECTIONS`` (head metrics with
-  soft and argmax side by side, the stage contributions with the paired means beside each Δ, calibration, the single
+  soft and argmax side by side, the stage contributions with the paired means beside each Δ, the single
   swaps, fallbacks and crops), each always present (a section without data says so).
 - ``profile_markdown``: the speed profile's tables, ``profile.md``.
 
@@ -43,10 +43,10 @@ from alignair_assay.report.markdown import (
 )
 
 DIAGNOSTICS_KIND = "alignair_assay.diagnostics_report"
-DIAGNOSTICS_VERSION = "3"
+DIAGNOSTICS_VERSION = "4"
 SUMMARY_SECTIONS = ("Where the end-to-end error comes from", "Calls", "Boundaries: decoder vs network",
                     "Metadata heads", "Speed", "Flags")
-SUITE_SECTIONS = ("Head metrics", "Stage contributions", "Calibration", "Single-swap variants", "Fallbacks and crops")
+SUITE_SECTIONS = ("Head metrics", "Stage contributions", "Single-swap variants", "Fallbacks and crops")
 # The end-to-end metrics the summary traces through the stages.
 SUMMARY_METRICS = ("clone_key.exact", "junction.nt_exact")
 # The cumulative chain's stages, in order, and their summary column names.
@@ -76,7 +76,7 @@ _BOUNDARY_COLUMNS = (("exact", "soft"), ("exact", "argmax"), ("abs_err", "soft")
                      ("err", "soft"), ("err", "argmax"))
 _ALLELE_METRICS = ("allele_top1", "allele_top3", "allele_top5", "allele_top1_generative", "n_above_threshold")
 _META_METRICS = ("head.mutation_rate_abs_err.read", "head.mutation_rate_abs_err.record", "head.indel_count_abs_err",
-                 "head.orientation.correct", "head.d.short_d_prob_ok",
+                 "head.orientation.correct",
                  "head.d_presence.correct", "head.d_presence.callable_gated", "head.cropped")
 _READS = ("built", "diagnosed", "scored", "excluded", "cropped")
 
@@ -86,8 +86,8 @@ _ERRORS_NOTE = ("Each Δ is the change when the truth of one more stage is fed i
                 "(the metadata heads and the AIRR assembly). soft_decoder: the product's argmax boundaries "
                 "replaced by the soft-argmax expectations, nothing else changed.")
 _CALLS_NOTE = ("Each cell is V / D / J. Top-1 in set: the product's call at baseline. Δ true calls: feeding the "
-               "truth call after the truth orientation and spans (bold: significant). Head: the calibrated allele "
-               "head's top-1 → top-3 in the truth set. ECE: the top-1 probability's expected calibration error.")
+               "truth call after the truth orientation and spans (bold: significant). Head: the allele scores' "
+               "top-1 → top-3 in the truth set.")
 _BOUNDARIES_NOTE = ("Exact-boundary rate (%) under the soft-argmax decoder → the position logits' argmax, the product's decoder. "
                     "A large jump is the decoder, not the network.")
 _HEADS_NOTE = ("The raw head outputs of the product pipeline (the baseline replay), scored against observable "
@@ -104,12 +104,8 @@ _CONTRIBUTIONS_NOTE = ("The truth of one more stage is fed in at each step (base
                        "metric significantly), worse, tie (no significant difference). Each step's table gives each "
                        "variant's own mean over its own cases (n, coverage) and the paired means, whose difference "
                        "is Δ; rates are in percent, their differences in percentage points.")
-_CALIBRATION_NOTE = ("Reliability of each gene's top-1 calibrated allele probability against the top-1 being in the "
-                     "scored truth set, in equal-width bins. ECE: the bins' read-weighted |accuracy − confidence|. "
-                     "A bin's cell is reads: accuracy / mean confidence; empty bins are left out.")
 _SWAPS_NOTE = ("Each swap changes one thing on the baseline (soft_decoder: the segments from the soft-argmax "
-               "expectations; true_classifier_spans: the truth spans into the classifier only, the segments "
-               "unchanged) and is compared with the baseline like a step above. better: the swap improves the "
+               "expectations) and is compared with the baseline like a step above. better: the swap improves the "
                "metric significantly.")
 _PROFILE_NOTE = ("Stages: the replay's stages, with their share of the whole run. Modules: the network's leaf "
                  "modules, with their share of the forward stage, from separate runs with timing hooks; other is "
@@ -146,7 +142,7 @@ def diagnostics_summary(report: dict) -> dict:
     ``STAGES`` -> the step's ``delta``, ``verdict``, ``test``, ``n_paired``, ``n_clusters`` and the ``stages`` it
     spans), ``true_germline`` (mean), ``gap`` (1 - that mean), ``soft_decoder`` (the swap's comparison entry, the
     same fields), ``n_paired`` and ``n_clusters`` (``[min, max]`` over those comparisons)); ``calls`` (suite -> gene
-    -> ``top1_in_set``, ``true_calls`` (the step's entry), ``head.allele_top1``, ``head.allele_top3``, ``ece``);
+    -> ``top1_in_set``, ``true_calls`` (the step's entry), ``head.allele_top1``, ``head.allele_top3``);
     ``boundaries`` (suite -> ``head.{g}.{edge}_exact`` -> ``soft`` and ``argmax`` rates); ``metadata`` (suite ->
     head metric -> mean); ``speed`` (``reads_per_second``, ``device``, ``batch_size``, ``reads``, ``reused`` and the
     top three ``stages`` and ``modules``, ``[name, share]``; None without a profile); ``flags`` (at most
@@ -182,7 +178,7 @@ def diagnostics_scalars(summary: dict) -> dict[str, float]:
     """The summary's numbers flattened for a training dashboard (TensorBoard, W&B), None values left out:
     ``<S>/baseline/<metric>``, ``<S>/delta/<stage>/<metric>`` (the stages of ``STAGES`` and ``soft_decoder``),
     ``<S>/true_germline/<metric>``, ``<S>/heads/<head metric>`` (``head.{g}.{edge}_exact.{soft,argmax}``, the
-    allele top-1/top-3 and the metadata heads), ``<S>/calibration/<g>.ece``, ``speed/reads_per_second`` and
+    allele top-1/top-3 and the metadata heads), ``speed/reads_per_second`` and
     ``speed/{stages,modules}/<name>`` (shares); with a comparison, ``<S>/against/<metric>.delta`` for every compared
     metric (this model − the baseline) and ``<S>/against/<metric>.fixed`` (the baseline wrong, this model right) and
     ``.broken`` (reads) for every 0/1 one."""
@@ -205,7 +201,6 @@ def diagnostics_scalars(summary: dict) -> dict[str, float]:
             put(f"{suite}/delta/allele_calls/{g}.top1_in_set", (calls["true_calls"] or {}).get("delta"))
             for k in ("top1", "top3"):
                 put(f"{suite}/heads/head.{g}.allele_{k}", calls[f"head.allele_{k}"])
-            put(f"{suite}/calibration/{g}.ece", calls["ece"])
     for suite, edges in summary["boundaries"].items():
         for name, rates in edges.items():
             for decoder, value in rates.items():
@@ -262,7 +257,7 @@ def _error_row(suite: dict, metric: str) -> dict | None:
 
 
 def _calls(suite: dict) -> dict:
-    heads, calibration = suite.get("heads") or {}, suite.get("calibration") or {}
+    heads = suite.get("heads") or {}
     out = {}
     for g in _GENES:
         metric = f"{g}.top1_in_set"
@@ -271,8 +266,7 @@ def _calls(suite: dict) -> dict:
         row = {"top1_in_set": _mean(_scores(suite, "baseline").get(metric)),
                "true_calls": None if step is None else _entry(step),
                "head.allele_top1": _mean(heads.get(f"head.{g}.allele_top1")),
-               "head.allele_top3": _mean(heads.get(f"head.{g}.allele_top3")),
-               "ece": (calibration.get(g) or {}).get("ece")}
+               "head.allele_top3": _mean(heads.get(f"head.{g}.allele_top3"))}
         if any(value is not None for value in row.values()):
             out[g] = row
     return out
@@ -458,12 +452,11 @@ def _calls_section(summary: dict) -> list[str]:
                      cells(lambda g, c: _points(c["top1_in_set"])),
                      cells(lambda g, c: _step_cell(f"{g}.top1_in_set", c["true_calls"]).replace(" pp", "")),
                      cells(lambda g, c: MISSING if c["head.allele_top1"] is None else
-                           f"{_points(c['head.allele_top1'])}→{_points(c['head.allele_top3'])}"),
-                     cells(lambda g, c: MISSING if c["ece"] is None else f"{c['ece']:.3f}")])
+                           f"{_points(c['head.allele_top1'])}→{_points(c['head.allele_top3'])}")])
     if not rows:
         return ["No allele call was scored."]
     return [_CALLS_NOTE, "", *markdown_table(["Suite", "Top-1 in set, % (V / D / J)", "Δ true calls, pp",
-                                              "Head top-1 → top-3, %", "ECE"], rows)]
+                                              "Head top-1 → top-3, %"], rows)]
 
 
 def _points(value) -> str:
@@ -534,8 +527,7 @@ def suite_markdown(report: dict, name: str) -> str:
     lines += ["", f"Result {'reused from the cache (' + seconds + ')' if suite.get('reused') else seconds}."]
     sections = ((_HEADS_NOTE, _suite_heads), (_with_cluster_note(suite, "contributions", _CONTRIBUTIONS_NOTE),
                                               _suite_contributions),
-                (_CALIBRATION_NOTE, _suite_calibration), (_with_cluster_note(suite, "swaps", _SWAPS_NOTE),
-                                                          _suite_swaps),
+                (_with_cluster_note(suite, "swaps", _SWAPS_NOTE), _suite_swaps),
                 (_FALLBACKS_NOTE, _suite_fallbacks))
     for title, (note, render) in zip(SUITE_SECTIONS, sections):
         lines += ["", f"## {title}", "", note, "", *render(suite)]
@@ -671,27 +663,6 @@ def _comparison_table(comparison: dict, metrics: list[str]) -> list[str]:
                      MISSING if p is None else f"{p:.3g}", verdict])
     return markdown_table(["Metric", a, b, "n paired", f"{a} (paired)", f"{b} (paired)", "Δ", "95% CI", "p",
                            "Verdict"], rows)
-
-
-def _suite_calibration(suite: dict) -> list[str]:
-    tables = suite.get("calibration") or {}
-    genes = [g for g in _GENES if g in tables]
-    if not genes:
-        return ["No allele head was calibrated on these reads."]
-    rows = [[g.upper(), str(tables[g]["n"]), _percent(tables[g]["confidence"]), _percent(tables[g]["accuracy"]),
-             MISSING if tables[g]["ece"] is None else f"{tables[g]['ece']:.3f}"] for g in genes]
-    lines = markdown_table(["Gene", "n", "Mean confidence", "Accuracy", "ECE"], rows)
-    edges = tables[genes[0]]["bins"]
-    rows = []
-    for k, edge in enumerate(edges):
-        cells = [tables[g]["bins"][k] for g in genes]
-        if any(cell["n"] for cell in cells):
-            rows.append([f"{edge['lo']:.1f}–{edge['hi']:.1f}",
-                         *(f"{cell['n']}: {_percent(cell['accuracy'])} / {_percent(cell['confidence'])}"
-                           if cell["n"] else MISSING for cell in cells)])
-    if rows:
-        lines += ["", *markdown_table(["Top-1 probability", *(g.upper() for g in genes)], rows)]
-    return lines
 
 
 def _suite_fallbacks(suite: dict) -> list[str]:

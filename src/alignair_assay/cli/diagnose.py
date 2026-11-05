@@ -1,4 +1,4 @@
-"""``diagnose``: AlignAIR's head metrics, stage contributions, calibration and speed profile on built dev suites, run
+"""``diagnose``: AlignAIR's head metrics, stage contributions and speed profile on built dev suites, run
 in process (``workflow.diagnose``) and cached per suite under the model key."""
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ DEFAULT_BATCH_SIZE = 256
 def register(sub) -> None:
     """Add the ``diagnose`` subcommand."""
     p = sub.add_parser("diagnose", help="diagnose an AlignAIR checkpoint in process on built dev suites: head "
-                                        "metrics, stage contributions, calibration, speed profile")
+                                        "metrics, stage contributions, speed profile")
     p.add_argument("--run-dir", required=True, help="a run directory with the suites built on the dev split")
     p.add_argument("--checkpoint", required=True, type=labelled_path, metavar="[LABEL=]PATH",
                    help="AlignAIR .alignair model file, or LABEL=PATH to name it LABEL in the report")
@@ -33,7 +33,7 @@ def register(sub) -> None:
     p.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="reads per forward batch")
     p.add_argument("--variants", type=comma_list,
                    help="comma-separated truth-substitution variants (default: every one; the baseline is always "
-                        "scored with another; an empty list runs only the head metrics, calibration and profile)")
+                        "scored with another; an empty list runs only the head metrics and profile)")
     p.add_argument("--no-profile", action="store_true", help="skip the speed profile")
     p.add_argument("--max-cases", type=int, help="diagnose at most this many reads per suite, evenly spaced")
     p.add_argument("--allow-unverified-replay", action="store_true",

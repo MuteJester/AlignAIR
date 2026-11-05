@@ -38,13 +38,6 @@ def _entry(own_from, own_to, paired_from, paired_to, verdict, *, n=10):
             "verdict": verdict}
 
 
-def _bins(filled):
-    """Ten calibration bins, the given ones filled: ``{index: (n, confidence, accuracy)}``."""
-    return [{"lo": k / 10, "hi": (k + 1) / 10, "n": filled[k][0] if k in filled else 0,
-             "confidence": filled[k][1] if k in filled else None, "accuracy": filled[k][2] if k in filled else None}
-            for k in range(10)]
-
-
 def _suite(name="S1", *, reused=False) -> dict:
     heads = {
         "head.v.start_exact.soft": _cell(0.907), "head.v.start_exact.argmax": _cell(1.0),
@@ -58,14 +51,11 @@ def _suite(name="S1", *, reused=False) -> dict:
         "head.mutation_rate_abs_err.read": _cell(0.083),
         "head.orientation.correct": _cell(0.997), "head.cropped": _cell(0.06),
     }
-    calibration = {"v": {"gene": "v", "n": 10, "bins": _bins({8: (2, 0.85, 0.5), 9: (8, 0.95, 1.0)}),
-                         "ece": 0.059, "confidence": 0.93, "accuracy": 0.9},
-                   "j": {"gene": "j", "n": 0, "bins": _bins({}), "ece": None, "confidence": None, "accuracy": None}}
     variants = {
         "baseline": {"scores": {"junction.nt_exact": _cell(0.6)}, "fallbacks": {}, "seconds": {"forward": 0.5},
                      "substituted": []},
         "true_spans": {"scores": {"junction.nt_exact": _cell(0.8)}, "fallbacks": {"spans.d.unobserved": 5},
-                       "seconds": {"forward": 0.5}, "substituted": ["orientation", "spans", "classifier_spans"]},
+                       "seconds": {"forward": 0.5}, "substituted": ["orientation", "spans"]},
         "soft_decoder": {"scores": {"junction.nt_exact": _cell(0.75)}, "fallbacks": {},
                            "seconds": {"forward": 0.5}, "substituted": ["decoder"]},
     }
@@ -77,7 +67,7 @@ def _suite(name="S1", *, reused=False) -> dict:
                           "v.top1_in_set": _entry(0.9, 0.85, 0.9, 0.85, "from_better")}}]
     return {"suite": name, "key": {"version": "1"},
             "reads": {"built": 100, "diagnosed": 50, "scored": 48, "excluded": 2, "cropped": 3},
-            "heads": heads, "calibration": calibration, "metrics": ["junction.nt_exact", "v.top1_in_set"],
+            "heads": heads, "metrics": ["junction.nt_exact", "v.top1_in_set"],
             "variants": variants, "contributions": contributions, "swaps": swaps, "seconds": 12.3,
             "reused": reused}
 
@@ -161,7 +151,7 @@ def test_report_dict_is_strict_json():
     suite = _suite()
     suite["heads"]["head.v.start_err.soft"]["mean"] = math.nan
     report = _report({"S1": suite})
-    assert report["kind"] == DIAGNOSTICS_KIND and report["version"] == "3"
+    assert report["kind"] == DIAGNOSTICS_KIND and report["version"] == "4"
     assert report["model"]["model_key"] == KEY and list(report["suites"]) == ["S1"]
     assert report["suites"]["S1"]["heads"]["head.v.start_err.soft"]["mean"] is None
     assert suite["heads"]["head.v.start_err.soft"]["mean"] != suite["heads"]["head.v.start_err.soft"]["mean"]
@@ -212,8 +202,8 @@ def test_where_the_error_comes_from():
 def test_calls_boundaries_metadata_and_speed():
     md = diagnostics_markdown(_report())
     calls = _section(md, "Calls")
-    assert "| Suite | Top-1 in set, % (V / D / J) | Δ true calls, pp | Head top-1 → top-3, % | ECE |" in calls
-    assert "| S1 | — / — / — | — / — / — | 92.7→96.3 / — / — | 0.059 / — / — |" in calls
+    assert "| Suite | Top-1 in set, % (V / D / J) | Δ true calls, pp | Head top-1 → top-3, % |" in calls
+    assert "| S1 | — / — / — | — / — / — | 92.7→96.3 / — / — |" in calls
     boundaries = _section(md, "Boundaries: decoder vs network")
     assert "| Suite | V start | V end | D start | D end | J start | J end |" in boundaries
     assert "| S1 | 91→100 | — | — | — | — | 0→84 |" in boundaries
@@ -257,7 +247,7 @@ def test_scalars_flatten_the_summary():
     assert scalars["S1/heads/head.v.start_exact.soft"] == 0.907
     assert scalars["S1/heads/head.j.end_exact.argmax"] == 0.843
     assert scalars["S1/heads/head.orientation.correct"] == 0.997
-    assert scalars["S1/heads/head.v.allele_top3"] == 0.963 and scalars["S1/calibration/v.ece"] == 0.059
+    assert scalars["S1/heads/head.v.allele_top3"] == 0.963
     assert scalars["speed/reads_per_second"] == 1103.4 and scalars["speed/stages/germline"] == 0.585
     assert all(isinstance(value, float) for value in scalars.values())
     assert not any(key.startswith("S1/true_germline") for key in scalars)  # None is left out
@@ -268,8 +258,7 @@ def test_scalars_flatten_the_summary():
 def test_the_suite_report_renders_every_section_in_order():
     md = suite_markdown(_report(), "S1")
     assert md.startswith(f"# AlignAIR diagnostics: model {KEY}, suite S1\n")
-    assert SUITE_SECTIONS == ("Head metrics", "Stage contributions", "Calibration", "Single-swap variants",
-                              "Fallbacks and crops")
+    assert SUITE_SECTIONS == ("Head metrics", "Stage contributions", "Single-swap variants", "Fallbacks and crops")
     positions = [md.index(f"\n## {title}\n") for title in SUITE_SECTIONS]
     assert positions == sorted(positions)
     assert "[summary](../diagnostics.md)" in md
@@ -344,16 +333,8 @@ def test_clustered_comparisons_show_their_clusters():
     assert "fewer than 10 clusters" in section
 
 
-def test_calibration_single_swaps_and_fallbacks():
+def test_single_swaps_and_fallbacks():
     md = suite_markdown(_report(), "S1")
-    calibration = _section(md, "Calibration")
-    assert "| Gene | n | Mean confidence | Accuracy | ECE |" in calibration
-    assert "| V | 10 | 93.0% | 90.0% | 0.059 |" in calibration
-    assert "| J | 0 | — | — | — |" in calibration
-    assert "| 0.8–0.9 | 2: 50.0% / 85.0% | — |" in calibration  # reads: accuracy / mean confidence
-    assert "| 0.9–1.0 | 8: 100.0% / 95.0% | — |" in calibration
-    assert "| 0.0–0.1 |" not in calibration  # empty bins are left out
-
     swaps = _section(md, "Single-swap variants")
     assert "### baseline → soft_decoder" in swaps
     assert "| v.top1_in_set | 90.0% (n=10, 100%) | 85.0% (n=9, 90%) | 9 | 90.0% | 85.0% | -5.0 pp |" in swaps
@@ -373,12 +354,11 @@ def test_the_profile_page():
 
 def test_sections_without_data_say_so():
     suite = _suite()
-    suite.update(variants={}, contributions=[], swaps=[], calibration={})
+    suite.update(variants={}, contributions=[], swaps=[])
     md = suite_markdown(_report({"S1": suite}, profile=None), "S1")
     assert "No cumulative-chain variant was run" in _section(md, "Stage contributions")
     assert "No single-swap variant was run" in _section(md, "Single-swap variants")
     assert "No variant fell back" in _section(md, "Fallbacks and crops")
-    assert "No allele head" in _section(md, "Calibration")
     for title in SUITE_SECTIONS:
         assert f"\n## {title}\n" in md
     summary = diagnostics_markdown(_report({"S1": suite}, profile=None))

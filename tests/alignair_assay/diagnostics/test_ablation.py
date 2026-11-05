@@ -116,7 +116,7 @@ def _standard():
 
 def test_variant_names():
     assert VARIANTS == ("baseline", "true_orientation", "true_spans", "true_calls", "true_germline")
-    assert SINGLE_SWAPS == ("soft_decoder", "true_classifier_spans")
+    assert SINGLE_SWAPS == ("soft_decoder",)
     assert DEFAULT_VARIANTS == VARIANTS + SINGLE_SWAPS
 
 
@@ -125,8 +125,8 @@ def test_true_germline_substitutions_in_the_model_frame():
     outputs = _outputs(lengths, [0, 1, 0, 0, 0, 0, 2, 0], cropped={"r1"})
     subs, fallbacks = substitutions_for("true_germline", truths, outputs)
 
-    assert subs.active() == ("orientation", "spans", "calls", "germline", "classifier_spans")
-    assert subs.segment_spans and subs.decoder == "argmax"
+    assert subs.active() == ("orientation", "spans", "calls", "germline")
+    assert subs.decoder == "argmax"
     # every scored read gets its truth orientation; the excluded case and the read without truth get the model's own
     # (so the replay needs no second forward pass for them)
     assert subs.orientation == [0, 1, 0, 0, 0, 0, 2, 0]
@@ -164,28 +164,16 @@ def test_cumulative_variants_add_one_stage_each():
     truths, lengths = _standard()
     outputs = _outputs(lengths, [0, 1, 0, 0, 0, 0, 2, 0], cropped={"r1"})
     expected = {"baseline": (), "true_orientation": ("orientation",),
-                "true_spans": ("orientation", "spans", "classifier_spans"),
-                "true_calls": ("orientation", "spans", "calls", "classifier_spans"),
-                "true_germline": ("orientation", "spans", "calls", "germline", "classifier_spans"),
-                "soft_decoder": ("decoder",), "true_classifier_spans": ("classifier_spans",)}
+                "true_spans": ("orientation", "spans"),
+                "true_calls": ("orientation", "spans", "calls"),
+                "true_germline": ("orientation", "spans", "calls", "germline"),
+                "soft_decoder": ("decoder",)}
     found = {name: substitutions_for(name, truths, outputs) for name in DEFAULT_VARIANTS}
     assert {name: subs.active() for name, (subs, _) in found.items()} == expected
     assert found["baseline"] == (Substitutions(), {}) and found["true_orientation"][1] == {}
     assert found["soft_decoder"] == (Substitutions(decoder="soft"), {})
     assert set(found["true_spans"][1]) == {"spans.v.cropped", "spans.d.unobserved", "spans.j.unscorable"}
     assert found["true_spans"][0].spans == found["true_germline"][0].spans
-
-
-def test_classifier_spans_need_the_models_frame():
-    # Without the true orientation, truth spans are in the model's frame only where its orientation is right.
-    truths, lengths = _standard()
-    outputs = _outputs(lengths, [0, 0, 0, 3, 0, 0, 2, 0], cropped={"r1"})
-    subs, fallbacks = substitutions_for("true_classifier_spans", truths, outputs)
-    assert subs.orientation is None and subs.classifier_spans and not subs.segment_spans
-    assert all(subs.spans[g][0][k] is None for g in GENES for k in (1, 3))
-    assert subs.spans["v"][0][0] == 0 and subs.spans["d"][0][4] == 205
-    assert fallbacks == {"spans.v.orientation": 2, "spans.d.orientation": 2, "spans.j.orientation": 1,
-                         "spans.d.unobserved": 1, "spans.j.unscorable": 1}
 
 
 def test_substitutions_for_checks_its_inputs():
@@ -462,11 +450,6 @@ def test_variants_on_the_released_checkpoint(reference, s1_layout):
     assert list(results) == list(DEFAULT_VARIANTS)
     ids, seqs = _ids_seqs(cases)
     assert results["baseline"].rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=64)
-    # the classifier seam reproduces the released model's own classifier call
-    none = [None] * len(seqs)
-    seam = replay(model, reference_set, seqs, ids, device="cpu", batch_size=64,
-                  substitutions=Substitutions(spans={g: (none, none) for g in GENES}, classifier_spans=True))
-    assert seam.airr_rows == results["baseline"].rows
     # true calls make every applicable call metric perfect
     for name in ("v.top1_in_set", "j.top1_in_set"):
         values = [s[name] for s in results["true_calls"].scores.values() if name in s]
