@@ -73,3 +73,14 @@ def test_validation_restores_model_mode_after_task_failure(task_batch):
     with pytest.raises(RuntimeError, match="broken task"):
         validate(model, [(out, targets)], None, tasks=AlleleTasks())
     assert model.training
+
+
+@pytest.mark.parametrize("mask", [torch.tensor([.5, 1.]), torch.ones(2, 1), [True, False]],
+                         ids=["not_binary", "not_a_row", "not_a_tensor"])
+def test_a_row_mask_must_be_a_binary_row_vector(task_batch, mask):
+    from alignair.errors import TrainingDataError
+    out, targets = task_batch()
+    targets["v_supervise"] = mask
+    with pytest.raises(TrainingDataError, match="binary row mask") as caught:
+        alignment_metrics(out, targets, ("v", "j"))
+    assert caught.value.context == {"gene": "v", "field": "v_supervise"}

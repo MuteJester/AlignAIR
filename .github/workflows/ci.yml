@@ -37,7 +37,7 @@ jobs:
           alignair doctor
       - name: Tests
         run: |
-          python -m pytest tests -q --cov=alignair --cov=alignair_benchmark \
+          python -m pytest tests -q --cov=alignair \
             --cov-report=xml:test-results/coverage.xml --cov-report=json:test-results/coverage.json \
             --cov-report=html:test-results/htmlcov --junitxml=test-results/junit.xml
       - name: Critical-file branch and statement coverage

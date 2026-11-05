@@ -74,3 +74,12 @@ def test_improving_or_unavailable_objectives_do_not_report_plateau(objectives, c
     for step in (1,2,3):
         session.observe(SimpleNamespace(step=step))
     assert not capsys.readouterr().out and model.training
+
+
+def test_validation_runs_only_on_its_cadence():
+    steps = []
+    session = StudySession(TrainingStudy(validation_every=2, evaluate=lambda _, step: steps.append(step) or {}),
+                           torch.nn.Linear(1, 1), None)
+    for step in (1, 2, 3, 4):
+        session.observe(SimpleNamespace(step=step))
+    assert steps == [2, 4] and len(session.validations) == 2
