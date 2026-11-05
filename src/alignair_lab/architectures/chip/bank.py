@@ -39,18 +39,21 @@ class BankCompiler(nn.Module):
             if gene == "d":           # a reverse complement row reads its own positions, as a forward D row does
                 rows += [(index, reverse_complement(sequence), frame.columns[name])
                          for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences))]
-            table = torch.zeros(len(rows), frame.width * len(BASES))
-            cover = torch.zeros(len(rows), frame.width)
+            # every base's (row, column, base) gathered as plain ints, then written in one indexed assignment each
+            row_of, column_of, base_of = [], [], []
             for row, (_, sequence, columns) in enumerate(rows):
                 for k, base in enumerate(sequence.upper()):
                     if base in BASES and columns[k] >= 0:
-                        table[row, int(columns[k]) * len(BASES) + BASES.index(base)] = 1.
-                        cover[row, int(columns[k])] = 1.
+                        row_of.append(row), column_of.append(int(columns[k])), base_of.append(BASES.index(base))
+            row_of, column_of = torch.tensor(row_of, dtype=torch.long), torch.tensor(column_of, dtype=torch.long)
+            table = torch.zeros(len(rows), frame.width * len(BASES))
+            table[row_of, column_of * len(BASES) + torch.tensor(base_of, dtype=torch.long)] = 1.
+            cover = torch.zeros(len(rows), frame.width)
+            cover[row_of, column_of] = 1.
             longest = max(len(sequence) for _, sequence, _ in rows)
-            sequence_tokens = torch.zeros(len(rows), longest, dtype=torch.long)
-            for row, (_, sequence, _) in enumerate(rows):
-                sequence_tokens[row, :len(sequence)] = torch.tensor(
-                    [BASES.index(base) + 1 if base in BASES else 0 for base in sequence.upper()])
+            sequence_tokens = torch.tensor([[BASES.index(base) + 1 if base in BASES else 0 for base in sequence.upper()]
+                                            + [0] * (longest - len(sequence)) for _, sequence, _ in rows],
+                                           dtype=torch.long)
             self.register_buffer(f"table_{gene}", table, persistent=False)
             self.register_buffer(f"cover_{gene}", cover, persistent=False)
             self.register_buffer(f"sequence_{gene}", sequence_tokens, persistent=False)
