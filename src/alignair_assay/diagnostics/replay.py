@@ -15,7 +15,8 @@
 8. ``germline``: ``pipeline.align_germline``.
 9. ``v_presence``: ``pipeline.v_absent``, the reads that hold no V (``alignair.predict.v_presence``).
 10. ``ties``: ``pipeline.tied_alleles``, the V alleles each read cannot tell from its call (``alignair.predict.ties``).
-11. ``records``: ``pipeline._to_records``, which drops the V of the reads without one and lists each V call's ties.
+11. ``records``: ``pipeline._to_records``, which drops the V of the reads without one, lists each V call's ties and,
+    for a reference of several loci, labels each read with its called V's locus (``pipeline._called_loci``).
 12. ``airr``: ``alignair.predict.airr.build_airr``.
 
 Every stage is AlignAIR's own function, looked up where ``pipeline.predict`` looks it up; none is re-implemented.
@@ -271,7 +272,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
     with _timed(seconds, "records"):
         records = pipeline._to_records(canonical, calls, germline, genes, preds, cfg.chain_types,
                                        segments.low_quality, was_cropped, input_sequences=reads, no_v=no_v,
-                                       v_ties=v_ties)
+                                       v_ties=v_ties, read_loci=pipeline._called_loci(calls["v"], reference_set, no_v))
     with _timed(seconds, "airr"):
         airr_rows = (build_airr(records, reference_set, chain=("heavy" if cfg.has_d else "light")) if cfg.airr
                      else records)

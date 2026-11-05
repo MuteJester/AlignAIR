@@ -98,6 +98,15 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
         assert not any(row.get("d_call") for row in out.airr_rows)
 
 
+def test_replay_equals_product_pipeline_on_a_multi_locus_reference(make_small_model, s0_reads):
+    """IGK + IGL: each row is labelled with its called V's locus, never IGH, by the replay as by the product."""
+    model, reference_set = make_small_model("HUMAN_IGK_OGRDB", "HUMAN_IGL_OGRDB", seed=0)
+    ids, seqs = _inputs(s0_reads)
+    out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
+    assert {row["locus"] for row in out.airr_rows} <= {"IGK", "IGL", ""}
+
+
 def test_replay_equals_product_pipeline_on_a_read_longer_than_the_window(make_small_model, s0_reads):
     from dataclasses import replace
     from alignair.core import AlignAIR

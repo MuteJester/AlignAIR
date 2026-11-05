@@ -52,6 +52,18 @@ def _validate_predictions(preds, stage: str = "model forward") -> None:
             raise NumericalError(f"non-finite {name} after {stage}", context={"stage": stage, "field": name})
 
 
+def _called_loci(v_calls, reference, no_v) -> list[str] | None:
+    """Per read, the locus of its V call in a reference of several loci, ``""`` for a read without a V call; None for
+    a reference of one locus or none (its records are labelled otherwise)."""
+    loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
+    if len(loci) < 2:
+        return None
+    names = reference.gene("V").names
+    owner = {names[k]: locus for locus in loci for k in np.flatnonzero(reference.locus_mask(locus, "V"))}
+    return ["" if (no_v is not None and no_v[i]) or not call.names else owner.get(call.names[0], "")
+            for i, call in enumerate(v_calls)]
+
+
 def apply_input_policy(sequences, max_len: int) -> tuple[list, list]:
     """Compatibility entry point for shared nucleotide prediction preparation."""
     return prepare_nucleotide_inputs(sequences, max_len)
@@ -104,7 +116,8 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     # The record must OWN the pre-orientation read (not a parallel external list) so the AIRR writer emits
     # the correct `sequence`/`rev_comp` identically for the Python API and the CLI, and crop-consistently.
     records = _to_records(seqs, calls, alignments, genes, preds, cfg.chain_types, segs.low_quality,
-                          was_cropped, input_sequences=sequences, no_v=no_v, v_ties=v_ties)
+                          was_cropped, input_sequences=sequences, no_v=no_v, v_ties=v_ties,
+                          read_loci=_called_loci(calls["v"], reference, no_v))
     if cfg.airr:
         from .airr import build_airr
         records = build_airr(records, reference, chain=("heavy" if cfg.has_d else "light"))
@@ -117,7 +130,7 @@ def _anchor(position) -> int | None:
 
 
 def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, low_quality=None,
-                was_cropped=None, input_sequences=None, no_v=None, v_ties=None) -> list:
+                was_cropped=None, input_sequences=None, no_v=None, v_ties=None, read_loci=None) -> list:
     orientation = preds.orientation
     anchors = getattr(preds, "anchors", None)
     records = []
@@ -146,7 +159,9 @@ def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, lo
             rec["segmentation_low_quality"] = bool(low_quality[i])
         if was_cropped is not None and was_cropped[i]:
             rec["length_cropped"] = True
-        if chain_types is not None and len(chain_types) == 1:  # the reference's one locus
+        if read_loci is not None:                              # several loci: the called V's
+            rec["locus"] = read_loci[i]
+        elif chain_types is not None and len(chain_types) == 1:  # the reference's one locus
             rec["locus"] = chain_types[0]
         for g in genes:
             call, aln = calls[g][i], alignments[g][i]

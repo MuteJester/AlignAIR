@@ -38,7 +38,8 @@ def register(sub) -> None:
                    help="write dropped/invalid input records here (id, position, reason, sequence)")
     p.add_argument("--locus", default=None,
                    help="locus label for records the model can't attribute (default: the model's locus "
-                        "if it declares exactly one; else IGH). Multi-chain records carry their own locus.")
+                        "if it declares exactly one; else IGH). With several loci, each record carries its called "
+                        "V's locus (blank without a V call).")
     p.add_argument("--columns", default=None,
                    help="output columns: a preset (full/core/minimal/airr) or a comma-separated "
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
