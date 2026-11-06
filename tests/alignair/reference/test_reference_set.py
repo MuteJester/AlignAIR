@@ -111,3 +111,13 @@ def test_from_genotype_with_anchors():
     )
     assert rs.gene("V").anchors == {"IGHV1-2*02": 288}
     assert rs.gene("J").anchors is None
+
+
+def test_a_subset_keeps_the_references_allele_order():
+    """The bank's row order is the reference's whatever order (or set) the alleles are named in: the chip's scores
+    depend on it."""
+    rs = ReferenceSet.from_genotype({"V": {"V*01": "ACGTAC", "V*02": "ACGAAC", "V*03": "ACCTAC", "V*04": "TCGTAC"},
+                                     "J": {"J*01": "TTTGGA"}})
+    sub = rs.subset({"V": ["V*04", "V*02", "V*02"]})
+    assert sub.gene("V").names == ["V*02", "V*04"]
+    assert sub.gene("V").index == {"V*02": 0, "V*04": 1} and sub.gene("V").sequences == ["ACGAAC", "TCGTAC"]

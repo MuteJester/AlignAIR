@@ -36,3 +36,18 @@ def test_a_genotype_naming_a_gene_the_reference_lacks_is_refused():
 def test_a_genotype_leaving_a_gene_empty_is_refused(igh):
     with pytest.raises(InputError, match="no allele"):
         genotype_bank(igh, {"V": []})
+
+
+def test_a_genotype_bank_is_the_same_under_any_hash_seed():
+    """A genotype read from a file is a set of names; the bank it gives must not follow the set's hash order, which
+    changes from one process to the next."""
+    import os
+    import subprocess
+    import sys
+    code = ("from alignair.genotype.bank import genotype_bank; from alignair.reference.reference_set import "
+            "ReferenceSet; names = [f'IGHV{i}-1*01' for i in range(30)]; "
+            "ref = ReferenceSet.from_genotype({'V': {n: 'ACGT' * 3 for n in names}, 'J': {'IGHJ1*01': 'TTGG'}}); "
+            "print(','.join(genotype_bank(ref, {'v': set(names[::2])}).gene('V').names))")
+    banks = {subprocess.run([sys.executable, "-c", code], env={**os.environ, "PYTHONHASHSEED": str(seed)},
+                            capture_output=True, text=True, check=True).stdout.strip() for seed in range(4)}
+    assert banks == {",".join(f"IGHV{i}-1*01" for i in range(0, 30, 2))}

@@ -268,11 +268,13 @@ class ReferenceSet:
 
     def subset(self, allowed: Dict[str, Iterable[str]]) -> "ReferenceSet":
         """Return a new ReferenceSet keeping only the named alleles per gene (a donor's
-        reduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {gene: [names]}."""
-        want = {g.upper(): list(v) for g, v in allowed.items()}
+        reduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {gene: names}; a gene
+        it does not name keeps all its alleles. The kept alleles are in this reference's order, each once, whatever
+        order (or set) they are named in: the chip's scores depend on its bank's row order."""
+        want = {g.upper(): set(v) for g, v in allowed.items()}
         out: Dict[str, GeneReference] = {}
         for G, ref in self.genes.items():
-            keep = [n for n in want.get(G, ref.names) if n in ref.index]
+            keep = [n for n in ref.names if n in want[G]] if G in want else list(ref.names)
             seqs = [ref.sequences[ref.index[n]] for n in keep]
             anc = ({n: ref.anchors[n] for n in keep if n in ref.anchors}
                    if ref.anchors else None)
