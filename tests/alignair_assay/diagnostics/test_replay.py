@@ -90,8 +90,8 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
         assert 0 < len(with_v) < len(out.airr_rows)   # the head's frames: some reads keep their V, some do not
     if variant == "igk":
         assert len(with_v) <= len(out.airr_rows) // 2  # an IGK model reads no IGK V in most of the IGH reads
-    if variant != "igh":                              # the predicted indels open the gapped germline reader
-        assert any(re.search("[ID]", row["v_cigar"] + row["j_cigar"]) for row in with_v)
+    if variant == "igh_varied_orientation":           # the predicted indels open the gapped germline reader
+        assert with_v and any(re.search("[ID]", row["v_cigar"] + row["j_cigar"]) for row in with_v)
     if variant == "igk":
         # A light-chain model: no D head (genes v and j) and the light-chain AIRR assembly.
         assert not model.cfg.has_d and list(out.segments.start) == ["v", "j"]

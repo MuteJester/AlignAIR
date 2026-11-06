@@ -276,6 +276,7 @@ def test_bench_case_orientations(reference, load_fixture):
 def test_jsonl_roundtrip(tmp_path, reference):
     recs = list(_exp(mutate=0.05, indels=(0, 2), e5=(0, 300)).run_records(n=40, seed=5))
     recs += list(_exp(invert_d=True).run_records(n=10, seed=5))
+    recs += list(_exp(e5=(295, 300)).run_records(n=5, seed=5))   # the 5' loss takes the V Cys: no junction
     truths = _truths(recs, reference)
     truths.append(dataclasses.replace(truths[0], unscorable=frozenset({"v", "d"})))
     assert any(t.junction is None for t in truths) and any(t.junction for t in truths)

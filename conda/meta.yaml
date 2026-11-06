@@ -30,7 +30,7 @@ requirements:
   run:
     - python >=3.10,<3.13
     - pytorch >=2.2
-    - genairr >=2.2.0          # NOTE: not yet on bioconda — submit/locate before a Bioconda recipe lands
+    - genairr >=2.4.0,<2.5     # NOTE: not yet on bioconda — submit/locate before a Bioconda recipe lands
     - numpy >=1.24
     - pyyaml >=6.0
     - biopython >=1.80

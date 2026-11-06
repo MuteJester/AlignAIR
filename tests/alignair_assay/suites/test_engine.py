@@ -117,10 +117,16 @@ def test_accept_filter_applied():
                    .run_records(n=80, seed=derive_seed(7, "dev", "T", "j6", 0), expose_provenance=True).records)
     prefix = [r for r in first_round if _uses_j6(r)][:40]
     assert prefix and [c["record"] for c in generated.cases[:len(prefix)]] == prefix
-    # Round 0 over-asks by 2; round 1 by 1 / acceptance so far.
-    k = len(prefix)
-    assert stats["rounds"] == 2 and k < 40
-    assert stats["generated"] == 80 + math.ceil((40 - k) * min(20, 1 / max(k / 80, 0.05)))
+    # Round 0 over-asks by 2; each later round by 1 / acceptance so far (capped at 20), until 40 are accepted.
+    accepted, generated, rounds = 0, 0, 0
+    while accepted < 40:
+        factor = 2 if generated == 0 else min(20, 1 / max(accepted / generated, 0.05))
+        batch = (Experiment.on(dataconfig(REFERENCE)).recombine()
+                 .run_records(n=math.ceil((40 - accepted) * factor), seed=derive_seed(7, "dev", "T", "j6", rounds),
+                              expose_provenance=True).records)
+        generated, rounds = generated + len(batch), rounds + 1
+        accepted += sum(_uses_j6(r) for r in batch)
+    assert len(prefix) < 40 and stats["rounds"] == rounds >= 2 and stats["generated"] == generated
 
 
 def test_scale():

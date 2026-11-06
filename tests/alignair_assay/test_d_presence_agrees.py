@@ -51,7 +51,7 @@ def test_d_presence_is_the_truths_observed_length_on_any_d_alignment(cigar):
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("inverted,counts", [(False, (604, 89, 1507)), (True, (306, 19, 725))],
+@pytest.mark.parametrize("inverted,counts", [(False, (621, 50, 1529)), (True, (306, 32, 712))],
                          ids=["curriculum", "inverted_d"])
 def test_d_presence_agrees_with_the_assays_observability(reference, inverted, counts):
     """On live HUMAN_IGH_OGRDB records of every component of the default training mix (300 from each first
