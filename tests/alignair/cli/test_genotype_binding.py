@@ -56,11 +56,16 @@ def _rows(path):
 
 
 def _genotype(golden, tmp_path):
-    """A genotype of the V alleles the golden rows call first, written as JSON; returns ``(path, genotype)``."""
-    genotype = {"V": sorted({row["v_call"].split(",")[0] for row in golden[1] if row["v_call"]})}
+    """A genotype of the V alleles the golden rows call first but one, so the reads called with that one must move,
+    written as JSON; returns ``(path, genotype)``."""
+    genotype = {"V": sorted({row["v_call"].split(",")[0] for row in golden[1] if row["v_call"]})[1:]}
     path = tmp_path / "donor.json"
     path.write_text(json.dumps(genotype))
     return path, genotype
+
+
+def path_genotype(path):
+    return json.loads(path.read_text())["V"]
 
 
 def test_a_genotype_run_binds_its_bank_once(golden, fasta, binds, tmp_path):
@@ -79,6 +84,7 @@ def test_a_genotype_run_binds_its_bank_once(golden, fasta, binds, tmp_path):
     assert len(cli) == 6 and "v_call" in common
     assert [{key: row[key] for key in common} for row in cli] == [{key: row[key] for key in common} for row in api]
     assert any(row["v_call"] for row in cli)
+    assert all(set(filter(None, row["v_call"].split(","))) <= set(genotype["V"]) for row in cli)
 
 
 def test_a_genotype_may_name_a_novel_allele_of_the_reference(golden, fasta, tmp_path):
@@ -101,8 +107,11 @@ def test_threaded_genotype_rows_equal_one_process(golden, fasta, tmp_path):
     path, _ = _genotype(golden, tmp_path)
     assert _predict(fasta, tmp_path / "one.tsv", "--genotype", str(path), "--threads", "1") == 0
     assert _predict(fasta, tmp_path / "two.tsv", "--genotype", str(path), "--threads", "2") == 0
-    one = _rows(tmp_path / "one.tsv")
-    assert len(one) == 6 and _rows(tmp_path / "two.tsv") == one
+    assert _predict(fasta, tmp_path / "plain.tsv", "--threads", "1") == 0
+    one, two = _rows(tmp_path / "one.tsv"), _rows(tmp_path / "two.tsv")
+    assert len(one) == 6 and two == one and one != _rows(tmp_path / "plain.tsv")
+    assert any(row["v_call"] for row in two)
+    assert all(set(filter(None, row["v_call"].split(","))) <= set(path_genotype(path)) for row in two)
 
 
 def _tie_genotype(tmp_path, monkeypatch):
@@ -146,3 +155,14 @@ def test_bound_to_binds_a_copy_and_leaves_the_aligner_as_it_was():
     assert bound.reference is bank and bound.model is not aligner.model and bound.model_path is None
     assert bound.model.cfg.v_allele_count == 3 and aligner.model.cfg.v_allele_count == len(names)
     assert bound.label_schema["genes"]["v"] == names[:3] and aligner.label_schema["genes"]["v"] == list(names)
+
+
+def test_a_genotype_naming_every_allele_gives_the_rows_of_none(tmp_path):
+    """Named in any order, the whole reference is the bank it already was: the rows are the plain run's."""
+    reads = (json.loads(FIXTURE.read_text())["reads"] + json.loads(TIE_READS.read_text())["reads"])
+    fasta, genotype = tmp_path / "reads.fasta", tmp_path / "donor.json"
+    fasta.write_text("".join(f">r{i}\n{read}\n" for i, read in enumerate(reads)))
+    genotype.write_text(json.dumps({"V": load_model(str(TEST_CHIP)).reference.gene("V").names[::-1]}))
+    assert _predict(fasta, tmp_path / "plain.tsv", "--threads", "1") == 0
+    assert _predict(fasta, tmp_path / "every.tsv", "--threads", "1", "--genotype", str(genotype)) == 0
+    assert _rows(tmp_path / "every.tsv") == _rows(tmp_path / "plain.tsv")
