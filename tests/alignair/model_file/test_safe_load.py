@@ -30,6 +30,18 @@ def test_publish_artifact_has_no_pickle_sections(tmp_path):
     assert "train_state" not in secs
 
 
+
+def test_a_publish_artifact_records_no_host_or_user_and_a_checkpoint_does(tmp_path):
+    """A model file made to be shared names neither the machine nor the login it was written on; a resumable
+    checkpoint, which stays with its run, still does."""
+    model, _ = _model()
+    published, checkpoint = str(tmp_path / "pub.alignair"), str(tmp_path / "ckpt.alignair")
+    for path, trusted in ((published, False), (checkpoint, True)):
+        mf.save_model(path, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+                      include_trusted_pickle=trusted)
+    assert {"host", "user"}.isdisjoint(mf.read_metadata(published)["provenance"])
+    assert {"host", "user"} <= set(mf.read_metadata(checkpoint)["provenance"])
+
 def test_inference_loads_no_pickle_artifact_with_gapped_and_anchors(tmp_path):
     model, cfg = _model()
     p = str(tmp_path / "pub.alignair")

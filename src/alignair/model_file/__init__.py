@@ -56,7 +56,9 @@ def _versions():
     return {"alignair_version": av, **genairr_identity(), "torch_version": torch.__version__}
 
 
-def _provenance():
+def _provenance(*, publish: bool = False):
+    """The source commit, and for a file that stays with its run (a resumable checkpoint) the machine and login it
+    was written on; a file made to be shared (``publish``) names neither."""
     import getpass
     import platform
     import subprocess
@@ -65,6 +67,8 @@ def _provenance():
                                          stderr=subprocess.DEVNULL).decode().strip()
     except Exception:
         commit = None
+    if publish:
+        return {"git_commit": commit}
     try:
         user = getpass.getuser()
     except Exception:
@@ -83,7 +87,7 @@ def save_model(path, model, *, dataconfigs, training, inference=None,
     """Write an .alignair model file. ``include_trusted_pickle=True`` (default) keeps the pickled
     ``dataconfig``/``train_state`` sections (a resumable training checkpoint). Set it to ``False`` for
     a **publish/inference artifact**: weights + config + safe ``reference_json`` + ``reference`` FASTA
-    + model card, and ZERO pickle sections. ``card`` supplies descriptive AIRR fields (species/locus/
+    + model card, ZERO pickle sections, and no host or user in its provenance. ``card`` supplies descriptive AIRR fields (species/locus/
     intended_use/…) merged into the header. A model may record its ordered
     ``label_schema``; allele models may omit it. Binding validation precedes destination writes.
     """
@@ -149,7 +153,7 @@ def save_model(path, model, *, dataconfigs, training, inference=None,
                  "species": _enum_str(getattr(dc.metadata, "species", None)),
                  "schema_sha256": getattr(dc, "schema_sha256", None)}
                 for i, (name, dc) in enumerate(resolved)]},
-        "provenance": _provenance(),
+        "provenance": _provenance(publish=not include_trusted_pickle),
         "_formats": formats,
     }
     for k, v in (card or {}).items():                     # descriptive AIRR fields (species/locus/…)
