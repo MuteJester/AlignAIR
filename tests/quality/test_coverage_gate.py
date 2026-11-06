@@ -40,3 +40,12 @@ def test_file_without_branches_can_satisfy_a_branch_floor():
     report = _report()
     report["files"]["critical.py"]["summary"].update(num_branches=0, covered_branches=0)
     assert check_coverage(report, POLICY) == []
+
+
+def test_every_file_the_policy_holds_to_a_floor_exists():
+    """A deleted file's floor goes with it: the gate cannot be satisfied by evidence for a file that is gone."""
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    policy = json.loads((root / "tests" / "coverage-policy.json").read_text())
+    assert [name for name in policy["files"] if not (root / name).is_file()] == []

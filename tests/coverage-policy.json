@@ -25,7 +25,6 @@
     "src/alignair/data/coordinates.py": {"statements": 95, "branches": 95},
     "src/alignair/data/targets.py": {"statements": 95, "branches": 85},
     "src/alignair/core/setup.py": {"statements": 98, "branches": 95},
-    "src/alignair/reference/identity.py": {"statements": 98, "branches": 95},
     "src/alignair/train/setup.py": {"statements": 98, "branches": 95},
     "src/alignair/train/config.py": {"statements": 98, "branches": 95},
     "src/alignair/train/workflow.py": {"statements": 98, "branches": 95},
