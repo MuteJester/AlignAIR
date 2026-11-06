@@ -309,12 +309,12 @@ def prepare_candidate(config) -> None:
     """Import the candidates and prepare the candidate's model setup (no weights): an unknown architecture or model
     option is refused here, before anything is written."""
     import alignair_lab.architectures  # noqa: F401  (registers every candidate in this process)
-    import GenAIRR.data as gd
     from alignair.core import prepare_model
+    from alignair.genairr import resolve_dataconfigs
     from alignair.core.components import architecture_components
     from alignair.reference.reference_set import ReferenceSet
     architecture_components(config.model_options.get("architecture", BASELINE_ARCHITECTURE))
-    sources = [getattr(gd, source) for source in config.dataconfigs]
+    sources = resolve_dataconfigs(config.dataconfigs)
     prepare_model(ReferenceSet.from_dataconfigs(*sources), input_space=config.input_space,
                   label_space=config.label_space, **config.model_options)
 

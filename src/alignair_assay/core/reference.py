@@ -16,12 +16,12 @@ DEFAULT_REFERENCE = "HUMAN_IGH_OGRDB"
 def dataconfig(name: str):
     """The GenAIRR DataConfig ``name`` (an attribute of ``GenAIRR.data``, e.g. ``HUMAN_IGH_OGRDB``); ValueError for
     an unknown name. Suites simulate from this object and the truth reference is built from it."""
-    import GenAIRR.data as gdata
-
-    config = getattr(gdata, name, None)
-    if config is None:
-        raise ValueError(f"unknown GenAIRR dataconfig {name!r}")
-    return config
+    from alignair.errors import ConfigurationError
+    from alignair.genairr import resolve_dataconfig
+    try:
+        return resolve_dataconfig(name)
+    except ConfigurationError as error:
+        raise ValueError(f"unknown GenAIRR dataconfig {name!r}") from error
 
 
 def gene_name(allele: str) -> str:

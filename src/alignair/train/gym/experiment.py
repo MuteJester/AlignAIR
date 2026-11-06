@@ -1,5 +1,20 @@
 """GenAIRR Experiment Factory."""
+from ...errors import ConfigurationError
 from ...reference.reference_set import is_tcr
+
+# The parameters that choose or weigh alleles, which a GenAIRR genotype (``with_genotype``) owns once it is given.
+_ALLELE_CHOICE = ("restrict_alleles", "v_allele_weights", "d_allele_weights", "j_allele_weights")
+
+
+def _refuse_genotype_conflicts(params) -> None:
+    """ConfigurationError when a genotype (``genotype`` or ``genotype_seed``) comes with an allele restriction or
+    weights: GenAIRR's genotype decides which alleles recombine and how often, so the two cannot be combined."""
+    if params.get("genotype") is None and params.get("genotype_seed") is None:
+        return
+    conflicts = [key for key in _ALLELE_CHOICE if params.get(key)]
+    if conflicts:
+        raise ConfigurationError(f"a genotype cannot be combined with {', '.join(conflicts)}: the genotype decides "
+                                 "which alleles recombine and how often", context={"field": conflicts[0]})
 
 
 def build_experiment(dataconfig, params, allow_curatable: bool = False):
@@ -7,6 +22,7 @@ def build_experiment(dataconfig, params, allow_curatable: bool = False):
     allow_curatable: permit simulation from references with curatable issues (e.g. alleles with
     no detected anchor) — needed for some custom FASTA references built via the cartridge builder."""
     from GenAIRR import Experiment
+    _refuse_genotype_conflicts(params)
     exp = Experiment.on(dataconfig)
     if allow_curatable:
         exp = exp.allow_curatable_refdata()

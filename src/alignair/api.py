@@ -81,14 +81,14 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     ``train_overrides`` forwards to :func:`alignair.train.trainer.train` (e.g. ``lr=``, ``batch_size=``,
     ``progresses=``, ``short_boost=``, ``resume_path=``). Like ``alignair train``, the curriculum's reads get library
     flanks (``data.flanks.FlankPolicy``) unless ``flanks=`` says otherwise (None: bare reads)."""
-    import GenAIRR.data as gd
     from .data.flanks import FlankPolicy
+    from .genairr import resolve_dataconfigs
     from .tasks import build_tasks
     from .core import prepare_model
     from .train.guards import validate_training_request
     from .train.trainer import train as _train
 
-    dcs = [getattr(gd, d) if isinstance(d, str) else d for d in dataconfigs]
+    dcs = resolve_dataconfigs(dataconfigs)
     reference = ReferenceSet.from_dataconfigs(*dcs)
     setup = prepare_model(reference)
     cfg = setup.config

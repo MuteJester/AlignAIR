@@ -221,9 +221,14 @@ def test_default_provider_copies_parameters_and_releases_its_context(monkeypatch
 
 
 def test_reference_name_resolution_is_lazy_and_reports_unknown_names(monkeypatch):
-    module=ModuleType('GenAIRR')
-    module.KNOWN=reference()
-    monkeypatch.setitem(sys.modules,'GenAIRR',module)
+    data=ModuleType('GenAIRR.data')
+    data.KNOWN=reference()
+    data.list_configs=lambda: ['KNOWN']
+    package=ModuleType('GenAIRR')
+    package.__path__=[]
+    package.data=data
+    monkeypatch.setitem(sys.modules,'GenAIRR',package)
+    monkeypatch.setitem(sys.modules,'GenAIRR.data',data)
     records=training_records(('KNOWN',),policy=CurriculumStreamPolicy((.3,),0.),record_source=provider)
     assert next(records)['panel']=='IGH'
     unknown=training_records(('UNKNOWN',),record_source=provider,seed=3)
@@ -247,10 +252,14 @@ def test_explicit_sources_and_custom_names_work_without_importing_the_simulator(
 
 
 def test_materialized_provider_names_and_custom_name_collisions_are_preserved(monkeypatch):
+    from alignair.genairr import catalog
     item=reference('custom')
+    item.compute_checksum=lambda: 'checksum-of-canonical'
     module=ModuleType('GenAIRR.data')
-    module._private=item
     module.CANONICAL=item
+    module.list_configs=lambda: ['CANONICAL']
+    module.audit_config=lambda name: {'dataconfig_checksum': 'checksum-of-canonical'}
+    monkeypatch.setattr(catalog, '_builtin_by_checksum', catalog._builtin_by_checksum.__wrapped__)
     package=ModuleType('GenAIRR')
     package.__path__=[]
     package.data=module

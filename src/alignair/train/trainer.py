@@ -4,11 +4,9 @@
 """
 from __future__ import annotations
 
-import functools
 import hashlib
 import itertools
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 
 from ..errors import ConfigurationError, error_context
 from ..data.adapters import build_nucleotide_batch as build_batch
@@ -34,37 +32,7 @@ from .study import TrainingStudy, StudySession
 RECIPE = 'v3'
 
 
-@functools.lru_cache(maxsize=None)
-def _tree_sha256(directory: str) -> str:
-    """SHA-256 over every file under ``directory`` but ``__pycache__`` and ``.pyc``: in the sorted order of their
-    POSIX paths relative to it, each path, its byte length and its bytes. Computed once per process."""
-    root = Path(directory)
-    names = sorted(path.relative_to(root).as_posix() for path in root.rglob('*')
-                   if path.is_file() and '__pycache__' not in path.relative_to(root).parts and path.suffix != '.pyc')
-    digest = hashlib.sha256()
-    for name in names:
-        data = (root / name).read_bytes()
-        digest.update(f'{name}\0{len(data)}\0'.encode())
-        digest.update(data)
-    return digest.hexdigest()
-
-
-def genairr_source_sha256() -> str:
-    """The content digest of the GenAIRR package this process imports (its sources, compiled engine and data), as
-    ``train_args["genairr_source_sha256"]`` records it: the method of the assay's GenAIRR provenance
-    (``tree_digest`` of the package directory), so the two compare. About 0.5 s, once per process."""
-    import GenAIRR
-    return _tree_sha256(str(Path(GenAIRR.__file__).resolve().parent))
-
-
-def _recorded_genairr_source() -> str | None:
-    """``genairr_source_sha256()``, or None, said on one line, when a file of the package cannot be read: the digest
-    is provenance, and never fails a run."""
-    try:
-        return genairr_source_sha256()
-    except OSError as error:
-        print(f"GenAIRR source digest not recorded: {error}", flush=True)
-        return None
+from ..genairr.identity import _recorded_genairr_source, genairr_source_sha256  # noqa: F401  (re-exported)
 
 
 def eval_metrics(out: dict, targets: dict, cfg) -> dict:

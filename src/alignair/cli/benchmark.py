@@ -42,8 +42,8 @@ def _dataconfig_names(args, model_path):
 def run(args) -> int:
     import torch
 
-    import GenAIRR.data as gd
     from ..api import load_model
+    from ..genairr import resolve_dataconfigs
     from ..evaluate import format_text, run_benchmark
     from ..registry import resolve_model, sources as _sources
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -58,10 +58,9 @@ def run(args) -> int:
         return report_error(ConfigurationError(
             "--dataconfig is required to generate benchmark data (the model card has none)"))
     try:
-        dcs = [getattr(gd, n) if isinstance(n, str) else n for n in names]
-    except AttributeError as e:
-        return fail(e, error_type=ConfigurationError, message="unknown GenAIRR dataconfig",
-                    context={"dataconfigs": names})
+        dcs = resolve_dataconfigs(names)
+    except ConfigurationError as e:
+        return report_error(e)
     try:
         model, reference = load_model(model_path, dataconfigs=args.dataconfig or names, device=device,
                                       trust_pickle=args.trust_pickle)

@@ -150,12 +150,14 @@ def test_an_init_seeded_build_leaves_every_process_generator_as_the_data_seed_le
 
 def test_a_genairr_source_that_cannot_be_read_is_recorded_as_unknown(tmp_path, monkeypatch, capsys):
     """The digest is provenance: an unreadable file of the GenAIRR package never fails a training run."""
-    from alignair.train import trainer
+    from alignair.genairr import identity
+    from alignair.train import trainer  # noqa: F401  (imported before the patch: it re-exports the real digest)
 
     def unreadable():
         raise PermissionError(13, 'Permission denied', 'GenAIRR/data/x.pkl')
 
-    monkeypatch.setattr(trainer, 'genairr_source_sha256', unreadable)
+    monkeypatch.setattr(identity, 'genairr_source_sha256', unreadable)
+    monkeypatch.setattr(identity, '_identity', identity._identity.__wrapped__)
     run = run_training(request(steps=1), output_dir=tmp_path)
     assert read_metadata(run.model_path)['training']['train_args']['genairr_source_sha256'] is None
     assert capsys.readouterr().out.count('GenAIRR source digest not recorded') == 1

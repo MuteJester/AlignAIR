@@ -23,11 +23,13 @@ def build_dataconfigs(*, dataconfig: Optional[list] = None, v_fasta: Optional[st
         raise ValueError("choose ONE reference mode: --dataconfig (built-in) OR a custom "
                          "--v-fasta/--j-fasta/--chain-type — not both")
     if dataconfig:
-        import GenAIRR.data as gd
+        from ..errors import ConfigurationError
+        from ..genairr import resolve_dataconfigs
         try:
-            return [getattr(gd, d) for d in dataconfig], None
-        except AttributeError as e:
-            raise ValueError(f"unknown built-in dataconfig: {e}. Run `alignair reference list`.") from e
+            return resolve_dataconfigs(dataconfig), None
+        except ConfigurationError as e:
+            raise ValueError(f"unknown built-in dataconfig: {e.context.get('dataconfig')}. "
+                             "Run `alignair reference list`.") from e
     if not (v_fasta and j_fasta and chain_type):
         raise ValueError("custom training needs --v-fasta, --j-fasta and --chain-type "
                          "(plus --d-fasta for heavy / D-bearing loci)")
@@ -128,7 +130,8 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
     """A standalone reference fingerprint: allele order hash, per-gene anchor coverage, source FASTA
     hashes, tool versions, and the exported model artifact hash — enough to identify the exact reference
     without opening the model container."""
-    import GenAIRR
+    from ..genairr import genairr_identity
+    genairr = genairr_identity()
 
     from .. import __version__
     from ..model_file import serialize
@@ -146,7 +149,9 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
         # independently of source-file layout (matches the container's embedded-reference check).
         "reference_fasta_sha256": serialize.reference_fasta_sha256(ref),
         "allele_order_sha256": serialize.allele_order_sha256(ref),
-        "versions": {"alignair": __version__, "genairr": getattr(GenAIRR, "__version__", "unknown")},
+        "versions": {"alignair": __version__, "genairr": genairr["genairr_version"],
+                     "genairr_determinism_version": genairr["genairr_determinism_version"],
+                     "genairr_source_sha256": genairr["genairr_source_sha256"]},
         "model_artifact_sha256": _sha256(model_path),
     }
     if sources:

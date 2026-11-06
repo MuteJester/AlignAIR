@@ -84,7 +84,6 @@ def check_baseline(path: Path, steps: int, *, schedule=None, options: Mapping | 
     and source digest and reference checksums the checkpoint records, when it was saved, the baseline ``options``
     and its capacity (``CAPACITY_FIELDS``)."""
     import dataclasses
-    import GenAIRR.data as gd
     import alignair_lab.architectures  # noqa: F401  (a baseline screen's model is a candidate's)
     from alignair.core import prepare_model
     from alignair.model_file import read_metadata, read_model_state
@@ -120,7 +119,8 @@ def check_baseline(path: Path, steps: int, *, schedule=None, options: Mapping | 
     if init_seed is not None and train_args.get("init_seed") != init_seed:
         _refuse(path, "was not trained from its screen's init seed", train_args, {"init_seed": init_seed},
                 ["init_seed"])
-    sources = [getattr(gd, name) for name in DATACONFIGS]
+    from alignair.genairr import resolve_dataconfigs
+    sources = resolve_dataconfigs(DATACONFIGS)
     references = {"dataconfigs": [entry.get("schema_sha256") for entry in
                                   (metadata.get("reference") or {}).get("dataconfigs", [])]}
     wanted = {"dataconfigs": [getattr(source, "schema_sha256", None) for source in sources]}

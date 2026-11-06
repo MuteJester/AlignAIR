@@ -76,10 +76,10 @@ def mutation_cap_for(dataconfig, mutation_cap):
 def dataconfig_name(dataconfig) -> str:
     """Use a materialized provider name, explicit custom name, or receptor descriptor."""
     try:
-        import GenAIRR.data as gd
-        for name, value in vars(gd).items():
-            if value is dataconfig and not name.startswith('_'):
-                return name
+        from ...genairr import name_of
+        builtin = name_of(dataconfig)
+        if builtin is not None:
+            return builtin
     except Exception:  # Naming cannot prevent source construction when a provider is unavailable.
         pass
     name = getattr(dataconfig, 'name', None)
@@ -269,11 +269,8 @@ def selection_supported(dataconfig) -> bool:
 
 def _resolve_reference(value):
     if isinstance(value, str):
-        import GenAIRR as ga
-        try:
-            value = getattr(ga, value)
-        except AttributeError as exc:
-            raise ConfigurationError('unknown source dataconfig name', context={'field': 'dataconfigs'}) from exc
+        from ...genairr import resolve_dataconfig
+        value = resolve_dataconfig(value)
     if not hasattr(getattr(value, 'metadata', None), 'chain_type'):
         raise ConfigurationError('source references must supply receptor metadata', context={'field': 'dataconfigs'})
     return value

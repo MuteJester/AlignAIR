@@ -27,18 +27,8 @@ def register(sub) -> None:
 
 
 def _dataconfigs() -> list:
-    import GenAIRR.data as gd
-    out = []
-    for name in sorted(n for n in dir(gd) if not n.startswith("_")):
-        obj = getattr(gd, name)
-        md = getattr(obj, "metadata", None)
-        if md is None:
-            continue
-        ct = getattr(md, "chain_type", None)
-        sp = getattr(md, "species", None)
-        out.append({"name": name, "chain_type": str(getattr(ct, "value", ct)),
-                    "species": str(getattr(sp, "value", sp)), "has_d": bool(getattr(md, "has_d", False))})
-    return out
+    from ..genairr import list_dataconfigs
+    return list_dataconfigs()
 
 
 def run_list(args) -> int:

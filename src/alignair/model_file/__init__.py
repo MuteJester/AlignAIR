@@ -11,8 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-import GenAIRR.data as gd
-
 from ..errors import ConfigurationError, DataContractError, ModelError, ModelIntegrityError, error_context
 
 from ..core import AlignAIR, validate_reference_binding
@@ -38,26 +36,25 @@ def _enum_str(x):
 
 def _resolve_dataconfigs(dataconfigs):
     """Accept names or DataConfig objects -> list of (name, DataConfig)."""
+    from ..genairr import name_of, resolve_dataconfig
     out = []
-    for dc in dataconfigs:
-        if isinstance(dc, str):
-            out.append((dc, getattr(gd, dc)))
-        else:
-            name = getattr(getattr(dc, "metadata", None), "reference_set", None) or type(dc).__name__
-            out.append((str(name), dc))
+    for spec in dataconfigs:
+        dc = resolve_dataconfig(spec)
+        name = (spec if isinstance(spec, str) else name_of(dc)
+                or getattr(getattr(dc, "metadata", None), "reference_set", None) or type(dc).__name__)
+        out.append((str(name), dc))
     return out
 
 
 def _versions():
     import torch
-    import GenAIRR
+    from ..genairr import genairr_identity
     try:
         from importlib.metadata import version
         av = version("AlignAIR")
     except Exception:
         av = "0+unknown"
-    return {"alignair_version": av, "genairr_version": getattr(GenAIRR, "__version__", "?"),
-            "torch_version": torch.__version__}
+    return {"alignair_version": av, **genairr_identity(), "torch_version": torch.__version__}
 
 
 def _provenance():

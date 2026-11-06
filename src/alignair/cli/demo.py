@@ -34,8 +34,8 @@ def _simulate_reads(dataconfig, n: int, seed: int = 7) -> list:
 
 def run(args) -> int:
     import torch
-    import GenAIRR.data as gd
     from ..api import load_model, predict_sequences, train_model
+    from ..genairr import resolve_dataconfig
     from ..io.airr import write_airr
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -44,7 +44,7 @@ def run(args) -> int:
     bundle = os.path.join(out, "bundle")
     os.makedirs(bundle, exist_ok=True)
     model_path = os.path.join(bundle, "model.alignair")
-    dc = getattr(gd, args.dataconfig)
+    dc = resolve_dataconfig(args.dataconfig)
 
     print(f"[demo] training a tiny model on {args.dataconfig} ({args.steps} steps, {device})...")
     train_model([args.dataconfig], out_path=model_path, steps=args.steps, device=device)

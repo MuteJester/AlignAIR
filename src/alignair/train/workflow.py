@@ -43,18 +43,15 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     from ..reference.reference_set import ReferenceSet
     from .guards import validate_training_request
     from .trainer import train
-    import GenAIRR.data as gd
     import numpy as np
+    from ..genairr import resolve_dataconfigs
     import torch
 
     if not isinstance(config, TrainingConfig):
         raise ConfigurationError('run_training requires a TrainingConfig')
     if not (output_dir or out_path):
         raise ConfigurationError('pass output_dir=... or out_path=...')
-    try:
-        sources = [getattr(gd, source) if isinstance(source, str) else source for source in config.dataconfigs]
-    except AttributeError as exc:
-        raise ConfigurationError('unknown source dataconfig', context={'field': 'dataconfigs'}) from exc
+    sources = resolve_dataconfigs(config.dataconfigs)
     reference = ReferenceSet.from_dataconfigs(*sources)
     setup = prepare_model(reference, input_space=config.input_space, label_space=config.label_space,
                           max_seq_length=config.max_seq_length, has_d=config.has_d, **config.model_options)
