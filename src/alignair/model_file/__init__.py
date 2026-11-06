@@ -15,7 +15,6 @@ from ..errors import ConfigurationError, DataContractError, ModelError, ModelInt
 
 from ..core import AlignAIR, validate_reference_binding
 from ..core.config import AlignAIRConfig
-from ..reference.identity import validate_reference_identity
 from ..reference.reference_set import ReferenceSet
 from . import container, serialize
 
@@ -274,17 +273,11 @@ def read_model_state(path) -> ModelStateData:
 
 
 def load_model(path, *, device="cpu", reference=None) -> LoadedModel:
-    """Load an inference model bound to its embedded reference, or to ``reference``: any reference with its genes
-    for a reference-agnostic model (its alleles are an input), the embedded one again for a fixed-head model
-    (``validate_reference_identity``)."""
+    """Load an inference model bound to its embedded reference, or to ``reference``: any reference with its genes (the
+    model's alleles are an input)."""
     data = read_model_state(path)
     model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
-    bound = data.reference
-    if reference is not None:
-        if not model.reference_agnostic:
-            with error_context(path=path):
-                validate_reference_identity(reference, data.reference)
-        bound = reference
+    bound = data.reference if reference is None else reference
     model.bind_reference(bound)
     return LoadedModel(model=model, reference=bound, config=model.cfg, metadata=data.metadata)
 

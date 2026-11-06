@@ -1,6 +1,5 @@
-"""A genotype on a reference-agnostic model is its bank: ``predict_sequences`` binds the genotype's subset of the
-reference for the call and predicts against it (no post-hoc mask), then binds the reference back; a fixed-head model
-keeps the post-hoc genotype mask."""
+"""A genotype is the model's bank: ``predict_sequences`` binds the genotype's subset of the reference for the call and
+predicts against it (no post-hoc mask), then binds the reference back."""
 import GenAIRR.data as gd
 import pytest
 from torch import nn
@@ -32,19 +31,17 @@ class BankCore(nn.Module):
 
 @pytest.fixture
 def make(monkeypatch):
-    """``make(agnostic) -> (model, reference)`` and the pipeline call ``predict_sequences`` makes, recorded."""
+    """``make() -> (model, reference)`` and the pipeline call ``predict_sequences`` makes, recorded."""
     monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
-    register_architecture("test-bank-agnostic-v1", ModelComponents(core=BankCore, objective=lambda cfg: None,
-                                                                    reference_agnostic=True))
-    register_architecture("test-bank-fixed-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
+    register_architecture("test-bank-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
     calls = []
     monkeypatch.setattr(api, "_predict", lambda model, sequences, reference, cfg, device: calls.append(
         {"bound": model.core.reference, "reference": reference}) or [])
 
-    def build(agnostic):
+    def build():
         reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-        name = "test-bank-agnostic-v1" if agnostic else "test-bank-fixed-v1"
-        model = AlignAIR(AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, architecture=name))
+        model = AlignAIR(AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576,
+                                                         architecture="test-bank-v1"))
         model.bind_reference(reference)
         return model, reference
     return build, calls
@@ -52,7 +49,7 @@ def make(monkeypatch):
 
 def test_a_genotype_is_the_models_bank(make):
     build, calls = make
-    model, reference = build(agnostic=True)
+    model, reference = build()
     genotype = {"v": set(reference.gene("V").names[:3]), "j": set(reference.gene("J").names[:2])}
     api.predict_sequences(model, reference, ["ACGT"], device="cpu", genotype=genotype)
     (call,) = calls
@@ -65,7 +62,7 @@ def test_a_genotype_is_the_models_bank(make):
 
 def test_a_genotype_naming_an_allele_the_reference_lacks_is_refused(make):
     build, calls = make
-    model, reference = build(agnostic=True)
+    model, reference = build()
     with pytest.raises(InputError, match="IGHV-missing"):
         api.predict_sequences(model, reference, ["ACGT"], device="cpu", genotype={"v": {"IGHV-missing*01"}})
     assert calls == [] and model.core.reference is reference

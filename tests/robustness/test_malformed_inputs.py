@@ -10,7 +10,7 @@ pytestmark = pytest.mark.component
 
 
 def test_malformed_genotype_yaml_errors(tmp_path):
-    from alignair.genotype.constraint import load_genotype
+    from alignair.genotype.files import load_genotype
     p = tmp_path / "bad.yaml"
     p.write_text("v: [IGHV1-2*01\n  : : broken")            # not valid YAML/JSON
     with pytest.raises(yaml.YAMLError):

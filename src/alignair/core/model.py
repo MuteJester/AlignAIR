@@ -84,25 +84,16 @@ class AlignAIR(nn.Module):
         modules["core"] = self.core
         return modules
 
-    @property
-    def reference_agnostic(self) -> bool:
-        """Whether the architecture's alleles are an input (``ModelComponents.reference_agnostic``): it then takes
-        any reference with its genes, alleles it never trained on included."""
-        return architecture_components(self.cfg.architecture).reference_agnostic
-
     def bind_reference(self, reference) -> None:
         """Give the parts that read the reference their bank (an input, not weights): the bank orientation's k-mer
-        index and the core's bank; a no-op for a model with neither. A reference-agnostic model's config then counts
-        the bound reference's alleles."""
+        index and the core's bank. The config then counts the bound reference's alleles."""
         if self.bank_orientation is not None:
             self.bank_orientation.bind(reference)
         bind = getattr(self.core, "bind_reference", None)
         if bind is not None:
             bind(reference)
-        if self.reference_agnostic:
-            genes = ("V", "J", "D") if self.cfg.has_d else ("V", "J")
-            self.cfg = replace(self.cfg, **{f"{gene.lower()}_allele_count": len(reference.gene(gene))
-                                            for gene in genes})
+        genes = ("V", "J", "D") if self.cfg.has_d else ("V", "J")
+        self.cfg = replace(self.cfg, **{f"{gene.lower()}_allele_count": len(reference.gene(gene)) for gene in genes})
 
     # ------------------------------------------------------------------ constructors
     @classmethod

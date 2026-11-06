@@ -1,5 +1,4 @@
 import pytest
-import torch
 genairr = pytest.importorskip("GenAIRR")
 import GenAIRR.data as gdata
 from alignair.reference.reference_set import ReferenceSet
@@ -34,16 +33,6 @@ def test_union_of_two_dataconfigs():
     assert len(set(rs.gene("V").names)) == len(rs.gene("V").names)
 
 
-def test_genotype_mask():
-    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    names = rs.gene("V").names
-    allowed = {names[0], names[5], names[10]}
-    mask = rs.genotype_mask("V", allowed)
-    assert mask.dtype == torch.bool and mask.shape == (len(names),)
-    assert mask.sum().item() == 3
-    assert mask[0] and mask[5] and mask[10]
-
-
 def test_from_genotype_heavy_and_novel():
     # a genotype with a known-subset plus a NOVEL allele the model never trained on
     genes = {
@@ -56,9 +45,6 @@ def test_from_genotype_heavy_and_novel():
     assert rs.gene("V").names == ["IGHV1-2*02", "NOVEL-V*01"]
     assert rs.gene("V").index["NOVEL-V*01"] == 1
     assert rs.gene("V").sequences[1] == "TTTTGGGGCCCC"
-    # genotype_mask works over the novel-inclusive reference
-    m = rs.genotype_mask("V", {"NOVEL-V*01"})
-    assert m.tolist() == [False, True]
 
 
 def test_from_genotype_light_no_d():

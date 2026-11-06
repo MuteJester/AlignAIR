@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List
 
 import numpy as np
-import torch
 
 from ..errors import ConfigurationError, DataContractError
 
@@ -346,8 +345,3 @@ class ReferenceSet:
             if m:
                 loci[m.group(1)] += 1
         return loci.most_common(1)[0][0] if loci else None
-
-    def genotype_mask(self, gene: str, allowed_names: Iterable[str]) -> torch.Tensor:
-        ref = self.gene(gene)
-        allowed = set(allowed_names)
-        return torch.tensor([n in allowed for n in ref.names], dtype=torch.bool)

@@ -5,9 +5,9 @@ An allele ties with the call when it matches at least as many of the read's V ba
 the call's alignment puts on germline bases (its CIGAR's M columns), each compared with the allele's base at the same
 IMGT column (the IMGT gapped forms put alleles of other lengths and with internal gaps in one frame; a reference
 without them compares germline positions). An allele without a base at a column (a gap, or past its end) matches no
-read base there, and an inserted read base is compared with no allele. Only an allele the read may be called with
-ties (its locus and any genotype: the selector's ``allowed`` mask). The ties follow the call by matches, then in
-reference order.
+read base there, and an inserted read base is compared with no allele. Only an allele of the bound reference ties (a
+genotype is the bank, so its alleles are the only candidates). The ties follow the call by matches, then in reference
+order.
 """
 from __future__ import annotations
 
@@ -52,14 +52,12 @@ def _aligned(aln) -> tuple:
     return np.array(reads, dtype=np.int64), np.array(germs, dtype=np.int64)
 
 
-def tied_alleles(sequences, alignments, reference, allowed=None) -> list:
-    """Per read (forward frame), its V call and the V alleles tied with it, the call first (a tuple of names), or
-    ``()`` for a read without a V alignment. ``allowed``: the V mask the selector ran under, ``(C,)`` for every read or
-    ``(N, C)`` per read; None allows every allele."""
-    mask = None if allowed is None else np.asarray(allowed, dtype=bool)
+def tied_alleles(sequences, alignments, reference) -> list:
+    """Per read (forward frame), its V call and the V alleles of the bound bank tied with it, the call first (a tuple
+    of names), or ``()`` for a read without a V alignment."""
     names = None
     out = []
-    for i, (sequence, aln) in enumerate(zip(sequences, alignments)):
+    for sequence, aln in zip(sequences, alignments):
         if aln is None:
             out.append(())
             continue
@@ -76,8 +74,6 @@ def tied_alleles(sequences, alignments, reference, allowed=None) -> list:
         read = np.frombuffer(sequence.upper().encode(), dtype=np.uint8)[reads]
         matches = (bases[:, own[germs]] == read).sum(1)
         tied = matches >= matches[call]
-        if mask is not None:
-            tied &= mask if mask.ndim == 1 else mask[i]
         others = sorted((a for a in np.flatnonzero(tied) if a != call), key=lambda a: (-matches[a], a))
         out.append((names[call], *(names[a] for a in others)))
     return out

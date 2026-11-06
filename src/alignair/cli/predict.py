@@ -51,12 +51,12 @@ def register(sub) -> None:
     p.add_argument("--chunk-size", type=int, default=20000,
                    help="stream the input in chunks of this many reads (default 20000)")
     p.add_argument("--genotype", default=None,
-                   help="genotype JSON/YAML {gene: [alleles]} (a subset of the trained reference) to "
-                        "constrain the allele calls to")
+                   help="genotype JSON/YAML {gene: [alleles]}: the bank the calls come from, a subset of the bound "
+                        "reference (--reference may add novel alleles)")
     p.add_argument("--reference", default=None,
-                   help="germline FASTA (V, D and J alleles) to call from, novel alleles included; a "
-                        "reference-agnostic model only. Missing IMGT gaps and anchors are taken from the "
-                        "model's own reference (the same allele, or a close same-length variant)")
+                   help="germline FASTA (V, D and J alleles) to call from, novel alleles included. Missing IMGT "
+                        "gaps and anchors are taken from the model's own reference (the same allele, or a close "
+                        "same-length variant)")
     p.add_argument("--infer-genotype", action="store_true",
                    help="infer the donor's V genotype from the reads' own calls (TIgGER's frequency rule on the "
                         "reads whose V call is a single allele) and re-call the reads whose call it excludes while "
@@ -276,11 +276,6 @@ def run(args) -> int:
     except ValueError as e:
         return fail(e, error_type=ModelError, context={"path": model_path})
     if args.reference:
-        if not getattr(aligner.model, "reference_agnostic", False):
-            return report_error(ConfigurationError(
-                "--reference needs a reference-agnostic model: this model's alleles are the reference it was "
-                "trained on (use --genotype to restrict the calls to a subset of it)",
-                context={"model": model_path, "reference": args.reference}))
         from ..reference.complete import complete_reference
         from ..reference.reference_set import ReferenceSet
         try:              # the FASTA's alleles become the model's bank, completed against its own reference
@@ -298,8 +293,8 @@ def run(args) -> int:
 
     overrides = {}
     if args.genotype:
-        from ..genotype.constraint import load_genotype
-        try:                    # fixed-head models cannot call novel alleles -> reject, do not drop
+        from ..genotype.files import load_genotype
+        try:                    # an allele the bound reference lacks is refused, not dropped
             genotype, _unknown = load_genotype(args.genotype, reference=reference, drop_unknown=False)
         except ValueError as e:
             return fail(e, context={"stage": "genotype_validation"})

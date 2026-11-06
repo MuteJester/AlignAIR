@@ -1,9 +1,8 @@
 """The V alleles a read cannot separate from its call (``predict.ties``): an allele ties when, over the read bases the
 call's alignment puts on germline bases, it matches at least as many as the call, compared at IMGT columns; only an
-allele the read may be called with ties. ``v_call`` lists the call, then its ties."""
+allele of the reference ties. ``v_call`` lists the call, then its ties."""
 import random
 
-import numpy as np
 import pytest
 
 from alignair.predict.state import GermlineAlignment
@@ -40,8 +39,8 @@ class _Reference:
         return self._v
 
 
-def _ties(read, aln, alleles, gapped=None, allowed=None):
-    return tied_alleles([read], [aln], _Reference(alleles, gapped), allowed=allowed)[0]
+def _ties(read, aln, alleles, gapped=None):
+    return tied_alleles([read], [aln], _Reference(alleles, gapped))[0]
 
 
 def test_an_allele_equal_to_the_call_over_the_reads_v_bases_ties():
@@ -79,14 +78,6 @@ def test_an_inserted_read_base_is_compared_with_no_allele():
     read = A[:50] + "T" + A[50:90]
     aln = GermlineAlignment("A", 0, 91, 0, 90, "50M1I40M")
     assert _ties(read, aln, {"A": A, "B": B, "C": C}) == ("A", "B")
-
-
-def test_only_alleles_the_read_may_be_called_with_tie():
-    read = A[:90]
-    aln = GermlineAlignment("A", 0, 90, 0, 90, "90M")
-    alleles = {"A": A, "B": B}
-    assert _ties(read, aln, alleles, allowed=np.array([True, False])) == ("A",)
-    assert _ties(read, aln, alleles, allowed=np.array([[True, False]])) == ("A",)
 
 
 def test_the_ties_follow_the_call_by_matches_then_reference_order():

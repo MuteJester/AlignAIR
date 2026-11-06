@@ -1,6 +1,6 @@
 """Completing a reference against a known one: IMGT-gapped forms and conserved anchors for the alleles that lack them.
 
-A reference-agnostic model lays V on IMGT-gapped columns and lines a read up with an allele from its conserved codon
+The model lays V on IMGT-gapped columns and lines a read up with an allele from its conserved codon
 (V Cys, J W/F), so a user's reference (a FASTA, a genotype with novel alleles) is completed against the reference the
 model came with (``known``) before it is bound. Each allele without a gapped form or anchor takes them from:
 

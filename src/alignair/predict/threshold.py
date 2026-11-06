@@ -42,7 +42,7 @@ def largest_gap(p: np.ndarray, param=None, cap: int = 3):
 
 
 def max_likelihood_percentage(p: np.ndarray, pct: float = 0.1, cap: int = 3):
-    """Legacy relative-to-max rule: keep ``{i : p_i >= pct * max(p)}``. Mismatched to a BCE head."""
+    """The relative rule: keep ``{i : p_i >= pct * max(p)}``."""
     p = np.asarray(p, dtype=np.float64)
     idx = np.where(p >= float(p.max()) * pct)[0]
     return _finish(p, idx, cap)
@@ -53,40 +53,20 @@ SELECTORS = {"absolute": absolute_threshold, "largest_gap": largest_gap,
 
 
 def select_alleles(allele_probs: dict, names: dict, param: float = 0.5, cap: int = 3,
-                   selector: str = "absolute", allowed: dict | None = None) -> dict:
-    """Map per-gene probability matrices to per-read allele calls.
+                   selector: str = "absolute") -> dict:
+    """Map per-gene score matrices to per-read allele calls.
 
-    ``allele_probs``: {gene: [N, C] sigmoid probs}. ``names``: {gene: [C] allele names, index-aligned
-    to the model's output head}. ``param`` is the selector's scalar (threshold for ``"absolute"``,
-    pct for the legacy rule, ignored for ``"largest_gap"``). Returns {gene: list[GeneCall]}.
-
-    ``allowed`` (genotype / locus constraint): ``{gene: bool mask}`` where the mask is either 1-D
-    ``(C,)`` — the same allowed set for every read (a genotype) — or 2-D ``(N, C)`` — a per-read allowed
-    set (locus masking in a multi-chain model, where each read's predicted locus restricts its callable
-    alleles). Selection runs over *only* the allowed indices, so a constrained call is **always** a
-    member of the allowed set — never a disallowed argmax fallback from zeroed probabilities. A
-    read whose allowed set is empty (e.g. the D gene for a light-chain read) gets an explicit *no-call*
-    (empty ``GeneCall``) rather than a forced pick.
+    ``allele_probs``: {gene: [N, C] allele scores}. ``names``: {gene: [C] allele names, index-aligned to the bound
+    bank}. ``param`` is the selector's scalar (threshold for ``"absolute"``, a percentage for the relative rule,
+    ignored for ``"largest_gap"``). Returns {gene: list[GeneCall]}. A genotype restricts the calls by being the bank.
     """
     fn = SELECTORS[selector]
     out: dict[str, list[GeneCall]] = {}
     for gene, probs in allele_probs.items():
         gene_names = names[gene]
-        amask = None if allowed is None else allowed.get(gene)
-        amask = None if amask is None else np.asarray(amask, dtype=bool)
-        per_read = amask is not None and amask.ndim == 2
         calls = []
-        for i, row in enumerate(np.asarray(probs)):
-            if amask is None:
-                idx, lk = fn(row, param, cap)
-            else:
-                allowed_idx = np.where(amask[i] if per_read else amask)[0]
-                if len(allowed_idx) == 0:                # no allowed allele -> explicit no-call
-                    calls.append(GeneCall((), ()))
-                    continue
-                sub_sel, lk = fn(row[allowed_idx], param, cap)
-                idx = allowed_idx[sub_sel]
-            calls.append(GeneCall(tuple(gene_names[j] for j in idx),
-                                  tuple(float(x) for x in lk)))
+        for row in np.asarray(probs):
+            idx, lk = fn(row, param, cap)
+            calls.append(GeneCall(tuple(gene_names[j] for j in idx), tuple(float(x) for x in lk)))
         out[gene] = calls
     return out

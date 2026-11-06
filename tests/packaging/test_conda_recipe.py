@@ -25,7 +25,7 @@ def test_recipe_deps_match_the_cli_dependency_story():
     # #93 removed typer/rich; the recipe must not resurrect them
     assert "typer" not in deps and "rich" not in deps
     # the [cli] extra is reflected
-    for pkg in ("pytorch", "genairr", "parasail-python", "huggingface_hub"):
+    for pkg in ("pytorch", "genairr", "huggingface_hub"):
         assert pkg in deps, f"{pkg} missing from recipe run deps"
 
 

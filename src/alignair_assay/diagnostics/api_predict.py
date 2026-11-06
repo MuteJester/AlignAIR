@@ -13,7 +13,7 @@ and the genotype arm run the same code and model:
    CLI's does. The model's reference must be the one in ``--reference``, which the runner verified against the
    truth reference.
 2. ``--genotype``, a JSON ``{"v": [...], "d": [...], "j": [...]}``, is read with AlignAIR's
-   ``genotype.constraint.load_genotype(path, reference=<the model's>, drop_unknown=False)``. It returns
+   ``genotype.files.load_genotype(path, reference=<the model's>, drop_unknown=False)``. It returns
    ``(genotype, unknown)`` and raises on an allele the model does not hold. Its ``genotype``, ``{gene letter: set of
    allele names}``, is the type ``predict_sequences`` takes: the bank the model is bound to for each chunk.
 3. The reads are read with ``alignair.iter_sequences`` in chunks of ``CHUNK_SIZE``, the CLI's default
@@ -50,7 +50,7 @@ import torch
 from alignair import AirrWriter, iter_sequences, predict_sequences, resolve_device
 from alignair.errors import InputError
 from alignair.genotype.bank import genotype_bank
-from alignair.genotype.constraint import load_genotype
+from alignair.genotype.files import load_genotype
 
 from alignair_assay.core.reference import Reference
 from alignair_assay.diagnostics.replay import load_model_checked

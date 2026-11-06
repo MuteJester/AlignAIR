@@ -25,7 +25,7 @@ def load_model(checkpoint_path: str, *, reference: ReferenceSet | None = None,
     """Load a trained AlignAIR model file into an eval-ready ``(model, reference)`` pair.
 
     A ``.alignair`` model file carries its own reference (rebuilt from the no-pickle ``reference_json``);
-    ``reference`` binds another one to a reference-agnostic model (alleles it never trained on included). An
+    ``reference`` binds another one in its place (alleles the model never trained on included). An
     AlignAIR 3 checkpoint (a ``.pt``, or a conv-v1 model file) is refused with the version that reads it.
     """
     from .model_file import container, load_model as _load_alignair, v3_checkpoint_error

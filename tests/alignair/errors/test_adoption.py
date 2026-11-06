@@ -18,7 +18,7 @@ pytestmark = pytest.mark.component
     ("registry.sources", "OfflineError", RuntimeError),
     ("train.guards", "TrainingConfigError", ValueError),
     ("train.guards", "NonFiniteLossError", RuntimeError),
-    ("genotype.constraint", "NovelAlleleUnsupportedError", ValueError),
+    ("genotype.files", "UnknownAlleleError", ValueError),
 ])
 def test_canonical_exceptions_preserve_builtin_catchability(module, name, builtin):
     cls = getattr(importlib.import_module("alignair." + module), name)

@@ -17,7 +17,6 @@ def test_chip_v1_builds_the_chip_with_the_configured_trunk_width():
     setup = prepare_model(toy_reference(), architecture="chip-v1", trunk_channels=8, max_seq_length=64, anchor_heads=True, d_presence_head=True)
     model = setup.build_model()
     assert isinstance(model.core, ChipCore) and model.core.trunk.project.out_channels == 8
-    assert model.reference_agnostic
 
 
 def test_the_product_network_imports_neither_the_lab_nor_the_assay():

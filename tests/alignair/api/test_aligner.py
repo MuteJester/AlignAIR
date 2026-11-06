@@ -100,8 +100,8 @@ def test_tcr_train_api_end_to_end(tmp_path):
     """Training custom models on TCR loci (TRA: non-D, TRB: D-bearing) without AID SHM mutation failures,
     then PREDICTING a simulated read of that locus.
 
-    The models are 2-step (untrained), so accuracy is meaningless here — but a fixed-reference model can
-    only ever emit alleles from its own embedded catalog, so the locus label and the call namespace are
+    The models are 2-step (untrained), so accuracy is meaningless here — but a model can only ever emit
+    alleles from the reference it is bound to (here its own embedded catalog), so the locus label and the call namespace are
     strong, non-flaky assertions that the whole train -> load -> predict path works per locus."""
     from alignair import Aligner, TrainingConfig, run_training
 

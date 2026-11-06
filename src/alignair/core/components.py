@@ -37,21 +37,17 @@ class ModelComponents:
     ``bind_reference(reference)``; the model's builders and loaders call it. ``objective(config) -> TrainingTasks`` is
     the architecture's training objective (``tasks.build_tasks``).
 
-    ``reference_agnostic``: the architecture's alleles are an input, not weights (its core reads them from the bound
-    reference), so it takes any reference with its genes, alleles it never trained on included, and its calls follow
-    the bound reference's alleles; a fixed-head architecture (the default) is tied to the reference it trained on.
+    An architecture's alleles are an input, not weights: its core reads them from the bound reference, so a model
+    takes any reference with its genes, alleles it never trained on included, and its calls are that reference's.
     """
     core: Callable[[AlignAIRConfig], nn.Module]
     objective: Callable[[AlignAIRConfig], object]
     embedding: Callable[[AlignAIRConfig], nn.Module] = _embedding
     orientation_head: Callable[[AlignAIRConfig], nn.Module] = _orientation
-    reference_agnostic: bool = False
 
     def __post_init__(self):
-        if type(self.reference_agnostic) is not bool:
-            raise ConfigurationError("reference_agnostic must be a boolean", context={"component": "reference_agnostic"})
         for field in fields(self):
-            if field.name != "reference_agnostic" and not callable(getattr(self, field.name)):
+            if not callable(getattr(self, field.name)):
                 raise ConfigurationError(f"component factory {field.name!r} must be callable",
                                          context={"component": field.name})
 
@@ -69,7 +65,7 @@ def _chip_objective(cfg: AlignAIRConfig):
     return ChipObjective(cfg)
 
 
-CHIP = ModelComponents(core=_chip_core, objective=_chip_objective, reference_agnostic=True)
+CHIP = ModelComponents(core=_chip_core, objective=_chip_objective)
 _ARCHITECTURES = {"chip-v1": CHIP}
 # The environment variable naming the modules (comma-separated) that register architectures defined outside the package.
 ARCHITECTURE_MODULES = "ALIGNAIR_ARCHITECTURE_MODULES"

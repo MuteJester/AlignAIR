@@ -68,7 +68,7 @@ def test_threads_without_the_lab_on_the_path_give_the_one_process_rows(model_fil
 
 
 def test_a_genotype_keeps_the_chips_v_calls_inside_it(model_file, fasta, tmp_path):
-    """--genotype masks the chip's bank: every V call names only the genotype's alleles (or no V at all)."""
+    """--genotype is the chip's bank: every V call names only the genotype's alleles (or no V at all)."""
     from alignair.model_file import load_model
     names = load_model(model_file).reference.gene("V").names
     genotype = tmp_path / "donor.json"
@@ -76,3 +76,4 @@ def test_a_genotype_keeps_the_chips_v_calls_inside_it(model_file, fasta, tmp_pat
     assert _predict(model_file, fasta, tmp_path / "geno.tsv", "--genotype", str(genotype)) == 0
     rows = _rows(tmp_path / "geno.tsv")
     assert rows and all(set(filter(None, row["v_call"].split(","))) <= set(names[:2]) for row in rows)
+    assert any(row["v_call"] for row in rows)

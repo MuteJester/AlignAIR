@@ -1,4 +1,4 @@
-"""Tests for germline alignment (reuse align/ WFA/parasail; Short-D sentinel)."""
+"""Tests for germline alignment (the heuristic matcher; Short-D sentinel)."""
 import pytest
 import numpy as np
 

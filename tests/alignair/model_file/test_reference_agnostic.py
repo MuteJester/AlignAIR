@@ -1,5 +1,5 @@
-"""Loading with another reference: a reference-agnostic model (its alleles an input) binds the reference it is given,
-alleles it never trained on included; a fixed-head model keeps the reference it trained on."""
+"""Loading with another reference: the model (its alleles an input) binds the reference it is given, alleles it never
+trained on included."""
 import GenAIRR.data as gd
 import pytest
 from torch import nn
@@ -9,7 +9,6 @@ from alignair import model_file as mf
 from alignair.core import AlignAIR, ModelComponents, register_architecture
 from alignair.core import components
 from alignair.core.config import AlignAIRConfig
-from alignair.errors import ModelError
 from alignair.reference.reference_set import ReferenceSet
 
 pytestmark = pytest.mark.integration
@@ -34,9 +33,7 @@ class BankCore(nn.Module):
 def saved(tmp_path, monkeypatch):
     """``save(architecture) -> path``: a fresh model of the architecture saved on HUMAN_IGH_OGRDB."""
     monkeypatch.setattr(components, "_ARCHITECTURES", dict(components._ARCHITECTURES))
-    register_architecture("test-bank-agnostic-v1", ModelComponents(core=BankCore, objective=lambda cfg: None,
-                                                                    reference_agnostic=True))
-    register_architecture("test-bank-fixed-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
+    register_architecture("test-bank-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
 
     def save(architecture):
         cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, architecture=architecture)
@@ -58,19 +55,11 @@ def _another_reference():
          "J": dict(zip(subset.gene("J").names, subset.gene("J").sequences))})
 
 
-def test_a_reference_agnostic_model_loads_with_another_reference(saved):
-    path = saved("test-bank-agnostic-v1")
+def test_a_model_loads_with_another_reference(saved):
+    path = saved("test-bank-v1")
     other = _another_reference()
     loaded = mf.load_model(path, reference=other)
     assert loaded.reference is other and loaded.model.core.reference is other
     assert loaded.config.v_allele_count == 11 and loaded.model.cfg.v_allele_count == 11
     model, reference = api.load_model(path, reference=other)
     assert reference is other and model.core.reference is other
-
-
-def test_a_fixed_head_model_keeps_the_reference_it_trained_on(saved):
-    path = saved("test-bank-fixed-v1")
-    with pytest.raises(ModelError, match="reference does not match"):
-        mf.load_model(path, reference=_another_reference())
-    same = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    assert mf.load_model(path, reference=same).model.core.reference.gene("V").names == same.gene("V").names

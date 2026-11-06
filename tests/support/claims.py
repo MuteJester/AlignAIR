@@ -7,9 +7,9 @@ CLAIM_TESTS = {
     "segment coordinates are bounded and ordered":
         "tests/alignair/predict/test_segment.py::test_property_bounds_and_ordering",
     "genotype-constrained calls stay within the allowed set":
-        "tests/alignair/predict/test_threshold.py::test_allowed_set_restricts_call_even_when_disallowed_has_max_prob",
-    "novel alleles are rejected (fixed-reference contract)":
-        "tests/acceptance/test_fixed_reference_contract.py::test_novel_allele_is_rejected_not_dropped",
+        "tests/alignair/cli/test_predict_threads.py::test_a_genotype_keeps_the_chips_v_calls_inside_it",
+    "a novel allele given in the reference is called":
+        "tests/acceptance/test_reference_contract.py::test_a_novel_allele_in_the_reference_is_called",
     "AIRR output passes official validation":
         "tests/acceptance/test_airr_validation.py::test_golden_airr_passes_official_validation",
     "productivity is derived from the predicted anchors' junction (in frame, no stop codon)":

@@ -14,6 +14,18 @@ GENES = ("v", "d", "j")
 
 
 @dataclass(frozen=True)
+class AlignResult:
+    """One segment's alignment to its germline window: the CIGAR (M/I/D runs only) and the read and germline
+    coordinates it spans (0-based, end-exclusive)."""
+    score: float        # higher is better
+    cigar: str
+    q_start: int        # first read base consumed
+    q_end: int          # one past the last read base
+    t_start: int        # germline bases before the alignment
+    t_end: int          # germline end (exclusive)
+
+
+@dataclass(frozen=True)
 class GeneCall:
     """A per-read allele call for one gene: selected allele names (top-1 first) + likelihoods."""
     names: tuple[str, ...]

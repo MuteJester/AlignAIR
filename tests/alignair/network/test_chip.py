@@ -159,7 +159,6 @@ def test_any_reference_binds_and_the_calls_follow_its_alleles(chip):
     three alleles (no per-allele weights to resize)."""
     model, batch, _ = chip
     model.eval()
-    assert model.reference_agnostic
     model.bind_reference(_with_a_novel_v())
     assert model.cfg.v_allele_count == 3
     inputs = {key: value for key, value in batch.inputs.items() if not key.startswith(("bank_mask", "teacher"))}

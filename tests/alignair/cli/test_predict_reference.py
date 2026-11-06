@@ -1,5 +1,5 @@
-"""``alignair predict --reference FASTA``: a reference-agnostic model is bound to the FASTA's alleles (novel ones
-included), completed against the reference it came with; a fixed-head model refuses another reference."""
+"""``alignair predict --reference FASTA``: the model is bound to the FASTA's alleles (novel ones included), completed
+against the reference it came with."""
 from types import SimpleNamespace
 
 import pytest
@@ -17,7 +17,7 @@ def _known():
     return ReferenceSet({"V": v, "D": d, "J": j}, has_d=True)
 
 
-def _run(tmp_path, monkeypatch, *, agnostic):
+def _run(tmp_path, monkeypatch):
     from alignair.cli import predict as predict_cli
     from alignair.cli.main import build_parser
     model = tmp_path / "model.alignair"
@@ -28,7 +28,7 @@ def _run(tmp_path, monkeypatch, *, agnostic):
 
     def from_pretrained(*args, reference=None, **kwargs):
         loads.append(reference)
-        return SimpleNamespace(model=SimpleNamespace(reference_agnostic=agnostic), reference=reference or _known())
+        return SimpleNamespace(model=SimpleNamespace(), reference=reference or _known())
     monkeypatch.setattr("alignair.registry.resolve_model", lambda *a, **k: model)
     monkeypatch.setattr("alignair.model_file.container.is_alignair_file", lambda path: True)
     monkeypatch.setattr(predict_cli.Aligner, "from_pretrained", from_pretrained)
@@ -41,16 +41,10 @@ def _run(tmp_path, monkeypatch, *, agnostic):
     return args.func(args), loads, streamed
 
 
-def test_a_reference_agnostic_model_is_bound_to_the_completed_fasta(tmp_path, monkeypatch):
-    status, loads, streamed = _run(tmp_path, monkeypatch, agnostic=True)
+def test_the_model_is_bound_to_the_completed_fasta(tmp_path, monkeypatch):
+    status, loads, streamed = _run(tmp_path, monkeypatch)
     assert status == 0
     bound = loads[-1]
     assert bound.gene("V").names == ["IGHV1-1*01", "IGHV1-1*novel"]
     assert bound.gene("V").gapped["IGHV1-1*novel"] == "ACGA..ACGTAC" and bound.gene("V").anchors["IGHV1-1*novel"] == 4
     assert streamed and streamed[0].reference is bound
-
-
-def test_a_fixed_head_model_refuses_another_reference(tmp_path, monkeypatch, capsys):
-    status, _, streamed = _run(tmp_path, monkeypatch, agnostic=False)
-    assert status != 0 and not streamed
-    assert "reference-agnostic" in capsys.readouterr().err

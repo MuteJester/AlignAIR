@@ -22,7 +22,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..align.backend import AlignResult
+from .state import AlignResult
 
 _ACCEL = 0.05          # per-step velocity increment that amplifies same-state (match/mismatch) runs
 _START_CHECK = 30      # segment bases compared at the placement's start when checking it for a mis-anchor
@@ -118,7 +118,7 @@ except (ImportError, OSError):                              # pragma: no cover -
 
 def derive_alignment(read_window: str, germline_window: str, indel_count=0) -> AlignResult:
     """Reconstruct a base-level alignment of a read segment against its (already located) germline
-    window -> an ``AlignResult`` (M/I/D CIGAR + coords), a drop-in for the WFA result.
+    window -> an ``AlignResult`` (M/I/D CIGAR + coords).
 
     The window is *pinned* by :class:`HeuristicGermlineMatcher` (both ends fixed), so it can't drift
     the way an ends-free aligner does. Uses the compiled :mod:`_derive_cy` kernel when present, else

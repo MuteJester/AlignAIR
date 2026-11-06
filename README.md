@@ -37,7 +37,7 @@ pip install "AlignAIR[cli]"            # core + CLI (recommended)
 alignair doctor                        # verify Python / PyTorch+CUDA / GenAIRR
 ```
 
-Install extras: `[cli]` (model download + parasail), `[test]` (pytest, official AIRR validation, recipe
+Install extras: `[cli]` (model download), `[test]` (pytest, official AIRR validation, recipe
 checks), `[all]`.
 CSV/TSV reading uses Python's standard library; pandas is not
 required for inference or training. PyTorch is auto-detected for GPU; for a CPU-only install, `pip install torch
@@ -133,8 +133,7 @@ reference/config/model size without training with `--plan`. Then just
 `productive`, `v_call`/`d_call`/`j_call`, `junction`/`junction_aa`, gapped `sequence_alignment` /
 `germline_alignment`, per-gene `*_cigar`, `*_identity`, and sequence/germline coordinates, plus a
 per-gene candidate-set column (`*_call_set`) for alleles a read cannot distinguish. The gapped
-alignment fields are produced by AlignAIR's own IMGT-gap reconstruction (no external aligner required;
-`parasail` is bundled in `[cli]` for exact CIGARs and the fast reader).
+alignment fields are produced by AlignAIR's own IMGT-gap reconstruction (no external aligner required).
 
 Every run also writes a **`<output>.run.json` provenance sidecar** (model + fingerprint, reference,
 command, device, seed, and package versions). Validate any TSV explicitly:
@@ -154,7 +153,7 @@ alignair validate-airr out.tsv      # structural check: columns, coordinate/CIGA
 | `alignair reference` | list built-in references, or export a model's reference |
 | `alignair compare` | agreement report between two AIRR TSVs (e.g. AlignAIR vs IgBLAST) on your data |
 | `alignair validate-airr` | structural check of a rearrangement TSV (columns, coordinate/CIGAR bounds, productivity); not the official AIRR-C schema validator |
-| `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR, parasail) |
+| `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR) |
 | `alignair convert` | convert a legacy checkpoint into a versioned, fingerprinted `.alignair` |
 
 Run `alignair <command> --help` for options.

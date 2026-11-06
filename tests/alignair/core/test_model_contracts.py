@@ -1,6 +1,7 @@
 """The model's construction contracts: architecture registration refuses what it cannot hold, a component factory
 must give a torch module, the model takes only an AlignAIRConfig, an empty read is refused when the configuration
-says so, and a model without an orientation head or bank vote runs its core on the read as given."""
+says so, and a model without an orientation head or bank vote runs its core on the read as given and counts the alleles of
+the reference it is bound to."""
 import pytest
 import torch
 from torch import nn
@@ -93,10 +94,12 @@ def test_without_an_orientation_head_the_core_reads_the_tokens_as_given(scratch)
     out = model({"tokenized_sequence": tokens})
     assert torch.equal(out["tokens"], tokens) and "orientation_logits" not in out and "orientation" not in out
     assert out["start_mask"].all() and not out["end_mask"][:, 0].any()
-    model.bind_reference(object())                             # no bank vote and a core without a bank: a no-op
+    from alignair.reference import ReferenceSet
+    model.bind_reference(ReferenceSet.from_genotype({"V": {"V*01": "ACGT"}, "D": {"D*01": "GG"}, "J": {"J*01": "TT"}}))
+    assert (model.cfg.v_allele_count, model.cfg.j_allele_count, model.cfg.d_allele_count) == (1, 1, 1)
 
 
-def test_a_fixed_head_model_built_from_dataconfigs_keeps_their_allele_counts(scratch):
+def test_a_model_built_from_dataconfigs_takes_their_genes(scratch):
     import GenAIRR.data as gd
     register_architecture("test-echo-v1", ModelComponents(core=EchoCore, objective=_objective))
     model = AlignAIR.from_dataconfigs(gd.HUMAN_IGK_OGRDB, architecture="test-echo-v1", bank_orientation=False)

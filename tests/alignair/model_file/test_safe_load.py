@@ -35,7 +35,7 @@ def test_inference_loads_no_pickle_artifact_with_gapped_and_anchors(tmp_path):
     p = str(tmp_path / "pub.alignair")
     mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
-    lm = mf.load_model(p)                                        # default trust_pickle=False
+    lm = mf.load_model(p)
     assert lm.reference.gene("V").gapped and lm.reference.gene("V").anchors
     x = {"tokenized_sequence": torch.zeros(1, cfg.max_seq_length, dtype=torch.long)}
     with torch.no_grad():
