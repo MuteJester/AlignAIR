@@ -21,19 +21,18 @@ from .reference.reference_set import ReferenceSet
 
 __all__ = ["load_model", "predict_sequences", "train_model"]
 
-def load_model(checkpoint_path: str, *, dataconfigs=None, reference: ReferenceSet | None = None,
-               device: str = "cpu", trust_pickle: bool = False) -> tuple[AlignAIR, ReferenceSet]:
+def load_model(checkpoint_path: str, *, reference: ReferenceSet | None = None,
+               device: str = "cpu") -> tuple[AlignAIR, ReferenceSet]:
     """Load a trained AlignAIR model file into an eval-ready ``(model, reference)`` pair.
 
-    A ``.alignair`` model file carries its own reference (rebuilt from the no-pickle ``reference_json``), so
-    ``dataconfigs`` are unnecessary; ``reference`` binds another reference to a reference-agnostic model (alleles it
-    never trained on included) and must be the embedded one for a fixed-head model. An AlignAIR 3 checkpoint (a
-    ``.pt``, or a conv-v1 model file) is refused with the version that reads it.
+    A ``.alignair`` model file carries its own reference (rebuilt from the no-pickle ``reference_json``);
+    ``reference`` binds another one to a reference-agnostic model (alleles it never trained on included). An
+    AlignAIR 3 checkpoint (a ``.pt``, or a conv-v1 model file) is refused with the version that reads it.
     """
     from .model_file import container, load_model as _load_alignair, v3_checkpoint_error
     if not container.is_alignair_file(checkpoint_path):
         raise v3_checkpoint_error(checkpoint_path)
-    lm = _load_alignair(checkpoint_path, device=device, trust_pickle=trust_pickle, reference=reference)
+    lm = _load_alignair(checkpoint_path, device=device, reference=reference)
     return lm.model, lm.reference
 
 

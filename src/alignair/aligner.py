@@ -17,9 +17,9 @@ training subpackage — a top-level ``train`` name would collide with it.)
 """
 from __future__ import annotations
 
-from .errors import ConfigurationError, InputError, MissingDependencyError, ModelError
+from .errors import MissingDependencyError, ModelError
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterator, Optional, Sequence
 
 __all__ = ["Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
@@ -105,8 +105,8 @@ class Aligner:
     # ------------------------------------------------------------------ constructors
     @classmethod
     def from_pretrained(cls, model: str, *, revision: str | None = None, device: str = "auto",
-                        reference=None, dataconfigs=None, registry=None, offline: bool = False,
-                        trust_pickle: bool = False, token: str | None = None) -> "Aligner":
+                        reference=None, registry=None, offline: bool = False,
+                        token: str | None = None) -> "Aligner":
         """Load a model by local path, a Hugging Face repo (``hf://org/repo`` or ``org/repo`` — pulled
         via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``). ``revision`` pins a
         HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
@@ -116,8 +116,7 @@ class Aligner:
         path = str(resolve_model(model, sources=list(registry) if registry is not None else None,
                                  offline=offline, token=token, revision=revision))
         dev = resolve_device(device)
-        m, ref = load_model(path, dataconfigs=dataconfigs, reference=reference, device=dev,
-                            trust_pickle=trust_pickle)
+        m, ref = load_model(path, reference=reference, device=dev)
         from .model_file import read_metadata, container
         schema = read_metadata(path).get('model', {}).get('label_schema') if container.is_alignair_file(path) else None
         return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path), label_schema=schema)

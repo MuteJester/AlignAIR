@@ -9,12 +9,11 @@ pytestmark = pytest.mark.component
 
 @pytest.mark.parametrize("options,message", [
     ({"init_from": "a.alignair", "resume_path": "b.alignair"}, "choose init_from or resume_path"),
-    ({"trust_pickle": "yes"}, "trust_pickle must be a boolean"),
     ({"flanks": "default"}, "flanks must be a FlankPolicy"),
     ({"schedule": {"total_steps": 10}}, "schedule must be a CosineSchedule"),
     ({"study": "every step"}, "study must be a TrainingStudy"),
     ({"input_space": "protein"}, "nucleotide reads with allele labels"),
-], ids=["init_and_resume", "trust_pickle", "flanks", "schedule", "study", "spaces"])
+], ids=["init_and_resume", "flanks", "schedule", "study", "spaces"])
 def test_an_unusable_request_is_refused(options, message):
     with pytest.raises(ConfigurationError, match=message):
         TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", **options)

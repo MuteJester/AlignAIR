@@ -7,7 +7,7 @@ import torch
 
 from alignair import model_file
 from alignair.core import AlignAIR, prepare_model
-from alignair.errors import ConfigurationError, ModelIntegrityError
+from alignair.errors import ConfigurationError, ModelError, ModelIntegrityError
 from alignair.model_file import container, serialize
 from alignair.reference import ReferenceSet
 
@@ -74,7 +74,7 @@ def test_embedded_reference_contract_error_has_artifact_context(artifact):
     assert caught.value.context['path'] == str(path)
 
 
-def test_trusted_legacy_container_still_verifies_available_reference_hashes(tmp_path):
+def test_a_container_without_reference_json_is_refused_as_written_before_alignair_4(tmp_path):
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
                           max_seq_length=128, embed_dim=4, trunk_channels=8)
     path = tmp_path / 'legacy.alignair'
@@ -83,11 +83,10 @@ def test_trusted_legacy_container_still_verifies_available_reference_hashes(tmp_
     header.pop('_sections_base', None)
     sections = {name: (container.read_section(path, name), info['codec'])
                 for name, info in header['sections'].items() if name != 'reference_json'}
-    header['reference']['allele_order_sha256'] = '0' * 64
     container.write_container(path, header, sections)
-    with pytest.raises(ModelIntegrityError, match='allele_order_sha256') as caught:
-        model_file.load_model(path, trust_pickle=True)
-    assert caught.value.context['stage'] == 'model_binding'
+    with pytest.raises(ModelError, match='no reference_json: it was written before AlignAIR 4') as caught:
+        model_file.load_model(path)
+    assert caught.value.context['path'] == str(path) and 'alignair<4' in caught.value.hint
 
 
 @pytest.mark.parametrize('problem', ['head_count'])

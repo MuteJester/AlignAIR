@@ -79,13 +79,12 @@ def test_failed_base_refresh_leaves_previous_base_and_new_numbered_recovery(tmp_
     assert not list(tmp_path.glob('*.tmp'))
 
 
-@pytest.mark.parametrize('trust_pickle', [False, True])
-def test_a_pt_checkpoint_is_refused_with_the_version_that_resumes_it(tmp_path, trust_pickle):
+def test_a_pt_checkpoint_is_refused_with_the_version_that_resumes_it(tmp_path):
     from alignair.errors import ModelError
     path = tmp_path/'legacy.pt'
     torch.save({'model': {'weight': torch.tensor(2.)}, 'logvars': {}, 'step': 9}, path)
     with pytest.raises(ModelError, match=r'AlignAIR 3 checkpoint .*alignair<4') as caught:
-        checkpoints.load_training_checkpoint(path, trust_pickle=trust_pickle)
+        checkpoints.load_training_checkpoint(path)
     assert caught.value.context['path'] == str(path)
 
 

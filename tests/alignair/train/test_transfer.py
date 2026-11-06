@@ -66,10 +66,9 @@ def test_safe_warm_start_decodes_weights_without_source_factories_or_rng_use(tmp
     assert torch.equal(torch.get_rng_state(), rng)
 
 
-@pytest.mark.parametrize('trust_pickle', [False, True])
-def test_a_pt_warm_start_source_is_refused(tmp_path, trust_pickle):
+def test_a_pt_warm_start_source_is_refused(tmp_path):
     from alignair.errors import ModelError
     path = tmp_path / 'source.pt'
     torch.save({'model': _Net(3).state_dict()}, path)
     with pytest.raises(ModelError, match=r'AlignAIR 3 checkpoint .*alignair<4'):
-        load_source_state_dict(path, trust_pickle=trust_pickle)
+        load_source_state_dict(path)

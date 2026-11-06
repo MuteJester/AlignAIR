@@ -58,13 +58,12 @@ class TrainingConfig:
     schedule: CosineSchedule | None = None
     study: TrainingStudy | None = None
     init_from: str | None = None
-    trust_pickle: bool = False
     data_workers: int = 0
     flanks: FlankPolicy | None = field(default_factory=FlankPolicy)
 
     def __post_init__(self):
-        if self.init_from and self.resume_path or type(self.trust_pickle) is not bool:
-            raise ConfigurationError('choose init_from or resume_path; trust_pickle must be a boolean')
+        if self.init_from and self.resume_path:
+            raise ConfigurationError('choose init_from or resume_path')
         validate_data_workers(self.data_workers)
         if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
             raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})

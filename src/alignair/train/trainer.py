@@ -53,8 +53,8 @@ class TrainingOutcome:
 def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, init_seed=None, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
-          mutation_cap=None, init_from=None, init_trust_pickle=False,
-          grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False,
+          mutation_cap=None, init_from=None,
+          grad_clip=None, val_every=0, val_batches=4,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
           schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
           indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION, flanks=None):
@@ -144,7 +144,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
     if resume_path and resume_from is None:
         raise ConfigurationError('resume checkpoint does not exist', context={'path': str(resume_path)})
     if resume_from:
-        state = load_training_checkpoint(resume_from, device=device, trust_pickle=resume_trust_pickle)
+        state = load_training_checkpoint(resume_from, device=device)
         validate_continuation(state, cfg, schema, schedule=schedule_metadata, lr=lr)
         restore_model_state(model, state.model_state, source=resume_from)
         if state.optimizer_state is not None:
@@ -163,7 +163,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
         print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
     elif init_from:                                # warm-start: copy the shape-compatible backbone
         from .transfer import load_source_state_dict, summarize, transfer_compatible_weights
-        src_sd = load_source_state_dict(init_from, device=device, trust_pickle=init_trust_pickle)
+        src_sd = load_source_state_dict(init_from, device=device)
         transferred, skipped = transfer_compatible_weights(model, src_sd)
         print(f"WARM-START from {init_from}\n{summarize(transferred, skipped)}", flush=True)
 

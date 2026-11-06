@@ -54,7 +54,7 @@ def validate_continuation(state, config, label_schema, *, schedule=None, lr=None
         raise ConfigurationError('checkpoint has no optimizer continuation state; use init_from for a warm start')
 
 
-def load_training_checkpoint(path, *, device="cpu", trust_pickle=False) -> ResumeState:
+def load_training_checkpoint(path, *, device="cpu") -> ResumeState:
     """Decode a self-contained .alignair checkpoint without allocating a model; restoration validates weight
     compatibility. The trusted resume reader decodes its pickle training sections; it does not apply the recorded
     process RNG state. An AlignAIR 3 checkpoint (a .pt) is refused with the version that reads it."""

@@ -157,12 +157,11 @@ def test_read_maps_weights_to_requested_device_without_constructing_a_model(chec
         assert all(tensor.device.type == 'meta' for tensor in data.model_state.values())
 
 
-def test_trusted_legacy_embedded_reference_can_be_decoded_without_a_model(checkpoint, monkeypatch):
-    path, setup, model, *_ = checkpoint
+def test_a_checkpoint_without_reference_json_is_refused_before_any_model_is_built(checkpoint, monkeypatch):
+    path, *_ = checkpoint
     _rewrite(path, lambda header, sections: sections.pop('reference_json'))
     def forbidden(*args, **kwargs):
-        raise AssertionError('legacy reference decoding constructed an AlignAIR model')
+        raise AssertionError('reading a training checkpoint constructed an AlignAIR model')
     monkeypatch.setattr(AlignAIR, '__init__', forbidden)
-    decoded = model_file.read_training_state(path)
-    assert decoded.reference.to_serializable() == setup.reference.to_serializable()
-    _equal(decoded.model_state, model.state_dict())
+    with pytest.raises(ModelError, match='no reference_json: it was written before AlignAIR 4'):
+        model_file.read_training_state(path)

@@ -25,7 +25,6 @@ def register(sub) -> None:
     p.add_argument("--format", choices=["text", "json"], default="text")
     p.add_argument("--registry", action="append")
     p.add_argument("--offline", action="store_true")
-    p.add_argument("--trust-pickle", action="store_true")
     p.set_defaults(func=run)
 
 
@@ -62,8 +61,7 @@ def run(args) -> int:
     except ConfigurationError as e:
         return report_error(e)
     try:
-        model, reference = load_model(model_path, dataconfigs=args.dataconfig or names, device=device,
-                                      trust_pickle=args.trust_pickle)
+        model, reference = load_model(model_path, device=device)
     except ValueError as e:
         return fail(e, error_type=ModelError, context={"path": model_path})
 

@@ -102,10 +102,8 @@ def test_load_refuses_legacy_without_reference_json(tmp_path):
         "weights": (serialize.state_dict_to_bytes(model.state_dict()), "none"),
         "dataconfig/0": (serialize.dataconfig_to_bytes(gd.HUMAN_IGH_OGRDB), "zstd"),
     })
-    with pytest.raises(ValueError, match="reference_json|trust"):
-        mf.load_model(p)                                        # safe default refuses
-    lm = mf.load_model(p, trust_pickle=True)                    # explicit trust -> legacy pickle path
-    assert lm.reference.gene("V").names
+    with pytest.raises(ValueError, match="no reference_json: it was written before AlignAIR 4"):
+        mf.load_model(p)                                        # no pickled reference is ever read
 
 
 def test_allele_order_mismatch_is_a_hard_error():

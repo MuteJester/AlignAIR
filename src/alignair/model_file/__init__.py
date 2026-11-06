@@ -245,26 +245,18 @@ class ModelStateData:
     reference: ReferenceSet
 
 
-def read_model_state(path, *, trust_pickle=False) -> ModelStateData:
+def read_model_state(path) -> ModelStateData:
     """Decode weights and verify reference/label bindings without model construction or RNG use.
 
-    Safe reference JSON and safetensors are the default. Historical reference pickle requires
-    explicit consent. This does not decode training state, require architecture factories, or
+    The reference comes from the no-pickle ``reference_json``, the weights from safetensors. This does not decode training state, require architecture factories, or
     check architecture-specific weight keys/shapes; restoration owns those checks.
     """
     md = container.read_header(path)
     cfg = serialize.config_from_bytes(container.read_section(path, "config"))
-    if "reference_json" in md["sections"]:                       # safe, no-pickle path (default)
-        reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
-    elif trust_pickle and any(k.startswith("dataconfig/") for k in md["sections"]):
-        n = len(md["reference"]["dataconfigs"])                  # legacy trusted path (explicit consent)
-        dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
-        reference = ReferenceSet.from_dataconfigs(*dcs)
-    else:
-        raise ModelError(
-            "this .alignair has no safe `reference_json` section (it predates the safe format). "
-            "Upgrade it: `alignair convert <old>.alignair <new>.alignair --trust-pickle`, or pass "
-            "trust_pickle=True for a local file you trust (it will unpickle the embedded dataconfig).")
+    if "reference_json" not in md["sections"]:
+        raise ModelError(f"{path} has no reference_json: it was written before AlignAIR 4",
+                         context={"path": str(path)}, hint="Run it with alignair<4.")
+    reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
     schema = md.get('model', {}).get('label_schema')
     with error_context(stage='model_binding', path=path):
         _verify_reference_integrity(reference, md)
@@ -281,11 +273,11 @@ def read_model_state(path, *, trust_pickle=False) -> ModelStateData:
     return ModelStateData(md, cfg, model_state, reference)
 
 
-def load_model(path, *, device="cpu", trust_pickle=False, reference=None) -> LoadedModel:
+def load_model(path, *, device="cpu", reference=None) -> LoadedModel:
     """Load an inference model bound to its embedded reference, or to ``reference``: any reference with its genes
     for a reference-agnostic model (its alleles are an input), the embedded one again for a fixed-head model
     (``validate_reference_identity``)."""
-    data = read_model_state(path, trust_pickle=trust_pickle)
+    data = read_model_state(path)
     model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
     bound = data.reference
     if reference is not None:
@@ -333,7 +325,7 @@ def read_training_state(path, *, device="cpu") -> TrainingStateData:
     ``load_training_state``, this is a trusted resume flow that decodes pickle training sections.
     """
     with error_context(stage="training_checkpoint_load", path=path):
-        data = read_model_state(path, trust_pickle=True)
+        data = read_model_state(path)
         md, cfg, model_state, reference = data.metadata, data.config, data.model_state, data.reference
         if "train_state" not in md["sections"]:
             raise ModelError("no train_state section; this model file cannot resume training")

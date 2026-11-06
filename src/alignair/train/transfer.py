@@ -32,12 +32,12 @@ def transfer_compatible_weights(target_model, source_state_dict: dict) -> tuple[
     return transferred, skipped
 
 
-def load_source_state_dict(source_path: str, device: str = "cpu", trust_pickle: bool = False) -> dict:
+def load_source_state_dict(source_path: str, device: str = "cpu") -> dict:
     """State_dict of another AlignAIR model (any reference/architecture), for backbone transfer."""
     from ..model_file import container, read_model_state, v3_checkpoint_error
     if not container.is_alignair_file(source_path):
         raise v3_checkpoint_error(source_path)
-    state = read_model_state(source_path, trust_pickle=trust_pickle).model_state
+    state = read_model_state(source_path).model_state
     return {name: value.to(device) for name, value in state.items()}
 
 
