@@ -151,6 +151,7 @@ class ReferenceSet:
 
     @classmethod
     def from_dataconfigs(cls, *dataconfigs) -> "ReferenceSet":
+        from ..genairr.anchors import confirmed_anchor
         has_d = any(dc.metadata.has_d for dc in dataconfigs)
         wanted = ["v", "j"] + (["d"] if has_d else [])
         genes: Dict[str, GeneReference] = {}
@@ -180,7 +181,8 @@ class ReferenceSet:
                     sequences.append(allele.ungapped_seq.upper())
                     # conserved junction anchor (Cys-104 for V, Trp/Phe-118 for J); ungapped
                     # germline position. Used to derive the AIRR junction; absent on D.
-                    anc = getattr(allele, "anchor", None)
+                    anc = (confirmed_anchor(allele, g.upper()) if g.upper() in ("V", "J")
+                           else getattr(allele, "anchor", None))
                     if anc is not None:
                         anchors[allele.name] = int(anc)
                     gap = getattr(allele, "gapped_seq", None)
