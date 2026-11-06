@@ -115,26 +115,31 @@ def test_threaded_genotype_rows_equal_one_process(golden, fasta, tmp_path):
 
 
 def _tie_genotype(tmp_path, monkeypatch):
-    """Golden and tie reads, and an inferred genotype that keeps only one sibling of a tied call, so pass 2 re-calls
-    the rows it moves; returns ``(fasta, plain rows, the sibling kept)``."""
+    """Golden and tie reads, and an inferred genotype that keeps, for every gene whose call a plain row ties with a
+    sibling of its own gene, only that sibling, so pass 2 re-calls every such row; returns ``(fasta, plain rows, the
+    genotype)``."""
     reads = (json.loads(FIXTURE.read_text())["reads"] + json.loads(TIE_READS.read_text())["reads"]) * 2
     fasta = tmp_path / "reads.fasta"
     fasta.write_text("".join(f">r{i}\n{read}\n" for i, read in enumerate(reads)))
     assert _predict(fasta, tmp_path / "plain.tsv", "--threads", "1") == 0
     plain = _rows(tmp_path / "plain.tsv")
-    gene, other = next((gene_of(call), same[0]) for call, *tied in (row["v_call"].split(",") for row in plain)
-                       for same in [[allele for allele in tied if gene_of(allele) == gene_of(call)]] if same)
-    monkeypatch.setattr(GenotypeEvidence, "genotype", lambda self, **rule: {gene: [other]})
-    return fasta, plain, other
+    genotype = {}
+    for call, *tied in (row["v_call"].split(",") for row in plain if row["v_call"]):
+        sibling = next((allele for allele in tied if gene_of(allele) == gene_of(call)), None)
+        if sibling is not None:
+            genotype.setdefault(gene_of(call), [sibling])
+    monkeypatch.setattr(GenotypeEvidence, "genotype", lambda self, **rule: genotype)
+    return fasta, plain, genotype
 
 
 def test_the_genotype_pass_binds_its_bank_once(binds, tmp_path, monkeypatch):
-    fasta, plain, other = _tie_genotype(tmp_path, monkeypatch)
+    fasta, plain, genotype = _tie_genotype(tmp_path, monkeypatch)
     assert binds == []
     assert _predict(fasta, tmp_path / "pass.tsv", "--threads", "1", "--infer-genotype") == 0
     moved = sum(row != before for row, before in zip(_rows(tmp_path / "pass.tsv"), plain))
     assert moved > 2                                                # pass 2 re-calls more than one chunk
-    assert len(binds) == 1 and other in binds[0].gene("V").names
+    assert len(binds) == 1 and {allele for alleles in genotype.values() for allele in alleles} <= set(
+        binds[0].gene("V").names)
 
 
 def test_a_threaded_genotype_pass_gives_the_one_process_rows(tmp_path, monkeypatch):
