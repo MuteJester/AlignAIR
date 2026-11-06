@@ -180,16 +180,15 @@ class Aligner:
         return loci[0] if len(loci) == 1 else "IGH"
 
     # ------------------------------------------------------------------ inference
-    def predict(self, sequences: Sequence[str], *, batch_size="auto", genotype=None,
-                genotype_method: str = "mask", airr: bool = True, **overrides) -> PredictionResult:
+    def predict(self, sequences: Sequence[str], *, batch_size="auto", genotype=None, airr: bool = True,
+                **overrides) -> PredictionResult:
         """Eagerly align a list of nucleotide strings, returning a :class:`PredictionResult`.
-        ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{gene: names}`` dict)
-        constrains calls to a donor subset of the trained reference."""
+        ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{gene: names}`` dict) is the bank the
+        calls come from: a subset of the bound reference."""
         from .api import predict_sequences
         bs = _auto_batch_size(self.device) if batch_size in (None, "auto") else int(batch_size)
         if genotype is not None:
             overrides["genotype"] = genotype
-            overrides["genotype_method"] = genotype_method
         records = predict_sequences(self.model, self.reference, sequences, device=self.device,
                                     batch_size=bs, airr=airr, **overrides)
         return PredictionResult(records, locus=self.default_locus)
@@ -202,14 +201,14 @@ class Aligner:
         """
         from .data import prepare_nucleotide_inputs, SequenceInputAdapter
         from .core.boundaries import read_window
-        from .data.tokenizer import CenterPaddedTokenizer
+        from .data.tokenizer import NucleotideTokenizer
         from .predict.forward import collect_prediction_outputs, prediction_batches
         from .core.setup import _input_config
         cfg = self.model.cfg
         _input_config(cfg)
         window = read_window(cfg.max_seq_length)
         values, _ = prepare_nucleotide_inputs(sequences, window)
-        tokenizer = CenterPaddedTokenizer()
+        tokenizer = NucleotideTokenizer()
         adapter = SequenceInputAdapter(tokenizer, cfg.max_seq_length, self.device, vocab_size=cfg.vocab_size)
         return collect_prediction_outputs(
             prediction_batches(self.model, values, adapter, batch_size=batch_size))

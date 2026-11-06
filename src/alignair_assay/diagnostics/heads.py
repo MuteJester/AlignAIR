@@ -40,11 +40,10 @@ still scored on its alleles, and the mutation rate and indel count still count t
 An edge is scored for an observed segment with at least ``MIN_OBSERVED`` germline bases (the end-to-end boundary
 and allele metrics' rule), when its whole interval lies inside the cropped window without touching the cut.
 
-**Alleles** (the calibrated probabilities ``predictions.allele``, which the selector sees, ranked by probability over
-the read's allowed alleles, ties to the lower index): ``head.{g}.allele_top{1,3,5}`` (the top k meet the scored
-truth set), ``head.{g}.allele_top1_generative`` (informational: the top-1 is in the generative set) and
-``head.{g}.n_above_threshold`` (informational: allowed alleles at probability >= 0.5), for the same segments as the
-boundaries.
+**Alleles** (the allele scores ``predictions.allele``, which the selector sees, ranked by score over the bank's
+alleles, ties to the lower index): ``head.{g}.allele_top{1,3,5}`` (the top k meet the scored truth set),
+``head.{g}.allele_top1_generative`` (informational: the top-1 is in the generative set) and
+``head.{g}.n_above_threshold`` (informational: alleles scoring >= 0.5), for the same segments as the boundaries.
 
 **D presence** (a model with a D presence head, ``d_presence_logits``; the product gates the D call on its argmax):
 ``head.d_presence.correct``, the head's class is the truth's (``d_class``: absent, short below ``MIN_OBSERVED["d"]``
@@ -116,18 +115,11 @@ def decode_boundaries(outputs: StageOutputs, gene: str, decoder: str) -> tuple[n
 
 
 def allele_ranking(outputs: StageOutputs, gene: str) -> list[np.ndarray]:
-    """Per read, the indices of the alleles ``gene``'s selector could call (all of them, or the read's ``allowed``
-    row), by decreasing calibrated probability, ties to the lower index; empty when none is allowed. The first is
+    """Per read, the indices of ``gene``'s alleles by decreasing score, ties to the lower index. The first is
     the selector's top-1 call; the selector breaks ties the same way unless more than 16 alleles pass its threshold
     (numpy's default sort is stable only up to 16 elements)."""
     probs = np.asarray(outputs.predictions.allele[gene])
-    mask = None if outputs.allowed is None else outputs.allowed.get(gene)
-    mask = None if mask is None else np.asarray(mask, dtype=bool)
-    ranking = []
-    for i, row in enumerate(probs):
-        candidates = np.arange(row.shape[0]) if mask is None else np.flatnonzero(mask[i] if mask.ndim == 2 else mask)
-        ranking.append(candidates[np.argsort(-row[candidates], kind="stable")])
-    return ranking
+    return [np.argsort(-row, kind="stable") for row in probs]
 
 
 def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],

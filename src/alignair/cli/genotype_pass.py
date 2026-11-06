@@ -125,7 +125,7 @@ def complete(observer: Observer, args, *, first: str, predict, v_names, extra_co
     if not rows:
         os.replace(first, args.out)
     else:
-        bound = {"genotype": {"V": set(allowed_v(genotype, v_names))}, "genotype_method": "mask"}
+        bound = {"genotype": {"V": set(allowed_v(genotype, v_names))}}
         second = f"{args.out}.pass2.{os.getpid()}"
         try:
             reads = collect(args.input, rows, chunk_size=args.chunk_size, seq_column=args.sequence_column,

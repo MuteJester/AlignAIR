@@ -83,7 +83,7 @@ def _window(truth, width):
     return lo, truth.sequence[lo:lo + width]
 
 
-def _blank(truths, *, width=WIDTH, names=NAMES, allowed=None) -> StageOutputs:
+def _blank(truths, *, width=WIDTH, names=NAMES) -> StageOutputs:
     """Outputs of zeros for ``truths`` (in order), as the replay would capture them for a model with a ``width``
     window and ``names`` alleles; ``predictions.allele`` holds the same arrays as ``raw``."""
     n = len(truths)
@@ -103,8 +103,7 @@ def _blank(truths, *, width=WIDTH, names=NAMES, allowed=None) -> StageOutputs:
                               indel_count=raw["indel_count"].reshape(-1), orientation=np.zeros(n, int))
     return StageOutputs(ids=[t.case_id for t in truths], raw=raw, predictions=predictions,
                         canonical=[_window(t, width)[1] for t in truths], segments=None, calls={}, germline={},
-                        records=[], airr_rows=[], seconds={}, allele_names={g: list(v) for g, v in names.items()},
-                        allowed=allowed)
+                        records=[], airr_rows=[], seconds={}, allele_names={g: list(v) for g, v in names.items()})
 
 
 def _edge(out, i, g, edge, *, soft, argmax):
@@ -222,33 +221,18 @@ def test_allele_top_k_generative_and_threshold():
     assert scores["a"]["head.v.allele_top1"] == 1.0 and scores["a"]["head.v.n_above_threshold"] == 1.0
 
 
-def test_allele_ranking_ties_and_allowed_masks():
+def test_allele_ranking_orders_by_score_with_ties_to_the_lower_index():
     truths = [_truth("a", 50, {"v": _seg(0, 40, "V3*01"), "d": _seg(41, 50, "D1*01")}),
               _truth("b", 50, {"v": _seg(0, 40, "V1*01"), "d": _seg(41, 50, "D1*01")})]
-    # Read a may call V2..V4 and any D; read b any V and no D (a light-chain locus in a two-locus model).
-    allowed = {"v": np.array([[k in (2, 3, 4) for k in range(7)], [True] * 7]),
-               "d": np.array([[True] * 3, [False] * 3]),
-               "j": np.ones((2, 3), bool)}
-    out = _blank(truths, allowed=allowed)
+    out = _blank(truths)
     _probs(out, 0, "v", V1_01=0.99, V3_01=0.4, V2_01=0.2)
     _probs(out, 1, "v", V1_02=0.8, V1_01=0.8)  # a tie goes to the lower index, as the product's selector breaks it
-    _probs(out, 0, "d", D1_01=0.7)
-    _probs(out, 1, "d", D1_01=0.7)
-
     ranking = allele_ranking(out, "v")
-    assert [NAMES["v"][k] for k in ranking[0]] == ["V3*01", "V2*01", "V4*01"]
+    assert [NAMES["v"][k] for k in ranking[0][:3]] == ["V1*01", "V3*01", "V2*01"]
     assert [NAMES["v"][k] for k in ranking[1][:2]] == ["V1*01", "V1*02"]
-    assert allele_ranking(out, "d")[1].size == 0
     scores = head_scores(out, truths)
-    assert scores["a"]["head.v.allele_top1"] == 1.0 and scores["a"]["head.v.n_above_threshold"] == 0.0
+    assert scores["a"]["head.v.allele_top1"] == 0.0 and scores["a"]["head.v.allele_top3"] == 1.0
     assert scores["b"]["head.v.allele_top1"] == 1.0
-    assert scores["b"]["head.d.allele_top5"] == scores["b"]["head.d.n_above_threshold"] == 0.0  # no D allowed
-    assert scores["a"]["head.d.allele_top1"] == 1.0
-
-    # A one-dimensional mask (a genotype) applies to every read.
-    out = _blank(truths, allowed={"v": np.array([k != 0 for k in range(7)])})
-    _probs(out, 1, "v", V1_01=0.9, V2_01=0.3)
-    assert [NAMES["v"][k] for k in allele_ranking(out, "v")[1][:1]] == ["V2*01"]
 
     # Ties keep the head's order however many alleles tie (numpy's default sort is unstable past 16 elements).
     many = {**NAMES, "v": [f"V{k}*01" for k in range(20)]}

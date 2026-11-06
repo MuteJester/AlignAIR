@@ -12,7 +12,7 @@ import torch
 from ..core.runtime import evaluation_mode
 from ..data.inference import SequenceInputAdapter
 from ..data.inputs import prepare_nucleotide_inputs
-from ..data.tokenizer import CenterPaddedTokenizer
+from ..data.tokenizer import NucleotideTokenizer
 from ..errors import ConfigurationError, InferenceError, InputError, NumericalError, error_context
 
 
@@ -128,7 +128,7 @@ def collect_prediction_outputs(batches, *, transform=None) -> dict[str, np.ndarr
 def run_model(model, sequences, cfg, device: str = "cpu") -> list:
     """Nucleotide forward inputs use the same content/window policy as prediction and reporting."""
     records, _ = prepare_nucleotide_inputs(sequences, cfg.window)
-    adapter = SequenceInputAdapter(CenterPaddedTokenizer(), cfg.max_seq_length, device,
+    adapter = SequenceInputAdapter(NucleotideTokenizer(), cfg.max_seq_length, device,
                                     vocab_size=6)
     return [{key: output_numpy(value) for key, value in batch.outputs.items()}
             for batch in prediction_batches(model, records, adapter, batch_size=cfg.batch_size)]

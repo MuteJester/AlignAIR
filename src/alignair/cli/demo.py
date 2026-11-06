@@ -60,7 +60,7 @@ def run(args) -> int:
     donor = {g: set(list(ref.gene(g.upper()).names)[: max(2, len(ref.gene(g.upper())) // 3)])
              for g in (("v", "d", "j") if ref.has_d else ("v", "j"))}
     donor_records = predict_sequences(model, ref, reads, device=device,
-                                      genotype=donor, genotype_method="mask")
+                                      genotype=donor)
     write_airr(os.path.join(out, "demo_donor.tsv"), ids, reads, donor_records, locus="IGH")
 
     print(f"[demo] done -> {out}  (bundle/, demo.tsv, demo_donor.tsv)")

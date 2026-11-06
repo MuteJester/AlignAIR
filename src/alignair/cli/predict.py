@@ -57,8 +57,6 @@ def register(sub) -> None:
                    help="germline FASTA (V, D and J alleles) to call from, novel alleles included; a "
                         "reference-agnostic model only. Missing IMGT gaps and anchors are taken from the "
                         "model's own reference (the same allele, or a close same-length variant)")
-    p.add_argument("--genotype-method", choices=["mask", "softmax", "renormalize", "redistribute"],
-                   default="mask", help="how to apply the genotype constraint (default: mask)")
     p.add_argument("--infer-genotype", action="store_true",
                    help="infer the donor's V genotype from the reads' own calls (TIgGER's frequency rule on the "
                         "reads whose V call is a single allele) and re-call the reads whose call it excludes while "
@@ -305,7 +303,7 @@ def run(args) -> int:
             genotype, _unknown = load_genotype(args.genotype, reference=reference, drop_unknown=False)
         except ValueError as e:
             return fail(e, context={"stage": "genotype_validation"})
-        overrides = {"genotype": genotype, "genotype_method": args.genotype_method}
+        overrides = {"genotype": genotype}
 
     from ..io.metadata import DuplicateMetadataId
     try:

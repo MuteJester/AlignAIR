@@ -229,12 +229,11 @@ def test_stage_outputs_shapes_and_ids(small_model, s0_reads):
     assert list(out.seconds) == list(STAGES) and all(seconds >= 0 for seconds in out.seconds.values())
 
 
-def test_allele_names_are_captured_and_the_selector_runs_unmasked(make_shaped_model, s0_reads):
+def test_allele_names_are_captured(make_shaped_model, s0_reads):
     model, reference_set = make_shaped_model("igh")
     ids, seqs = _inputs(s0_reads)
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     assert out.allele_names == {g: list(reference_set.gene(g.upper()).names) for g in GENES}
-    assert out.allowed is None  # no genotype: the selector runs unmasked
 
 
 def test_replay_input_checks(small_model, s0_reads):

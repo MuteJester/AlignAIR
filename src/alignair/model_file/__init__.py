@@ -118,7 +118,7 @@ def save_model(path, model, *, dataconfigs, training, inference=None,
     steps = int(training.get("steps", 0) or 0)
     training = dict(training)
     training.setdefault("total_sequences_seen", steps * bs)
-    inf = {"threshold": 0.5, "selector": "absolute", "cap": 3, "germline_reader": "heuristic",
+    inf = {"threshold": 0.5, "selector": "absolute", "cap": 3,
            "pad_mode": "right", "airr": True,
            "chain_types": [ct for ct, _ in resolved] if cfg.num_chain_types > 1 else None}
     if inference:

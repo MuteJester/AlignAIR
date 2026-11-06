@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from .errors import InputError
 
 from .core import AlignAIR
 from .predict import PredictConfig, predict as _predict
@@ -36,32 +35,20 @@ def load_model(checkpoint_path: str, *, reference: ReferenceSet | None = None,
     return lm.model, lm.reference
 
 
-def _genotype_bank(reference: ReferenceSet, genotype) -> ReferenceSet:
-    """The genotype's subset of ``reference`` ({gene letter: allele names}; a gene it does not name keeps all its
-    alleles). InputError naming the alleles the reference does not hold."""
-    missing = sorted(name for gene, names in genotype.items() for name in names
-                     if gene.upper() not in reference.genes or name not in reference.gene(gene.upper()).index)
-    if missing:
-        raise InputError(f"the genotype names alleles the reference does not hold: {', '.join(missing[:5])}",
-                         context={"missing": missing},
-                         hint="Give their sequences in the reference (alignair predict --reference).")
-    return reference.subset({gene.upper(): names for gene, names in genotype.items()})
-
-
 def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Sequence[str], *,
-                      device: str | None = None, batch_size: int = 64, **predict_overrides) -> list:
+                      device: str | None = None, batch_size: int = 64, genotype=None, **predict_overrides) -> list:
     """Run the full AlignAIR prediction pipeline on raw nucleotide strings, returning AIRR-convention
     records. ``predict_overrides`` forwards to :class:`~alignair.predict.PredictConfig` (e.g.
-    ``threshold=``, ``germline_reader=``, ``genotype=``). On a reference-agnostic model a genotype is
-    the bank: the model is bound to the genotype's subset of ``reference`` for the call (its calls are
-    then only the genotype's alleles, the model reading no other) and to ``reference`` again after."""
-    genotype = predict_overrides.get("genotype")
-    if genotype and getattr(model, "reference_agnostic", False):
-        bank = _genotype_bank(reference, genotype)
+    ``threshold=``, ``airr=``). A ``genotype`` ({gene letter: allele names}) is the bank: the model is bound to
+    the genotype's subset of ``reference`` (``genotype.bank.genotype_bank``) for the call, its calls then only the
+    genotype's alleles, and to ``reference`` again after."""
+    if genotype:
+        from .genotype.bank import genotype_bank
+        bank = genotype_bank(reference, genotype)
         model.bind_reference(bank)
         try:
             return predict_sequences(model, bank, sequences, device=device, batch_size=batch_size,
-                                     **{**predict_overrides, "genotype": None})
+                                     **predict_overrides)
         finally:
             model.bind_reference(reference)
     device = device or next(model.parameters()).device.type

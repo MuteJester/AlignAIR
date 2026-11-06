@@ -39,7 +39,7 @@ def make(monkeypatch):
     register_architecture("test-bank-fixed-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
     calls = []
     monkeypatch.setattr(api, "_predict", lambda model, sequences, reference, cfg, device: calls.append(
-        {"bound": model.core.reference, "reference": reference, "genotype": cfg.genotype}) or [])
+        {"bound": model.core.reference, "reference": reference}) or [])
 
     def build(agnostic):
         reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
@@ -50,13 +50,13 @@ def make(monkeypatch):
     return build, calls
 
 
-def test_a_reference_agnostic_model_reads_a_genotype_as_its_bank(make):
+def test_a_genotype_is_the_models_bank(make):
     build, calls = make
     model, reference = build(agnostic=True)
     genotype = {"v": set(reference.gene("V").names[:3]), "j": set(reference.gene("J").names[:2])}
     api.predict_sequences(model, reference, ["ACGT"], device="cpu", genotype=genotype)
     (call,) = calls
-    assert call["genotype"] is None and call["bound"] is call["reference"]
+    assert call["bound"] is call["reference"]
     assert set(call["reference"].gene("V").names) == genotype["v"]
     assert set(call["reference"].gene("J").names) == genotype["j"]
     assert call["reference"].gene("D").names == reference.gene("D").names         # a gene it does not name: all
@@ -70,11 +70,3 @@ def test_a_genotype_naming_an_allele_the_reference_lacks_is_refused(make):
         api.predict_sequences(model, reference, ["ACGT"], device="cpu", genotype={"v": {"IGHV-missing*01"}})
     assert calls == [] and model.core.reference is reference
 
-
-def test_a_fixed_head_model_keeps_the_post_hoc_genotype_mask(make):
-    build, calls = make
-    model, reference = build(agnostic=False)
-    genotype = {"v": set(reference.gene("V").names[:3])}
-    api.predict_sequences(model, reference, ["ACGT"], device="cpu", genotype=genotype)
-    (call,) = calls
-    assert call["reference"] is reference and call["genotype"] == genotype

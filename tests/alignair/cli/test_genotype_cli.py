@@ -35,4 +35,4 @@ def test_predict_passes_the_validated_genotype_mapping(tmp_path, monkeypatch):
         "--no-run-metadata", "--quiet",
     ])
     assert args.func(args) == 0
-    assert captured == {"genotype": {"v": {"V*01"}, "j": {"J*01"}}, "genotype_method": "mask"}
+    assert captured == {"genotype": {"v": {"V*01"}, "j": {"J*01"}}}

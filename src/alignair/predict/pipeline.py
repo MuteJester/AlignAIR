@@ -81,18 +81,12 @@ def _canonicalize(seq: str, orientation_id: int) -> str:
     return seq
 
 
-def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
+def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"):
     genes = _genes(cfg)
     # Tokenization, orientation, alignment and reported coordinates share the same normalized read.
     sequences, was_cropped = prepare_nucleotide_inputs(sequences, cfg.window)
     preds = clean(run_model(model, sequences, cfg, device), genes)
     _validate_predictions(preds)  # raw outputs must be finite before any use
-    allowed = None
-    if cfg.genotype:
-        from ..genotype.constraint import adjust_for_genotype, genotype_allowed_mask
-        allowed = genotype_allowed_mask(cfg.genotype, reference, genes=set(preds.allele))  # validates
-        preds = adjust_for_genotype(preds, cfg.genotype, reference, method=cfg.genotype_method)
-        _assert_finite(preds.allele, "genotype constraint")
     # canonicalize each read to the model's forward frame so coords / germline / AIRR all agree
     orient = preds.orientation
     seqs = [_canonicalize(s, int(orient[i]) if orient is not None else 0)
@@ -100,13 +94,12 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     seq_lens = np.array([len(s) for s in seqs])
     segs = correct_segments(preds.start, preds.end, seq_lens, cfg.max_seq_length, cfg.pad_mode)
     names = {g: list(reference.gene(g.upper()).names) for g in genes}
-    calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector, allowed=allowed)
-    alignments = align_germline(seqs, segs, calls, reference, aligner,
-                                reader=cfg.germline_reader, indel_counts=preds.indel_count)
+    calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector)
+    alignments = align_germline(seqs, segs, calls, reference, indel_counts=preds.indel_count)
     # a read without a V (a D-J rearrangement, a read starting inside the junction) gets no V call
     no_v = v_absent(seqs, alignments["v"], reference)
     # the V alleles each read cannot tell from its call, among those it may be called with
-    v_ties = tied_alleles(seqs, alignments["v"], reference, allowed=None if allowed is None else allowed.get("v"))
+    v_ties = tied_alleles(seqs, alignments["v"], reference)
     # `sequences` here is the post-crop, PRE-orientation read; `seqs` is its canonical (forward) frame.
     # The record must OWN the pre-orientation read (not a parallel external list) so the AIRR writer emits
     # the correct `sequence`/`rev_comp` identically for the Python API and the CLI, and crop-consistently.

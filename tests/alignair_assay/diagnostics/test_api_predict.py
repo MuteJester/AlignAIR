@@ -85,12 +85,12 @@ def test_a_genotype_constrains_the_calls(checkpoint, inputs, reference, tmp_path
     calls = [set(row["v_call"].split(",")) - {""} for row in _rows(out)]
     assert any(calls) and all(call <= set(allowed) for call in calls)
     record = json.loads(out.with_name("genotype.tsv.run.json").read_text())
-    assert record["genotype"] == {"path": str(genotype), "method": "mask", "alleles": {"v": 4, "d": 33, "j": 7}}
+    assert record["genotype"] == {"path": str(genotype), "method": "bank", "alleles": {"v": 4, "d": 33, "j": 7}}
 
 
 @pytest.mark.parametrize("v, error", [
     (["IGHVX9*01"], "NovelAlleleUnsupportedError: unknown alleles in genotype for v: ['IGHVX9*01']"),
-    ([], "NovelAlleleUnsupportedError: genotype constraint for gene 'v' allows no allele"),
+    ([], "InputError: the genotype leaves gene V with no allele"),
 ])
 def test_a_failure_on_the_genotype_path_is_told_apart(checkpoint, inputs, reference, tmp_path, capsys, v, error):
     fasta, truth = inputs
@@ -108,18 +108,18 @@ def test_a_failure_on_the_genotype_path_is_told_apart(checkpoint, inputs, refere
                                     AttributeError("'tuple' object has no attribute 'items'"), KeyError("v")])
 def test_a_genotype_of_the_wrong_type_is_a_genotype_failure(checkpoint, inputs, reference, tmp_path, capsys,
                                                             monkeypatch, raised):
-    # The errors a genotype of another type raises where it is applied, reading it or computing its mask before any
+    # The errors a genotype of another type raises where it is applied, reading it or building its bank before any
     # read is predicted, are the genotype path's.
     import alignair_assay.diagnostics.api_predict as api_predict
 
-    def mask(*args, **kwargs):
+    def bank(*args, **kwargs):
         raise raised
 
     fasta, truth = inputs
     genotype = tmp_path / "genotype.json"
     genotype.write_text(json.dumps({"v": sorted(reference.alleles["v"])[:3], "d": sorted(reference.alleles["d"]),
                                     "j": sorted(reference.alleles["j"])}))
-    monkeypatch.setattr(api_predict, "genotype_allowed_mask", mask)
+    monkeypatch.setattr(api_predict, "genotype_bank", bank)
     assert main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype))) == GENOTYPE_FAILED
     assert capsys.readouterr().err.strip().splitlines()[-1].startswith(f"{GENOTYPE_NOTE}: {type(raised).__name__}")
 

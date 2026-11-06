@@ -6,14 +6,14 @@ import pytest
 import torch
 
 from alignair.data import SequenceInputAdapter
-from alignair.data.tokenizer import CenterPaddedTokenizer
+from alignair.data.tokenizer import NucleotideTokenizer
 from alignair.errors import ConfigurationError, DataContractError, InputError, current_error_context
 
 pytestmark = pytest.mark.component
 
 
 def test_the_adapter_preserves_nucleotide_tokens_with_explicit_padding():
-    nucleotide = SequenceInputAdapter(CenterPaddedTokenizer(), 6, vocab_size=6)
+    nucleotide = SequenceInputAdapter(NucleotideTokenizer(), 6, vocab_size=6)
     assert nucleotide(['ATGC','N'])['tokenized_sequence'].tolist() == [[1,2,3,4,0,0],[5,0,0,0,0,0]]
 
 
@@ -31,7 +31,7 @@ def test_supplied_tokenizer_is_used_instead_of_replaced_and_prefix_policy_is_exp
 
 
 def test_legacy_nucleotide_policy_can_retain_empty_and_unknown_inputs():
-    adapter = SequenceInputAdapter(CenterPaddedTokenizer(),4,allow_empty=True)
+    adapter = SequenceInputAdapter(NucleotideTokenizer(),4,allow_empty=True)
     assert adapter(['','?'])['tokenized_sequence'].tolist() == [[0,0,0,0],[5,0,0,0]]
 
 
@@ -40,7 +40,7 @@ def test_legacy_nucleotide_policy_can_retain_empty_and_unknown_inputs():
                                     {'device':'bad_device'}, {'alphabet':1}, {'alphabet':()},
                                     {'alphabet':('AA',)}, {'alphabet':(1,)}])
 def test_invalid_adapter_configuration_is_classified(options):
-    args = {'tokenizer':CenterPaddedTokenizer(), 'max_length':8}
+    args = {'tokenizer':NucleotideTokenizer(), 'max_length':8}
     args.update(options)
     with pytest.raises(ConfigurationError):
         SequenceInputAdapter(**args)
@@ -48,7 +48,7 @@ def test_invalid_adapter_configuration_is_classified(options):
 
 @pytest.mark.parametrize('sequences', ['AC',None,[],[''],[1],['ACZ'],['AAAAA']])
 def test_invalid_batches_fail_with_input_errors_and_no_scope_leak(sequences):
-    adapter = SequenceInputAdapter(CenterPaddedTokenizer(),4,alphabet=frozenset('AC'))
+    adapter = SequenceInputAdapter(NucleotideTokenizer(),4,alphabet=frozenset('AC'))
     with pytest.raises(InputError):
         adapter(sequences)
     assert current_error_context() == {}

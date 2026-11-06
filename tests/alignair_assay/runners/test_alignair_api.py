@@ -133,13 +133,12 @@ READS = {"r1": "ACGT" * 50, "r2": "TTGA" * 50, "r3": "GGCA" * 50}
 
 def test_runner_records_failed_genotype_path(reference, tmp_path, monkeypatch):
     calls = []
-    failure = ("genotype API path failed: NovelAlleleUnsupportedError: genotype constraint for gene 'v' allows no "
-               "allele in the model's reference")
+    failure = "genotype API path failed: InputError: the genotype leaves gene V with no allele"
 
     def fake_timed_command(argv, *, log_path, env=None, cpus=None):
         calls.append((argv, env, cpus))
         Path(log_path).write_text("Traceback (most recent call last):\n  File \"api_predict.py\", line 1\n"
-                                  "alignair.genotype.constraint.NovelAlleleUnsupportedError: genotype constraint\n"
+                                  "alignair.errors.exceptions.InputError: the genotype leaves gene V with no allele\n"
                                   f"{failure}\n")
         return GENOTYPE_API_FAILED, 0.5, 1234
 
@@ -260,8 +259,7 @@ def test_runner_end_to_end_on_a_small_model(small_checkpoint, reference, tmp_pat
                                   reference=Path(setup["model_reference"]["path"]))
     returncode, _, _ = api_module.timed_command(argv, log_path=log, env=runner.environment())
     assert returncode == GENOTYPE_API_FAILED
-    assert error_line(log).startswith(f"{GENOTYPE_NOTE}: NovelAlleleUnsupportedError: genotype constraint for gene "
-                                      "'v' allows no allele")
+    assert error_line(log).startswith(f"{GENOTYPE_NOTE}: InputError: the genotype leaves gene V with no allele")
     assert not (tmp_path / "refused.tsv").exists() and list(tmp_path.glob("refused.tsv*")) == []
 
 

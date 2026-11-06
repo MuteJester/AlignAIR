@@ -1,13 +1,9 @@
 """One inference primitive: detached outputs, checked shapes, lazy batches and mode restoration."""
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 import torch
 
 from alignair.core import evaluation_mode
-from alignair.data import SequenceInputAdapter
-from alignair.data.tokenizer import CenterPaddedTokenizer
 from alignair.errors import ConfigurationError, InferenceError, InputError, NumericalError, current_error_context
 from alignair.predict import PredictConfig, collect_prediction_outputs, forward_batch, prediction_batches
 from alignair.predict.forward import PredictionBatch, output_numpy, run_model
