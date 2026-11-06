@@ -2,7 +2,7 @@
 
 Pass 1, the plain streaming predict into a temporary TSV, hands each chunk's rows to an ``Observer`` (their V calls,
 and the assembly outcome of every row with tied alleles). The genotype is inferred from them; pass 2 reads the input
-again, re-calls only the moved reads with the genotype as the ``--genotype`` constraint (mask) and writes their rows;
+again, re-calls only the moved reads with the genotype as the bank (bound once) and writes their rows;
 the output is pass 1's rows with the moved ones replaced (``merge``, atomic), and the genotype is written as an AIRR
 GenotypeSet (``write_genotype``). ``complete`` runs everything after pass 1.
 """
@@ -114,23 +114,23 @@ def write_genotype(path: str, genotype: dict, locus: str) -> None:
         json.dump(genotype_set, handle, indent=2)
 
 
-def complete(observer: Observer, args, *, first: str, predict, v_names, extra_cols, out_locus: str, meta_by_id,
+def complete(observer: Observer, args, *, first: str, bind, v_names, extra_cols, out_locus: str, meta_by_id,
              counts: dict, fail_reasons: dict, partial_reasons: dict) -> dict:
     """After pass 1 wrote ``first``: infer the genotype from ``observer``, re-call the rows it moves with
-    ``predict(sequences, **genotype_constraint) -> records`` into a second temporary TSV, write ``args.out`` (pass
-    1's rows with those swapped in; ``first`` itself when none moves), correct the assembly counts, and write the
-    genotype. ``first`` and the second TSV are removed. Returns the run metadata's record of the pass."""
+    ``bind(genotype) -> predict`` (``predict(sequences) -> records`` from that genotype's bank, bound once) into a
+    second temporary TSV, write ``args.out`` (pass 1's rows with those swapped in; ``first`` itself when none moves),
+    correct the assembly counts, and write the genotype. ``first`` and the second TSV are removed. Returns the run metadata's record of the pass."""
     genotype = observer.evidence.genotype(explain=args.genotype_explain, min_reads=args.genotype_min_reads)
     rows = observer.evidence.moved(genotype)
     if not rows:
         os.replace(first, args.out)
     else:
-        bound = {"genotype": {"V": set(allowed_v(genotype, v_names))}}
         second = f"{args.out}.pass2.{os.getpid()}"
         try:
+            predict = bind({"V": set(allowed_v(genotype, v_names))})
             reads = collect(args.input, rows, chunk_size=args.chunk_size, seq_column=args.sequence_column,
                             id_column=args.id_column)
-            after = recall(lambda sequences: predict(sequences, **bound), reads, out_path=second, columns=args.columns,
+            after = recall(predict, reads, out_path=second, columns=args.columns,
                            extra_cols=extra_cols, out_locus=out_locus, meta_by_id=meta_by_id,
                            chunk_size=args.chunk_size)
             merge(first, second, rows, args.out)

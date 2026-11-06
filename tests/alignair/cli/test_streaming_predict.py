@@ -51,7 +51,7 @@ def test_stream_preserves_order_counts_and_chunks(tmp_path):
     counts, fr, pr = _stream_predict(
         aligner, input_path=str(tmp_path / "in.fasta"), out_path=str(tmp_path / "out.tsv"),
         columns="minimal", chunk_size=3, seq_column=None, id_column=None, meta_by_id=None,
-        extra_cols=None, out_locus="IGH", overrides={}, batch_size=64,
+        extra_cols=None, out_locus="IGH", batch_size=64,
         rejects_out=str(tmp_path / "rej.tsv"))
     assert aligner.calls == 4                              # ceil(10/3) chunks -> streamed, not one shot
     assert counts == {"input": 11, "accepted": 10, "rejected": 1, "cropped": 0,
@@ -68,7 +68,7 @@ def test_stream_counts_partial_status(tmp_path):
     counts, fr, pr = _stream_predict(
         _FakeAligner(status="partial"), input_path=str(tmp_path / "in.fasta"),
         out_path=str(tmp_path / "out.tsv"), columns="minimal", chunk_size=2, seq_column=None,
-        id_column=None, meta_by_id=None, extra_cols=None, out_locus="IGH", overrides={},
+        id_column=None, meta_by_id=None, extra_cols=None, out_locus="IGH",
         batch_size=64, rejects_out=None)
     assert counts["partial"] == 4 and counts["complete"] == 0
     assert pr == {"missing_calls_or_coordinates": 4}
@@ -86,7 +86,7 @@ def test_metadata_joins_original_source_ids_across_output_id_collisions(tmp_path
         counts, _, _ = _stream_predict(
             _FakeAligner(), input_path=str(reads), out_path=str(tmp_path / 'out.tsv'),
             columns='minimal', chunk_size=1, seq_column=None, id_column=None, meta_by_id=lookup,
-            extra_cols=columns, out_locus='IGH', overrides={}, batch_size=4, rejects_out=None)
+            extra_cols=columns, out_locus='IGH', batch_size=4, rejects_out=None)
         rows = _rows(tmp_path / 'out.tsv')
         assert counts['written'] == 5
         assert [row['sequence_id'] for row in rows] == ['read', 'read_dup1', 'read_dup1_dup1', 'seq3', 'seq3_dup1']
@@ -109,7 +109,7 @@ def test_stream_closes_input_and_discards_output_if_metadata_lookup_fails(tmp_pa
     with pytest.raises(RuntimeError, match='lookup failed'):
         _stream_predict(_FakeAligner(), input_path='reads.fa', out_path=str(out), columns='minimal',
                         chunk_size=1, seq_column=None, id_column=None, meta_by_id=BrokenLookup(),
-                        extra_cols=['cell_id'], out_locus='IGH', overrides={}, batch_size=4, rejects_out=None)
+                        extra_cols=['cell_id'], out_locus='IGH', batch_size=4, rejects_out=None)
     assert source.closed and not out.exists()
 
 
@@ -151,7 +151,7 @@ def test_stream_memory_is_bounded(tmp_path):
         counts, _, _ = _stream_predict(
             aligner, input_path=str(tmp_path / "big.fasta"), out_path=str(tmp_path / "out.tsv"),
             columns="minimal", chunk_size=1000, seq_column=None, id_column=None, meta_by_id=None,
-            extra_cols=None, out_locus="IGH", overrides={}, batch_size=64, rejects_out=None)
+            extra_cols=None, out_locus="IGH", batch_size=64, rejects_out=None)
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()

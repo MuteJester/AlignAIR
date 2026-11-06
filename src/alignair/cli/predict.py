@@ -113,7 +113,7 @@ def _load_metadata_table(args):
 
 
 def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_column, id_column,
-                    meta_by_id, extra_cols, out_locus, overrides, batch_size, rejects_out, pool=None,
+                    meta_by_id, extra_cols, out_locus, batch_size, rejects_out, pool=None,
                     observe=None):
     """Stream reader-chunk -> predict -> AIRR assembly -> metadata join -> writer -> counters, in
     chunks of sequence/metadata payloads. ID reservations grow with distinct accepted output IDs.
@@ -156,8 +156,8 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
                     rejects_buf.clear()
                 if not cseqs:
                     continue
-                records = (pool.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides) if pool is not None
-                           else aligner.predict(cseqs, batch_size=batch_size, airr=do_airr, **overrides).to_dicts())
+                records = (pool.predict(cseqs, batch_size=batch_size, airr=do_airr) if pool is not None
+                           else aligner.predict(cseqs, batch_size=batch_size, airr=do_airr).to_dicts())
                 if observe is not None:
                     observe(counts["written"], records)
                 metas = lookup_metadata_rows(meta_by_id, batch.source_ids)  # Batched lookup by original source ID
@@ -291,14 +291,14 @@ def run(args) -> int:
         return report_error(ConfigurationError(f"--locus {args.locus} is not one of this model's loci {loci}"))
     out_locus = args.locus or (loci[0] if len(loci) == 1 else "IGH")
 
-    overrides = {}
     if args.genotype:
+        from ..genotype.bank import genotype_bank
         from ..genotype.files import load_genotype
         try:                    # an allele the bound reference lacks is refused, not dropped
             genotype, _unknown = load_genotype(args.genotype, reference=reference, drop_unknown=False)
+            aligner = aligner.bound_to(genotype_bank(reference, genotype))      # the genotype is the bank: bound once
         except ValueError as e:
             return fail(e, context={"stage": "genotype_validation"})
-        overrides = {"genotype": genotype}
 
     from ..io.metadata import DuplicateMetadataId
     try:
@@ -327,16 +327,25 @@ def run(args) -> int:
         counts, fail_reasons, partial_reasons = _stream_predict(
             aligner, input_path=args.input, out_path=first, columns=args.columns,
             chunk_size=args.chunk_size, seq_column=args.sequence_column, id_column=args.id_column,
-            meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus, overrides=overrides,
+            meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus,
             batch_size=args.batch_size, rejects_out=args.rejects_out, pool=pool, observe=observer)
         if observer is not None:      # infer the genotype, re-call the reads it moves, swap their rows in
             do_airr = needs_assembly(args.columns)
 
-            def predict(sequences, **bound):
-                if pool is not None:
-                    return pool.predict(sequences, batch_size=args.batch_size, airr=do_airr, **bound)
-                return aligner.predict(sequences, batch_size=args.batch_size, airr=do_airr, **bound).to_dicts()
-            genotype_record = gp.complete(observer, args, first=first, predict=predict,
+            def bind(genotype):
+                """Pass 2's ``predict``: the aligner bound once to ``genotype``'s bank, its workers restarted on it."""
+                nonlocal pool
+                from ..genotype.bank import genotype_bank
+                bound = aligner.bound_to(genotype_bank(reference, genotype))
+                if pool is None:
+                    return lambda sequences: bound.predict(sequences, batch_size=args.batch_size,
+                                                           airr=do_airr).to_dicts()
+                from ..predict.parallel import ProcessPool
+                pool.close()
+                pool = None
+                pool = workers = ProcessPool(bound, args.threads)
+                return lambda sequences: workers.predict(sequences, batch_size=args.batch_size, airr=do_airr)
+            genotype_record = gp.complete(observer, args, first=first, bind=bind,
                                           v_names=reference.gene("V").names, extra_cols=extra_cols,
                                           out_locus=out_locus, meta_by_id=meta_by_id, counts=counts,
                                           fail_reasons=fail_reasons, partial_reasons=partial_reasons)

@@ -1,5 +1,5 @@
-"""``predict --genotype``: the genotype file is validated against the model's reference and passed to the
-prediction as the constraint mapping."""
+"""``predict --genotype``: the genotype file is validated against the model's reference, and the stream predicts with
+an aligner bound to the genotype's bank (the reference's subset it names; a gene it does not name keeps all)."""
 import json
 
 import pytest
@@ -7,25 +7,27 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_predict_passes_the_validated_genotype_mapping(tmp_path, monkeypatch):
+def test_predict_streams_with_the_genotypes_bank(tmp_path, monkeypatch):
     from types import SimpleNamespace
     from alignair.cli import predict as predict_cli
     from alignair.cli.main import build_parser
+    from alignair.reference import ReferenceSet
 
     model = tmp_path / "model.alignair"
     model.write_bytes(b"model fixture")
     genotype = tmp_path / "donor.json"
     genotype.write_text(json.dumps({"v": ["V*01"], "j": ["J*01"]}))
-    reference = SimpleNamespace(locus_names=lambda: ("IGH",),
-                                gene=lambda gene: SimpleNamespace(names=[f"{gene}*01"]))
+    reference = ReferenceSet.from_genotype({"V": {"V*01": "ACGTAC", "V*02": "ACGAAC"}, "D": {"D*01": "GGGCCC"},
+                                            "J": {"J*01": "TTTGGA", "J*02": "TTAGGA"}})
+    banks, streamed = [], []
+    loaded = SimpleNamespace(reference=reference,
+                             bound_to=lambda bank: banks.append(bank) or SimpleNamespace(reference=bank))
     monkeypatch.setattr("alignair.registry.resolve_model", lambda *a, **k: model)
     monkeypatch.setattr("alignair.model_file.container.is_alignair_file", lambda path: True)
-    monkeypatch.setattr(predict_cli.Aligner, "from_pretrained",
-                        lambda *a, **k: SimpleNamespace(reference=reference))
-    captured = {}
+    monkeypatch.setattr(predict_cli.Aligner, "from_pretrained", lambda *a, **k: loaded)
 
     def stream(aligner, **kwargs):
-        captured.update(kwargs["overrides"])
+        streamed.append(aligner)
         return {"accepted": 1, "rejected": 0, "written": 1, "failed": 0, "partial": 0}, {}, {}
 
     monkeypatch.setattr(predict_cli, "_stream_predict", stream)
@@ -35,4 +37,6 @@ def test_predict_passes_the_validated_genotype_mapping(tmp_path, monkeypatch):
         "--no-run-metadata", "--quiet",
     ])
     assert args.func(args) == 0
-    assert captured == {"genotype": {"v": {"V*01"}, "j": {"J*01"}}}
+    (bank,) = banks
+    assert [aligner.reference for aligner in streamed] == [bank]
+    assert (bank.gene("V").names, bank.gene("D").names, bank.gene("J").names) == (["V*01"], ["D*01"], ["J*01"])
