@@ -18,9 +18,17 @@ pytestmark = pytest.mark.component
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _gone(module):
+    """No module of that name can be imported: no spec, or only the namespace a checkout's leftover ``__pycache__``
+    keeps (git does not remove an ignored directory), with no module in it."""
+    spec = importlib.util.find_spec(module)
+    return spec is None or spec.origin is None and not any(
+        path.suffix == ".py" or path.is_dir() and path.name != "__pycache__"
+        for location in spec.submodule_search_locations for path in Path(location).iterdir())
+
+
 def test_the_alignair_3_prediction_surface_is_gone():
-    assert importlib.util.find_spec("alignair.align") is None
-    assert importlib.util.find_spec("alignair.reference.identity") is None
+    assert _gone("alignair.align") and _gone("alignair.reference.identity")
     assert "reference_agnostic" not in {field.name for field in dataclasses.fields(ModelComponents)}
     assert not hasattr(AlignAIR, "reference_agnostic")
     assert "allowed" not in inspect.signature(select_alleles).parameters
