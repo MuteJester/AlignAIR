@@ -168,7 +168,9 @@ def test_annotate_keeps_order_loci_provenance_and_d_and_leaves_its_input_untouch
     before = user.to_serializable()
     done = annotate(user, known)
     assert user.to_serializable() == before
-    assert done.gene("V").names == user.gene("V").names and done.loci == user.loci
+    assert done.gene("V").names == user.gene("V").names
+    assert [(l.locus, l.ranges) for l in done.loci] == [(l.locus, l.ranges) for l in user.loci]
+    assert done.loci[0].species == known.loci[0].species          # a model's schema is the bound reference's
     assert done.provenance == user.provenance and done.gene("D").names == ["IGHD1-1*01"]
     assert not done.gene("D").anchors and not done.gene("D").info
     assert annotate(done, known).to_serializable() == done.to_serializable()
@@ -182,3 +184,65 @@ def test_the_summary_names_five_alleles_then_how_many_more(known):
     assert summary.endswith("IGHVF1-G1*94 (unresolved), and 2 more")
     complete = anchor_report(annotate(ReferenceSet.from_genotype({"V": {"IGHVF1-G1*01": s}, "J": {}}), known))
     assert complete.complete() and complete.summary() == "V 1/1, J 0/0 anchored"
+
+
+# --- the final review's fix pass ----------------------------------------------------------------------------------
+
+def test_a_models_own_trd_alleles_as_a_fasta_keep_the_models_locus_schema(tmp_path):
+    """TRD's V alleles include TRAV/DV ones, whose names show TRA: bound to a TRD model they stay in its one locus
+    (the chain head's class), not a TRA locus the model has none of."""
+    from alignair.model_file import serialize
+    trd = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRD_IMGT)
+    path = tmp_path / "trd.fasta"
+    path.write_text(serialize.reference_fasta(trd))
+    bound = annotate(ReferenceSet.from_fasta(str(path)), trd)
+    assert [(l.locus, l.ranges) for l in bound.loci] == [(l.locus, l.ranges) for l in trd.loci]
+    assert all(bound.gene(g).names == trd.gene(g).names for g in ("V", "D", "J"))
+
+
+def test_a_reference_bound_to_a_two_locus_model_takes_its_loci_in_its_order():
+    """The model's loci, in its order, stay the bound reference's (the chain head's classes), even one the reference
+    has no allele of; an allele the model holds takes its locus, a novel one its name's."""
+    igk_igl = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    v, j = igk_igl.gene("V"), igk_igl.gene("J")
+    user = ReferenceSet.from_genotype({"V": {"IGLV9-99*01": _snp(v.sequences[200], 50), v.names[0]: v.sequences[0]},
+                                       "J": {j.names[0]: j.sequences[0]}})
+    bound = annotate(user, igk_igl)
+    assert bound.locus_names() == ("IGK", "IGL")
+    assert bound.gene("V").names == [v.names[0], "IGLV9-99*01"]
+    assert [l.ranges for l in bound.loci] == [{"V": (0, 1), "J": (0, 1)}, {"V": (1, 2)}]
+
+
+def test_an_allele_no_locus_of_a_two_locus_model_holds_is_refused():
+    """A one-locus model takes a novel allele into its locus whatever its name shows (a TRD model's TRAV/DV alleles
+    are named TRA); a model of several loci refuses one whose name shows none of them."""
+    from alignair.errors import InputError
+    igk_igl = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    user = ReferenceSet.from_genotype({"V": {"TRBV9-99*01": "ACGT" * 70}, "J": {}})
+    with pytest.raises(InputError, match=r"TRBV9-99\*01"):
+        annotate(user, igk_igl)
+    trd = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRD_IMGT)
+    novel = ReferenceSet.from_genotype({"V": {"TRAV14/DV4*99": "ACGT" * 70}, "J": {}})
+    assert annotate(novel, trd).locus_names() == ("TRD",)
+
+
+def test_a_known_allele_whose_gapped_form_is_not_its_sequence_lends_no_gaps():
+    """HUMAN_IGH_EXTENDED's IGHV4-3GMG*02/03/04 gapped forms hold more bases than their sequences: such a form cannot
+    carry another allele's bases, and binding a variant of one does not crash."""
+    union = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGH_EXTENDED)
+    v = union.gene("V")
+    name = "IGHV4-3GMG*04"
+    assert v.gapped[name].replace(".", "") != v.sequences[v.index[name]]
+    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV4-3GMG*99": _snp(v.sequences[v.index[name]])}, "J": {}}),
+                    union)
+    gapped = (done.gene("V").gapped or {}).get("IGHV4-3GMG*99")
+    assert gapped is None or gapped.replace(".", "") == _snp(v.sequences[v.index[name]])
+
+
+def test_gaps_carried_without_an_anchor_name_the_allele_that_lent_them():
+    known = _toy_known()
+    known.gene("V").anchors.pop("IGHV1-1*01")
+    done = annotate(_users({"IGHV1-1*novel": "ACGAACGTAC"}), known)
+    assert done.gene("V").gapped == {"IGHV1-1*novel": "ACGA..ACGTAC"} and not done.gene("V").anchors
+    assert _evidence(done, "V", "IGHV1-1*novel") == AnchorEvidence(
+        "nearest_known_allele", "unresolved", "1 of 10 bases differ", "IGHV1-1*01")

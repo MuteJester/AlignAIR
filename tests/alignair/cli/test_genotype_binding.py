@@ -157,7 +157,8 @@ def test_bound_to_binds_a_copy_and_leaves_the_aligner_as_it_was():
     names = aligner.reference.gene("V").names
     bank = genotype_bank(aligner.reference, {"V": names[:3]})
     bound = aligner.bound_to(bank)
-    assert bound.reference is bank and bound.model is not aligner.model and bound.model_path is None
+    assert bound.reference.gene("V").names == names[:3]
+    assert bound.model is not aligner.model and bound.model_path is None
     assert bound.model.cfg.v_allele_count == 3 and aligner.model.cfg.v_allele_count == len(names)
     assert bound.label_schema["genes"]["v"] == names[:3] and aligner.label_schema["genes"]["v"] == list(names)
 
@@ -171,3 +172,21 @@ def test_a_genotype_naming_every_allele_gives_the_rows_of_none(tmp_path):
     assert _predict(fasta, tmp_path / "plain.tsv", "--threads", "1") == 0
     assert _predict(fasta, tmp_path / "every.tsv", "--threads", "1", "--genotype", str(genotype)) == 0
     assert _rows(tmp_path / "every.tsv") == _rows(tmp_path / "plain.tsv")
+
+
+def test_bound_to_annotates_a_reference_against_the_aligners_own(tmp_path):
+    """Binding an aligner to its own alleles given as a FASTA (no anchors, no gaps) gives its rows, as a reference
+    given at load does."""
+    from alignair.aligner import Aligner
+    from alignair.model_file import serialize
+    from alignair.reference import anchor_report
+    from alignair.reference.reference_set import ReferenceSet
+    aligner = Aligner.from_pretrained(str(TEST_CHIP), device="cpu", offline=True)
+    path = tmp_path / "own.fasta"
+    path.write_text(serialize.reference_fasta(aligner.reference))
+    bound = aligner.bound_to(ReferenceSet.from_fasta(str(path)))
+    assert anchor_report(bound.reference).complete()
+    reads = json.loads(FIXTURE.read_text())["reads"][:6]
+    keys = ("v_call", "d_call", "j_call", "junction", "v_germline_start", "j_germline_end")
+    assert [{k: r[k] for k in keys} for r in bound.predict(reads, batch_size=4).to_dicts()] == [
+        {k: r[k] for k in keys} for r in aligner.predict(reads, batch_size=4).to_dicts()]

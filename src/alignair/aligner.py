@@ -172,9 +172,13 @@ class Aligner:
     def bound_to(self, reference) -> "Aligner":
         """An Aligner that predicts from ``reference`` (its bank, e.g. a donor genotype's subset of the reference): a
         copy of the model bound to it once, so later calls, and the workers a pool starts from it, use that bank
-        with no per-call binding. This Aligner is unchanged. The copy is not a model file (``model_path`` is unset),
+        with no per-call binding; the reference is annotated against this Aligner's own (``alignair.reference.
+        annotate``), as one given at load is. This Aligner is unchanged. The copy is not a model file (``model_path`` is unset),
         and its label schema names the bank's alleles."""
         import copy
+
+        from .reference import annotate
+        reference = annotate(reference, known=self.reference)   # as a reference given at load is
         model = copy.deepcopy(self.model)
         model.bind_reference(reference)
         schema = self.label_schema

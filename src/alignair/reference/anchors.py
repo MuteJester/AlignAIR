@@ -12,39 +12,51 @@
    ``gap_from_known`` calls it instead; a V of another length stays without, reported.
 
 Each V and J allele records how its anchor was found (``AlleleInfo.anchor_evidence``: supplied, known_allele,
-nearest_known_allele or the resolver's method; ambiguous, unresolved or invalid when none was). A D is left as given.
-``anchor_report`` counts the anchored alleles and names those without."""
+nearest_known_allele or the resolver's method; ambiguous, unresolved or invalid when none was). A D is left as given. Given a ``known``
+with a locus schema, the result is laid on it (``_on_the_models_loci``): the model's loci, in its order, are the bound
+reference's, whatever the alleles' names show. ``anchor_report`` counts the anchored alleles and names those without."""
 from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
 
+from ..errors import InputError
 from .info import ANCHORED, AlleleInfo, AnchorEvidence
-from .reference_set import GeneReference, ReferenceSet, _locus_from_name
+from .reference_set import GeneReference, ReferenceSet, _loci_from_membership, _locus_from_name
 
 MAX_DIFFERENT = 0.1          # the largest share of a V's bases its nearest known allele may differ at
 GAP = "."
 _GENES = ("V", "J")
 
 
-def _carry_gaps(gapped: str, sequence: str) -> str:
-    """A known allele's gapped form with another allele's bases (the same length) in its base columns."""
+def _carry_gaps(gapped: str, sequence: str) -> str | None:
+    """A known allele's gapped form with another allele's bases (the same length) in its base columns; None when the
+    form does not hold that many bases."""
+    if len(gapped) - gapped.count(GAP) != len(sequence):
+        return None
     bases = iter(sequence)
     return "".join(GAP if column == GAP else next(bases) for column in gapped)
+
+
+def _lends_gaps(known: GeneReference, name: str, sequence: str) -> bool:
+    """Whether a known allele's gapped form is its sequence with gaps (a few bundled ones hold other bases)."""
+    gapped = (known.gapped or {}).get(name)
+    return gapped is not None and gapped.replace(GAP, "").upper() == sequence
 
 
 def gap_from_known(sequence: str, known: GeneReference) -> tuple[str | None, int | None, AnchorEvidence] | None:
     """The gapped form (``sequence``'s bases on its columns) and anchor of the known allele of ``sequence``'s length
     that differs from it at the fewest bases (ties by name), when those are at most ``MAX_DIFFERENT`` of its bases;
-    else None."""
+    else None. Only a known allele whose gapped form is its sequence with gaps lends its gaps."""
     candidates = [(sum(a != b for a, b in zip(other, sequence)), name)
-                  for name, other in zip(known.names, known.sequences) if len(other) == len(sequence)]
+                  for name, other in zip(known.names, known.sequences)
+                  if len(other) == len(sequence) and _lends_gaps(known, name, other)]
     if not candidates:
         return None
     different, best = min(candidates)
     if different > MAX_DIFFERENT * len(sequence):
         return None
-    gapped = _carry_gaps(known.gapped[best], sequence) if known.gapped and best in known.gapped else None
+    gapped = _carry_gaps(known.gapped[best], sequence)
     anchor = (known.anchors or {}).get(best)
     return gapped, anchor, AnchorEvidence("nearest_known_allele", "inferred" if anchor is not None else "unresolved",
                                           f"{different} of {len(sequence)} bases differ", best)
@@ -101,12 +113,54 @@ def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> Refe
                     carried_gaps, carried_anchor, carried_evidence = carried
                     if carried_gaps is not None:
                         gapped[name] = carried_gaps
-                    if name not in anchors and carried_anchor is not None:
-                        anchors[name], evidence = carried_anchor, carried_evidence
+                    if name not in anchors:          # the allele that lent the gaps says more than "unresolved"
+                        evidence = carried_evidence
+                        if carried_anchor is not None:
+                            anchors[name] = carried_anchor
             info[name] = dataclasses.replace(entry, anchor_evidence=evidence)
         genes[gene] = GeneReference(list(alleles.names), list(alleles.sequences), dict(alleles.index),
                                     anchors=anchors or None, gapped=gapped or None, info=info or None)
-    return ReferenceSet(genes, reference.has_d, loci=list(reference.loci), provenance=reference.provenance)
+    annotated = ReferenceSet(genes, reference.has_d, loci=list(reference.loci), provenance=reference.provenance)
+    return _on_the_models_loci(annotated, known) if known is not None and known.loci else annotated
+
+
+def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> ReferenceSet:
+    """``reference`` laid on ``known``'s locus schema (the chain head's classes, in their order): an allele ``known``
+    holds (by name and sequence, else by sequence) takes its locus, a novel one its name's when the model has it, else
+    the model's only locus; each gene's alleles grouped by locus, the reference's order within one. InputError for an
+    allele no locus of the model can hold."""
+    loci = [info.locus for info in known.loci]
+    theirs = known._membership()
+    genes = {}
+    per_index = {}
+    for gene, alleles in reference.genes.items():
+        target = known.genes.get(gene)
+        by_sequence = {}
+        for i, sequence in enumerate(target.sequences if target is not None else ()):
+            by_sequence.setdefault(sequence, i)
+        placed = []
+        for name, sequence in zip(alleles.names, alleles.sequences):
+            row = (target.index[name] if target is not None and name in target.index
+                   and target.sequences[target.index[name]] == sequence else by_sequence.get(sequence))
+            locus = theirs[gene][row] if row is not None else None
+            if locus is None:
+                named = _locus_from_name(name)
+                locus = named if named in loci else (loci[0] if len(loci) == 1 else None)
+            if locus is None:
+                raise InputError(f"the reference's allele {name} belongs to none of the model's loci "
+                                 f"({', '.join(loci)})", context={"allele": name, "loci": loci},
+                                 hint="Name it after its locus, or bind it to a model of that locus.")
+            placed.append((name, locus))
+        order = [name for locus in loci for name, x in placed if x == locus]
+        source = {name: alleles.index[name] for name in alleles.names}
+        pick = lambda values: {n: values[n] for n in order if n in values} if values else None
+        genes[gene] = GeneReference(order, [alleles.sequences[source[n]] for n in order],
+                                    {n: i for i, n in enumerate(order)}, anchors=pick(alleles.anchors) or None,
+                                    gapped=pick(alleles.gapped) or None, info=pick(alleles.info) or None)
+        per_index[gene] = [dict(placed)[n] for n in order]
+    ranges = _loci_from_membership(per_index, loci)
+    schema = [dataclasses.replace(info, ranges=new.ranges) for info, new in zip(known.loci, ranges)]
+    return ReferenceSet(genes, reference.has_d, loci=schema, provenance=reference.provenance)
 
 
 @dataclass(frozen=True)
