@@ -8,7 +8,8 @@ from ..reference.reference_set import ReferenceSet
 
 
 def genotype_bank(reference: ReferenceSet, genotype: Mapping[str, Iterable[str]]) -> ReferenceSet:
-    """``reference``'s subset of the alleles ``genotype`` names (``{gene letter: allele names}``, any case); a gene it
+    """``reference``'s subset of the alleles ``genotype`` names (``{gene letter: allele names}``, any case), in the
+    reference's order and with its locus schema (every locus stays, its ranges over the kept alleles); a gene it
     does not name keeps all its alleles. InputError when it names alleles the reference does not hold (give their
     sequences in the reference) or leaves a gene with no allele."""
     allowed = {gene.upper(): list(names) for gene, names in genotype.items()}

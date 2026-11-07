@@ -1,6 +1,7 @@
 """ReferenceSet: union 1..N GenAIRR dataconfigs into per-gene allele references."""
 from __future__ import annotations
 
+import dataclasses
 import re
 from numbers import Integral
 from dataclasses import dataclass, field
@@ -8,7 +9,7 @@ from typing import Dict, Iterable, List
 
 import numpy as np
 
-from ..errors import ConfigurationError, DataContractError
+from ..errors import ConfigurationError, DataContractError, InputError
 from .info import AlleleInfo
 from .provenance import SourceProvenance
 
@@ -17,6 +18,7 @@ _LOCUS_OF_CHAIN = {
     "BCR_HEAVY": "IGH", "BCR_LIGHT_KAPPA": "IGK", "BCR_LIGHT_LAMBDA": "IGL",
     "TCR_ALPHA": "TRA", "TCR_BETA": "TRB", "TCR_GAMMA": "TRG", "TCR_DELTA": "TRD",
 }
+_CHAIN_OF_LOCUS = {locus: chain for chain, locus in _LOCUS_OF_CHAIN.items()}
 _LOCUS_NAME_RE = re.compile(r"^(IG[HKL]|TR[ABGD])")
 
 
@@ -261,19 +263,31 @@ class ReferenceSet:
 
     @classmethod
     def from_genotype(cls, genes: Dict[str, Dict[str, str]],
-                      anchors: Dict[str, Dict[str, int]] | None = None) -> "ReferenceSet":
+                      anchors: Dict[str, Dict[str, int]] | None = None, *,
+                      locus: str | None = None) -> "ReferenceSet":
         """Build a reference from a genotype mapping {gene_type: {allele_name: dna_seq}}.
 
         gene_type is V/J (+ D for heavy chains; omit D for light). ``anchors`` optionally supplies
         {gene: {allele_name: pos}} so alleles keep their junction anchor.
 
-        The alleles keep the file's order. A chip reads its alleles from the bound reference, so the result can be
-        bound to a model (``predict --reference``), novel alleles included, or trained against.
+        The locus schema comes from ``locus`` when given (one locus over every allele), else from the allele names:
+        names that show one locus give it to every allele (those whose name shows none join it); names that show
+        several, every allele showing one, group each gene's alleles by locus (loci in order of first appearance over
+        V, then J, then D; the file's order within a locus); otherwise there is no schema. The alleles otherwise
+        keep the file's order. A chip reads its alleles from the bound reference, so the result can be bound to a
+        model (``predict --reference``), novel alleles included, or trained against.
         """
         upper = {k.upper(): v for k, v in genes.items()}
         anc_in = {k.upper(): v for k, v in (anchors or {}).items()}
         has_d = bool(upper.get("D"))
         wanted = ["V", "J"] + (["D"] if has_d else [])
+        alleles = {g: dict(upper.get(g, {})) for g in wanted}          # name -> sequence, first of a name kept
+        of = {g: [locus or _locus_from_name(name) for name in alleles[g]] for g in ("V", "J", "D") if g in alleles}
+        shown = list(dict.fromkeys(lc for g in ("V", "J", "D") if g in of for lc in of[g] if lc is not None))
+        grouped = len(shown) > 1 and all(lc is not None for lcs in of.values() for lc in lcs)
+        if grouped:                                   # several loci: each gene's alleles grouped by locus
+            alleles = {g: {n: alleles[g][n] for lc in shown for n, x in zip(list(alleles[g]), of[g]) if x == lc}
+                       for g in alleles}
         out: Dict[str, GeneReference] = {}
         for g in wanted:
             names: List[str] = []
@@ -281,9 +295,7 @@ class ReferenceSet:
             index: Dict[str, int] = {}
             ganc = {}
             gapped = {}
-            for name, seq in upper.get(g, {}).items():
-                if name in index:
-                    continue
+            for name, seq in alleles[g].items():
                 index[name] = len(names)
                 names.append(name)
                 written = str(seq).upper().replace("-", ".")
@@ -293,7 +305,15 @@ class ReferenceSet:
                 if name in anc_in.get(g, {}):
                     ganc[name] = int(anc_in[g][name])
             out[g] = GeneReference(names, sequences, index, anchors=ganc or None, gapped=gapped or None)
-        return cls(out, has_d)
+        if len(shown) == 1 or locus is not None:      # one locus over every allele
+            only = locus or shown[0]
+            loci = _loci_from_membership({g: [only] * len(out[g]) for g in out}, [only], _CHAIN_OF_LOCUS)
+        elif grouped:
+            loci = _loci_from_membership({g: [_locus_from_name(n) for n in out[g].names] for g in out}, shown,
+                                         _CHAIN_OF_LOCUS)
+        else:
+            loci = []
+        return cls(out, has_d, loci=loci)
 
     def subset(self, allowed: Dict[str, Iterable[str]]) -> "ReferenceSet":
         """Return a new ReferenceSet keeping only the named alleles per gene (a donor's
@@ -311,7 +331,88 @@ class ReferenceSet:
             info = {n: ref.info[n] for n in keep if n in ref.info} if ref.info else None
             out[G] = GeneReference(keep, seqs, {n: i for i, n in enumerate(keep)},
                                    anchors=anc or None, gapped=gapped or None, info=info or None)
-        return ReferenceSet(out, self.has_d, provenance=self.provenance)
+        membership = self._membership()
+        per_index = {G: [membership[G][self.genes[G].index[n]] for n in out[G].names] for G in out}
+        return ReferenceSet(out, self.has_d, loci=self._loci_keeping_fields(per_index), provenance=self.provenance)
+
+    def _membership(self) -> Dict[str, list]:
+        """Each gene's per-index locus (None for an allele no locus range holds), from the locus schema."""
+        membership = {G: [None] * len(ref) for G, ref in self.genes.items()}
+        for info in self.loci:
+            for G, (start, end) in info.ranges.items():
+                if G in membership:
+                    membership[G][start:end] = [info.locus] * (end - start)
+        return membership
+
+    def _loci_keeping_fields(self, per_index: Dict[str, list], extra: List[LocusInfo] = ()) -> List[LocusInfo]:
+        """This reference's loci (then ``extra`` ones) with ranges recomputed from ``per_index``, every other field kept;
+        none when this reference has no schema."""
+        if not self.loci:
+            return []
+        known = [*self.loci, *extra]
+        rebuilt = _loci_from_membership(per_index, [l.locus for l in known])
+        return [dataclasses.replace(info, ranges=new.ranges, has_d=info.has_d or new.has_d)
+                for info, new in zip(known, rebuilt)]
+
+    def allele_locus(self, gene: str, name: str) -> str | None:
+        """The locus whose range holds the allele ``name`` of ``gene``, else None."""
+        ref = self.genes.get(gene.upper())
+        if ref is None or name not in ref.index:
+            return None
+        return self._membership()[gene.upper()][ref.index[name]]
+
+    def extend(self, other: "ReferenceSet", *, on_conflict: str = "error") -> "ReferenceSet":
+        """This reference with ``other``'s alleles added (a donor's novel or undocumented alleles), each at the end of
+        its locus's block in its gene; this reference is unchanged.
+
+        An allele of ``other`` this reference holds with the same sequence is skipped; with another sequence,
+        ``on_conflict="error"`` refuses (InputError naming them) and ``"keep"`` keeps this reference's. A new allele's
+        locus is ``other``'s, else its name's, else this reference's only locus; one no locus can hold is refused.
+        A locus this reference lacks is added after its loci. Anchors, gapped forms and info come along; the
+        provenance is this reference's followed by ``other``'s new sources."""
+        if on_conflict not in ("error", "keep"):
+            raise ValueError(f"on_conflict is 'error' or 'keep', got {on_conflict!r}")
+        conflicts = [n for G, ref in other.genes.items() if G in self.genes for n, seq in zip(ref.names, ref.sequences)
+                     if n in self.genes[G].index and self.genes[G].sequences[self.genes[G].index[n]] != seq]
+        if conflicts and on_conflict == "error":
+            raise InputError(f"the added alleles name alleles the reference holds with another sequence: "
+                             f"{', '.join(conflicts[:5])}", context={"alleles": conflicts},
+                             hint="Rename them, or pass on_conflict='keep' to keep the reference's.")
+        added = {G: [n for n in ref.names if n not in (self.genes[G].index if G in self.genes else {})]
+                 for G, ref in other.genes.items()}
+        loci_of, theirs = {}, other._membership()
+        for G, names in added.items():
+            for n in names:
+                locus = theirs[G][other.genes[G].index[n]] or _locus_from_name(n) or (
+                    self.loci[0].locus if len(self.loci) == 1 else None)
+                if locus is None and self.loci:
+                    raise InputError(f"no locus of the reference can hold the added allele {n}",
+                                     context={"allele": n, "loci": list(self.locus_names())},
+                                     hint="Name it after its locus (e.g. IGKV...), or add it to a one-locus reference.")
+                loci_of[(G, n)] = locus
+        new_loci = list(dict.fromkeys(loc for loc in loci_of.values() if loc not in self.locus_names()))
+        membership = self._membership()
+        genes, per_index = {}, {}
+        for G in dict.fromkeys([*self.genes, *other.genes]):
+            mine = self.genes.get(G) or GeneReference([], [], {})
+            order = list(zip(mine.names, membership.get(G, [])))
+            for n in added.get(G, []):
+                locus = loci_of[(G, n)]
+                last = max((i for i, (_, x) in enumerate(order) if x == locus), default=None) if self.loci else None
+                order.insert(len(order) if last is None else last + 1, (n, locus))
+            source = {n: (self.genes[G] if n in mine.index else other.genes[G]) for n, _ in order}
+            names = [n for n, _ in order]
+            pick = lambda attr: {n: getattr(source[n], attr)[n] for n in names
+                                 if getattr(source[n], attr) and n in getattr(source[n], attr)}
+            genes[G] = GeneReference(names, [source[n].sequences[source[n].index[n]] for n in names],
+                                     {n: i for i, n in enumerate(names)}, anchors=pick("anchors") or None,
+                                     gapped=pick("gapped") or None, info=pick("info") or None)
+            per_index[G] = [x for _, x in order]
+        extra = [next((dataclasses.replace(l, ranges={}) for l in other.loci if l.locus == loc), None)
+                 or LocusInfo(loc, _CHAIN_OF_LOCUS.get(loc, loc), False) for loc in new_loci]
+        provenance = [*self.provenance, *(src for src in other.provenance if src not in self.provenance)]
+        return ReferenceSet(genes, self.has_d or other.has_d, loci=self._loci_keeping_fields(per_index, extra),
+                            provenance=provenance)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ReferenceSet":

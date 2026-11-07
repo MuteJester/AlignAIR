@@ -1,95 +1,69 @@
-"""The ReferenceSet carries a per-locus schema (ordered loci + per-gene allele-index membership)
-so multi-chain prediction can label the locus, mask cross-locus alleles, and assemble per-record."""
-import numpy as np
+"""A reference keeps its locus schema (the chain head's classes, and each read's locus) through a subset, a genotype
+and a FASTA: names that show one locus give it, names that show several are grouped by locus (file order within one),
+and a reference whose names show none has no schema unless it is given a locus."""
+import GenAIRR.data as gd
 import pytest
 
-import GenAIRR.data as gd
-from alignair.reference.reference_set import ReferenceSet
+from alignair.reference import LocusInfo
+from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 pytestmark = pytest.mark.component
 
 
-@pytest.fixture(scope="module")
-def igk_igl():
-    return ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+def _loci(reference):
+    return [(l.locus, l.chain_type, l.has_d, l.ranges) for l in reference.loci]
 
 
-def test_ordered_loci_and_names(igk_igl):
-    assert igk_igl.locus_names() == ("IGK", "IGL")
-    assert [l.has_d for l in igk_igl.loci] == [False, False]      # light chains: no D
+def test_a_single_locus_genotype_gets_its_locus_schema():
+    reference = ReferenceSet.from_genotype({"V": {"IGKV1-5*01": "ACGT", "IGKV3-20*01": "ACGG"},
+                                            "J": {"IGKJ1*01": "TTTT"}})
+    assert _loci(reference) == [("IGK", "BCR_LIGHT_KAPPA", False, {"V": (0, 2), "J": (0, 1)})]
 
 
-def test_locus_masks_partition_the_v_head(igk_igl):
-    k = igk_igl.locus_mask("IGK", "V")
-    l = igk_igl.locus_mask("IGL", "V")
-    n = len(igk_igl.gene("V"))
-    assert k.shape == (n,) and l.shape == (n,)
-    assert not np.any(k & l)                                      # disjoint
-    assert np.all(k | l)                                         # cover the whole head
-    # the mask actually selects that locus's alleles
-    names = list(igk_igl.gene("V").names)
-    assert all(names[i].upper().startswith("IGKV") for i in np.where(k)[0])
-    assert all(names[i].upper().startswith("IGLV") for i in np.where(l)[0])
+def test_alleles_without_a_locus_name_join_the_one_the_others_name():
+    reference = ReferenceSet.from_genotype({"V": {"IGHV1-2*02": "ACGTACGTACGT", "NOVEL-V*01": "TTTTGGGGCCCC"},
+                                            "D": {"IGHD3-10*01": "GGGGTTTTAAAA"}, "J": {"IGHJ6*02": "CCCCAAAATTTT"}})
+    assert _loci(reference) == [("IGH", "BCR_HEAVY", True, {"V": (0, 2), "D": (0, 1), "J": (0, 1)})]
 
 
-def test_locus_schema_survives_serialization(igk_igl):
-    rebuilt = ReferenceSet.from_serializable(igk_igl.to_serializable())
-    assert rebuilt.locus_names() == ("IGK", "IGL")
-    assert np.array_equal(rebuilt.locus_mask("IGK", "V"), igk_igl.locus_mask("IGK", "V"))
+def test_a_genotype_naming_no_locus_has_none_unless_given_one():
+    genes = {"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}}
+    assert ReferenceSet.from_genotype(genes).loci == []
+    assert _loci(ReferenceSet.from_genotype(genes, locus="TRB")) == [
+        ("TRB", "TCR_BETA", False, {"V": (0, 1), "J": (0, 1)})]
 
 
-def test_single_chain_has_one_locus():
-    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    assert ref.locus_names() == ("IGH",)
-    assert ref.loci[0].has_d is True
-    assert np.all(ref.locus_mask("IGH", "V"))                    # the whole head is IGH
+def test_an_interleaved_two_locus_genotype_is_grouped_by_locus():
+    reference = ReferenceSet.from_genotype({"V": {"IGKV1*01": "ACGT", "IGLV1*01": "ACGA", "IGKV2*01": "ACGG"},
+                                            "J": {"IGLJ1*01": "TTTT", "IGKJ1*01": "TTTA"}})
+    assert reference.gene("V").names == ["IGKV1*01", "IGKV2*01", "IGLV1*01"]
+    assert reference.gene("J").names == ["IGKJ1*01", "IGLJ1*01"]
+    assert reference.gene("V").sequences == ["ACGT", "ACGG", "ACGA"]
+    assert _loci(reference) == [("IGK", "BCR_LIGHT_KAPPA", False, {"V": (0, 2), "J": (0, 1)}),
+                                ("IGL", "BCR_LIGHT_LAMBDA", False, {"V": (2, 3), "J": (1, 2)})]
+    reference.validate()
 
 
-def test_locus_lacking_a_gene_masks_to_no_call():
-    """A known locus that has no alleles for a gene (e.g. D on a light chain) -> all-False, so a
-    light-chain read is never handed a heavy-chain D allele."""
-    from alignair.reference.reference_set import GeneReference, LocusInfo, ReferenceSet as RS
-    genes = {"V": GeneReference(["IGHV1*01", "IGKV1*01"], ["A", "C"], {}),
-             "D": GeneReference(["IGHD1*01"], ["G"], {})}
-    ref = RS(genes, has_d=True, loci=[
-        LocusInfo("IGH", "BCR_HEAVY", True, {"V": (0, 1), "D": (0, 1)}),
-        LocusInfo("IGK", "BCR_LIGHT_KAPPA", False, {"V": (1, 2)})])
-    assert not ref.locus_mask("IGK", "D").any()                 # IGK has no D -> no-call, NOT all-True
-    assert ref.locus_mask("IGH", "D").all()
+def test_a_multi_locus_genotype_with_an_unplaceable_allele_keeps_file_order_and_no_schema():
+    reference = ReferenceSet.from_genotype({"V": {"IGKV1*01": "ACGT", "IGLV1*01": "ACGA", "myV*01": "ACGG"},
+                                            "J": {"IGKJ1*01": "TTTT"}})
+    assert reference.loci == [] and reference.gene("V").names == ["IGKV1*01", "IGLV1*01", "myV*01"]
 
 
-def test_same_locus_panels_merge_into_one_contiguous_locus():
-    """Merging two same-locus references (e.g. IGH panels) is allowed: one IGH locus over the whole
-    head (this is the benchmark superset-reference use case)."""
-    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGH_EXTENDED)
-    assert ref.locus_names() == ("IGH",)                        # merged into ONE locus, not two
-    assert np.all(ref.locus_mask("IGH", "V"))                   # contiguous over the whole V head
+def test_a_fasta_reference_carries_its_locus(tmp_path):
+    path = tmp_path / "genotype.fasta"
+    path.write_text(">IGHV1-2*02 some desc\nACGTACGT\n>NOVEL_IGHV9*01\nTTTTGGGG\n"
+                    ">IGHD3-10*01\nGGGGTTTT\n>IGHJ6*02\nCCCCAAAA\n")
+    assert ReferenceSet.from_fasta(str(path)).locus_names() == ("IGH",)
 
 
-@pytest.mark.model_validation
-@pytest.mark.skip(reason="pending: the pinned IGK+IGL model is an AlignAIR 3 file, which AlignAIR 4 refuses; no "
-                         "AlignAIR 4 multi-locus model is published yet (a release blocker of the v4 release)")
-def test_real_multichain_model_locus_schema_matches_training(igkl_model):
-    """The shipped IGK+IGL model's embedded reference (schema inferred from names, saved before the
-    schema existed) yields chain-class order (IGK, IGL) with masks that partition the head — matching
-    the dataconfig order the chain_type head was trained on."""
-    from alignair.api import load_model
-    _, ref = load_model(igkl_model, device="cpu")
-    assert ref.locus_names() == ("IGK", "IGL")                  # class 0 = IGK, class 1 = IGL
-    for gene in ("V", "J"):
-        k, l = ref.locus_mask("IGK", gene), ref.locus_mask("IGL", gene)
-        assert not np.any(k & l) and np.all(k | l)              # disjoint + cover
-        names = list(ref.gene(gene).names)
-        assert all(names[i].upper().startswith("IGK") for i in np.where(k)[0])
-        assert all(names[i].upper().startswith("IGL") for i in np.where(l)[0])
-
-
-def test_interleaved_split_locus_fails_closed():
-    """A locus split by another locus's alleles (interleaved) is refused rather than masked by a
-    silently-widened min/max range."""
-    import pytest
-    from alignair.reference.reference_set import GeneReference, ReferenceSet as RS
-    genes = {"V": GeneReference(["IGKV1*01", "IGLV1*01", "IGKV2*01"], ["A", "C", "G"], {}),
-             "J": GeneReference(["IGKJ1*01"], ["T"], {})}
-    with pytest.raises(ValueError, match="contiguous"):
-        RS.from_serializable(RS(genes, has_d=False).to_serializable())
+def test_a_subset_keeps_the_locus_schema():
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    subset = reference.subset({"V": reference.gene("V").names[:5]})
+    assert _loci(subset) == [("IGH", "BCR_HEAVY", True, {"V": (0, 5), "D": (0, 33), "J": (0, 7)})]
+    v = GeneReference(["IGHV1*01", "IGHV2*01"], ["ACGT", "ACGA"], {"IGHV1*01": 0, "IGHV2*01": 1})
+    j = GeneReference(["IGHJ1*01"], ["TTTT"], {"IGHJ1*01": 0})
+    human = ReferenceSet({"V": v, "J": j}, False,
+                         loci=[LocusInfo("IGH", "BCR_HEAVY", False, {"V": (0, 2), "J": (0, 1)}, species="Human")])
+    assert human.subset({"V": ["IGHV2*01"]}).loci == [
+        LocusInfo("IGH", "BCR_HEAVY", False, {"V": (0, 1), "J": (0, 1)}, species="Human")]

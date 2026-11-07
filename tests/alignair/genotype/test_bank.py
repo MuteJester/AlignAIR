@@ -51,3 +51,14 @@ def test_a_genotype_bank_is_the_same_under_any_hash_seed():
     banks = {subprocess.run([sys.executable, "-c", code], env={**os.environ, "PYTHONHASHSEED": str(seed)},
                             capture_output=True, text=True, check=True).stdout.strip() for seed in range(4)}
     assert banks == {",".join(f"IGHV{i}-1*01" for i in range(0, 30, 2))}
+
+
+def test_a_genotype_bank_of_a_two_locus_reference_keeps_both_loci():
+    """The loci are the chain head's classes: a genotype naming only IGK V alleles keeps IGL too, its J range intact
+    and no V of its own."""
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    bank = genotype_bank(reference, {"V": reference.gene("V").names[:2]})
+    assert [(l.locus, l.chain_type, l.has_d, l.ranges) for l in bank.loci] == [
+        ("IGK", "BCR_LIGHT_KAPPA", False, {"V": (0, 2), "J": (0, 8)}),
+        ("IGL", "BCR_LIGHT_LAMBDA", False, {"J": (8, 18)})]
+    assert not bank.locus_mask("IGL", "V").any() and bank.locus_mask("IGL", "J")[8:].all()
