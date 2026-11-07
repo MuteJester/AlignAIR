@@ -44,3 +44,18 @@ def test_a_multi_locus_reference_labels_each_row_with_its_called_vs_locus():
     for row in rows:
         call = row["v_call"].split(",")[0]
         assert row["locus"] == ("" if not call else next(locus for locus, names in of.items() if call in names))
+
+
+
+def test_a_rows_locus_is_its_reported_v_alleles_not_the_models_top_name():
+    """IGK + IGL: the locus of a row comes from the allele its V is aligned to (the reported V call, which may be an
+    allele the read matches better than the model's top name, ``predict.ties.better_v_alleles``)."""
+    import GenAIRR.data as gd
+    from alignair.predict.pipeline import _called_loci
+    from alignair.reference.reference_set import ReferenceSet
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    v = reference.gene("V")
+    igk = v.names[int(np.flatnonzero(reference.locus_mask("IGK", "V"))[0])]
+    igl = v.names[int(np.flatnonzero(reference.locus_mask("IGL", "V"))[0])]
+    alignments = [GermlineAlignment(igl, 0, 10, 0, 10, "10M"), GermlineAlignment(igk, 0, 10, 0, 10, "10M"), None]
+    assert _called_loci(alignments, reference, np.array([False, True, False])) == ["IGL", "", ""]

@@ -391,15 +391,20 @@ def test_germline_alignments_replace_the_matcher(make_shaped_model, s0_reads, mo
     monkeypatch.setattr(pipeline, "align_germline",
                         lambda sequences, *args, **kwargs: matched.append(len(sequences)) or product(sequences, *args,
                                                                                                     **kwargs))
-    # The first ten reads get every gene substituted (with the matcher's own alignments): the matcher skips them.
-    own = {g: [base.germline[g][i] if i < 10 else None for i in range(n)] for g in GENES}
+    # The first ten reads get every gene substituted (with the matcher's own alignments, before better_v moves a V to
+    # a better allele): the matcher skips them.
+    matcher = product(base.canonical, base.segments, base.calls, reference_set,
+                      indel_counts=base.predictions.indel_count)
+    own = {g: [matcher[g][i] if i < 10 else None for i in range(n)] for g in GENES}
     out = _sub(model, reference_set, seqs, ids, germline=own)
     assert out.airr_rows == base.airr_rows and matched == [n - 10]
 
-    # A substituted alignment reaches the records and the AIRR assembly.
+    # A substituted alignment, with its call (as a truth substitution gives both), reaches the records and the AIRR
+    # assembly.
     v0 = base.calls["v"][0].names[0]
     given = {"v": [GermlineAlignment(v0, 10, 100, 5, 95, "90M")] + [None] * (n - 1)}
-    out = _sub(model, reference_set, seqs, ids, germline=given)
+    out = _sub(model, reference_set, seqs, ids, germline=given,
+               calls={"v": [base.calls["v"][0]] + [None] * (n - 1)})
     record = out.records[0]
     assert (record["v_sequence_start"], record["v_sequence_end"], record["v_germline_start"],
             record["v_germline_end"], record["v_cigar"]) == (10, 100, 5, 95, "90M")

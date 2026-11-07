@@ -8,6 +8,10 @@ without them compares germline positions). An allele without a base at a column 
 read base there, and an inserted read base is compared with no allele. Only an allele of the bound reference ties (a
 genotype is the bank, so its alleles are the only candidates). The ties follow the call by matches, then in reference
 order.
+
+An allele matching strictly more of those read bases than the call is better than it (``better_v_alleles``): the read
+shows a base only that allele holds, so the prediction makes it the call (and realigns V to it) before the ties are
+listed. This is what lets a bound reference's alleles the model never trained on, a novel allele among them, be called.
 """
 from __future__ import annotations
 
@@ -52,27 +56,62 @@ def _aligned(aln) -> tuple:
     return np.array(reads, dtype=np.int64), np.array(germs, dtype=np.int64)
 
 
+class _Bank:
+    """The bound reference's V alleles as the comparison reads them: names, their index, base codes and columns."""
+
+    def __init__(self, reference):
+        gene = reference.gene("V")
+        self.names, forms = list(gene.names), gene.gapped or {}
+        self.bases, self.columns = _table(tuple(forms.get(name) or seq for name, seq in zip(self.names, gene.sequences)))
+        self.index = {name: i for i, name in enumerate(self.names)}
+
+    def matches(self, sequence, aln) -> tuple:
+        """``(matches, call)``: per allele, how many of the read bases the call's alignment ``aln`` puts on germline
+        bases it matches at their IMGT columns, and the call's row."""
+        call = self.index[aln.allele]
+        reads, germs = _aligned(aln)
+        own = self.columns[call]
+        inside = germs < len(own)
+        reads, germs = reads[inside], germs[inside]
+        read = np.frombuffer(sequence.upper().encode(), dtype=np.uint8)[reads]
+        return (self.bases[:, own[germs]] == read).sum(1), call
+
+
+def better_v_alleles(sequences, alignments, reference, candidates) -> list:
+    """Per read (forward frame), the V allele of the bound bank that matches strictly more of the read bases its V
+    alignment puts on germline bases than the call does, or None (no alignment, or the call matches most). Among the
+    alleles matching most, the first of the read's ``candidates`` (the model's called names, in its order) that is one,
+    else the first in reference order."""
+    bank = None
+    out = []
+    for sequence, aln, named in zip(sequences, alignments, candidates):
+        if aln is None:
+            out.append(None)
+            continue
+        bank = bank or _Bank(reference)
+        matches, call = bank.matches(sequence, aln)
+        top = matches.max()
+        if matches[call] >= top:
+            out.append(None)
+            continue
+        best = set(np.flatnonzero(matches == top).tolist())
+        pick = next((bank.index[n] for n in named if bank.index.get(n) in best), min(best))
+        out.append(bank.names[pick])
+    return out
+
+
 def tied_alleles(sequences, alignments, reference) -> list:
     """Per read (forward frame), its V call and the V alleles of the bound bank tied with it, the call first (a tuple
     of names), or ``()`` for a read without a V alignment."""
-    names = None
+    bank = None
     out = []
     for sequence, aln in zip(sequences, alignments):
         if aln is None:
             out.append(())
             continue
-        if names is None:
-            gene = reference.gene("V")
-            names, forms = list(gene.names), gene.gapped or {}
-            bases, columns = _table(tuple(forms.get(name) or seq for name, seq in zip(names, gene.sequences)))
-            index = {name: i for i, name in enumerate(names)}
-        call = index[aln.allele]
-        reads, germs = _aligned(aln)
-        own = columns[call]
-        inside = germs < len(own)
-        reads, germs = reads[inside], germs[inside]
-        read = np.frombuffer(sequence.upper().encode(), dtype=np.uint8)[reads]
-        matches = (bases[:, own[germs]] == read).sum(1)
+        bank = bank or _Bank(reference)
+        names = bank.names
+        matches, call = bank.matches(sequence, aln)
         tied = matches >= matches[call]
         others = sorted((a for a in np.flatnonzero(tied) if a != call), key=lambda a: (-matches[a], a))
         out.append((names[call], *(names[a] for a in others)))

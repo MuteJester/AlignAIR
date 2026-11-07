@@ -16,11 +16,11 @@ import numpy as np
 from .clean import NOT_OBSERVED, clean
 from .config import PredictConfig
 from .forward import run_model
-from .germline import align_germline
+from .germline import align_germline, realign_v
 from .junction import derive_junction
 from .segment import correct_segments
 from .threshold import select_alleles
-from .ties import tied_alleles
+from .ties import better_v_alleles, tied_alleles
 from .v_presence import V_ABSENT, V_PRESENCE, v_absent
 
 
@@ -52,16 +52,16 @@ def _validate_predictions(preds, stage: str = "model forward") -> None:
             raise NumericalError(f"non-finite {name} after {stage}", context={"stage": stage, "field": name})
 
 
-def _called_loci(v_calls, reference, no_v) -> list[str] | None:
-    """Per read, the locus of its V call in a reference of several loci, ``""`` for a read without a V call; None for
-    a reference of one locus or none (its records are labelled otherwise)."""
+def _called_loci(v_alignments, reference, no_v) -> list[str] | None:
+    """Per read, the locus of its V call (the allele its V is aligned to) in a reference of several loci, ``""`` for a
+    read without a V call; None for a reference of one locus or none (its records are labelled otherwise)."""
     loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
     if len(loci) < 2:
         return None
     names = reference.gene("V").names
     owner = {names[k]: locus for locus in loci for k in np.flatnonzero(reference.locus_mask(locus, "V"))}
-    return ["" if (no_v is not None and no_v[i]) or not call.names else owner.get(call.names[0], "")
-            for i, call in enumerate(v_calls)]
+    return ["" if (no_v is not None and no_v[i]) or aln is None else owner.get(aln.allele, "")
+            for i, aln in enumerate(v_alignments)]
 
 
 _COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
@@ -96,6 +96,9 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     names = {g: list(reference.gene(g.upper()).names) for g in genes}
     calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector)
     alignments = align_germline(seqs, segs, calls, reference, indel_counts=preds.indel_count)
+    # an allele the read matches better than the model's call (a bound allele it never trained on) becomes the call
+    better = better_v_alleles(seqs, alignments["v"], reference, [call.names for call in calls["v"]])
+    alignments["v"] = realign_v(seqs, segs, alignments["v"], better, reference, indel_counts=preds.indel_count)
     # a read without a V (a D-J rearrangement, a read starting inside the junction) gets no V call
     no_v = v_absent(seqs, alignments["v"], reference)
     # the V alleles each read cannot tell from its call, among those it may be called with
@@ -105,7 +108,7 @@ def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"
     # the correct `sequence`/`rev_comp` identically for the Python API and the CLI, and crop-consistently.
     records = _to_records(seqs, calls, alignments, genes, preds, cfg.chain_types, segs.low_quality,
                           was_cropped, input_sequences=sequences, no_v=no_v, v_ties=v_ties,
-                          read_loci=_called_loci(calls["v"], reference, no_v))
+                          read_loci=_called_loci(alignments["v"], reference, no_v))
     if cfg.airr:
         from .airr import build_airr
         records = build_airr(records, reference, chain=("heavy" if cfg.has_d else "light"))

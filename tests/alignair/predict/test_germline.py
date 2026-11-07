@@ -2,7 +2,7 @@
 import pytest
 import numpy as np
 
-from alignair.predict.germline import align_germline
+from alignair.predict.germline import align_germline, realign_v
 from alignair.predict.state import GeneCall, Segments
 
 pytestmark = pytest.mark.component
@@ -88,3 +88,27 @@ def test_a_d_without_read_bases_spans_no_germline():
     """A D segment of no read bases is placed on no germline base (not on the whole germline as deletions)."""
     a = _d_alignment("CCCC" + "GGGG", 4, 4, indel_count=0.0)
     assert (a.seq_start, a.seq_end, a.germ_start, a.germ_end, a.cigar) == (4, 4, 0, 0, "")
+
+
+def test_realign_v_aligns_a_reads_new_v_as_a_called_allele_and_keeps_the_others():
+    a = "ACGTACGTTGCAACGTAGGCTTACGATCGA"
+    b = a[:12] + "G" + a[13:]                            # a's sibling, one SNP at germline position 12
+    ref = _FakeRef({"V": _FakeGene(["A", "B"], [a, b])})
+    sequences = ["TT" + b + "CC", "TT" + a + "CC"]
+    segs = Segments({"v": np.array([2, 2])}, {"v": np.array([32, 32])})
+    first = align_germline(sequences, segs, {"v": [GeneCall(("A",), (0.9,))] * 2}, ref)["v"]
+    as_b = align_germline(sequences[:1], Segments({"v": np.array([2])}, {"v": np.array([32])}),
+                          {"v": [GeneCall(("B",), (0.9,))]}, ref)["v"][0]
+    out = realign_v(sequences, segs, first, ["B", None], ref)
+    assert out[0] == as_b and out[0].allele == "B"
+    assert out[1] is first[1]
+
+
+def test_realign_v_keeps_the_current_alignment_when_the_new_allele_matches_fewer_read_bases():
+    a = "ACGTACGTTGCAACGTAGGCTTACGATCGA"
+    c = a[:5] + "TTT" + a[8:20] + "CCCC" + a[24:]          # differs from the read in 7 places
+    ref = _FakeRef({"V": _FakeGene(["A", "C"], [a, c])})
+    sequences = ["TT" + a[:12] + "G" + a[13:] + "CC"]      # a with one mismatch
+    segs = Segments({"v": np.array([2])}, {"v": np.array([32])})
+    first = align_germline(sequences, segs, {"v": [GeneCall(("A",), (0.9,))]}, ref)["v"]
+    assert realign_v(sequences, segs, first, ["C"], ref)[0] is first[0]

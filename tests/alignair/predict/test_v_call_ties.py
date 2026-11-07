@@ -1,5 +1,6 @@
 """``v_call`` lists the V call, then the alleles the read cannot tell from it (``predict.ties``): on the golden reads and
-the tie reads, every row's ``v_call`` starts with the selector's top-1 and names distinct V alleles of the reference;
+the tie reads, where no allele matches a read better than the model's top-1 (``test_better_v_call`` covers the reads
+where one does), every row's ``v_call`` starts with the selector's top-1 and names distinct V alleles of the reference;
 a short amplicon whose V the call's alignment shows only in part lists more than the call."""
 import json
 

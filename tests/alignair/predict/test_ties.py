@@ -1,12 +1,13 @@
 """The V alleles a read cannot separate from its call (``predict.ties``): an allele ties when, over the read bases the
 call's alignment puts on germline bases, it matches at least as many as the call, compared at IMGT columns; only an
-allele of the reference ties. ``v_call`` lists the call, then its ties."""
+allele of the reference ties. ``v_call`` lists the call, then its ties. An allele matching strictly more of those read
+bases than the call is better (``better_v_alleles``): it becomes the call."""
 import random
 
 import pytest
 
 from alignair.predict.state import GermlineAlignment
-from alignair.predict.ties import tied_alleles
+from alignair.predict.ties import better_v_alleles, tied_alleles
 
 pytestmark = pytest.mark.component
 
@@ -99,3 +100,38 @@ def test_reads_without_a_v_alignment_read_no_reference():
         def gene(self, letter):
             raise AssertionError("read the reference")
     assert tied_alleles([A], [None], _NoReference()) == [()]
+
+
+def _better(read, aln, alleles, candidates=(), gapped=None):
+    return better_v_alleles([read], [aln], _Reference(alleles, gapped), [tuple(candidates)])[0]
+
+
+def test_an_allele_matching_more_read_bases_than_the_call_is_better():
+    read = B[60:]                                   # the read shows B's base at 100, the call is A
+    assert _better(read, GermlineAlignment("A", 0, 60, 60, 120, "60M"), {"A": A, "B": B}) == "B"
+
+
+def test_no_allele_is_better_than_a_call_matching_most():
+    read = A[60:]                                   # the read shows A's base at 100
+    assert _better(read, GermlineAlignment("A", 0, 60, 60, 120, "60M"), {"A": A, "B": B}) is None
+    read = A[:90]                                   # B matches as many: a tie is not better
+    assert _better(read, GermlineAlignment("A", 0, 90, 0, 90, "90M"), {"A": A, "B": B}) is None
+
+
+def test_among_equal_better_alleles_the_models_candidates_come_first_then_reference_order():
+    f = _substituted(B, 10)                         # B with another SNP where the read shows nothing
+    read, aln = B[60:], GermlineAlignment("A", 0, 60, 60, 120, "60M")
+    alleles = {"F": f, "A": A, "B": B}
+    assert _better(read, aln, alleles) == "F"
+    assert _better(read, aln, alleles, candidates=("A", "B")) == "B"
+
+
+def test_a_better_allele_is_found_at_imgt_columns():
+    d = _substituted(B, 3)[3:]                      # B without its first 3 bases, gapped on A's columns
+    gapped = {"A": A, "D": "..." + d}
+    read = B[30:110]
+    assert _better(read, GermlineAlignment("A", 0, 80, 30, 110, "80M"), {"A": A, "D": d}, gapped=gapped) == "D"
+
+
+def test_a_read_without_a_v_alignment_has_no_better_allele():
+    assert better_v_alleles([A], [None], _Reference({"A": A}), [()]) == [None]

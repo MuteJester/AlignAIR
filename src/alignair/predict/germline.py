@@ -80,3 +80,44 @@ def align_germline(sequences, segments, calls, reference, *, indel_counts=None) 
             results.append(_gapless(seq, s, e, aln, germ) if gene == "d" else aln)
         out[gene] = results
     return out
+
+
+def _matched(sequence: str, aln: GermlineAlignment, germ: str) -> int:
+    """How many read bases ``aln`` puts on an equal germline base (its CIGAR's M columns)."""
+    import re
+    matched, r, g = 0, aln.seq_start, aln.germ_start
+    read = sequence.upper()
+    for count, op in re.findall(r"(\d+)([MIDNSHP=X])", aln.cigar or ""):
+        count = int(count)
+        if op in "M=X":
+            matched += sum(a == b for a, b in zip(read[r:r + count], germ[g:g + count]))
+            r, g = r + count, g + count
+        elif op == "I":
+            r += count
+        elif op == "D":
+            g += count
+    return matched
+
+
+def realign_v(sequences, segments, alignments, alleles, reference, *, indel_counts=None) -> list:
+    """``alignments`` (the reads' V alignments) with read i's replaced by the alignment of ``alleles[i]``, aligned as
+    ``align_germline`` aligns a called allele over the read's V segment (``segments``), where ``alleles[i]`` is not
+    None and that alignment puts more read bases on equal germline bases than read i's current one; the other reads
+    keep theirs. ``predict.ties.better_v_alleles`` names the alleles by comparing them at IMGT columns, which charges
+    an allele nothing for germline bases the read lacks, so the realignment decides."""
+    redo = [i for i, allele in enumerate(alleles) if allele is not None]
+    if not redo:
+        return list(alignments)
+    from .state import GeneCall, Segments
+    picked = Segments({"v": segments.start["v"][redo]}, {"v": segments.end["v"][redo]})
+    calls = {"v": [GeneCall((alleles[i],), (float("nan"),)) for i in redo]}
+    counts = None if indel_counts is None else [indel_counts[i] for i in redo]
+    new = align_germline([sequences[i] for i in redo], picked, calls, reference, indel_counts=counts)["v"]
+    gene = reference.gene("V")
+    out = list(alignments)
+    for i, aln in zip(redo, new):
+        current = alignments[i]
+        if current is None or _matched(sequences[i], aln, _germline_seq(gene, aln.allele)) > _matched(
+                sequences[i], current, _germline_seq(gene, current.allele)):
+            out[i] = aln
+    return out

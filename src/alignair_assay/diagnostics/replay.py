@@ -11,11 +11,13 @@
 5. ``segments``: ``pipeline.correct_segments``.
 6. ``alleles``: ``pipeline.select_alleles``.
 7. ``germline``: ``pipeline.align_germline``.
-8. ``v_presence``: ``pipeline.v_absent``, the reads that hold no V (``alignair.predict.v_presence``).
-9. ``ties``: ``pipeline.tied_alleles``, the V alleles each read cannot tell from its call (``alignair.predict.ties``).
-10. ``records``: ``pipeline._to_records``, which drops the V of the reads without one, lists each V call's ties and,
-    for a reference of several loci, labels each read with its called V's locus (``pipeline._called_loci``).
-11. ``airr``: ``alignair.predict.airr.build_airr``.
+8. ``better_v``: ``pipeline.better_v_alleles`` and ``pipeline.realign_v``, an allele the read matches better than
+   its V call becoming the call (``alignair.predict.ties``); a read whose V call is substituted keeps it.
+9. ``v_presence``: ``pipeline.v_absent``, the reads that hold no V (``alignair.predict.v_presence``).
+10. ``ties``: ``pipeline.tied_alleles``, the V alleles each read cannot tell from its call (``alignair.predict.ties``).
+11. ``records``: ``pipeline._to_records``, which drops the V of the reads without one, lists each V call's ties and,
+    for a reference of several loci, labels each read with its V call's locus (``pipeline._called_loci``).
+12. ``airr``: ``alignair.predict.airr.build_airr``.
 
 A genotype is the bank the model is bound to (``predict_sequences``' ``genotype``): the replay takes the model as it
 is bound, so a genotype run is replayed by binding its bank first.
@@ -38,7 +40,9 @@ the product functions the replay mirrors.
   calls, so its allele probabilities stay its own. ``low_quality`` keeps ``correct_segments``' meaning: a V or J of zero length. The given spans are not
   re-ordered against the model's spans of other genes, so a truth span is never moved.
 - ``calls``: replace the selector's calls, before the germline alignment.
-- ``germline``: replace the matcher's alignments; the matcher runs only for the reads with a gene left to it.
+- ``germline``: replace the matcher's alignments; the matcher runs only for the reads with a gene left to it. A
+  substituted V alignment is the matcher's output, so ``better_v`` may still move the read to a better allele unless
+  its V call is substituted too.
 
 Every per-read entry may be None, which keeps the model's value for that read (a fallback). Substituted values are
 checked (read range, model alleles, an alignment on the read's call); a bad one is a ValueError.
@@ -65,7 +69,7 @@ from alignair.predict.state import Segments
 from alignair_assay.core.reference import Reference
 
 # The replayed stages, in pipeline order: the keys of ``StageOutputs.seconds``.
-STAGES = ("input_policy", "forward", "clean", "canonicalize", "segments", "alleles", "germline",
+STAGES = ("input_policy", "forward", "clean", "canonicalize", "segments", "alleles", "germline", "better_v",
           "v_presence", "ties", "records", "airr")
 # "argmax": the logits' argmax, which the product decodes boundaries with; "soft": the soft-argmax expectation.
 DECODERS = ("soft", "argmax")
@@ -246,6 +250,13 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
         calls = _substitute(calls, subs.calls)
     with _timed(seconds, "germline"):
         germline = _align(canonical, segments, calls, reference_set, cfg, preds.indel_count, subs.germline)
+    with _timed(seconds, "better_v"):
+        given = [subs.calls is not None and subs.calls.get("v") is not None and subs.calls["v"][i] is not None
+                 for i in range(len(canonical))]
+        better = pipeline.better_v_alleles(canonical, germline["v"], reference_set, [call.names for call in calls["v"]])
+        better = [None if held else allele for held, allele in zip(given, better)]
+        germline["v"] = pipeline.realign_v(canonical, segments, germline["v"], better, reference_set,
+                                           indel_counts=preds.indel_count)
     with _timed(seconds, "v_presence"):
         no_v = pipeline.v_absent(canonical, germline["v"], reference_set)
     with _timed(seconds, "ties"):
@@ -253,7 +264,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
     with _timed(seconds, "records"):
         records = pipeline._to_records(canonical, calls, germline, genes, preds, cfg.chain_types,
                                        segments.low_quality, was_cropped, input_sequences=reads, no_v=no_v,
-                                       v_ties=v_ties, read_loci=pipeline._called_loci(calls["v"], reference_set, no_v))
+                                       v_ties=v_ties, read_loci=pipeline._called_loci(germline["v"], reference_set, no_v))
     with _timed(seconds, "airr"):
         airr_rows = (build_airr(records, reference_set, chain=("heavy" if cfg.has_d else "light")) if cfg.airr
                      else records)

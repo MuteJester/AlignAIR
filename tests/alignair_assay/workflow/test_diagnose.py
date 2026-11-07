@@ -750,9 +750,10 @@ def test_the_released_checkpoint(built, tmp_path, device):
     # A trained model, so the numbers mean something: P2b's 300-read figures were orientation 99.7%, J top-1 97.3%.
     assert s1["heads"]["head.orientation.correct"]["mean"] > 0.9
     assert s1["heads"]["head.j.allele_top1"]["mean"] > 0.8
-    # Feeding every stage's truth leaves a better junction than the product's.
+    # Feeding every stage's truth leaves a junction no worse than the product's (on these 60 reads the product's,
+    # with its V call moved to the allele a read matches best, already equals it).
     chain = s1["variants"]
-    assert chain["true_germline"]["scores"]["junction.nt_exact"]["mean"] > chain["baseline"]["scores"][
+    assert chain["true_germline"]["scores"]["junction.nt_exact"]["mean"] >= chain["baseline"]["scores"][
         "junction.nt_exact"]["mean"]
     assert result.profile["device"] == device and result.profile["reads_per_second"] > 0
     again = evaluate(checkpoint, layout, ["S1"], device=device, batch_size=64, max_cases=60)
