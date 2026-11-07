@@ -1,16 +1,12 @@
 """A V or J anchor GenAIRR stores as 0 (its legacy "not found") is no anchor unless GenAIRR's resolver confirms one;
-every other stored anchor is kept, so the reference a model was trained on is unchanged."""
-import json
-
+every other stored anchor is kept (the byte pin of the trained references is
+``tests/alignair/reference/test_reference_pin.py``)."""
 import pytest
 
 import GenAIRR.data as gd
-from alignair.model_file import container
 from alignair.reference.reference_set import ReferenceSet
 
 pytestmark = pytest.mark.component
-
-FIXTURE = "tests/alignair/fixtures/test_chip.alignair"
 
 
 def _stored(dataconfig, gene):
@@ -38,7 +34,3 @@ def test_resolving_leaves_the_dataconfig_untouched():
     ReferenceSet.from_dataconfigs(dataconfig)
     assert _stored(dataconfig, "V")["TRBV17*01"] == 0 and dataconfig.compute_checksum() == before
 
-
-def test_the_trained_reference_is_unchanged():
-    embedded = json.loads(container.read_section(FIXTURE, "reference_json"))
-    assert ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB).to_serializable() == embedded

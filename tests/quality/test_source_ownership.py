@@ -43,3 +43,34 @@ def test_the_product_imports_neither_the_assay_nor_the_lab():
     failures = [f'{path}:{line}: {name}' for path, line, name in _imports(ROOT)
                 if name.split('.')[0] in development]
     assert not failures, '\n'.join(failures)
+
+
+def _module_level_imports(tree):
+    """The import nodes a module runs when it is imported: its body's, and those of top-level ``if``/``try`` blocks."""
+    pending = list(tree.body)
+    while pending:
+        node = pending.pop(0)
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            yield node
+        elif isinstance(node, (ast.If, ast.Try)):
+            pending += [*node.body, *node.orelse, *getattr(node, "finalbody", []),
+                        *(child for handler in getattr(node, "handlers", []) for child in handler.body)]
+
+
+def test_the_reference_package_imports_neither_torch_nor_genairr_at_module_level():
+    """The reference is data and algorithms: a model file, a genotype or a user's FASTA reads into it without torch
+    or the simulator; its only AlignAIR imports are the errors and itself."""
+    root = ROOT / "reference"
+    offending = []
+    for path in sorted(root.rglob("*.py")):
+        package = "alignair.reference" + "".join("." + part for part in path.relative_to(root).parts[:-1])
+        for node in _module_level_imports(ast.parse(path.read_text())):
+            names = ([importlib.util.resolve_name("." * node.level + (node.module or ""), package)] if
+                     isinstance(node, ast.ImportFrom) and node.level else
+                     [node.module or ""] if isinstance(node, ast.ImportFrom) else [alias.name for alias in node.names])
+            for name in names:
+                top = name.split(".")[0]
+                if top in ("torch", "GenAIRR") or top == "alignair" and not name.startswith(
+                        ("alignair.errors", "alignair.reference")):
+                    offending.append(f"{path.relative_to(ROOT)}:{node.lineno} {name}")
+    assert offending == []
