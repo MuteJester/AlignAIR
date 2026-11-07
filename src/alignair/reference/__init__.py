@@ -1,3 +1,5 @@
-from .reference_set import ReferenceSet, GeneReference
+from .info import AlleleInfo, AnchorEvidence
+from .provenance import SourceProvenance
+from .reference_set import GeneReference, LocusInfo, ReferenceSet
 
-__all__ = ["ReferenceSet", "GeneReference"]
+__all__ = ["ReferenceSet", "GeneReference", "LocusInfo", "AlleleInfo", "AnchorEvidence", "SourceProvenance"]

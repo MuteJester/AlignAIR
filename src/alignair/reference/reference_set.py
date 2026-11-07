@@ -9,6 +9,8 @@ from typing import Dict, Iterable, List
 import numpy as np
 
 from ..errors import ConfigurationError, DataContractError
+from .info import AlleleInfo
+from .provenance import SourceProvenance
 
 # GenAIRR chain-type value -> AIRR locus code
 _LOCUS_OF_CHAIN = {
@@ -86,6 +88,7 @@ class GeneReference:
     index: Dict[str, int]     # name -> row index
     anchors: Dict[str, int] | None = None  # name -> conserved-anchor germline pos (Cys/Trp-Phe)
     gapped: Dict[str, str] | None = None   # name -> IMGT-gapped germline (AIRR sequence_alignment)
+    info: Dict[str, AlleleInfo] | None = None  # name -> what its source told (functionality, species, label, evidence)
 
     def __len__(self) -> int:
         return len(self.names)
@@ -100,15 +103,18 @@ class LocusInfo:
     chain_type: str
     has_d: bool
     ranges: Dict[str, tuple] = field(default_factory=dict)   # {"V": (s,e), "J": (s,e), ["D": (s,e)]}
+    species: str | None = None                                # the species of all its alleles, when they share one
 
 
 class ReferenceSet:
     """Per-gene union allele references built from one or more GenAIRR DataConfigs."""
 
-    def __init__(self, genes: Dict[str, GeneReference], has_d: bool, loci: List[LocusInfo] | None = None):
+    def __init__(self, genes: Dict[str, GeneReference], has_d: bool, loci: List[LocusInfo] | None = None,
+                 provenance: Iterable[SourceProvenance] = ()):
         self.genes = genes
         self.has_d = has_d
         self.loci = loci or []
+        self.provenance = tuple(provenance)      # the sources its alleles came from, in order
 
     def gene(self, g: str) -> GeneReference:
         return self.genes[g.upper()]
@@ -207,9 +213,24 @@ class ReferenceSet:
             genes[G] = {"names": list(ref.names), "sequences": list(ref.sequences),
                         "gapped": dict(ref.gapped) if ref.gapped else {},
                         "anchors": dict(ref.anchors) if ref.anchors else {}}
-        loci = [{"locus": l.locus, "chain_type": l.chain_type, "has_d": l.has_d,
-                 "ranges": {G: list(se) for G, se in l.ranges.items()}} for l in self.loci]
-        return {"schema": "alignair.reference.v1", "has_d": self.has_d, "genes": genes, "loci": loci}
+            info = {}
+            for name in ref.names:
+                entry = (ref.info or {}).get(name)
+                if entry is not None and entry.to_dict():
+                    info[name] = entry.to_dict()
+            if info:                                     # optional in v1: left out when no allele has any
+                genes[G]["info"] = info
+        loci = []
+        for l in self.loci:
+            locus = {"locus": l.locus, "chain_type": l.chain_type, "has_d": l.has_d,
+                     "ranges": {G: list(se) for G, se in l.ranges.items()}}
+            if l.species is not None:
+                locus["species"] = l.species
+            loci.append(locus)
+        out = {"schema": "alignair.reference.v1", "has_d": self.has_d, "genes": genes, "loci": loci}
+        if self.provenance:
+            out["provenance"] = [source.to_dict() for source in self.provenance]
+        return out
 
     @classmethod
     def from_serializable(cls, data: dict) -> "ReferenceSet":
@@ -220,15 +241,23 @@ class ReferenceSet:
             sequences = [str(s).upper() for s in gd["sequences"]]
             anchors = {k: int(v) for k, v in (gd.get("anchors") or {}).items()} or None
             gapped = {k: str(v).upper() for k, v in (gd.get("gapped") or {}).items()} or None
+            info, held = {}, set(names)
+            for name, entry in (gd.get("info") or {}).items():
+                if name not in held:
+                    raise DataContractError("reference info names an allele its gene does not hold",
+                                            context={"gene": G.upper(), "allele": name})
+                info[name] = AlleleInfo.from_dict(entry)
             out[G.upper()] = GeneReference(names, sequences, {n: i for i, n in enumerate(names)},
-                                           anchors=anchors, gapped=gapped)
+                                           anchors=anchors, gapped=gapped, info=info or None)
         loci = [LocusInfo(locus=l["locus"], chain_type=l.get("chain_type", l["locus"]),
                           has_d=bool(l.get("has_d")),
-                          ranges={G: tuple(se) for G, se in (l.get("ranges") or {}).items()})
+                          ranges={G: tuple(se) for G, se in (l.get("ranges") or {}).items()},
+                          species=l.get("species"))
                 for l in data.get("loci", [])]
         if not loci:                                     # references serialized before the schema existed
             loci = _infer_loci_from_names(out)
-        return cls(out, bool(data.get("has_d")), loci=loci)
+        provenance = [SourceProvenance.from_dict(source) for source in data.get("provenance") or ()]
+        return cls(out, bool(data.get("has_d")), loci=loci, provenance=provenance)
 
     @classmethod
     def from_genotype(cls, genes: Dict[str, Dict[str, str]],
@@ -279,9 +308,10 @@ class ReferenceSet:
             anc = ({n: ref.anchors[n] for n in keep if n in ref.anchors}
                    if ref.anchors else None)
             gapped = ({n: ref.gapped[n] for n in keep if n in ref.gapped} if ref.gapped else None)
+            info = {n: ref.info[n] for n in keep if n in ref.info} if ref.info else None
             out[G] = GeneReference(keep, seqs, {n: i for i, n in enumerate(keep)},
-                                   anchors=anc or None, gapped=gapped or None)
-        return ReferenceSet(out, self.has_d)
+                                   anchors=anc or None, gapped=gapped or None, info=info or None)
+        return ReferenceSet(out, self.has_d, provenance=self.provenance)
 
     @classmethod
     def from_yaml(cls, path: str) -> "ReferenceSet":
