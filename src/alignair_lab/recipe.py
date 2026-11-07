@@ -20,16 +20,22 @@ batches. A schedule and an init seed may be given (``TrainingConfig.init_seed``:
 """
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Mapping
 
 from alignair import TrainingConfig
 from alignair.errors import ConfigurationError
 from alignair.train import CosineSchedule
+from alignair.train.gym.novel import NovelAlleles
 from alignair.train.gym.streams import CurriculumStreamPolicy
 from alignair.train.trainer import RECIPE
 
 DATACONFIGS = ("HUMAN_IGH_OGRDB",)
 POLICY = CurriculumStreamPolicy(progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1)
+# The novel-allele recipe (infra Phase 2): the same mix with 40% of the eligible V genes novel per epoch of 4,096 seeds,
+# SNPs 1-6; the screen ``alignair_lab.novel`` decides whether it enters the retrain.
+NOVEL_ALLELES = NovelAlleles()
+NOVEL_POLICY = dataclasses.replace(POLICY, novel_alleles=NOVEL_ALLELES)
 SEED = 0
 BATCH_SIZE = 64
 LR = 3e-4
@@ -48,7 +54,7 @@ def schedule(name: str, steps: int) -> CosineSchedule | None:
 
 def training_config(*, steps: int, architecture: str = BASELINE_ARCHITECTURE, model_options: Mapping | None = None,
                     device: str = "cuda", data_workers: int = 0, schedule: CosineSchedule | None = None,
-                    init_seed: int | None = None) -> TrainingConfig:
+                    init_seed: int | None = None, novel_alleles: NovelAlleles | None = None) -> TrainingConfig:
     """The recipe's ``TrainingConfig`` for ``steps`` steps of ``architecture`` with ``model_options``, under
     ``schedule`` (None: a constant rate) and from ``init_seed``'s initial weights (None: the seed's): with chip-v1, no
     options and no schedule, the baseline's model on the baseline's training batches. The architecture is named by
@@ -61,7 +67,8 @@ def training_config(*, steps: int, architecture: str = BASELINE_ARCHITECTURE, mo
         options["architecture"] = architecture
     return TrainingConfig(dataconfigs=DATACONFIGS, steps=steps, batch_size=BATCH_SIZE, lr=LR, device=device,
                           short_boost=POLICY.short_boost, seed=SEED, model_options=options,
-                          data_workers=data_workers, schedule=schedule, init_seed=init_seed)
+                          data_workers=data_workers, schedule=schedule, init_seed=init_seed,
+                          novel_alleles=novel_alleles)
 
 
 def recipe_train_args(schedule: CosineSchedule | None = None) -> dict:

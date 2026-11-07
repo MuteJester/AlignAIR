@@ -55,6 +55,8 @@ share only inputs they read: the record cache, the dev build, the baselines and 
 """
 from __future__ import annotations
 
+from dataclasses import replace
+
 import contextlib
 import hashlib
 import json
@@ -146,7 +148,8 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
                data_workers: int = DEFAULT_DATA_WORKERS, eval_batch_size: int = 256, cache=CACHE,
                dev_build=DEV_BUILD, out_root=SCREENS, schedule: str = DEFAULT_SCHEDULE,
                init_seed: int = DEFAULT_INIT_SEED, against_screen: str | None = None, against_milestone=None,
-               baseline_options: Mapping | None = None, echo: Callable[[str], None] | None = None) -> dict:
+               baseline_options: Mapping | None = None, echo: Callable[[str], None] | None = None,
+               novel_alleles=None, training_cache=None) -> dict:
     """Screen ``architecture`` with ``model_options`` for ``steps`` steps under ``schedule`` from ``init_seed``'s
     initial weights (see the module docstring); returns the screen record (``screen.json``) with its printed
     ``headline``.
@@ -156,7 +159,9 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
     ``against_milestone``, with the milestone there at ``steps``. The baseline is of its architecture's default
     options, or of ``baseline_options`` (recorded in ``screen.json`` and on the headline). ``echo`` receives the
     progress lines and the headline; by default they are printed to the standard output in effect at the call,
-    which the trainer's redirected output does not reach."""
+    which the trainer's redirected output does not reach. With ``novel_alleles`` (a ``NovelAlleles``), the candidate
+    trains by the novel-allele recipe from the novel record cache ``training_cache`` (required), checked before
+    anything is written; the protocol, the baseline and the null band stay ``cache``'s."""
     start = time.perf_counter()
     if echo is None:
         stream = sys.stdout
@@ -185,15 +190,26 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
         provenance = baseline_screen(Path(out_root), wanted, baseline_options, name=against_screen, cache=source.path,
                                      schedule=schedule)
     manifest = source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=steps * BATCH_SIZE)
+    if (novel_alleles is None) != (training_cache is None):
+        raise ValueError("a screen with novel alleles trains from a novel record cache: give both novel_alleles and "
+                         "training_cache, or neither")
+    training_source, training_manifest = source, manifest
+    if novel_alleles is not None:
+        training_source = CachedRecordSource(training_cache)
+        training_manifest = training_source.require(DATACONFIGS, policy=replace(POLICY, novel_alleles=novel_alleles),
+                                                    seed=SEED, records=steps * BATCH_SIZE)
     names = builds = band = None
     if provenance is not None:
         same_genairr(provenance, manifest)
+        if novel_alleles is not None:
+            same_genairr(provenance, training_manifest)
         names = built_suites(Path(dev_build), suites)
         builds = suite_builds(Path(dev_build), names)
     if provenance is not None and provenance["kind"] == "screen":       # a milestone's run is another regime of noise
         band = null_band(Path(out_root), wanted, baseline_options, names, max_cases, builds)
     config = training_config(steps=steps, architecture=architecture, model_options=model_options, device=device,
-                             data_workers=data_workers, schedule=learning, init_seed=init_seed)
+                             data_workers=data_workers, schedule=learning, init_seed=init_seed,
+                             novel_alleles=novel_alleles)
     prepare_candidate(config)
     screen = Path(out_root) / name
     Path(out_root).mkdir(parents=True, exist_ok=True)
@@ -217,6 +233,14 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
                         "genairr_version": manifest["genairr"].get("genairr_version"), "recipe": manifest["recipe"],
                         "code_sha256": manifest["code"]["sha256"], "created": manifest["created"],
                         "verification": source.verification},
+              "training_cache": None if novel_alleles is None else {
+                  "path": training_source.path, "steps": training_manifest["steps"],
+                  "records": training_manifest["records"],
+                  "genairr_source_sha256": training_manifest["genairr"]["genairr_source_sha256"],
+                  "genairr_version": training_manifest["genairr"].get("genairr_version"),
+                  "recipe": training_manifest["recipe"], "code_sha256": training_manifest["code"]["sha256"],
+                  "created": training_manifest["created"], "verification": training_source.verification},
+              "novel_alleles": None if novel_alleles is None else novel_alleles.to_dict(),
               "baseline": provenance,
               "null_band": None if band is None else {key: value for key, value in band.items() if key != "seeds"},
               "dev_build": str(Path(dev_build).resolve()), "out_root": str(Path(out_root).resolve()),
@@ -245,7 +269,7 @@ def run_screen(name: str, *, steps: int = DEFAULT_STEPS, architecture: str = BAS
 
         stage(f"training {architecture} for {steps} steps from the record cache")
         clock = time.perf_counter()
-        trained = _train(config, screen, source, echo=lambda line: echo(f"[screen {name}] {line}"))
+        trained = _train(config, screen, training_source, echo=lambda line: echo(f"[screen {name}] {line}"))
         times["training"] = time.perf_counter() - clock
         record["candidate"] = {"model_path": trained.model_path, "steps": trained.steps,
                                "steps_per_second": round(trained.steps / times["training"], 2),
@@ -377,7 +401,15 @@ def _title(record: dict, result, baseline_key: str, code: str | None) -> list[st
     return [f"Screen {record['name']}: {_training_text(record)}, against {against} at step {record['steps']}.",
             f"Candidate {result.model_key} ({record['candidate']['model_path']}); baseline {baseline_key} "
             f"({baseline['checkpoint']}).", _provenance_line(baseline), *seeds, _cache_line(record["cache"]),
-            *_band_lines(record, code), ""]
+            *_novel_lines(record), *_band_lines(record, code), ""]
+
+
+def _novel_lines(record: dict) -> list[str]:
+    training = record.get("training_cache")
+    if not training:
+        return []
+    return [f"Training records: the novel-allele cache {training['path']} ({json.dumps(record['novel_alleles'])}); "
+            f"compared under the protocol of {record['cache']['path']}."]
 
 
 def _provenance_line(baseline: dict) -> str:

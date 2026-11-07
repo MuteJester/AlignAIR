@@ -14,7 +14,11 @@
       [--variants baseline] [--device cuda] [--data-workers 2] [--eval-batch-size 256] [--cache DIR] [--dev-build DIR]
       [--out-root DIR]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
-      [--segment-records N]
+      [--segment-records N] [--novel]
+  python -m alignair_lab novel-screen --name NAME --novel-cache DIR [--heldout DIR] [--steps 20000] [--init-seed K]
+      [--model-option KEY=VALUE ...] [--baseline-model-option KEY=VALUE ...] [--schedule cosine|constant]
+      [--suites S1,S3] [--max-cases N] [--device cuda] [--data-workers 2] [--eval-batch-size 256] [--cache DIR]
+      [--dev-build DIR] [--out-root DIR]
   python -m alignair_lab igblast-dev [--run-dir DIR] [--suites S1,S3] [--igblast-dir DIR] [--dev-build DIR]
   python -m alignair_lab against-igblast --name NAME --checkpoint FILE [--model-option KEY=VALUE ...]
       [--igblast-run DIR] [--suites S1,S3] [--device cuda] [--dev-build DIR] [--out-root DIR]
@@ -27,7 +31,9 @@ with the baseline's milestone (``--against-milestone``, Tier 2; its directory de
 writes the null band and the baseline seeds' values of their protocol, which the headlines of its screens weigh their
 Δs against (``calibrate.run_calibration``). ``replicates`` screens a candidate from several init seeds, reusing the
 finished screens, and pools them into one report against the baseline seeds (``replicates.run_replicates``; with
-``--reuse`` it trains nothing). ``cache`` writes the recipe's record cache (``records.write_record_cache``).
+``--reuse`` it trains nothing). ``cache`` writes the recipe's record cache (``records.write_record_cache``;
+``--novel``: the novel-allele recipe's, ``recipe.NOVEL_POLICY``). ``novel-screen`` trains chip-v1 from a novel cache
+and scores it and the protocol's baseline seeds on the held-out S7 novel alleles (``novel.run_novel_screen``).
 ``igblast-dev`` runs IgBLAST on the dev build's reads, and ``against-igblast`` pairs a checkpoint with it read by read
 (``igblast``). A
 ``--model-option`` value is read as JSON when it parses (``64``, ``true``, ``[3, 5]``), else as a string. Run under
@@ -153,7 +159,25 @@ def build_parser() -> argparse.ArgumentParser:
                        help="write every stream in segments of this many records, each drawn from its own seed "
                             "(default: the selected streams only, sized to keep every writer busy; a size larger "
                             "than any stream writes each whole)")
+    cache.add_argument("--novel", action="store_true",
+                       help="write the novel-allele recipe's cache (recipe.NOVEL_POLICY) instead of the recipe's")
     cache.set_defaults(func=run_cache)
+
+    novel_screen = commands.add_parser("novel-screen", help="train chip-v1 from a novel record cache and gate it on "
+                                                           "the held-out novel alleles")
+    novel_screen.add_argument("--name", required=True, help="the screen's name: its directory under --out-root")
+    novel_screen.add_argument("--novel-cache", help="the novel-allele recipe's record cache (cache --novel)")
+    novel_screen.add_argument("--heldout", default=None, help="the held-out S7 suite (default: novel.HELDOUT)")
+    novel_screen.add_argument("--steps", type=int, default=screen.DEFAULT_STEPS,
+                              help="training steps (default %(default)s)")
+    novel_screen.add_argument("--init-seed", type=init_seed, default=0, metavar="K|none",
+                              help="the seed of the candidate's initial weights (default %(default)s)")
+    novel_screen.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
+                              help="a model configuration field of the candidate (repeatable)")
+    novel_screen.add_argument("--baseline-model-option", action="append", default=[], metavar="KEY=VALUE",
+                              help="a model configuration field of the baseline (repeatable)")
+    add_protocol_arguments(novel_screen)
+    novel_screen.set_defaults(func=run_novel_screen)
 
     dev = commands.add_parser("igblast-dev", help="run IgBLAST with the assay on a copy of the dev build's suites")
     dev.add_argument("--run-dir", default=str(igblast.IGBLAST_DEV), help="the assay run (default %(default)s)")
@@ -268,9 +292,23 @@ def run_replicates(args) -> int:
     return 0
 
 
+def run_novel_screen(args) -> int:
+    from alignair_lab import novel
+    novel.run_novel_screen(args.name, steps=args.steps, cache=args.cache, novel_cache=args.novel_cache,
+                           heldout=args.heldout or novel.HELDOUT, schedule=args.schedule, init_seed=args.init_seed,
+                           suites=_names(args.suites), max_cases=args.max_cases, device=args.device,
+                           data_workers=args.data_workers, eval_batch_size=args.eval_batch_size,
+                           dev_build=args.dev_build, out_root=args.out_root,
+                           model_options=model_options(args.model_option),
+                           baseline_options=model_options(args.baseline_model_option))
+    return 0
+
+
 def run_cache(args) -> int:
+    from alignair_lab.recipe import NOVEL_POLICY
     from alignair_lab.records import write_record_cache
-    manifest = write_record_cache(args.out, dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=args.steps,
+    manifest = write_record_cache(args.out, dataconfigs=DATACONFIGS, policy=NOVEL_POLICY if args.novel else POLICY,
+                                  seed=SEED, steps=args.steps,
                                   batch_size=BATCH_SIZE, workers=args.workers, segment_records=args.segment_records,
                                   progress=lambda line: print(f"[cache] {line}", flush=True),
                                   progress_seconds=args.progress_seconds)

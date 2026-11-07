@@ -1,6 +1,6 @@
 """The screens' test rig, built once per test session in a temporary directory: a dev build of S0 (2 reads), a small
-chip-v1 baseline trained 2 steps at the recipe's constant rate from init seed 0 and kept as its step-2 milestone, and
-a record cache of the recipe for 2 steps. A baseline screen of the small lab-null-v2 (init seed 0, cosine schedule)
+chip-v1 baseline trained 2 steps at the recipe's constant rate from init seed 0 and kept as its step-2 milestone,
+record caches of the recipe and of the novel-allele recipe for 2 steps, and the held-out S7 suite at scale 0.02. A baseline screen of the small lab-null-v2 (init seed 0, cosine schedule)
 is trained in the rig's screens directory when a test first asks for it.
 
 Every screen of these tests is of the small model (``SMALL``), on the CPU, with one data worker."""
@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 from alignair import run_training
 from alignair.model_file import read_metadata, update_card
-from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED, training_config
+from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, NOVEL_POLICY, POLICY, SEED, training_config
 from alignair_lab.records import write_record_cache
 
 SMALL = {'embed_dim': 4, 'trunk_channels': 8}
@@ -29,8 +29,13 @@ def build(root: Path) -> SimpleNamespace:
     shutil.copyfile(baseline.model_path, root / 'milestones' / 'model.step2.alignair')
     write_record_cache(root / 'cache', dataconfigs=DATACONFIGS, policy=POLICY, seed=SEED, steps=2,
                        batch_size=BATCH_SIZE, workers=2)
+    write_record_cache(root / 'novel_cache', dataconfigs=DATACONFIGS, policy=NOVEL_POLICY, seed=SEED, steps=2,
+                       batch_size=BATCH_SIZE, workers=2)
+    heldout = RunLayout(root / 'heldout')
+    build_suite('S7', heldout, reference_name='HUMAN_IGH_OGRDB', split='dev', seed=5, scale=0.02, workers=1)
     return SimpleNamespace(root=root, dev=root / 'dev', milestones=root / 'milestones', cache=root / 'cache',
-                           screens=root / 'screens')
+                           screens=root / 'screens', novel_cache=root / 'novel_cache',
+                           heldout=heldout.suite_dir('S7'))
 
 
 def options(flag, values=SMALL):
