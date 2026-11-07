@@ -161,3 +161,17 @@ def test_invalid_requests_are_rejected_before_any_process_starts(options):
     with pytest.raises(ConfigurationError):
         AssembledBatches(object(), batch_size=8, workers=2, device='cpu')
     assert children() == before
+
+
+@pytest.mark.parametrize('in_worker', [True])
+def test_assembled_batches_with_novel_alleles_equal_the_serial_batches(igh, in_worker):
+    import dataclasses
+
+    from alignair.train.gym.novel import NovelAlleles
+    dataconfig, data = igh
+    stream = TrainingStream((dataconfig,), dataclasses.replace(RECIPE, novel_alleles=NovelAlleles(epoch_records=16)),
+                            0, data)
+    serial = run(serial_records(stream), data.batch_adapter, start_step=0, steps=4, batch_size=16)
+    with parallel_training_data(stream, batch_size=16, workers=3, device='cpu', assemble_in_worker=in_worker) as batches:
+        parallel = run(batches.records, batches.batch_adapter, start_step=0, steps=4, batch_size=16)
+    assert_same_runs(serial, parallel, steps=4)

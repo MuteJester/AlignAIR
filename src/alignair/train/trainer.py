@@ -50,6 +50,20 @@ class TrainingOutcome:
     validations: tuple = ()
 
 
+def _check_novel_alleles(dataconfigs, reference_set, spec) -> None:
+    """ConfigurationError unless every dataconfig has an eligible V (``novel_support``) and every locus of the reference
+    is of one and the same species (one species per model); prints what each epoch draws."""
+    from .gym.novel import novel_support
+    species = {info.species for info in reference_set.loci}
+    if len(species) != 1 or None in species:
+        raise ConfigurationError(f"novel alleles train a model of one species; the reference's loci are of "
+                                 f"{sorted(str(s) for s in species)}", context={"field": "novel_alleles"})
+    for dataconfig in dataconfigs:
+        genes = novel_support(dataconfig, spec)
+        print(f"novel alleles: {dataconfig_name(dataconfig)}: {max(1, round(spec.gene_fraction * genes))} of {genes} "
+              f"eligible V genes per epoch of {spec.epoch_records} records", flush=True)
+
+
 def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
           lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, init_seed=None, device="cpu",
           log_every=50, save_path=None, save_every=2000, resume_path=None,
@@ -57,7 +71,8 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
           grad_clip=None, val_every=0, val_batches=4,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
           schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
-          indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION, flanks=None):
+          indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION, flanks=None,
+          novel_alleles=None):
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
 
     ``indel_form`` and ``indel_fraction`` select the curriculum's polymerase-indel counts
@@ -120,7 +135,10 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
     requested_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
                                               mode='auto',
                                               indel_fraction=indel_fraction, indel_form=indel_form,
-                                              selected_fraction=selected_fraction, flanks=flanks)
+                                              selected_fraction=selected_fraction, flanks=flanks,
+                                              novel_alleles=novel_alleles)
+    if novel_alleles is not None:        # before any record is drawn: an eligible V, one species, GenAIRR's consent
+        _check_novel_alleles(dataconfigs, reference_set, novel_alleles)
     # A reference GenAIRR cannot draw productive records from (an incompletely annotated custom reference) trains
     # unselected: the whole run then draws no selected records, says so, and records it in train_args.
     unselectable = ([dataconfig_name(dataconfig) for dataconfig in dataconfigs if not selection_supported(dataconfig)]
@@ -187,6 +205,8 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                    "init_seed": init_seed, "grad_clip": grad_clip,
                    "started_from": "resume" if resume_from else "init_from" if init_from else None,
                    "genairr_source_sha256": _recorded_genairr_source()}
+    if novel_alleles is not None:
+        _train_args["novel_alleles"] = novel_alleles.to_dict()
     _dcs = dataconfigs
     source_checkpoint = resume_from or init_from
     if source_checkpoint:

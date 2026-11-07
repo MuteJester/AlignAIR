@@ -89,5 +89,6 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
           model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
           schedule=config.schedule, study=config.study,
           init_from=config.init_from,
-          data_workers=config.data_workers, record_source=record_source, flanks=config.flanks)
+          data_workers=config.data_workers, record_source=record_source, flanks=config.flanks,
+          novel_alleles=config.novel_alleles)
     return TrainingRun(path, outcome.best_model_path, outcome.steps, outcome.checkpoints, outcome.validations)

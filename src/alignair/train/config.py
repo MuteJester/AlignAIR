@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 
 from ..errors import ConfigurationError
 from ..data.flanks import FlankPolicy
+from .gym.novel import NovelAlleles
 from .schedules import CosineSchedule
 from .study import TrainingStudy
 from .guards import validate_data_workers
@@ -38,6 +39,9 @@ class TrainingConfig:
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant
     region) around the curriculum's reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the
     chip's recipe; None trains on the bare reads.
+    ``novel_alleles`` (``train.gym.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and
+    puts their rows in each batch's bank (``data.novel_bank``); None, the default, trains on the dataconfigs' alleles
+    alone. The model and the saved reference stay the dataconfigs' either way.
     """
     dataconfigs: tuple
     steps: int = 100_000
@@ -60,6 +64,7 @@ class TrainingConfig:
     init_from: str | None = None
     data_workers: int = 0
     flanks: FlankPolicy | None = field(default_factory=FlankPolicy)
+    novel_alleles: NovelAlleles | None = None
 
     def __post_init__(self):
         if self.init_from and self.resume_path:
@@ -67,6 +72,8 @@ class TrainingConfig:
         validate_data_workers(self.data_workers)
         if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
             raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
+        if self.novel_alleles is not None and not isinstance(self.novel_alleles, NovelAlleles):
+            raise ConfigurationError('novel_alleles must be a NovelAlleles or None', context={'field': 'novel_alleles'})
         if self.schedule is not None:
             if not isinstance(self.schedule, CosineSchedule):
                 raise ConfigurationError('schedule must be a CosineSchedule or None')
