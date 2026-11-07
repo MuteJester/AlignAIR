@@ -461,23 +461,26 @@ def test_a_novel_cache_written_in_segments_is_the_serial_stream(tmp_path):
     from alignair.reference.variants import NOVEL_FIELD
     from alignair.train.gym.novel import NovelAlleles
     spec = NovelAlleles(epoch_records=2)
-    policy = dataclasses.replace(POLICY, novel_alleles=spec)
+    # the unselected streams (selected ones are about 20 times slower to simulate, and their shift across an epoch is
+    # tests/alignair/train/gym/test_novel_streams.py's): each holds 10 records, its segments of 3 cross epochs of 2
+    policy = dataclasses.replace(UNSELECTED, novel_alleles=spec)
     path = tmp_path / "novel"
-    manifest = write_record_cache(path, dataconfigs=DATACONFIGS, policy=policy, seed=SEED, steps=2,
+    manifest = write_record_cache(path, dataconfigs=DATACONFIGS, policy=policy, seed=SEED, steps=1,
                                   batch_size=BATCH_SIZE, workers=2, segment_records=3)
     assert manifest["policy"]["novel_alleles"] == spec.to_dict()
     source = CachedRecordSource(path)
-    source.require(DATACONFIGS, policy=policy, seed=SEED, records=2 * BATCH_SIZE)
-    served = live(2 * BATCH_SIZE, policy=policy, record_source=source)
-    assert served == live(2 * BATCH_SIZE, policy=policy) and any(NOVEL_FIELD in r for r in served)
+    assert all(stream["segments"] > 1 for stream in manifest["components"])
+    source.require(DATACONFIGS, policy=policy, seed=SEED, records=BATCH_SIZE)
+    served = live(BATCH_SIZE, policy=policy, record_source=source)
+    assert served == live(BATCH_SIZE, policy=policy) and any(NOVEL_FIELD in r for r in served)
 
 
 def test_a_cache_of_another_novel_allele_spec_is_refused(tmp_path):
     from alignair.train.gym.novel import NovelAlleles
-    policy = dataclasses.replace(POLICY, novel_alleles=NovelAlleles(epoch_records=2))
+    policy = dataclasses.replace(UNSELECTED, novel_alleles=NovelAlleles(epoch_records=2))
     write_record_cache(tmp_path / "novel", dataconfigs=DATACONFIGS, policy=policy, seed=SEED, steps=1,
                        batch_size=BATCH_SIZE, workers=2)
-    other = dataclasses.replace(POLICY, novel_alleles=NovelAlleles(gene_fraction=0.3, epoch_records=2))
+    other = dataclasses.replace(UNSELECTED, novel_alleles=NovelAlleles(gene_fraction=0.3, epoch_records=2))
     with pytest.raises(ConfigurationError) as caught:
         CachedRecordSource(tmp_path / "novel").require(DATACONFIGS, policy=other, seed=SEED, records=BATCH_SIZE)
     assert caught.value.context["field"] == "novel_alleles"
