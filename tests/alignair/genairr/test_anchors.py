@@ -34,3 +34,37 @@ def test_resolving_leaves_the_dataconfig_untouched():
     ReferenceSet.from_dataconfigs(dataconfig)
     assert _stored(dataconfig, "V")["TRBV17*01"] == 0 and dataconfig.compute_checksum() == before
 
+
+
+TRBJ1_1 = "TGAACACTGAAGCTTTCTTTGGACAAGGCACCAGACTCACAGTTGTAG"
+
+
+def test_resolve_anchor_gives_genairrs_verdict():
+    from alignair.genairr.anchors import ResolvedAnchor, resolve_anchor
+    igh = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    v, j = igh.gene("V"), igh.gene("J")
+    v0 = v.names[0]
+    assert resolve_anchor(v.sequences[0], "V", locus="IGH", gapped=v.gapped[v0]) == ResolvedAnchor(
+        288, "inferred", "imgt_gapped_104", "declared IMGT alignment; conserved codon validated", (288,))
+    two = j.sequences[0][:18] + "TGGGGCAAAGGC" + j.sequences[0][18:]
+    assert resolve_anchor(two, "J", locus="IGH") == ResolvedAnchor(
+        None, "unknown", "unique_j_fwgxg", "zero or multiple candidate landmarks; source annotation required", (18, 30))
+    assert resolve_anchor(TRBJ1_1, "J", locus="TRB").position == 17
+    assert resolve_anchor(TRBJ1_1, "J", locus="IGH").position is None
+
+
+def test_resolve_anchor_refuses_a_d():
+    from alignair.genairr.anchors import resolve_anchor
+    with pytest.raises(ValueError):
+        resolve_anchor("GGGCCC", "D", locus="IGH")
+
+
+def test_a_genairr_without_the_resolver_is_a_missing_dependency(monkeypatch):
+    import types
+
+    from alignair.errors import MissingDependencyError
+    from alignair.genairr import anchors
+    monkeypatch.setattr(anchors, "_native", lambda: types.SimpleNamespace())
+    with pytest.raises(MissingDependencyError) as caught:
+        anchors.resolve_anchor(TRBJ1_1, "J", locus="TRB")
+    assert "GenAIRR>=2.4.0,<2.5" in caught.value.hint
