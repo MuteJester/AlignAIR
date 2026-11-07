@@ -18,6 +18,7 @@ from ...reference.reference_set import is_tcr
 from .curriculum import Curriculum
 from .curriculum.base import INDEL_FRACTION, indel_form_name, indel_fraction_range
 from .experiment import build_experiment
+from .novel import NovelAlleles, novel_records
 
 
 class RecordSource(Protocol):
@@ -137,7 +138,9 @@ class CurriculumStreamPolicy:
     historical form of the 1.0.0 recipe. ``selected_fraction`` (``SELECTED_FRACTION``) of each full-length
     component's records are drawn under GenAIRR's ``productive_only()`` (``substreams_for``); amplicon records never
     are. ``flanks`` (a ``data.flanks.FlankPolicy``) puts library flanks around every stream's records, drawn from the
-    stream's own seed block after its provider (``training_records``); None leaves the simulated reads bare."""
+    stream's own seed block after its provider (``training_records``); None leaves the simulated reads bare.
+    ``novel_alleles`` (a ``train.gym.novel.NovelAlleles``) makes every stream draw part of its reads from synthetic
+    novel V alleles (``train.gym.novel``); None, the default, draws them from the reference's alleles alone."""
     progresses: tuple[float, ...] = (.3, .6, .9)
     heavy_shm: float = .25
     short_boost: int = 1
@@ -147,6 +150,7 @@ class CurriculumStreamPolicy:
     indel_form: Literal['uniform', 'weighted'] = 'weighted'
     selected_fraction: float = SELECTED_FRACTION
     flanks: FlankPolicy | None = None
+    novel_alleles: NovelAlleles | None = None
 
     def __post_init__(self):
         if self.mode not in ('auto', 'amplicon'):
@@ -169,6 +173,8 @@ class CurriculumStreamPolicy:
         object.__setattr__(self, 'selected_fraction', _selected_fraction(self.selected_fraction))
         if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
             raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
+        if self.novel_alleles is not None and not isinstance(self.novel_alleles, NovelAlleles):
+            raise ConfigurationError('novel_alleles must be a NovelAlleles or None', context={'field': 'novel_alleles'})
 
     @property
     def selection_pattern(self) -> tuple[bool, ...]:
@@ -198,6 +204,9 @@ class CurriculumStreamPolicy:
         if cap is not None:
             for parameters, _ in components:
                 parameters['mutation_rate'] = min(parameters['mutation_rate'], cap)
+        if self.novel_alleles is not None:
+            for parameters, _ in components:
+                parameters['novel_alleles'] = self.novel_alleles.to_dict()
         return components
 
     def parameters_for(self, dataconfig, *, force_mixture=False) -> list[dict]:
@@ -240,9 +249,16 @@ def _scoped_records(records, *, seed, stage):
 
 
 def stream_records(dataconfig, parameters: Mapping, seed: int) -> Iterator[Mapping]:
-    """Default provider: forward GenAIRR records, with D inversion disabled unless requested."""
+    """Default provider: forward GenAIRR records, with D inversion disabled unless requested; a stream whose parameters
+    carry ``novel_alleles`` draws them from its epochs' novel alleles (``train.gym.novel.novel_records``)."""
     parameters = dict(parameters)
     parameters.setdefault('invert_d_prob', 0.)
+    novel = parameters.pop('novel_alleles', None)
+    if novel is not None:
+        with error_context(stage='curriculum_component', seed=seed):
+            records = novel_records(dataconfig, parameters, seed, NovelAlleles.from_dict(novel))
+        yield from _scoped_records(records, seed=seed, stage='curriculum_component')
+        return
     with error_context(stage='curriculum_component', seed=seed):
         experiment = build_experiment(dataconfig, parameters, allow_curatable=True)
         records = experiment.stream_records(n=None, seed=seed)

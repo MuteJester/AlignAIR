@@ -73,7 +73,8 @@ COMPRESSION_LEVEL = 6
 # The product code, besides GenAIRR, that turns a stream's parameters and seed into records (paths under the alignair
 # package; a directory stands for its Python files): the provider and its scoping, the seed blocks and the interleave,
 # the experiment builder and the curriculum. Recorded as provenance; ``require``'s live draw is the guard.
-PRODUCING_CODE = ("train/gym/streams.py", "train/gym/experiment.py", "train/gym/curriculum")
+PRODUCING_CODE = ("train/gym/streams.py", "train/gym/experiment.py", "train/gym/curriculum", "train/gym/novel.py",
+                  "reference/variants.py", "genairr/novel.py")
 # Records of every stream ``require`` draws live and compares with the cache, at most what the cache holds per stream.
 VERIFY_RECORDS = 2
 # Records of every unselected and every selected stream ``require`` also compares when the producing code is not the
@@ -126,9 +127,13 @@ def dataconfig_names(dataconfigs) -> list[str]:
 def policy_fields(policy: CurriculumStreamPolicy) -> dict:
     """Every field of a stream policy that shapes its providers' records, encoded as the manifest stores it
     (``encode_parameters``): all but ``flanks``, which ``training_records`` draws after the provider, so a cache of the
-    provider's records serves a flanked run too."""
-    return encode_parameters({field.name: getattr(policy, field.name) for field in dataclasses.fields(policy)
-                              if field.name != "flanks"})
+    provider's records serves a flanked run too. ``novel_alleles`` is left out when None (as every cache written
+    before it was), else its ``to_dict``."""
+    fields = {field.name: getattr(policy, field.name) for field in dataclasses.fields(policy)
+              if field.name not in ("flanks", "novel_alleles")}
+    if policy.novel_alleles is not None:
+        fields["novel_alleles"] = policy.novel_alleles.to_dict()
+    return encode_parameters(fields)
 
 
 def reference_sha256(reference) -> str | None:
