@@ -12,6 +12,10 @@ The bank is the chip's input, not its weights: the buffers are rebuilt from whic
   base), for the units that align a read to the rows base by base, gaps of the frame aside.
 - ``anchor_base_g`` (R,), V and J: the base each row's conserved codon starts at (V Cys, J W/F; -1 when none is
   annotated), which lines a read up with the row from the read's own anchor.
+
+A training batch may carry novel rows (``extension_inputs``: a batch's novel alleles, compiled on the same frames): then
+the chip reads ``BankCompiler.for_batch(batch)``, a ``BankView`` whose rows are the bound bank's plus the batch's, in
+the batch bank's order (``bank_order_g``), which is the bank of the reference extended with those alleles.
 """
 from __future__ import annotations
 
@@ -21,11 +25,62 @@ from torch import nn
 from ..reference.frames import gene_frames
 
 BASES = "ATGC"
+EXTENSION_KEYS = ("bank_order", "bank_extension_table", "bank_extension_cover", "bank_extension_sequence",
+                  "bank_extension_anchor")
 _COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
 
 
 def reverse_complement(sequence: str) -> str:
     return sequence.translate(_COMPLEMENT)[::-1]
+
+
+def compile_rows(rows, width: int):
+    """``(table (R, 4·width), cover (R, width), sequence (R, longest))`` of ``rows``, each ``(sequence, columns)``: the
+    one-hot bases on their frame columns, where a base is, and the ungapped tokens."""
+    row_of, column_of, base_of = [], [], []        # every base's (row, column, base) as plain ints, then one write each
+    for row, (sequence, columns) in enumerate(rows):
+        for k, base in enumerate(sequence.upper()):
+            if base in BASES and columns[k] >= 0:
+                row_of.append(row), column_of.append(int(columns[k])), base_of.append(BASES.index(base))
+    row_of, column_of = torch.tensor(row_of, dtype=torch.long), torch.tensor(column_of, dtype=torch.long)
+    table = torch.zeros(len(rows), width * len(BASES))
+    table[row_of, column_of * len(BASES) + torch.tensor(base_of, dtype=torch.long)] = 1.
+    cover = torch.zeros(len(rows), width)
+    cover[row_of, column_of] = 1.
+    longest = max(len(sequence) for sequence, _ in rows)
+    sequence_tokens = torch.tensor([[BASES.index(base) + 1 if base in BASES else 0 for base in sequence.upper()]
+                                    + [0] * (longest - len(sequence)) for sequence, _ in rows], dtype=torch.long)
+    return table, cover, sequence_tokens
+
+
+def _anchor_bases(alleles, names) -> list[int]:
+    anchors = alleles.anchors or {}
+    return [anchors[name] if 0 <= anchors.get(name, -1) < len(alleles.sequences[alleles.index[name]]) else -1
+            for name in names]
+
+
+def extension_inputs(base, extended, frames: dict, gene: str) -> dict:
+    """The batch inputs that make the chip read ``extended``'s bank for ``gene`` while bound to ``base``: the rows of
+    the alleles ``base`` lacks, in ``extended``'s order, compiled on ``frames`` (``gene_frames(extended)``), and
+    ``bank_order_{gene}``, each of ``extended``'s alleles as a row of the bound bank followed by the new rows.
+    ValueError for a D (its rows come in forward and reverse-complement pairs), for an allele of ``base`` that
+    ``extended`` lacks, and for a frame wider than the bound bank's."""
+    if gene == "d":
+        raise ValueError("a batch extends the V and J banks only (a D's rows are forward and reverse-complement pairs)")
+    mine, theirs = base.gene(gene.upper()), extended.gene(gene.upper())
+    lost = [name for name in mine.names if name not in theirs.index]
+    if lost:
+        raise ValueError(f"the extended reference lacks alleles of the bound one: {', '.join(lost[:5])}")
+    if frames[gene].width != gene_frames(base)[gene].width:
+        raise ValueError(f"the extended {gene.upper()} frame is {frames[gene].width} columns wide, the bound one "
+                         f"{gene_frames(base)[gene].width}: a novel allele must keep its base's columns")
+    new = [name for name in theirs.names if name not in mine.index]
+    order = [mine.index[name] if name in mine.index else len(mine) + new.index(name) for name in theirs.names]
+    table, cover, sequence = compile_rows([(theirs.sequences[theirs.index[n]], frames[gene].columns[n]) for n in new],
+                                          frames[gene].width)
+    return {f"bank_order_{gene}": torch.tensor(order, dtype=torch.long), f"bank_extension_table_{gene}": table,
+            f"bank_extension_cover_{gene}": cover, f"bank_extension_sequence_{gene}": sequence,
+            f"bank_extension_anchor_{gene}": torch.tensor(_anchor_bases(theirs, new), dtype=torch.long)}
 
 
 class BankCompiler(nn.Module):
@@ -39,21 +94,8 @@ class BankCompiler(nn.Module):
             if gene == "d":           # a reverse complement row reads its own positions, as a forward D row does
                 rows += [(index, reverse_complement(sequence), frame.columns[name])
                          for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences))]
-            # every base's (row, column, base) gathered as plain ints, then written in one indexed assignment each
-            row_of, column_of, base_of = [], [], []
-            for row, (_, sequence, columns) in enumerate(rows):
-                for k, base in enumerate(sequence.upper()):
-                    if base in BASES and columns[k] >= 0:
-                        row_of.append(row), column_of.append(int(columns[k])), base_of.append(BASES.index(base))
-            row_of, column_of = torch.tensor(row_of, dtype=torch.long), torch.tensor(column_of, dtype=torch.long)
-            table = torch.zeros(len(rows), frame.width * len(BASES))
-            table[row_of, column_of * len(BASES) + torch.tensor(base_of, dtype=torch.long)] = 1.
-            cover = torch.zeros(len(rows), frame.width)
-            cover[row_of, column_of] = 1.
-            longest = max(len(sequence) for _, sequence, _ in rows)
-            sequence_tokens = torch.tensor([[BASES.index(base) + 1 if base in BASES else 0 for base in sequence.upper()]
-                                            + [0] * (longest - len(sequence)) for _, sequence, _ in rows],
-                                           dtype=torch.long)
+            table, cover, sequence_tokens = compile_rows([(sequence, columns) for _, sequence, columns in rows],
+                                                         frame.width)
             self.register_buffer(f"table_{gene}", table, persistent=False)
             self.register_buffer(f"cover_{gene}", cover, persistent=False)
             self.register_buffer(f"sequence_{gene}", sequence_tokens, persistent=False)
@@ -61,10 +103,8 @@ class BankCompiler(nn.Module):
             if gene == "d":
                 self.register_buffer("row_inverted_d", torch.arange(len(rows)) >= len(alleles), persistent=False)
             else:
-                anchors = alleles.anchors or {}
-                anchor_base = [anchors[name] if 0 <= anchors.get(name, -1) < len(sequence) else -1
-                               for name, sequence in zip(alleles.names, alleles.sequences)]
-                self.register_buffer(f"anchor_base_{gene}", torch.tensor(anchor_base), persistent=False)
+                self.register_buffer(f"anchor_base_{gene}", torch.tensor(_anchor_bases(alleles, alleles.names)),
+                                     persistent=False)
             self.genes.append(gene)
 
     def width(self, gene: str) -> int:
@@ -76,3 +116,46 @@ class BankCompiler(nn.Module):
     def row_mask(self, gene: str, allele_mask: torch.Tensor) -> torch.Tensor:
         """``allele_mask`` (B, n alleles) bool -> (B, R): each row allowed when its allele is."""
         return allele_mask[:, getattr(self, f"row_allele_{gene}")]
+
+    def for_batch(self, batch):
+        """This bank, or the ``BankView`` of a batch that carries novel rows (``bank_order_*``)."""
+        extended = [gene for gene in self.genes if f"bank_order_{gene}" in batch]
+        return BankView(self, batch, extended) if extended else self
+
+
+class BankView:
+    """The bound bank with a batch's novel rows: for each extended gene, its rows are the bound rows followed by the
+    batch's, taken in the batch bank's order (``bank_order_g``), each its own allele; every other buffer is the bound
+    bank's."""
+
+    def __init__(self, bank: BankCompiler, batch, genes):
+        self._bank = bank
+        self.genes = bank.genes
+        for gene in genes:
+            order = batch[f"bank_order_{gene}"]
+            bound, extra = getattr(bank, f"sequence_{gene}"), batch[f"bank_extension_sequence_{gene}"]
+            longest = max(bound.shape[1], extra.shape[1])
+            sequences = torch.cat([_pad(bound, longest), _pad(extra.to(bound.device), longest)])
+            for name, extension in (("table", "table"), ("cover", "cover"), ("anchor_base", "anchor")):
+                rows = torch.cat([getattr(bank, f"{name}_{gene}"),
+                                  batch[f"bank_extension_{extension}_{gene}"].to(getattr(bank, f"{name}_{gene}"))])
+                setattr(self, f"{name}_{gene}", rows[order])
+            setattr(self, f"sequence_{gene}", sequences[order])
+            setattr(self, f"row_allele_{gene}", torch.arange(order.numel(), device=order.device))
+
+    def __getattr__(self, name):
+        return getattr(self._bank, name)
+
+    def width(self, gene: str) -> int:
+        return getattr(self, f"cover_{gene}").shape[1]
+
+    def rows(self, gene: str) -> int:
+        return getattr(self, f"cover_{gene}").shape[0]
+
+    def row_mask(self, gene: str, allele_mask: torch.Tensor) -> torch.Tensor:
+        return allele_mask[:, getattr(self, f"row_allele_{gene}")]
+
+
+def _pad(tokens: torch.Tensor, width: int) -> torch.Tensor:
+    """``tokens`` (R, L) padded with 0 to ``width`` columns."""
+    return torch.nn.functional.pad(tokens, (0, width - tokens.shape[1]))

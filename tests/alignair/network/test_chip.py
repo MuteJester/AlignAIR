@@ -7,11 +7,11 @@ import torch
 from alignair.core.anchors import ANCHOR_LOGITS
 from alignair.core.d_presence import D_PRESENCE_LOGITS
 from alignair.errors import ConfigurationError
-from alignair.reference.reference_set import GeneReference, ReferenceSet
+from alignair.reference.reference_set import ReferenceSet
 
 from alignair.network import chip as chip_core
 
-from .conftest import toy_reference
+from .conftest import toy_reference, with_a_novel_v
 
 pytestmark = pytest.mark.component
 
@@ -145,21 +145,12 @@ def test_the_chip_rescores_its_v_call_with_its_bank_at_inference_only(chip, monk
     assert seen == [model.core.bank]
 
 
-def _with_a_novel_v():
-    """The toy reference plus V*03, a novel allele (V*01 with its last base changed), gapped and anchored like V*01."""
-    toy = toy_reference()
-    v = GeneReference(["V*01", "V*02", "V*03"], ["ACGTACGTAC", "TTTTTTTTTT", "ACGTACGTAA"],
-                      {"V*01": 0, "V*02": 1, "V*03": 2}, anchors={"V*01": 4, "V*02": 4, "V*03": 4},
-                      gapped={"V*01": "ACGT..ACGTAC", "V*02": "TTTT..TTTTTT", "V*03": "ACGT..ACGTAA"})
-    return ReferenceSet({"V": v, "D": toy.gene("D"), "J": toy.gene("J")}, has_d=True)
-
-
 def test_any_reference_binds_and_the_calls_follow_its_alleles(chip):
     """The bank is an input: a reference with an allele the chip never trained on binds, and the V call is over its
     three alleles (no per-allele weights to resize)."""
     model, batch, _ = chip
     model.eval()
-    model.bind_reference(_with_a_novel_v())
+    model.bind_reference(with_a_novel_v())
     assert model.cfg.v_allele_count == 3
     inputs = {key: value for key, value in batch.inputs.items() if not key.startswith(("bank_mask", "teacher"))}
     out = model(inputs)

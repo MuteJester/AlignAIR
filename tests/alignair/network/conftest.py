@@ -23,6 +23,15 @@ def toy_reference():
     return ReferenceSet({"V": v, "D": d, "J": j}, has_d=True)
 
 
+def with_a_novel_v():
+    """The toy reference plus V*03, a novel allele (V*01 with its last base changed), gapped and anchored like V*01."""
+    toy = toy_reference()
+    v = GeneReference(["V*01", "V*02", "V*03"], ["ACGTACGTAC", "TTTTTTTTTT", "ACGTACGTAA"],
+                      {"V*01": 0, "V*02": 1, "V*03": 2}, anchors={"V*01": 4, "V*02": 4, "V*03": 4},
+                      gapped={"V*01": "ACGT..ACGTAC", "V*02": "TTTT..TTTTTT", "V*03": "ACGT..ACGTAA"})
+    return ReferenceSet({"V": v, "D": toy.gene("D"), "J": toy.gene("J")}, has_d=True)
+
+
 def toy_record():
     record = {"sequence": SEQUENCE, "sequence_id": "chip-read", "productive": None, "mutation_rate": 0.,
               "n_indels": 0, "n_quality_errors": 0, "v_call": "V*01", "d_call": "D*01", "j_call": "J*01"}
