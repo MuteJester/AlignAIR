@@ -158,50 +158,9 @@ class ReferenceSet:
 
     @classmethod
     def from_dataconfigs(cls, *dataconfigs) -> "ReferenceSet":
-        from ..genairr.anchors import confirmed_anchor
-        has_d = any(dc.metadata.has_d for dc in dataconfigs)
-        wanted = ["v", "j"] + (["d"] if has_d else [])
-        genes: Dict[str, GeneReference] = {}
-        locus_order: List[str] = []                       # distinct loci, in union order
-        locus_chain: Dict[str, str] = {}
-        per_index: Dict[str, list] = {}                   # GENE -> [locus per allele index]
-        for g in wanted:
-            names: List[str] = []
-            sequences: List[str] = []
-            index: Dict[str, int] = {}
-            anchors: Dict[str, int] = {}
-            gapped: Dict[str, str] = {}
-            membership: list = []
-            for dc in dataconfigs:
-                locus = _locus_of(dc.metadata.chain_type)
-                if locus not in locus_order:
-                    locus_order.append(locus)
-                    locus_chain[locus] = str(getattr(dc.metadata.chain_type, "value", dc.metadata.chain_type))
-                if g == "d" and not dc.metadata.has_d:
-                    continue
-                for allele in dc.allele_list(g):
-                    if allele.name in index:
-                        continue
-                    index[allele.name] = len(names)
-                    names.append(allele.name)
-                    membership.append(locus)              # which locus first contributed this allele
-                    sequences.append(allele.ungapped_seq.upper())
-                    # conserved junction anchor (Cys-104 for V, Trp/Phe-118 for J); ungapped
-                    # germline position. Used to derive the AIRR junction; absent on D.
-                    anc = (confirmed_anchor(allele, g.upper()) if g.upper() in ("V", "J")
-                           else getattr(allele, "anchor", None))
-                    if anc is not None:
-                        anchors[allele.name] = int(anc)
-                    gap = getattr(allele, "gapped_seq", None)
-                    if gap:
-                        gapped[allele.name] = gap.upper()
-            genes[g.upper()] = GeneReference(names, sequences, index,
-                                             anchors=anchors or None, gapped=gapped or None)
-            per_index[g.upper()] = membership
-        # contiguity validation lives in the shared builder: same-locus dataconfigs merge fine (one
-        # adjacent block), an interleaved / split locus fails closed.
-        loci = _loci_from_membership(per_index, locus_order, locus_chain)
-        return cls(genes, has_d, loci=loci)
+        """The annotated union of GenAIRR dataconfigs' alleles (``alignair.genairr.reference_from_dataconfigs``)."""
+        from ..genairr.reference import reference_from_dataconfigs
+        return reference_from_dataconfigs(*dataconfigs)
 
     def to_serializable(self) -> dict:
         """Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== model-head

@@ -7,7 +7,8 @@ sequences, never through ``GenAIRR._reference_annotations.resolve_allele_anchor`
 dataconfig's allele. When GenAIRR makes the resolver public (ask G4), only ``_native`` changes.
 
 GenAIRR's bundled dataconfigs store ``anchor = 0`` for an allele whose codon was not found, a legacy "not found" that
-reads as a real position; ``confirmed_anchor`` keeps every other stored anchor and resolves a stored 0 (or none)."""
+reads as a real position: ``alignair.genairr.reference`` takes only a stored non-zero anchor as supplied and annotates
+the rest, so a stored 0 is resolved here."""
 from __future__ import annotations
 
 import json
@@ -15,8 +16,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 from ..errors import MissingDependencyError
-
-_CONFIRMED = ("inferred", "verified")
 
 
 @dataclass(frozen=True)
@@ -53,13 +52,3 @@ def resolve_anchor(sequence: str, segment: Literal["V", "J"], *, locus: str,
     return ResolvedAnchor(None if position is None else int(position), result["status"], result["method"],
                           result.get("reason", ""), tuple(int(c) for c in result.get("candidates") or ()))
 
-
-def confirmed_anchor(allele, segment: str) -> int | None:
-    """``allele``'s anchor (an ungapped germline position) for ``segment`` ``"V"`` or ``"J"``: a stored non-zero anchor,
-    else the resolver's position when it confirms one, else None."""
-    stored = getattr(allele, "anchor", None)
-    if stored:
-        return int(stored)
-    gapped = getattr(allele, "gapped_seq", None) if segment == "V" else None
-    result = resolve_anchor(allele.ungapped_seq, segment, locus=allele.name[:3].upper(), gapped=gapped)
-    return result.position if result.status in _CONFIRMED else None
