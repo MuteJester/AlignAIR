@@ -19,6 +19,7 @@ from ..reference.frames import gene_frames
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .chip_inputs import chip_batch_inputs, chip_record_targets
 from .encoders import encode_allele_sets
+from .novel_bank import batch_bank
 from .targets import UNSCORABLE, build_targets, read_anchors, read_d_presence
 
 if TYPE_CHECKING:
@@ -116,10 +117,20 @@ class NucleotideBatchAdapter:
     def __call__(self, records) -> TrainingBatch:
         samples = []
         genes = _genes(self.config)
-        frames = gene_frames(self.reference)
+        records = list(records)
+        bank = batch_bank(self.reference, records)       # None unless a read comes from a novel allele
+        reference = self.reference if bank is None else bank.reference
+        frames = gene_frames(reference)
         for i, record in enumerate(records):
             with _record_context(i, record):
-                bundle = build_targets(record, self.reference, self.config.has_d)
+                if bank is not None:
+                    record = bank.resolve(record)
+                bundle = build_targets(record, reference, self.config.has_d)
+                if bank is not None:                     # a novel allele the read cannot tell from its family
+                    for gene, (start, end) in bundle["germline"].items():
+                        calls = bundle["calls"].get(gene.upper())
+                        if calls:
+                            calls.update(*(bank.ties(gene, call, (start, end)) for call in list(calls)))
                 targets = {}
                 for gene in genes:
                     present = gene in bundle["germline"]
@@ -129,20 +140,23 @@ class NucleotideBatchAdapter:
                     targets[f"{gene}_end"] = torch.tensor([float(end)], dtype=torch.float32)
                     targets[f"{gene}_supervise"] = torch.tensor(supervise)
                     targets[f"{gene}_allele"] = _alleles(
-                        self.reference, gene, bundle["calls"].get(gene.upper(), ()) if supervise else ())
+                        reference, gene, bundle["calls"].get(gene.upper(), ()) if supervise else ())
                 for key in ("mutation_rate", "indel_count"):
                     targets[key] = torch.tensor([bundle[key]], dtype=torch.float32)
                 targets["state_labels"] = PositionLabels(bundle["state_labels"])
                 if self.config.anchor_heads:
-                    targets.update(_anchor_targets(read_anchors(record, self.reference), self.config))   # forward frame
+                    targets.update(_anchor_targets(read_anchors(record, reference), self.config))   # forward frame
                 if self.config.d_presence_head:
                     targets.update(_d_presence_targets(record, self.config))
-                targets.update(chip_record_targets(record, self.reference, frames, bundle["region_labels"]))
+                targets.update(chip_record_targets(record, reference, frames, bundle["region_labels"]))
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length, reserve_terminal_slot=True,
                                 reject_empty_sequences=self.config.reject_empty_sequences)
-        batch.inputs.update(chip_batch_inputs(batch.targets, self.reference))   # forward frame, like the targets
+        batch.inputs.update(chip_batch_inputs(batch.targets, reference,     # forward frame, like the targets
+                                              paired=None if bank is None else bank.paired()))
+        if bank is not None:
+            batch.inputs.update({key: value.to(self.device) for key, value in bank.inputs(frames).items()})
         if self.config.use_orientation:
             augment = True if self.augment_orientation is None else self.augment_orientation
             labels = (torch.randint(0, NUM_ORIENTATIONS, (len(samples),)) if augment

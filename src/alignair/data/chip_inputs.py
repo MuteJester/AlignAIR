@@ -132,8 +132,10 @@ def _shrinkable_edges(allowed, sequence, germline, gene, path) -> None:
         allowed[read_position] |= _NP_BEFORE[gene]
 
 
-def chip_batch_inputs(targets: dict, reference, generator: torch.Generator | None = None) -> dict:
-    """The batch's bank masks and teacher inputs (see the module docstring)."""
+def chip_batch_inputs(targets: dict, reference, generator: torch.Generator | None = None, *,
+                      paired: dict | None = None) -> dict:
+    """The batch's bank masks and teacher inputs (see the module docstring). ``paired`` (per gene, a bool over the
+    alleles) joins the mandatory alleles: a batch's novel alleles' bases (``data.novel_bank``)."""
     inputs = {}
     for gene in GENES:
         if f"{gene}_allele" not in targets:
@@ -142,6 +144,8 @@ def chip_batch_inputs(targets: dict, reference, generator: torch.Generator | Non
         rows, n = alleles.shape
         supervise = targets.get(f"{gene}_supervise", torch.ones(rows, dtype=torch.bool)).reshape(-1, 1).bool()
         mask = ((alleles > 0.5) & supervise).any(0)
+        if paired is not None and gene in paired:
+            mask |= paired[gene].to(mask.device)
         size = min(n, int(math.exp(torch.rand((), generator=generator).item() * math.log(n + 1))))
         extra = max(size, 1) - int(mask.sum())
         if extra > 0:
