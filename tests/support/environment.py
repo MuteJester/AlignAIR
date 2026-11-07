@@ -39,6 +39,7 @@ def isolated_test_environment(request, monkeypatch, tmp_path):
     torch_state = torch.get_rng_state()
     cuda_state = torch.cuda.get_rng_state_all() if torch.cuda.is_initialized() else None
     dtype, grad_enabled = torch.get_default_dtype(), torch.is_grad_enabled()
+    threads = torch.get_num_threads()        # a test may set it (predict --threads 1 does, in-process)
     deterministic = torch.are_deterministic_algorithms_enabled()
     warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
     seed = int.from_bytes(hashlib.sha256(request.node.nodeid.encode()).digest()[:4], "big")
@@ -87,4 +88,6 @@ def isolated_test_environment(request, monkeypatch, tmp_path):
             torch.cuda.set_rng_state_all(cuda_state)
         torch.set_default_dtype(dtype)
         torch.set_grad_enabled(grad_enabled)
+        if torch.get_num_threads() != threads:
+            torch.set_num_threads(threads)
         torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
