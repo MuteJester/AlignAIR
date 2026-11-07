@@ -101,3 +101,13 @@ def test_a_subset_keeps_info_and_provenance():
 def test_a_reference_with_info_pickles():
     reference = _reference()
     assert pickle.loads(pickle.dumps(reference)).to_serializable() == reference.to_serializable()
+
+
+def test_a_value_this_build_does_not_know_is_read_as_unknown():
+    """A newer v1 file may carry a functionality or an anchor status this build does not know: it still loads, the
+    functionality as None and the evidence dropped."""
+    payload = _reference().to_serializable()
+    payload["genes"]["V"]["info"][V0]["functional"] = "ORF-like"
+    payload["genes"]["V"]["info"][V0]["anchor_evidence"]["status"] = "aligned"
+    back = ReferenceSet.from_serializable(payload)
+    assert back.gene("V").info[V0] == AlleleInfo(None, "Homo sapiens", "M99641", None)

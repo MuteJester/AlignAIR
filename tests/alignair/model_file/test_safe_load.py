@@ -143,3 +143,18 @@ def test_resumable_checkpoint_still_has_pickle_and_resumes(tmp_path):
     assert "dataconfig/0" in secs and "train_state" in secs and "reference_json" in secs
     ts = mf.load_training_state(p)
     assert ts.step == 5 and ts.optimizer_state is not None
+
+
+def test_a_model_files_reference_it_cannot_read_is_an_integrity_error(tmp_path, monkeypatch):
+    """A fault in the file's own reference is the file's, never the reference a user binds."""
+    from alignair.errors import DataContractError, ModelIntegrityError
+    model, _ = _model()
+    p = str(tmp_path / "pub.alignair")
+    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+                  include_trusted_pickle=False)
+
+    def unreadable(data):
+        raise DataContractError("reference info names an allele its gene does not hold", context={"gene": "V"})
+    monkeypatch.setattr(mf.serialize, "reference_from_json", unreadable)
+    with pytest.raises(ModelIntegrityError):
+        mf.load_model(p)

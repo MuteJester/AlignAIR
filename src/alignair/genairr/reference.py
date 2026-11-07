@@ -51,19 +51,20 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
     for g in wanted:
         gene = g.upper()
         names, sequences, index, anchors, gapped, info, membership = [], [], {}, {}, {}, {}, []
-        owner: Dict[str, int] = {}                    # name -> the dataconfig that gave it
         for dc in dataconfigs:
             if g == "d" and not dc.metadata.has_d:
                 continue
             locus = _locus_of(dc.metadata.chain_type)
+            own = set()                               # within one dataconfig the first of a name is kept
             for allele in dc.allele_list(g):
+                if allele.name in own:
+                    continue
+                own.add(allele.name)
                 sequence = allele.ungapped_seq.upper()
-                if allele.name in index:              # within one dataconfig the first of a name is kept
-                    if (owner[allele.name] != id(dc) and sequences[index[allele.name]] != sequence
-                            and allele.name not in collisions):
+                if allele.name in index:
+                    if sequences[index[allele.name]] != sequence and allele.name not in collisions:
                         collisions.append(allele.name)
                     continue
-                owner[allele.name] = id(dc)
                 index[allele.name] = len(names)
                 names.append(allele.name)
                 membership.append(locus)              # which locus first contributed this allele

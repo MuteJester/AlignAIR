@@ -1,8 +1,9 @@
 """The references a model trains on keep their bytes: for every GenAIRR dataconfig, and for the unions the lab and
 the locus screen train on, ``ReferenceSet.from_dataconfigs`` gives the ``alignair.reference.v1`` JSON pinned in
 ``tests/alignair/fixtures/reference_v1_sha256.json`` (optional keys a v1 reader ignores aside), and the model card's
-two reference hashes stay. A moved digest is a moved training target; re-pin only with a retrain (GenAIRR G1/G2 move
-them by design)."""
+two reference hashes stay. A moved digest is a moved training target; re-pin only with a retrain or a deliberate rule
+(GenAIRR G1/G2 move them by design; the owner's codon-104 rule of 2026-11-07 moved 27 dataconfigs, by 60 anchors of
+V alleles whose codon 104 is not Cys, and nothing else)."""
 import GenAIRR.data as gd
 import pytest
 

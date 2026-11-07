@@ -25,12 +25,14 @@ def test_a_dataconfigs_stored_anchors_are_supplied_evidence():
 
 def test_a_zero_anchor_is_resolved_and_its_verdict_recorded():
     reference = reference_from_dataconfigs(gd.HUMAN_TCRB_IMGT)
-    assert reference.gene("V").info["TRBV17*01"].anchor_evidence == AnchorEvidence(
-        "imgt_gapped_104", "invalid", "declared IMGT landmark is absent or does not encode Cys", None)
+    evidence = reference.gene("V").info["TRBV17*01"].anchor_evidence
+    assert (evidence.method, evidence.status) == ("imgt_position_104", "inferred") and "TAC" in evidence.detail
+    v = reference.gene("V")
+    assert v.anchors["TRBV17*01"] == len(v.gapped["TRBV17*01"][:309].replace(".", ""))      # codon 104's base
     report = anchor_report(reference)
-    assert report.anchored == {"V": 94, "J": 14} and report.total == {"V": 98, "J": 16}
-    assert report.missing == {"V": {"invalid": ("TRBV17*01", "TRBV17*02", "TRBV7-3*02", "TRBV7-3*03")},
-                              "J": {"unresolved": ("TRBJ2-2P*01", "TRBJ2-7*02")}}
+    assert report.anchored == {"V": 98, "J": 14} and report.total == {"V": 98, "J": 16}
+    assert report.missing == {"J": {"unresolved": ("TRBJ2-2P*01", "TRBJ2-7*02")}}
+    assert report.noncanonical == {"V": ("TRBV17*01", "TRBV17*02", "TRBV7-3*02", "TRBV7-3*03")}
 
 
 def test_a_dataconfigs_species_and_source_are_recorded():
@@ -70,3 +72,10 @@ def test_an_allele_named_twice_inside_one_dataconfig_keeps_its_first_sequence():
         first.setdefault(allele.name, allele.ungapped_seq.upper())
     v = reference_from_dataconfigs(gd.MOUSE_IGK_IMGT).gene("V")
     assert v.sequences[v.index["IGKV10-94*01"]] == first["IGKV10-94*01"]
+
+
+def test_a_dataconfig_unioned_with_a_copy_of_itself_is_itself():
+    import copy
+    alone = reference_from_dataconfigs(gd.MOUSE_IGK_IMGT)
+    doubled = reference_from_dataconfigs(gd.MOUSE_IGK_IMGT, copy.deepcopy(gd.MOUSE_IGK_IMGT))
+    assert all(doubled.gene(g).names == alone.gene(g).names for g in ("V", "J"))

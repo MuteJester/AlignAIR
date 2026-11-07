@@ -10,14 +10,14 @@ pytestmark = pytest.mark.component
 
 
 def _known():
-    v = GeneReference(["IGHV1-1*01"], ["ACGTACGTAC"], {"IGHV1-1*01": 0}, anchors={"IGHV1-1*01": 4},
-                      gapped={"IGHV1-1*01": "ACGT..ACGTAC"})
+    v = GeneReference(["IGHV1-1*01"], ["ACGTTGTTAC"], {"IGHV1-1*01": 0}, anchors={"IGHV1-1*01": 4},
+                      gapped={"IGHV1-1*01": "ACGT..TGTTAC"})
     d = GeneReference(["IGHD1-1*01"], ["GGGCCC"], {"IGHD1-1*01": 0})
     j = GeneReference(["IGHJ1*01"], ["TTTGGAA"], {"IGHJ1*01": 0}, anchors={"IGHJ1*01": 3})
     return ReferenceSet({"V": v, "D": d, "J": j}, has_d=True)
 
 
-FASTA = ">IGHV1-1*01\nACGTACGTAC\n>IGHV1-1*novel\nACGAACGTAC\n>IGHD1-1*01\nGGGCCC\n>IGHJ1*01\nTTTGGAA\n"
+FASTA = ">IGHV1-1*01\nACGTTGTTAC\n>IGHV1-1*novel\nACGATGTTAC\n>IGHD1-1*01\nGGGCCC\n>IGHJ1*01\nTTTGGAA\n"
 
 
 def _run(tmp_path, monkeypatch, *, bind=lambda reference: reference, patch_load=True, fasta_text=FASTA):

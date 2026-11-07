@@ -60,7 +60,13 @@ class AlleleInfo:
 
     @classmethod
     def from_dict(cls, data: dict) -> "AlleleInfo":
+        """Read leniently, as a newer v1 file may carry values this build does not know: an unknown functionality
+        reads as None and evidence with an unknown status is dropped."""
         fields = _known(cls, data)
-        if fields.get("anchor_evidence") is not None:
-            fields["anchor_evidence"] = AnchorEvidence.from_dict(fields["anchor_evidence"])
+        if fields.get("functional") not in (None, *FUNCTIONALITIES):
+            fields["functional"] = None
+        evidence = fields.get("anchor_evidence")
+        if evidence is not None:
+            fields["anchor_evidence"] = (AnchorEvidence.from_dict(evidence)
+                                         if dict(evidence).get("status") in ANCHOR_STATUSES else None)
         return cls(**fields)

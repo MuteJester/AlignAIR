@@ -121,10 +121,31 @@ def test_a_j_with_two_motifs_is_ambiguous_and_unanchored(known):
     assert _evidence(done, "J", "IGHJ1*91").status == "ambiguous"
 
 
-def test_a_gapped_v_without_its_cys_is_invalid_and_unanchored(known):
+def test_a_v_without_its_cys_is_anchored_at_its_imgt_position_gapped_or_not(known):
+    """The owner's rule (2026-11-07): codon 104 anchors the V whatever its residue (IMGT numbers the junction from
+    it), where GenAIRR calls such a gapped V invalid; given gapped or ungapped, the allele gets the same anchor, and the
+    report names it as non-canonical."""
     v = known.gene("V")
     g = v.gapped[v.names[0]]
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": g[:309] + "GGG" + g[312:]}, "J": {}}), known)
+    gapped = g[:309] + "TGG" + g[312:]
+    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": gapped}, "J": {}}), known)
+    assert done.gene("V").anchors["IGHV1-NOVEL*01"] == 288
+    evidence = _evidence(done, "V", "IGHV1-NOVEL*01")
+    assert (evidence.method, evidence.status) == ("imgt_position_104", "inferred") and "TGG" in evidence.detail
+    ungapped = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": gapped.replace(".", "")}, "J": {}}), known)
+    assert ungapped.gene("V").anchors["IGHV1-NOVEL*01"] == 288
+    report = anchor_report(done)
+    assert report.complete() and report.noncanonical == {"V": ("IGHV1-NOVEL*01",)}
+    assert "codon 104 not Cys: IGHV1-NOVEL*01" in report.summary()
+
+
+def test_a_v_gapped_off_imgt_numbering_stays_unanchored(known):
+    """A gapped form whose Cys sits a codon or more past column 309 is not on IMGT numbering (GenAIRR G2): no anchor
+    at column 309 for it."""
+    v = known.gene("V")
+    g = v.gapped[v.names[0]]
+    shifted = g[:300] + "..." + g[300:-3]
+    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": shifted}, "J": {}}))
     assert not done.gene("V").anchors
     assert _evidence(done, "V", "IGHV1-NOVEL*01").status == "invalid"
 
@@ -246,3 +267,22 @@ def test_gaps_carried_without_an_anchor_name_the_allele_that_lent_them():
     assert done.gene("V").gapped == {"IGHV1-1*novel": "ACGA..ACGTAC"} and not done.gene("V").anchors
     assert _evidence(done, "V", "IGHV1-1*novel") == AnchorEvidence(
         "nearest_known_allele", "unresolved", "1 of 10 bases differ", "IGHV1-1*01")
+
+
+def test_a_v_that_takes_its_nearest_alleles_anchor_asks_genairr_nothing(known, monkeypatch):
+    """An ungapped variant gapped by its nearest known allele needs no resolver call (GenAIRR anchors a V from its
+    gapped form only)."""
+    from alignair.genairr import anchors as adapter
+    calls = []
+    resolve = adapter.resolve_anchor
+    monkeypatch.setattr(adapter, "resolve_anchor", lambda *a, **k: calls.append(a) or resolve(*a, **k))
+    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": _snp(known.gene("V").sequences[0])}, "J": {}}),
+                    known)
+    assert done.gene("V").anchors["IGHV1-NOVEL*01"] == 288 and calls == []
+
+
+def test_annotate_shares_no_gene_or_locus_object_with_its_input(known):
+    user = ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": _snp(known.gene("V").sequences[0])},
+                                       "D": {"IGHD1-1*01": "GGGCCC"}, "J": {}})
+    done = annotate(user)
+    assert done.gene("D") is not user.gene("D") and all(a is not b for a, b in zip(done.loci, user.loci))

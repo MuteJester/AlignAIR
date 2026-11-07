@@ -293,7 +293,7 @@ def run(args) -> int:
     if bound is not None:
         from ..reference import anchor_report
         report = anchor_report(aligner.reference)
-        if not report.complete():
+        if not report.complete() or report.noncanonical:
             print(f"warning: --reference {args.reference}: {report.summary()}", file=sys.stderr)
     reference = aligner.reference
 

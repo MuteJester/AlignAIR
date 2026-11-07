@@ -238,6 +238,7 @@ class ReferenceSet:
         """
         upper = {k.upper(): v for k, v in genes.items()}
         anc_in = {k.upper(): v for k, v in (anchors or {}).items()}
+        locus = locus.upper() if locus is not None else None
         has_d = bool(upper.get("D"))
         wanted = ["V", "J"] + (["D"] if has_d else [])
         alleles = {g: dict(upper.get(g, {})) for g in wanted}          # name -> sequence, first of a name kept
@@ -313,6 +314,16 @@ class ReferenceSet:
         return [dataclasses.replace(info, ranges=new.ranges, has_d=info.has_d or new.has_d)
                 for info, new in zip(known, rebuilt)]
 
+    @staticmethod
+    def _insertion(order: list, locus: str, loci: list) -> int:
+        """Where an allele of ``locus`` goes in a gene's ``(name, locus)`` order: after its locus's block, else after
+        the blocks of the loci before it, else first."""
+        for candidate in loci[:loci.index(locus) + 1][::-1]:
+            last = max((i for i, (_, x) in enumerate(order) if x == candidate), default=None)
+            if last is not None:
+                return last + 1
+        return 0
+
     def allele_locus(self, gene: str, name: str) -> str | None:
         """The locus whose range holds the allele ``name`` of ``gene``, else None."""
         ref = self.genes.get(gene.upper())
@@ -355,10 +366,10 @@ class ReferenceSet:
         for G in dict.fromkeys([*self.genes, *other.genes]):
             mine = self.genes.get(G) or GeneReference([], [], {})
             order = list(zip(mine.names, membership.get(G, [])))
+            all_loci = [*self.locus_names(), *new_loci]
             for n in added.get(G, []):
                 locus = loci_of[(G, n)]
-                last = max((i for i, (_, x) in enumerate(order) if x == locus), default=None) if self.loci else None
-                order.insert(len(order) if last is None else last + 1, (n, locus))
+                order.insert(self._insertion(order, locus, all_loci) if self.loci else len(order), (n, locus))
             source = {n: (self.genes[G] if n in mine.index else other.genes[G]) for n, _ in order}
             names = [n for n, _ in order]
             pick = lambda attr: {n: getattr(source[n], attr)[n] for n in names
@@ -399,12 +410,16 @@ class ReferenceSet:
         genes: Dict[str, Dict[str, str]] = {"V": {}, "D": {}, "J": {}}
         name = None
         chunks: List[str] = []
+        twice: List[str] = []
 
         def _flush():
             if name is not None:
                 seg = cls._infer_segment(name)
                 if seg is not None:
-                    genes[seg][name] = "".join(chunks)
+                    sequence = "".join(chunks)
+                    if name in genes[seg] and genes[seg][name].upper() != sequence.upper():
+                        twice.append(name)
+                    genes[seg].setdefault(name, sequence)
 
         with open(path) as f:
             for line in f:
@@ -418,6 +433,9 @@ class ReferenceSet:
                 else:
                     chunks.append(line)
         _flush()
+        if twice:
+            raise InputError(f"{path} names {len(twice)} alleles twice with two sequences: {', '.join(twice[:5])}",
+                             context={"path": path, "alleles": twice}, hint="Give each allele one name.")
         return cls.from_genotype({g: m for g, m in genes.items() if m})
 
     def to_yaml(self, path: str) -> None:

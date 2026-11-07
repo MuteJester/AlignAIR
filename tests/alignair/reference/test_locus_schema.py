@@ -67,3 +67,18 @@ def test_a_subset_keeps_the_locus_schema():
                          loci=[LocusInfo("IGH", "BCR_HEAVY", False, {"V": (0, 2), "J": (0, 1)}, species="Human")])
     assert human.subset({"V": ["IGHV2*01"]}).loci == [
         LocusInfo("IGH", "BCR_HEAVY", False, {"V": (0, 1), "J": (0, 1)}, species="Human")]
+
+
+def test_a_given_locus_is_upper_cased():
+    reference = ReferenceSet.from_genotype({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}}, locus="trb")
+    assert reference.locus_names() == ("TRB",) and reference.loci[0].chain_type == "TCR_BETA"
+
+
+def test_a_fasta_naming_an_allele_twice_with_two_sequences_is_refused(tmp_path):
+    from alignair.errors import InputError
+    path = tmp_path / "twice.fasta"
+    path.write_text(">IGHV1-2*02\nACGTACGT\n>IGHV1-2*02\nACGTACGA\n>IGHJ6*02\nCCCCAAAA\n")
+    with pytest.raises(InputError, match=r"IGHV1-2\*02"):
+        ReferenceSet.from_fasta(str(path))
+    path.write_text(">IGHV1-2*02\nACGTACGT\n>IGHV1-2*02\nACGTACGT\n>IGHJ6*02\nCCCCAAAA\n")
+    assert ReferenceSet.from_fasta(str(path)).gene("V").names == ["IGHV1-2*02"]

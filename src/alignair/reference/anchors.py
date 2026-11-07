@@ -18,7 +18,9 @@ reference's, whatever the alleles' names show. ``anchor_report`` counts the anch
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+import numpy as np
 
 from ..errors import InputError
 from .info import ANCHORED, AlleleInfo, AnchorEvidence
@@ -26,6 +28,7 @@ from .reference_set import GeneReference, ReferenceSet, _loci_from_membership, _
 
 MAX_DIFFERENT = 0.1          # the largest share of a V's bases its nearest known allele may differ at
 GAP = "."
+CYS = ("TGT", "TGC")
 _GENES = ("V", "J")
 
 
@@ -44,22 +47,43 @@ def _lends_gaps(known: GeneReference, name: str, sequence: str) -> bool:
     return gapped is not None and gapped.replace(GAP, "").upper() == sequence
 
 
+class _Donors:
+    """The known alleles that can lend their gaps (a gapped form that is the allele's sequence with gaps), grouped by
+    length as base arrays, so the nearest of many is found by one vectorised comparison per allele."""
+
+    def __init__(self, known: GeneReference):
+        self.known = known
+        by_length = {}
+        for name, sequence in zip(known.names, known.sequences):
+            if _lends_gaps(known, name, sequence):
+                by_length.setdefault(len(sequence), []).append((name, sequence))
+        self.groups = {length: ([n for n, _ in group],
+                                np.frombuffer("".join(s for _, s in group).encode("ascii", "replace"),
+                                              dtype=np.uint8).reshape(len(group), length))
+                       for length, group in by_length.items()}
+
+    def nearest(self, sequence: str):
+        group = self.groups.get(len(sequence))
+        if group is None:
+            return None
+        names, bases = group
+        query = np.frombuffer(sequence.encode("ascii", "replace"), dtype=np.uint8)
+        different = (bases != query).sum(axis=1)
+        fewest = int(different.min())
+        if fewest > MAX_DIFFERENT * len(sequence):
+            return None
+        best = min(name for name, d in zip(names, different) if d == fewest)
+        gapped = _carry_gaps(self.known.gapped[best], sequence)
+        anchor = (self.known.anchors or {}).get(best)
+        return gapped, anchor, AnchorEvidence("nearest_known_allele", "inferred" if anchor is not None else "unresolved",
+                                              f"{fewest} of {len(sequence)} bases differ", best)
+
+
 def gap_from_known(sequence: str, known: GeneReference) -> tuple[str | None, int | None, AnchorEvidence] | None:
     """The gapped form (``sequence``'s bases on its columns) and anchor of the known allele of ``sequence``'s length
     that differs from it at the fewest bases (ties by name), when those are at most ``MAX_DIFFERENT`` of its bases;
     else None. Only a known allele whose gapped form is its sequence with gaps lends its gaps."""
-    candidates = [(sum(a != b for a, b in zip(other, sequence)), name)
-                  for name, other in zip(known.names, known.sequences)
-                  if len(other) == len(sequence) and _lends_gaps(known, name, other)]
-    if not candidates:
-        return None
-    different, best = min(candidates)
-    if different > MAX_DIFFERENT * len(sequence):
-        return None
-    gapped = _carry_gaps(known.gapped[best], sequence)
-    anchor = (known.anchors or {}).get(best)
-    return gapped, anchor, AnchorEvidence("nearest_known_allele", "inferred" if anchor is not None else "unresolved",
-                                          f"{different} of {len(sequence)} bases differ", best)
+    return _Donors(known).nearest(sequence)
 
 
 def _verdict(resolved) -> AnchorEvidence:
@@ -67,6 +91,19 @@ def _verdict(resolved) -> AnchorEvidence:
     status = ("invalid" if resolved.status == "invalid" else
               "ambiguous" if len(resolved.candidates) >= 2 else "unresolved")
     return AnchorEvidence(resolved.method, status, resolved.reason or None, None)
+
+
+def imgt_position(sequence: str, gapped: str | None) -> tuple[int, str] | None:
+    """``(anchor, codon)`` of a V whose codon 104 (IMGT-gapped columns 309-311) holds bases that are not Cys, when
+    its gapped form is its sequence with gaps on IMGT numbering; else None. The owner's rule (2026-11-07): codon 104
+    anchors the V whatever its residue, as IMGT numbers the junction from it. A form whose Cys sits a codon or more
+    past column 309 (columns 312-327) is not on IMGT numbering (GenAIRR G2) and gets none."""
+    if not gapped or len(gapped) < 312 or GAP in gapped[309:312] or gapped.replace(GAP, "").upper() != sequence:
+        return None
+    codon = gapped[309:312].upper()
+    if codon in CYS or any(gapped[c:c + 3].upper() in CYS for c in range(312, 328, 3)):
+        return None
+    return len(gapped[:309].replace(GAP, "")), codon
 
 
 def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> ReferenceSet:
@@ -77,9 +114,10 @@ def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> Refe
     genes = {}
     for gene, alleles in reference.genes.items():
         if gene not in _GENES:
-            genes[gene] = alleles
+            genes[gene] = _copy(alleles)
             continue
         target = known.genes.get(gene) if known is not None else None
+        donors = _Donors(target) if target is not None and gene == "V" else None
         by_sequence = {}
         for name, sequence in zip(target.names, target.sequences) if target is not None else ():
             by_sequence.setdefault(sequence, name)
@@ -99,29 +137,42 @@ def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> Refe
                     if name not in anchors and target.anchors and same in target.anchors:
                         anchors[name] = target.anchors[same]
                         evidence = AnchorEvidence("known_allele", "inferred", None, same)
-            if name not in anchors:
-                resolved = resolve_anchor(sequence, gene, gapped=gapped.get(name) if gene == "V" else None,
-                                          locus=_locus_from_name(name) or membership[gene][i] or "")
-                if resolved.status in ("inferred", "verified") and resolved.position is not None:
-                    anchors[name] = resolved.position
-                    evidence = AnchorEvidence(resolved.method, resolved.status, resolved.reason or None, None)
-                else:
-                    evidence = _verdict(resolved)
-            if needs_gap and target is not None:
-                carried = gap_from_known(sequence, target)
+            carried_evidence = None
+            if needs_gap and donors is not None:      # before the resolver: it anchors a V from gaps only
+                carried = donors.nearest(sequence)
                 if carried is not None:
                     carried_gaps, carried_anchor, carried_evidence = carried
                     if carried_gaps is not None:
                         gapped[name] = carried_gaps
-                    if name not in anchors:          # the allele that lent the gaps says more than "unresolved"
-                        evidence = carried_evidence
-                        if carried_anchor is not None:
-                            anchors[name] = carried_anchor
+                    if name not in anchors and carried_anchor is not None:
+                        anchors[name], evidence = carried_anchor, carried_evidence
+            if name not in anchors:
+                resolved = resolve_anchor(sequence, gene, gapped=gapped.get(name) if gene == "V" else None,
+                                          locus=_locus_from_name(name) or membership[gene][i] or "")
+                position = imgt_position(sequence, gapped.get(name)) if gene == "V" and resolved.status == "invalid" \
+                    else None
+                if resolved.status in ("inferred", "verified") and resolved.position is not None:
+                    anchors[name] = resolved.position
+                    evidence = AnchorEvidence(resolved.method, resolved.status, resolved.reason or None, None)
+                elif position is not None:
+                    anchors[name] = position[0]
+                    evidence = AnchorEvidence("imgt_position_104", "inferred",
+                                              f"codon 104 is {position[1]}, not Cys: anchored at its IMGT position", None)
+                else:                                 # the allele that lent gaps says more than "unresolved"
+                    evidence = carried_evidence or _verdict(resolved)
             info[name] = dataclasses.replace(entry, anchor_evidence=evidence)
         genes[gene] = GeneReference(list(alleles.names), list(alleles.sequences), dict(alleles.index),
                                     anchors=anchors or None, gapped=gapped or None, info=info or None)
-    annotated = ReferenceSet(genes, reference.has_d, loci=list(reference.loci), provenance=reference.provenance)
+    loci = [dataclasses.replace(info, ranges=dict(info.ranges)) for info in reference.loci]
+    annotated = ReferenceSet(genes, reference.has_d, loci=loci, provenance=reference.provenance)
     return _on_the_models_loci(annotated, known) if known is not None and known.loci else annotated
+
+
+def _copy(alleles: GeneReference) -> GeneReference:
+    return GeneReference(list(alleles.names), list(alleles.sequences), dict(alleles.index),
+                         anchors=dict(alleles.anchors) if alleles.anchors else None,
+                         gapped=dict(alleles.gapped) if alleles.gapped else None,
+                         info=dict(alleles.info) if alleles.info else None)
 
 
 def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> ReferenceSet:
@@ -167,10 +218,11 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
 class AnchorReport:
     """V and J: how many alleles have an anchor (``anchored``) of how many (``total``), and the names of those without
     by their status (``missing[gene][status]``: the statuses as they first occur, the names in reference order; no
-    evidence counts as unresolved)."""
+    evidence counts as unresolved), and the V alleles anchored on a codon that is not Cys (``noncanonical``)."""
     anchored: dict
     total: dict
     missing: dict
+    noncanonical: dict = field(default_factory=dict)   # V alleles anchored on a codon that is not Cys, by gene
 
     def complete(self) -> bool:
         return all(self.anchored[gene] == self.total[gene] for gene in self.total)
@@ -178,17 +230,25 @@ class AnchorReport:
     def summary(self) -> str:
         """``"V 2/3, J 1/2 anchored; no anchor: <name> (<status>), ..."``, at most five names, then how many more."""
         counts = ", ".join(f"{gene} {self.anchored[gene]}/{self.total[gene]}" for gene in self.total)
-        if self.complete():
-            return f"{counts} anchored"
-        names = [f"{name} ({status})" for gene in self.missing for status, names in self.missing[gene].items()
-                 for name in names]
-        more = f", and {len(names) - 5} more" if len(names) > 5 else ""
-        return f"{counts} anchored; no anchor: {', '.join(names[:5])}{more}"
+        parts = [f"{counts} anchored"]
+        if not self.complete():
+            names = [f"{name} ({status})" for gene in self.missing for status, names in self.missing[gene].items()
+                     for name in names]
+            parts.append(f"no anchor: {_first_five(names)}")
+        odd = [name for names in self.noncanonical.values() for name in names]
+        if odd:
+            parts.append(f"codon 104 not Cys: {_first_five(odd)}")
+        return "; ".join(parts)
+
+
+def _first_five(names: list) -> str:
+    more = f", and {len(names) - 5} more" if len(names) > 5 else ""
+    return ", ".join(names[:5]) + more
 
 
 def anchor_report(reference: ReferenceSet) -> AnchorReport:
     """How many of ``reference``'s V and J alleles have an anchor, and which have none and why."""
-    anchored, total, missing = {}, {}, {}
+    anchored, total, missing, noncanonical = {}, {}, {}, {}
     for gene in _GENES:
         if gene not in reference.genes:
             continue
@@ -203,4 +263,9 @@ def anchor_report(reference: ReferenceSet) -> AnchorReport:
                 by_status.setdefault(status, []).append(name)
         if by_status:
             missing[gene] = {status: tuple(names) for status, names in by_status.items()}
-    return AnchorReport(anchored, total, missing)
+        if gene == "V":
+            odd = tuple(name for name, sequence in zip(alleles.names, alleles.sequences) if name in anchors
+                        and sequence[anchors[name]:anchors[name] + 3].upper() not in CYS)
+            if odd:
+                noncanonical[gene] = odd
+    return AnchorReport(anchored, total, missing, noncanonical)

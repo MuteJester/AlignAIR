@@ -65,3 +65,13 @@ def test_an_allele_no_locus_can_hold_is_refused(igk_igl):
 def test_on_conflict_takes_error_or_keep(igk_igl):
     with pytest.raises(ValueError):
         igk_igl.extend(ReferenceSet.from_genotype({"V": {"myV*01": "ACGT"}, "J": {}}), on_conflict="replace")
+
+
+def test_an_allele_of_a_locus_without_a_block_in_its_gene_goes_in_locus_order():
+    three = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    v = three.gene("V")
+    igh, igl = v.names[:3], [n for n in v.names if n.startswith("IGLV")][:3]
+    bank = three.subset({"V": [*igh, *igl]})
+    extended = bank.extend(ReferenceSet.from_genotype({"V": {"IGKV9-99*01": "ACGT" * 70}, "J": {}}))
+    assert extended.gene("V").names == [*igh, "IGKV9-99*01", *igl]
+    assert [l.ranges.get("V") for l in extended.loci] == [(0, 3), (3, 4), (4, 7)]

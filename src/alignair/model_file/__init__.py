@@ -260,7 +260,13 @@ def read_model_state(path) -> ModelStateData:
     if "reference_json" not in md["sections"]:
         raise ModelError(f"{path} has no reference_json: it was written before AlignAIR 4",
                          context={"path": str(path)}, hint="Run it with alignair<4.")
-    reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
+    try:                                         # a fault in the file's own reference is the file's
+        reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
+    except (DataContractError, ValueError, KeyError, TypeError) as exc:
+        if isinstance(exc, ModelError):
+            raise
+        raise ModelIntegrityError(f"{path} holds a reference this build cannot read: {exc}",
+                                  context={"path": str(path), "field": "reference_json"}) from exc
     schema = md.get('model', {}).get('label_schema')
     with error_context(stage='model_binding', path=path):
         _verify_reference_integrity(reference, md)
