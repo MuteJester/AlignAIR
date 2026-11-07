@@ -59,7 +59,26 @@ def test_a_model_loads_with_another_reference(saved):
     path = saved("test-bank-v1")
     other = _another_reference()
     loaded = mf.load_model(path, reference=other)
-    assert loaded.reference is other and loaded.model.core.reference is other
+    assert loaded.reference.gene("V").names == other.gene("V").names
+    assert loaded.model.core.reference is loaded.reference
     assert loaded.config.v_allele_count == 11 and loaded.model.cfg.v_allele_count == 11
     model, reference = api.load_model(path, reference=other)
-    assert reference is other and model.core.reference is other
+    assert reference.gene("V").names == other.gene("V").names and model.core.reference is reference
+
+
+def test_a_reference_bound_at_load_is_annotated_against_the_models_own(saved):
+    """A Python user binding a reference gets what the CLI's --reference gets: the known alleles keep the model's
+    anchors, a SNP novel allele takes its nearest allele's gaps and anchor."""
+    from alignair.reference import AnchorEvidence, anchor_report
+    path = saved("test-bank-v1")
+    other = _another_reference()
+    novel = other.gene("V").sequences[other.gene("V").index["IGHV-novel*01"]]
+    trained = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB).gene("V")
+    for _, reference in (("model_file", mf.load_model(path, reference=other).reference),
+                         ("api", api.load_model(path, reference=other)[1])):
+        v = reference.gene("V")
+        assert v.anchors["IGHV-novel*01"] == 288 and v.gapped["IGHV-novel*01"].replace(".", "") == novel
+        assert v.info["IGHV-novel*01"].anchor_evidence == AnchorEvidence(
+            "nearest_known_allele", "inferred", "1 of 301 bases differ", "IGHVF1-G1*01")
+        assert {n: v.anchors[n] for n in v.names[:10]} == {n: trained.anchors[n] for n in v.names[:10]}
+        assert anchor_report(reference).complete()

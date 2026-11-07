@@ -10,10 +10,12 @@ from contextlib import closing
 import hashlib
 import json
 import os
+import sys
 from datetime import datetime, timezone
 
 from ..aligner import Aligner
-from ..errors import AlignAIRError, ConfigurationError, InputError, ModelError, RegistryError, report_error
+from ..errors import (AlignAIRError, ConfigurationError, DataContractError, InputError, ModelError,
+                      RegistryError, report_error)
 from ..genotype.lean import EXPLAIN, MIN_READS
 from ._errors import fail
 
@@ -271,18 +273,28 @@ def run(args) -> int:
     if not container.is_alignair_file(model_path):      # an AlignAIR 3 checkpoint: refused with the version that runs it
         from ..model_file import v3_checkpoint_error
         return report_error(v3_checkpoint_error(model_path))
-    try:  # the CLI is a thin client of the stable Aligner API
-        aligner = Aligner.from_pretrained(model_path, device=device)
-    except ValueError as e:
-        return fail(e, error_type=ModelError, context={"path": model_path})
-    if args.reference:
-        from ..reference.complete import complete_reference
+    bound = None
+    if args.reference:      # the FASTA's alleles become the model's bank, annotated against its own reference
         from ..reference.reference_set import ReferenceSet
-        try:              # the FASTA's alleles become the model's bank, completed against its own reference
-            bound = complete_reference(ReferenceSet.from_fasta(args.reference), aligner.reference)
-            aligner = Aligner.from_pretrained(model_path, device=device, reference=bound)
+        try:
+            bound = ReferenceSet.from_fasta(args.reference)
         except (ValueError, OSError) as e:
             return fail(e, context={"stage": "reference_binding", "path": args.reference})
+    try:  # the CLI is a thin client of the stable Aligner API
+        aligner = Aligner.from_pretrained(model_path, device=device, reference=bound)
+    except ValueError as e:                   # a ModelError is the file's; any other error with a reference, binding's
+        if bound is None or isinstance(e, ModelError):
+            return fail(e, error_type=ModelError, context={"path": model_path})
+        return fail(e, context={"stage": "reference_binding", "path": args.reference})
+    except DataContractError as e:
+        if bound is None:
+            raise
+        return fail(e, context={"stage": "reference_binding", "path": args.reference})
+    if bound is not None:
+        from ..reference import anchor_report
+        report = anchor_report(aligner.reference)
+        if not report.complete():
+            print(f"warning: --reference {args.reference}: {report.summary()}", file=sys.stderr)
     reference = aligner.reference
 
     # locus: don't silently default to IGH when the model declares its locus
