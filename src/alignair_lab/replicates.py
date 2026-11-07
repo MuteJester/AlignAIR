@@ -143,6 +143,10 @@ def check_replicates(records: Mapping[int, Mapping], expected: Mapping | None = 
                                      context=context)
         if record.get("init_seed") != seed:
             raise ConfigurationError(f"{what} was trained from init seed {record.get('init_seed')!r}", context=context)
+        if record.get("novel_alleles") is not None or record.get("training_cache"):
+            raise ConfigurationError(f"{what} trained with novel alleles from another record cache: replicates pool "
+                                     "screens of the default cache only", context=context,
+                                     hint="Run a novel-allele screen per init seed with novel-screen --init-seed K.")
         found = request_of(record)
         if want is None:
             want = found

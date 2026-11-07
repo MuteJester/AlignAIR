@@ -33,6 +33,10 @@ MIN_BASELINE_SEEDS = 3
 BASELINE_SEEDS = (0, 1, 2)
 GATED = tuple(metric for metric, _ in (*HEADLINE, *SECONDARY))
 CONDITIONS = ("extended", "genotype")
+# The candidate trains on the novel cache's records, not the baseline seeds' (the novel cache draws its own reads), and
+# the band and the seeds measure init-seed noise on fixed batches: a dev clause, or part of a gain, may be the draw's.
+CAVEAT = ("the null band and the baseline seeds measure init-seed noise on fixed batches; the candidate trains on "
+          "another data draw (the novel cache's own records), whose effect they leave out")
 
 
 def heldout_reference(reference, donors) -> tuple:
@@ -173,7 +177,7 @@ def novel_verdict(candidate: Mapping, baselines: Sequence[Mapping], decisions: M
     changes = {"known_change": _change(candidate, baselines, "extended", "known"),
                "genotype_novel_change": _change(candidate, baselines, "genotype", "novel"),
                "genotype_known_change": _change(candidate, baselines, "genotype", "known")}
-    found = {"novel_gain": gain, "novel_margin": margin, **changes}
+    found = {"novel_gain": gain, "novel_margin": margin, **changes, "caveat": CAVEAT}
     unset = [metric for metric in GATED
              if (decisions.get(metric) or {}).get("decision") in (None, UNCALIBRATED, ZERO_SPREAD)]
     if len(seeds) < MIN_BASELINE_SEEDS or unset or novel is None:
@@ -218,6 +222,7 @@ def _block(novel: Mapping) -> list[str]:
                          f"known {'n/a' if k is None else f'{100 * k:.1f}%'}")
         lines.append(f"  {who}: " + "; ".join(parts))
     tail = f": {'; '.join(novel['reasons'])}" if novel["reasons"] else ""
+    lines.append(f"Note: {novel.get('caveat', CAVEAT)}.")
     lines.append(f"Verdict: {novel['verdict']}{tail}")
     return lines
 

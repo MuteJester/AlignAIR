@@ -379,3 +379,15 @@ def test_replicates_train_the_missing_seeds_and_reuse_the_finished(rig, replicat
     assert (trained["status"], trained["init_seed"], trained["baseline"]["name"]) == ("done", 1, "base0")
     assert (report / "rep-init1.log").is_file() and "[replicates] trained rep-init1" in capsys.readouterr().out
     assert all(entry["k"] == 3 for entry in found["decisions"].values() if entry["pooled"] is not None)
+
+
+@pytest.mark.component
+@pytest.mark.parametrize("novel_seed", [0, 1])
+def test_replicates_of_a_novel_allele_screen_are_refused(novel_seed):
+    """A novel-allele screen trains from another record cache: pooled with plain screens it would mix two treatments,
+    so replicates of it (or with it) are refused; a novel-allele screen is run per init seed by novel-screen."""
+    spec = {"generator": 1, "gene_fraction": 0.4, "snps": [1, 6], "epoch_records": 4096}
+    records = {seed: record(seed, **({"novel_alleles": spec, "training_cache": {"path": "novel"}}
+                                     if seed == novel_seed else {})) for seed in (0, 1, 2)}
+    with pytest.raises(ConfigurationError, match="novel"):
+        check_replicates(records)

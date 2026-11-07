@@ -152,3 +152,15 @@ def test_the_cache_command_writes_the_novel_recipes_cache(tmp_path):
     assert main(["cache", "--novel", "--steps", "1", "--out", str(tmp_path / "novel"), "--workers", "2"]) == 0
     assert json.loads((tmp_path / "novel" / "manifest.json").read_text())["policy"]["novel_alleles"] == \
         NOVEL_ALLELES.to_dict()
+
+
+@pytest.mark.component
+def test_the_verdict_states_that_its_band_omits_the_data_draw():
+    """The candidate trains on other records than the baseline seeds (the novel cache draws its own reads): the band
+    and the seeds measure init-seed noise on fixed batches, which the verdict and the headline say."""
+    from alignair_lab.novel import _block, novel_verdict
+    found = novel_verdict(_scores(0.85, 0.90), BASELINES, _decisions())
+    assert "data draw" in found["caveat"]
+    novel = {"heldout": "S7", "overlap": [], "scores": {"candidate": _scores(0.85, 0.90), "baselines": {}}, **found}
+    lines = _block(novel)
+    assert any("data draw" in line for line in lines) and lines[-1].startswith("Verdict: pass")
