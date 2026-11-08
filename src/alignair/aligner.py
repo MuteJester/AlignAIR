@@ -214,21 +214,18 @@ class Aligner:
         """The model's raw head arrays; label_schema describes column identity.
 
         This method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the
-        read's best allele, model-frame positions).
+        read's best allele, model-frame positions). The forward is the one ``predict`` runs (``predict.forward.
+        run_model``: reads batched by width bucket), so the arrays are the ones a read's row comes from.
         """
-        from .data import prepare_nucleotide_inputs, SequenceInputAdapter
-        from .core.boundaries import read_window
-        from .data.tokenizer import NucleotideTokenizer
-        from .predict.forward import collect_prediction_outputs, prediction_batches
+        import numpy as np
         from .core.setup import _input_config
+        from .predict import PredictConfig
+        from .predict.forward import run_model
         cfg = self.model.cfg
         _input_config(cfg)
-        window = read_window(cfg.max_seq_length)
-        values, _ = prepare_nucleotide_inputs(sequences, window)
-        tokenizer = NucleotideTokenizer()
-        adapter = SequenceInputAdapter(tokenizer, cfg.max_seq_length, self.device, vocab_size=cfg.vocab_size)
-        return collect_prediction_outputs(
-            prediction_batches(self.model, values, adapter, batch_size=batch_size))
+        batches = run_model(self.model, sequences, PredictConfig(max_seq_length=cfg.max_seq_length,
+                                                                 batch_size=batch_size), self.device)
+        return {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
 
     def predict_iter(self, sequences: "Iterator[str]", *, batch_size="auto", chunk_size: int = 20000,
                      **kw) -> Iterator[dict]:

@@ -297,3 +297,36 @@ def test_bucket_batches_are_each_buckets_reads_in_input_order_in_batch_size_chun
     from alignair.predict.forward import bucket_batches
     reads = ["A" * 40, "A", "A" * 50, "AC", "A" * 45, "ACG", "A" * 63]      # buckets 64, 32, 64, 32, 64, 32, 64
     assert bucket_batches(reads, max_seq_length=576, batch_size=2) == [[0, 2], [4, 6], [1, 3], [5]]
+
+
+def test_predict_raw_gives_the_arrays_the_rows_come_from(chip_and_reads):
+    """``Aligner.predict_raw`` runs the forward ``predict`` runs (``run_model``: reads batched by width bucket): its
+    arrays are the ones a read's row comes from, bit for bit, whatever the other reads' lengths."""
+    from alignair.aligner import Aligner
+    torch.set_num_threads(8)                        # the harness's two threads hide width effects (it restores them)
+    model, reference, reads = chip_and_reads
+    reads = [read[:length] for read in reads for length in (90, len(read))]
+    raw = Aligner(model, reference, device="cpu").predict_raw(reads, batch_size=4)
+    batches = run_model(model, reads, PredictConfig.for_model(model, reference, batch_size=4))
+    assert raw.keys() == batches[0].keys()
+    assert all(np.array_equal(raw[key], np.concatenate([batch[key] for batch in batches])) for key in raw)
+
+
+def test_a_reads_outputs_are_the_same_whatever_the_length_of_its_bucket_mates(chip_and_reads):
+    """A read batched with a shorter read of its width bucket and with a longer one gives bit-identical outputs: in
+    evaluation the chip computes over the bucket's width, not the batch's longest read."""
+    from alignair.core.boundaries import WIDTH_BUCKET, width_bucket
+    torch.set_num_threads(8)                        # the harness's two threads hide width effects (it restores them)
+    model, reference, reads = chip_and_reads
+    cfg = PredictConfig.for_model(model, reference, batch_size=2)
+    checked = 0
+    for read in reads:
+        n = min(len(read), cfg.window)
+        top = width_bucket(n + 1, cfg.max_seq_length) - 1          # the longest read of the bucket
+        low = top - WIDTH_BUCKET + 1                                 # the shortest
+        if not low < n < top:
+            continue
+        shorter, longer = (read * 2)[:low], (read * 2)[:top]
+        checked += 1
+        assert _same_rows(run_model(model, [read, shorter], cfg), 0, run_model(model, [read, longer], cfg), 0)
+    assert checked >= 5
