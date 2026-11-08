@@ -492,3 +492,51 @@ def test_wrapped_models_are_unwrapped(make_small_model, reference):
         assert checked is model and checked_reference_set is reference_set
         assert weights_sha256((wrapped, reference_set)) == weights_sha256((model, reference_set))
     assert unwrap_model(model) is model
+
+
+
+# --- the replay is the product pipeline run with hooks ----------------------------------------------------------
+
+def test_a_product_stage_change_reaches_the_replay(small_model, s0_reads, monkeypatch):
+    from alignair.predict.pipeline import STAGE_NAMES
+    model, reference_set = small_model
+    ids, seqs = _inputs(s0_reads)
+    assert STAGES == STAGE_NAMES
+    product = stages.select_alleles
+    monkeypatch.setattr(stages, "select_alleles", lambda p, n, param, cap, sel: product(p, n, param, 1, sel))
+    out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
+    assert all(len(call.names) == 1 for call in out.calls["v"])
+
+
+def test_scattered_germline_substitutions_land_on_their_reads(make_shaped_model, s0_reads, monkeypatch):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _inputs(s0_reads)
+    n = len(seqs)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    matcher = stages.align_germline(base.canonical, base.segments, base.calls, reference_set,
+                                    indel_counts=base.predictions.indel_count)
+    held = (1, 4, 9, 30)
+    own = {g: [matcher[g][i] if i in held else None for i in range(n)] for g in GENES}
+    matched = []
+    product = stages.align_germline
+    monkeypatch.setattr(stages, "align_germline",
+                        lambda sequences, *args, **kwargs: matched.append(len(sequences)) or product(sequences, *args,
+                                                                                                    **kwargs))
+    out = _sub(model, reference_set, seqs, ids, germline=own)
+    assert matched == [n - len(held)] and out.airr_rows == base.airr_rows
+
+
+def test_a_substituted_v_call_holds_its_read_out_of_better_v(make_shaped_model, s0_reads):
+    model, reference_set = make_shaped_model("igh")
+    ids, seqs = _inputs(s0_reads)
+    n = len(seqs)
+    base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+    promoted = [i for i in range(n) if base.germline["v"][i] is not None
+                and base.germline["v"][i].allele != base.calls["v"][i].names[0]]
+    assert len(promoted) >= 2
+    held = promoted[:2]
+    out = _sub(model, reference_set, seqs, ids, calls={"v": [base.calls["v"][i] if i in held else None
+                                                              for i in range(n)]})
+    assert all(out.germline["v"][i].allele == base.calls["v"][i].names[0] for i in held)
+    assert all(out.germline["v"][i] == base.germline["v"][i] for i in range(n) if i not in held)

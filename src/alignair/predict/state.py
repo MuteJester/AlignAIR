@@ -6,7 +6,7 @@ chains).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional
 
 import numpy as np
@@ -50,6 +50,10 @@ class Predictions:
     # [N] int: the D presence head's class (core.d_presence: absent, short, callable), which gates the D call
     d_presence: Optional[np.ndarray] = None
 
+    def take(self, rows) -> "Predictions":
+        """The predictions of ``rows`` (read indices), in that order."""
+        return _taken(self, rows)
+
 
 @dataclass
 class Segments:
@@ -63,6 +67,10 @@ class Segments:
     start: dict[str, np.ndarray]      # {gene: [N] int}
     end: dict[str, np.ndarray]        # {gene: [N] int}
     low_quality: Optional[np.ndarray] = None   # [N] bool: V anchor collapsed -> infeasible segmentation
+
+    def take(self, rows) -> "Segments":
+        """The segments of ``rows`` (read indices), in that order."""
+        return _taken(self, rows)
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,7 @@ class PredictionState:
     """One prediction's state, stage by stage: the input, then the field each stage sets (None until it has run)."""
     context: PredictionContext
     sequences: object                                   # the input as given (any iterable of strings)
+    orientation_given: Optional[tuple] = None           # input: an orientation id per read to teacher-force (None: own)
     reads: Optional[list] = None                        # input_policy: post-crop, pre-orientation
     cropped: Optional[list] = None                      # input_policy: whether each read was cropped
     batches: Optional[list] = None                      # forward: the network's outputs, one dict per batch
@@ -104,7 +113,42 @@ class PredictionState:
     rows: Optional[list] = None                         # airr: what predict returns
 
     @classmethod
-    def start(cls, model, reference, cfg: PredictConfig, device: str, sequences) -> "PredictionState":
-        """The state before any stage: the context and the input."""
-        return cls(PredictionContext(model, reference, cfg, device), sequences)
+    def start(cls, model, reference, cfg: PredictConfig, device: str, sequences, *,
+              orientation=None) -> "PredictionState":
+        """The state before any stage: the context, the input, and the orientation ids to teacher-force (one per read,
+        None for the model's own; None: none forced)."""
+        return cls(PredictionContext(model, reference, cfg, device), sequences,
+                   None if orientation is None else tuple(orientation))
+
+    def take(self, rows) -> "PredictionState":
+        """The state of ``rows`` (read indices), in that order: every per-read field (``PER_READ_FIELDS``) cut to them,
+        the context kept, and the input and the batches, which are not per read, dropped."""
+        return replace(self, sequences=None, batches=None,
+                       **{name: _pick(getattr(self, name), list(rows)) for name in PER_READ_FIELDS})
+
+
+# The PredictionState fields that hold one entry per read (as a list, an array, a gene dict of them, or Predictions or
+# Segments): what ``PredictionState.take`` cuts.
+PER_READ_FIELDS = ("orientation_given", "reads", "cropped", "predictions", "canonical", "segments", "calls",
+                   "alignments", "no_v", "v_ties", "records", "rows")
+
+
+def _pick(value, rows: list):
+    """The entries of ``rows`` of a per-read value."""
+    if value is None:
+        return None
+    if isinstance(value, (Predictions, Segments)):
+        return value.take(rows)
+    if isinstance(value, dict):
+        return {key: _pick(entry, rows) for key, entry in value.items()}
+    if isinstance(value, np.ndarray):
+        return value[rows]
+    picked = [value[i] for i in rows]
+    return tuple(picked) if isinstance(value, tuple) else picked
+
+
+def _taken(value, rows):
+    """A Predictions or Segments with every per-read field cut to ``rows``."""
+    from dataclasses import fields
+    return replace(value, **{f.name: _pick(getattr(value, f.name), list(rows)) for f in fields(value)})
 

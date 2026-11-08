@@ -1,31 +1,15 @@
-"""AlignAIR's predict pipeline replayed stage by stage, with every stage's output captured.
+"""AlignAIR's predict pipeline run stage by stage, with every stage's output captured.
 
-``replay`` does what ``alignair.api.predict_sequences`` does (``alignair.predict.pipeline.predict`` under the
-``PredictConfig`` that ``predict_sequences`` builds), one stage at a time:
-
-1. ``input_policy``: shared nucleotide normalization and cropping through ``prepare_nucleotide_inputs``.
-2. ``forward``: the batched forward pass of ``alignair.predict.forward.run_model``, with each batch dict built here
-   (``SequenceInputAdapter``, right-padded), which is where a teacher-forced ``batch["orientation"]`` goes.
-3. ``clean``: ``stages.clean`` and ``stages.validate_predictions``.
-4. ``canonicalize``: ``stages.canonicalize`` into the model's forward frame.
-5. ``segments``: ``stages.correct_segments``.
-6. ``alleles``: ``stages.select_alleles``.
-7. ``germline``: ``stages.align_germline``.
-8. ``better_v``: ``stages.better_v_alleles`` and ``stages.realign_v``, an allele the read matches better than
-   its V call becoming the call (``alignair.predict.ties``); a read whose V call is substituted keeps it.
-9. ``v_presence``: ``stages.v_absent``, the reads that hold no V (``alignair.predict.v_presence``).
-10. ``ties``: ``stages.tied_alleles``, the V alleles each read cannot tell from its call (``alignair.predict.ties``).
-11. ``records``: ``stages.to_records``, which drops the V of the reads without one, lists each V call's ties and,
-    for a reference of several loci, labels each read with its V call's locus (``stages.called_loci``).
-12. ``airr``: ``alignair.predict.airr.build_airr``.
+``replay`` runs the product's own pipeline (``alignair.predict.pipeline.PIPELINE``, ``run_stages``), the one
+``alignair.api.predict_sequences`` runs, under the ``PredictConfig`` it builds (``PredictConfig.for_model``), with two
+hooks: ``Trace``, which keeps each stage's output and seconds, and ``_SubstitutionHook``, which feeds the substitutions
+in. Nothing is re-implemented here, so a change to a product stage reaches the replay as it reaches the product. The
+stages, in order (``STAGES``): ``input_policy``, ``forward``, ``clean``, ``canonicalize``, ``segments``, ``alleles``,
+``germline``, ``better_v`` (an allele the read matches better than its V call becomes the call), ``v_presence``,
+``ties``, ``records``, ``airr``.
 
 A genotype is the bank the model is bound to (``predict_sequences``' ``genotype``): the replay takes the model as it
 is bound, so a genotype run is replayed by binding its bank first.
-
-Every stage is AlignAIR's own function, looked up where ``pipeline.predict`` looks it up; none is re-implemented.
-Substitutions (``Substitutions``) happen only between stage calls. The private AlignAIR names called here
-(``_validate_predictions``, ``_canonicalize``, ``_to_records``) are pinned by the replay's equivalence tests, which also pin the code of
-the product functions the replay mirrors.
 
 **Substitutions**, each fed in between two stages (``Substitutions`` documents the fields):
 
@@ -42,7 +26,7 @@ the product functions the replay mirrors.
 - ``calls``: replace the selector's calls, before the germline alignment.
 - ``germline``: replace the matcher's alignments; the matcher runs only for the reads with a gene left to it. A
   substituted V alignment is the matcher's output, so ``better_v`` may still move the read to a better allele unless
-  its V call is substituted too.
+  its V call is substituted too (a read whose V call is substituted keeps it).
 
 Every per-read entry may be None, which keeps the model's value for that read (a fallback). Substituted values are
 checked (read range, model alleles, an alignment on the read's call); a bad one is a ValueError.
@@ -50,27 +34,21 @@ checked (read range, model alleles, an alignment on the read's call); a bad one 
 from __future__ import annotations
 
 import os
-import time
-from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 import torch
 from alignair.api import load_model
-from alignair.core.runtime import evaluation_mode
-from alignair.data import SequenceInputAdapter, prepare_nucleotide_inputs
-from alignair.data.tokenizer import NucleotideTokenizer
 from alignair.network.orientation import NUM_ORIENTATIONS
-from alignair.predict import PredictConfig, forward, stages
-from alignair.predict.airr import build_airr
-from alignair.predict.state import Segments
+from alignair.predict import PredictConfig
+from alignair.predict.pipeline import PIPELINE, STAGE_NAMES, Trace, run_stages
+from alignair.predict.state import PredictionState, Segments
 
 from alignair_assay.core.reference import Reference
 
-# The replayed stages, in pipeline order: the keys of ``StageOutputs.seconds``.
-STAGES = ("input_policy", "forward", "clean", "canonicalize", "segments", "alleles", "germline", "better_v",
-          "v_presence", "ties", "records", "airr")
+# The product's stages, in pipeline order: the keys of ``StageOutputs.seconds``.
+STAGES = STAGE_NAMES
 # "argmax": the logits' argmax, which the product decodes boundaries with; "soft": the soft-argmax expectation.
 DECODERS = ("soft", "argmax")
 
@@ -211,97 +189,92 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
         raise ValueError("no sequences to replay")
     subs = substitutions
     cfg = predict_config(model, reference_set, batch_size=batch_size)
-    genes = cfg.genes
-    names = {g: list(reference_set.gene(g.upper()).names) for g in genes}
-    _check_substitutions(subs, len(sequences), genes, names)
-    seconds: dict[str, float] = {}
+    names = {g: list(reference_set.gene(g.upper()).names) for g in cfg.genes}
+    _check_substitutions(subs, len(sequences), cfg.genes, names)
+    trace = Trace()
+    start = PredictionState.start(model, reference_set, cfg, device, sequences, orientation=subs.orientation)
+    final = run_stages(start, PIPELINE, hooks=(trace, _SubstitutionHook(subs)))
+    raw = {key: np.concatenate([batch[key] for batch in final.batches]) for key in final.batches[0]}
+    return StageOutputs(ids=list(ids), raw=raw, predictions=trace.states["clean"].predictions,
+                        canonical=final.canonical, segments=final.segments, calls=final.calls,
+                        germline=final.alignments, records=final.records, airr_rows=final.rows,
+                        seconds=dict(trace.seconds), allele_names=names, no_v=final.no_v, v_ties=final.v_ties)
 
-    with _timed(seconds, "input_policy"):
-        reads, was_cropped = prepare_nucleotide_inputs(sequences, cfg.window)
-    _check_spans(subs.spans, [len(read) for read in reads])  # orientation keeps a read's length
-    with _timed(seconds, "forward"):
-        batches = _forward(model, reads, cfg, device, orientation=subs.orientation)
-    raw = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
-    with _timed(seconds, "clean"):
-        preds = stages.clean(batches, genes)
-        stages.validate_predictions(preds)
-        if subs.orientation is not None:
-            preds = replace(preds, orientation=np.array([int(p) if o is None else int(o) for o, p
-                                                         in zip(subs.orientation, preds.orientation)], dtype=int))
-    with _timed(seconds, "canonicalize"):
-        orient = preds.orientation
-        canonical = [stages.canonicalize(s, int(orient[i]) if orient is not None else 0)
-                     for i, s in enumerate(reads)]
-        seq_lens = np.array([len(s) for s in canonical])
-    with _timed(seconds, "segments"):
-        start, end = preds.start, preds.end
+
+class _SubstitutionHook:
+    """The hook that feeds ``Substitutions`` in between the product's stages (the module docstring): it checks the
+    spans once the reads are known, runs ``segments`` on the soft expectations and puts the given spans in, puts the
+    given calls in after ``alleles``, runs ``germline`` only on the reads with a gene left to the matcher and puts the
+    given alignments in, and holds a read whose V call is given out of ``better_v``. Every other stage runs as it is."""
+
+    def __init__(self, substitutions: Substitutions):
+        self.subs = substitutions
+
+    def __call__(self, stage, state, run):
+        handle = getattr(self, f"_{stage.name}", None)
+        return run(state) if handle is None else handle(state, run)
+
+    def _input_policy(self, state, run):
+        out = run(state)
+        _check_spans(self.subs.spans, [len(read) for read in out.reads])   # orientation keeps a read's length
+        return out
+
+    def _segments(self, state, run):
+        subs = self.subs
         if subs.decoder == "soft":
-            start = {g: raw[f"{g}_start"].reshape(-1) for g in genes}
-            end = {g: raw[f"{g}_end"].reshape(-1) for g in genes}
-        segments = stages.correct_segments(start, end, seq_lens, cfg.max_seq_length, cfg.pad_mode)
+            raw = {key: np.concatenate([batch[key] for batch in state.batches]) for key in state.batches[0]}
+            genes = state.context.cfg.genes
+            soft = replace(state.predictions, start={g: raw[f"{g}_start"].reshape(-1) for g in genes},
+                           end={g: raw[f"{g}_end"].reshape(-1) for g in genes})
+            out = replace(run(replace(state, predictions=soft)), predictions=state.predictions)
+        else:
+            out = run(state)
         if subs.spans is not None:
-            segments = _substitute_spans(segments, subs.spans)
-    with _timed(seconds, "alleles"):
-        calls = stages.select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector)
-        calls = _substitute(calls, subs.calls)
-    with _timed(seconds, "germline"):
-        germline = _align(canonical, segments, calls, reference_set, cfg, preds.indel_count, subs.germline)
-    with _timed(seconds, "better_v"):
-        given = [subs.calls is not None and subs.calls.get("v") is not None and subs.calls["v"][i] is not None
-                 for i in range(len(canonical))]
-        better = stages.better_v_alleles(canonical, germline["v"], reference_set, [call.names for call in calls["v"]])
-        better = [None if held else allele for held, allele in zip(given, better)]
-        germline["v"] = stages.realign_v(canonical, segments, germline["v"], better, reference_set,
-                                           indel_counts=preds.indel_count)
-    with _timed(seconds, "v_presence"):
-        no_v = stages.v_absent(canonical, germline["v"], reference_set)
-    with _timed(seconds, "ties"):
-        v_ties = stages.tied_alleles(canonical, germline["v"], reference_set)
-    with _timed(seconds, "records"):
-        records = stages.to_records(canonical, calls, germline, genes, preds, cfg.chain_types,
-                                       segments.low_quality, was_cropped, input_sequences=reads, no_v=no_v,
-                                       v_ties=v_ties, read_loci=stages.called_loci(germline["v"], reference_set, no_v))
-    with _timed(seconds, "airr"):
-        airr_rows = (build_airr(records, reference_set, chain=("heavy" if cfg.has_d else "light")) if cfg.airr
-                     else records)
+            out = replace(out, segments=_substitute_spans(out.segments, subs.spans))
+        return out
 
-    return StageOutputs(ids=list(ids), raw=raw, predictions=preds, canonical=canonical, segments=segments,
-                        calls=calls, germline=germline, records=records, airr_rows=airr_rows, seconds=seconds,
-                        allele_names=names, no_v=no_v, v_ties=v_ties)
+    def _alleles(self, state, run):
+        out = run(state)
+        return out if not self.subs.calls else replace(out, calls=_substitute(out.calls, self.subs.calls))
 
+    def _germline(self, state, run):
+        given = self.subs.germline
+        if not given:
+            return run(state)
+        canonical, calls = state.canonical, state.calls
+        for g, alignments in given.items():
+            for i, alignment in enumerate(alignments):
+                if alignment is None:
+                    continue
+                call = calls[g][i].names[0] if calls[g][i].names else None
+                if alignment.allele != call:
+                    raise ValueError(f"the {g} alignment of read {i} is on {alignment.allele}, which is not the "
+                                     f"read's {g} call ({call or 'no call'})")
+                if not 0 <= alignment.seq_start <= alignment.seq_end <= len(canonical[i]):
+                    raise ValueError(f"the {g} alignment {alignment.seq_start}..{alignment.seq_end} of read {i} "
+                                     f"lies outside read {i} ({len(canonical[i])} bases)")
+        genes = list(state.segments.start)
+        n = len(canonical)
+        left = [i for i in range(n) if any(g not in given or given[g][i] is None for g in genes)]
+        aligned: dict[str, list] = {g: [None] * n for g in genes}
+        if left:   # each read is aligned on its own, so a subset gives the same alignments
+            part = run(state.take(left)).alignments
+            for k, i in enumerate(left):
+                for g in genes:
+                    aligned[g][i] = part[g][k]
+        return replace(state, alignments=_substitute(aligned, given))
 
-@contextmanager
-def _timed(seconds: dict[str, float], stage: str):
-    start = time.perf_counter()
-    yield
-    seconds[stage] = time.perf_counter() - start
-
-
-@torch.no_grad()
-def _forward(model, reads: list[str], cfg: PredictConfig, device: str, *, orientation: list | None = None) -> list[dict]:
-    """``run_model``'s batched forward pass: the same batches and tokens, each batch's outputs as numpy arrays.
-    ``orientation`` (per read, None for the model's own) is teacher-forced."""
-    adapter = SequenceInputAdapter(NucleotideTokenizer(), cfg.max_seq_length, device, vocab_size=6)
-    with evaluation_mode(model):
-        outputs = []
-        for start in range(0, len(reads), cfg.batch_size):
-            stop = min(start + cfg.batch_size, len(reads))
-            batch = adapter(reads[start:stop])
-            tokens = batch["tokenized_sequence"]
-            if orientation is not None:
-                batch["orientation"] = _forced_orientation(model, tokens, orientation[start:stop])
-            out = forward.forward_batch(model, batch, expected_rows=stop - start)
-            outputs.append({key: forward.output_numpy(value) for key, value in out.items()})
-        return outputs
-
-
-def _forced_orientation(model, tokens: torch.Tensor, given: list) -> torch.Tensor:
-    """The orientation ids to teacher-force for one batch: the given ones, and the model's own prediction (from a
-    forward pass without forcing) for a None entry."""
-    if any(o is None for o in given):
-        own = model({"tokenized_sequence": tokens})["orientation"].tolist()
-        given = [own[k] if o is None else o for k, o in enumerate(given)]
-    return torch.tensor([int(o) for o in given], dtype=torch.long, device=tokens.device)
+    def _better_v(self, state, run):
+        given = (self.subs.calls or {}).get("v")
+        if given is None:
+            return run(state)
+        free = [i for i, call in enumerate(given) if call is None]
+        v = list(state.alignments["v"])
+        if free:   # better_v reads each read on its own
+            part = run(state.take(free)).alignments["v"]
+            for k, i in enumerate(free):
+                v[i] = part[k]
+        return replace(state, alignments={**state.alignments, "v": v})
 
 
 def _check_substitutions(subs: Substitutions, n: int, genes, names: dict[str, list[str]]) -> None:
@@ -378,36 +351,3 @@ def _substitute_spans(segments: Segments, spans: dict) -> Segments:
                 start[g][i], end[g][i] = s, e
     low_quality = ((end["v"] - start["v"]) <= 0) | ((end["j"] - start["j"]) <= 0)
     return Segments(start, end, low_quality=low_quality)
-
-
-def _align(canonical: list[str], segments: Segments, calls: dict, reference_set, cfg: PredictConfig, indel_counts,
-           given: dict | None) -> dict[str, list]:
-    """``align_germline``'s alignments, with the given ones in place; the matcher runs only on the reads that have a
-    gene without a given alignment (each read is aligned on its own, so a subset gives the same alignments)."""
-    if not given:
-        return stages.align_germline(canonical, segments, calls, reference_set, indel_counts=indel_counts)
-    genes = list(segments.start)
-    for g, alignments in given.items():
-        for i, alignment in enumerate(alignments):
-            if alignment is None:
-                continue
-            call = calls[g][i].names[0] if calls[g][i].names else None
-            if alignment.allele != call:
-                raise ValueError(f"the {g} alignment of read {i} is on {alignment.allele}, which is not the read's "
-                                 f"{g} call ({call or 'no call'})")
-            if not 0 <= alignment.seq_start <= alignment.seq_end <= len(canonical[i]):
-                raise ValueError(f"the {g} alignment {alignment.seq_start}..{alignment.seq_end} of read {i} lies "
-                                 f"outside read {i} ({len(canonical[i])} bases)")
-    left = [i for i in range(len(canonical)) if any(g not in given or given[g][i] is None for g in genes)]
-    aligned: dict[str, list] = {g: [None] * len(canonical) for g in genes}
-    if left:
-        rows = np.array(left)
-        part = Segments({g: segments.start[g][rows] for g in genes}, {g: segments.end[g][rows] for g in genes},
-                        None if segments.low_quality is None else segments.low_quality[rows])
-        matched = stages.align_germline([canonical[i] for i in left], part,
-                                          {g: [calls[g][i] for i in left] for g in genes}, reference_set,
-                                          indel_counts=None if indel_counts is None else indel_counts[rows])
-        for k, i in enumerate(left):
-            for g in genes:
-                aligned[g][i] = matched[g][k]
-    return _substitute(aligned, given)

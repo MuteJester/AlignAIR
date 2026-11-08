@@ -191,3 +191,33 @@ def test_collection_snapshots_transform_buffers_before_advancing():
 def test_empty_collection_has_explicit_input_error():
     with pytest.raises(InputError, match='nonempty'):
         collect_prediction_outputs([])
+
+
+class Oriented(torch.nn.Module):
+    """Records each call's (training, grad enabled, orientation given) and returns its tokens and orientation: the
+    given one, else 3 for every read."""
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def forward(self, inputs):
+        tokens = inputs["tokenized_sequence"]
+        self.calls.append((self.training, torch.is_grad_enabled(), "orientation" in inputs))
+        return {"tokenized_sequence": tokens,
+                "orientation": inputs.get("orientation", torch.full((tokens.shape[0],), 3))}
+
+
+def test_run_model_teacher_forces_the_given_orientations():
+    model = Oriented()
+    batches = run_model(model, ["ACGT", "AC", "A"], PredictConfig(max_seq_length=8, batch_size=2),
+                        orientation=[1, 2, 0])
+    assert [batch["orientation"].tolist() for batch in batches] == [[1, 2], [0]]
+    assert model.calls == [(False, False, True)] * 2           # every id given: one pass per batch
+
+
+def test_a_none_orientation_is_the_models_own_from_an_unforced_eval_forward():
+    model = Oriented().train()
+    (batch,) = run_model(model, ["ACGT", "AC"], PredictConfig(max_seq_length=8, batch_size=2), orientation=[1, None])
+    assert batch["orientation"].tolist() == [1, 3]
+    assert model.calls == [(False, False, False), (False, False, True)] and model.training

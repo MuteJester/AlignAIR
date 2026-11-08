@@ -28,7 +28,7 @@ from alignair.predict import forward, pipeline
 PINNED = {
     "alignair.predict.pipeline.predict": "f337863e88788b0637b700999282dde5a63663c8107ea0f1f114a9174a302c8b",
     "alignair.api.predict_sequences": "e4beb94057dddeabfa7344444f0c4378b75d69bcd1bab8be307e497f53decbd2",
-    "alignair.predict.forward.run_model": "9bbc664cfb0b6312d1012d1edcc0592444b8d588013ed5e58ef981a07407c013",
+    "alignair.predict.forward.run_model": "a46d7a19d695ca9d108106d01df542a9a4d2f3dc7f99a49b6da7c10b037126e1",
 }
 # The name ``api.predict_sequences`` runs the pipeline through, which must be ``pipeline.predict``.
 PREDICT_ALIAS = "alignair.api._predict"

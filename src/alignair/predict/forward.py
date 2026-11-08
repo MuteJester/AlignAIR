@@ -125,10 +125,33 @@ def collect_prediction_outputs(batches, *, transform=None) -> dict[str, np.ndarr
     return {key: np.concatenate(values, axis=0) for key, values in collected.items()}
 
 
-def run_model(model, sequences, cfg, device: str = "cpu") -> list:
-    """Nucleotide forward inputs use the same content/window policy as prediction and reporting."""
+class _TeacherForced:
+    """An input adapter over ``(read, orientation id)`` records: the reads tokenized as ``adapter`` tokenizes them,
+    and each id teacher-forced as ``inputs["orientation"]``; a None id is the model's own, from an unforced forward in
+    evaluation mode (run only for a batch that holds one)."""
+
+    def __init__(self, adapter, model):
+        self.adapter, self.model = adapter, model
+
+    def __call__(self, chunk):
+        inputs = self.adapter([read for read, _ in chunk])
+        tokens = inputs["tokenized_sequence"]
+        given = [orientation for _, orientation in chunk]
+        if any(orientation is None for orientation in given):
+            with evaluation_mode(self.model):
+                own = self.model({"tokenized_sequence": tokens})["orientation"].tolist()
+            given = [own[k] if orientation is None else orientation for k, orientation in enumerate(given)]
+        inputs["orientation"] = torch.tensor([int(o) for o in given], dtype=torch.long, device=tokens.device)
+        return inputs
+
+
+def run_model(model, sequences, cfg, device: str = "cpu", *, orientation=None) -> list:
+    """Nucleotide forward inputs use the same content/window policy as prediction and reporting. ``orientation`` (one
+    id per read, None for the model's own) is teacher-forced; each id travels with its read into its batch."""
     records, _ = prepare_nucleotide_inputs(sequences, cfg.window)
     adapter = SequenceInputAdapter(NucleotideTokenizer(), cfg.max_seq_length, device,
                                     vocab_size=6)
+    if orientation is not None:
+        records, adapter = list(zip(records, orientation)), _TeacherForced(adapter, model)
     return [{key: output_numpy(value) for key, value in batch.outputs.items()}
             for batch in prediction_batches(model, records, adapter, batch_size=cfg.batch_size)]

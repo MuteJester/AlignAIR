@@ -13,7 +13,7 @@ import numpy as np
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS
 from ..core.d_presence import ABSENT, CALLABLE, D_CLASSES, D_PRESENCE
 from ..data.inputs import prepare_nucleotide_inputs
-from ..errors import NumericalError
+from ..errors import InputError, NumericalError
 from .clean import NOT_OBSERVED, clean
 from .forward import run_model
 from .germline import align_germline, realign_v
@@ -33,15 +33,30 @@ def prepare_reads(state: PredictionState) -> PredictionState:
 
 
 def run_forward(state: PredictionState) -> PredictionState:
-    """``forward``: the model's batched forward pass over the reads."""
-    context = state.context
-    return replace(state, batches=run_model(context.model, state.reads, context.cfg, context.device))
+    """``forward``: the model's batched forward pass over the reads, with the given orientations teacher-forced.
+    InputError for orientations that are not one per read, or an id that is not one of ``ORIENTATION_IDS``."""
+    context, given = state.context, state.orientation_given
+    if given is not None:
+        if len(given) != len(state.reads):
+            raise InputError(f"{len(given)} orientations for {len(state.reads)} reads",
+                             context={"field": "orientation"})
+        bad = next((i for i, o in enumerate(given) if o is not None and int(o) not in ORIENTATION_IDS), None)
+        if bad is not None:
+            raise InputError(f"orientation id {given[bad]} of read {bad} is not one of 0, 1, 2, 3",
+                             context={"field": "orientation", "read": bad})
+    batches = run_model(context.model, state.reads, context.cfg, context.device, orientation=given)
+    return replace(state, batches=batches)
 
 
 def decode_outputs(state: PredictionState) -> PredictionState:
-    """``clean``: the batches decoded into ``Predictions``, which must be finite before any use."""
+    """``clean``: the batches decoded into ``Predictions``, which must be finite before any use; a teacher-forced
+    orientation is the read's orientation (the model's own where none was given)."""
     predictions = clean(state.batches, state.context.cfg.genes)
     validate_predictions(predictions)
+    if state.orientation_given is not None:
+        own = predictions.orientation
+        predictions = replace(predictions, orientation=np.array(
+            [int(p) if o is None else int(o) for o, p in zip(state.orientation_given, own)], dtype=int))
     return replace(state, predictions=predictions)
 
 
@@ -156,6 +171,7 @@ def called_loci(v_alignments, reference, no_v) -> list[str] | None:
 
 
 _COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+ORIENTATION_IDS = range(4)          # canonicalize's transforms: identity, reverse complement, complement, reverse
 
 
 def canonicalize(seq: str, orientation_id: int) -> str:
