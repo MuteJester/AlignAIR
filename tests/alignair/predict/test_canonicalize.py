@@ -1,7 +1,7 @@
 """Orientation canonicalization: re-applying the predicted transform recovers the forward frame
 (the transforms are involutions), so coords/germline/AIRR all operate on one consistent sequence."""
 import pytest
-from alignair.predict.pipeline import _canonicalize
+from alignair.predict.stages import canonicalize as _canonicalize
 
 pytestmark = pytest.mark.component
 
@@ -28,7 +28,7 @@ def test_to_records_stores_post_crop_pre_orientation_input():
     orientation right (the fix for the Python-API double-reverse defect)."""
     from types import SimpleNamespace
 
-    from alignair.predict.pipeline import _to_records
+    from alignair.predict.stages import to_records as _to_records
     fwd = "ACGTACGTAC"
     original = _canonicalize(fwd, 1)                  # the read as submitted (reverse-complemented)
     canonical = _canonicalize(original, 1)            # re-oriented back to forward == fwd

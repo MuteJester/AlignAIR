@@ -51,7 +51,7 @@ def test_public_entries_reject_malformed_batches_without_running_model(entry, va
 
 @pytest.mark.parametrize('orientation', [0, 1, 2, 3])
 def test_normalized_read_reaches_tokens_alignment_and_record_coordinates(monkeypatch, orientation):
-    from alignair.predict import pipeline
+    from alignair.predict import stages
     model = ObservedModel(orientation)
     alignment_reads = []
     def align(sequences, segments, calls, *args, **kwargs):
@@ -60,13 +60,13 @@ def test_normalized_read_reaches_tokens_alignment_and_record_coordinates(monkeyp
             assert all(0 <= start <= end <= len(sequence)
                        for start, end, sequence in zip(segments.start[gene], segments.end[gene], sequences))
         return {gene: [None] * len(sequences) for gene in ('v', 'j')}
-    monkeypatch.setattr(pipeline, 'align_germline', align)
+    monkeypatch.setattr(stages, 'align_germline', align)
     result = Aligner(model, reference()).predict(iter(['  ac?pT  ']), airr=False)
     assert model.tokens == [[[1, 4, 5, 0]]]           # a 3-base window: the width less the terminal end slot
     assert len(result) == 1
     record = result.records[0]
     assert record['input_sequence'] == 'ACN' and record['length_cropped'] is True
-    assert record['sequence'] == pipeline._canonicalize('ACN', orientation)
+    assert record['sequence'] == stages.canonicalize('ACN', orientation)
     assert alignment_reads == [record['sequence']]
     assert model.training
 

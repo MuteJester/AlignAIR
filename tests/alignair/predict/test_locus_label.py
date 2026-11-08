@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from alignair.predict.pipeline import _to_records
+from alignair.predict.stages import to_records as _to_records
 from alignair.predict.state import GeneCall, GermlineAlignment, Predictions
 
 pytestmark = pytest.mark.component
@@ -51,7 +51,7 @@ def test_a_rows_locus_is_its_reported_v_alleles_not_the_models_top_name():
     """IGK + IGL: the locus of a row comes from the allele its V is aligned to (the reported V call, which may be an
     allele the read matches better than the model's top name, ``predict.ties.better_v_alleles``)."""
     import GenAIRR.data as gd
-    from alignair.predict.pipeline import _called_loci
+    from alignair.predict.stages import called_loci as _called_loci
     from alignair.reference.reference_set import ReferenceSet
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
     v = reference.gene("V")

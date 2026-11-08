@@ -100,7 +100,7 @@ class GeneReference:
 class LocusInfo:
     """One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has
     a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union's allele order. A read's
-    locus is its V call's (``predict.pipeline``)."""
+    locus is its V call's (``predict.stages.called_loci``)."""
     locus: str
     chain_type: str
     has_d: bool

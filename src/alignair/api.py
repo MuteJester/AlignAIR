@@ -53,12 +53,7 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
         finally:
             model.bind_reference(reference)
     device = device or next(model.parameters()).device.type
-    cfg = model.cfg
-    # the reference's ordered locus schema: one locus labels each record's locus; None for a schema-less reference.
-    chain_types = reference.locus_names() or None if hasattr(reference, "locus_names") else None
-    predict_overrides.setdefault("chain_types", chain_types)
-    pcfg = PredictConfig(max_seq_length=cfg.max_seq_length, has_d=cfg.has_d, batch_size=batch_size,
-                         **predict_overrides)
+    pcfg = PredictConfig.for_model(model, reference, batch_size=batch_size, **predict_overrides)
     return _predict(model, sequences, reference, pcfg, device=device)
 
 

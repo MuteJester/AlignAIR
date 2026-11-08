@@ -65,7 +65,7 @@ def _build_one(rec, v_gapped, j_ung, d_ung, chain) -> dict:
     seq = rec["sequence"]
     out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", "IGH")
-    # a D the D presence head gated (predict.pipeline._gate_d): an absent one is assembled as a read without a D (the
+    # a D the D presence head gated (predict.stages.gate_d): an absent one is assembled as a read without a D (the
     # light-chain path: one NP region between V and J); a short one keeps its span and takes the Short-D path for its
     # germline alignment (the read's bases between V and J), as it has no call
     presence = rec.get(D_PRESENCE)

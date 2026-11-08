@@ -34,7 +34,7 @@ def test_a_file_mixing_rows_with_and_without_d_fields_has_one_header_and_empty_d
     from alignair.core.d_presence import D_CLASSES
     from alignair.io.airr import COLUMNS, write_airr
     from alignair.predict.airr import build_airr
-    from alignair.predict.pipeline import _gate_d
+    from alignair.predict.stages import gate_d as _gate_d
     from alignair.reference.reference_set import ReferenceSet
     from alignair.train.gym import Curriculum
     from alignair.train.gym.streams import stream_records

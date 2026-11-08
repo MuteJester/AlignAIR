@@ -1,7 +1,8 @@
-"""Immutable typed state that flows through the prediction pipeline.
+"""The typed state that flows through the prediction pipeline.
 
-Each stage consumes one of these and returns the next — no shared mutable blob. Per-gene data is
-keyed by ``'v'``/``'d'``/``'j'`` (D absent for light chains).
+``PredictionState`` is what the stages (``predict.stages``) pass along: each returns a copy with its own fields set.
+The values it holds are the stages' types below. Per-gene data is keyed by ``'v'``/``'d'``/``'j'`` (D absent for light
+chains).
 """
 from __future__ import annotations
 
@@ -9,6 +10,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
+
+from .config import PredictConfig
 
 GENES = ("v", "d", "j")
 
@@ -71,3 +74,37 @@ class GermlineAlignment:
     germ_start: int
     germ_end: int
     cigar: str
+
+
+@dataclass(frozen=True)
+class PredictionContext:
+    """What a prediction runs with: the model, its bound reference, the configuration and the device."""
+    model: object
+    reference: object
+    cfg: PredictConfig
+    device: str
+
+
+@dataclass(frozen=True)
+class PredictionState:
+    """One prediction's state, stage by stage: the input, then the field each stage sets (None until it has run)."""
+    context: PredictionContext
+    sequences: object                                   # the input as given (any iterable of strings)
+    reads: Optional[list] = None                        # input_policy: post-crop, pre-orientation
+    cropped: Optional[list] = None                      # input_policy: whether each read was cropped
+    batches: Optional[list] = None                      # forward: the network's outputs, one dict per batch
+    predictions: Optional[Predictions] = None           # clean
+    canonical: Optional[list] = None                    # canonicalize: the reads in the model's forward frame
+    segments: Optional[Segments] = None                 # segments
+    calls: Optional[dict] = None                        # alleles: gene -> one GeneCall per read
+    alignments: Optional[dict] = None                   # germline, then better_v: gene -> GermlineAlignment | None
+    no_v: Optional[list] = None                         # v_presence: whether each read has no V
+    v_ties: Optional[list] = None                       # ties: each read's V call and the alleles tied with it
+    records: Optional[list] = None                      # records: one record dict per read
+    rows: Optional[list] = None                         # airr: what predict returns
+
+    @classmethod
+    def start(cls, model, reference, cfg: PredictConfig, device: str, sequences) -> "PredictionState":
+        """The state before any stage: the context and the input."""
+        return cls(PredictionContext(model, reference, cfg, device), sequences)
+

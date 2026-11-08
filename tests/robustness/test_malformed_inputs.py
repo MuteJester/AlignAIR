@@ -51,7 +51,7 @@ def test_empty_input_file_is_reported_not_crashed(tmp_path):
 
 
 def test_nonfinite_probabilities_are_caught():
-    from alignair.predict.pipeline import _assert_finite
+    from alignair.predict.stages import assert_finite as _assert_finite
     with pytest.raises(ValueError, match="non-finite"):
         _assert_finite({"v": np.array([[0.5, np.nan, 0.3]])}, "fuzz")
     with pytest.raises(ValueError, match="non-finite"):
@@ -61,7 +61,7 @@ def test_nonfinite_probabilities_are_caught():
 def test_raw_predictions_validated_before_use():
     """A damaged checkpoint emitting NaN outputs is rejected right after clean(), before it
     can become a plausible argmax call or a clipped-NaN coordinate."""
-    from alignair.predict.pipeline import _validate_predictions
+    from alignair.predict.stages import validate_predictions as _validate_predictions
     from alignair.predict.state import Predictions
     bad_probs = Predictions(allele={"v": np.array([[np.nan, 0.2]])}, start={"v": np.array([0.0])},
                             end={"v": np.array([1.0])}, mutation_rate=np.zeros(1),

@@ -16,7 +16,7 @@ pytest.importorskip("GenAIRR")
 import torch  # noqa: E402
 from alignair import api  # noqa: E402
 from alignair.model_file import save_model  # noqa: E402
-from alignair.predict import forward, pipeline  # noqa: E402
+from alignair.predict import forward, pipeline, stages  # noqa: E402
 from alignair.data import prepare_nucleotide_inputs  # noqa: E402
 from alignair.predict.state import GeneCall, GermlineAlignment  # noqa: E402
 
@@ -387,8 +387,8 @@ def test_germline_alignments_replace_the_matcher(make_shaped_model, s0_reads, mo
     n = len(seqs)
     base = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     matched = []
-    product = pipeline.align_germline
-    monkeypatch.setattr(pipeline, "align_germline",
+    product = stages.align_germline
+    monkeypatch.setattr(stages, "align_germline",
                         lambda sequences, *args, **kwargs: matched.append(len(sequences)) or product(sequences, *args,
                                                                                                     **kwargs))
     # The first ten reads get every gene substituted (with the matcher's own alignments, before better_v moves a V to
@@ -427,9 +427,9 @@ def test_the_product_decodes_by_argmax_and_the_soft_decoder_substitutes_the_expe
     lengths = np.array([len(read) for read in base.canonical])
     decoded = {g: decode_boundaries(base, g, "argmax") for g in GENES}
     # the replay's baseline is the product: the heads' argmax decoder is the same implementation
-    expected = pipeline.correct_segments({g: decoded[g][0] for g in GENES}, {g: decoded[g][1] for g in GENES},
+    expected = stages.correct_segments({g: decoded[g][0] for g in GENES}, {g: decoded[g][1] for g in GENES},
                                          lengths, 576, "right")
-    expectation = pipeline.correct_segments({g: base.raw[f"{g}_start"].reshape(-1) for g in GENES},
+    expectation = stages.correct_segments({g: base.raw[f"{g}_start"].reshape(-1) for g in GENES},
                                             {g: base.raw[f"{g}_end"].reshape(-1) for g in GENES}, lengths, 576, "right")
     for g in GENES:
         assert np.array_equal(base.segments.start[g], expected.start[g])

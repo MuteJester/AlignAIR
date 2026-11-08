@@ -216,7 +216,7 @@ def _d_presence(outputs: StageOutputs) -> np.ndarray | None:
 
 def model_frames(outputs: StageOutputs) -> np.ndarray:
     """Per read, the orientation id the replay canonicalized it with (``predictions.orientation``; 0 for every read
-    of a model without an orientation head, as ``pipeline._canonicalize`` treats it)."""
+    of a model without an orientation head, as ``stages.canonicalize`` treats it)."""
     orientation = getattr(outputs.predictions, "orientation", None)
     if orientation is None:
         return np.zeros(len(outputs.ids), dtype=int)

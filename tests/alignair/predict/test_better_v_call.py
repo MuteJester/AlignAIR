@@ -39,7 +39,7 @@ def _variant(row, reference):
 
 
 def test_an_allele_the_read_matches_better_than_the_call_becomes_the_call(monkeypatch):
-    import alignair.predict.pipeline as pipeline
+    import alignair.predict.stages as stages
     from alignair.api import load_model, predict_sequences
     from alignair.reference.reference_set import ReferenceSet
     model, reference = load_model(str(TEST_CHIP), device="cpu")
@@ -51,7 +51,7 @@ def test_an_allele_the_read_matches_better_than_the_call_becomes_the_call(monkey
     bound = reference.extend(ReferenceSet.from_genotype({"V": {NOVEL: novel}, "J": {}}))
     model, bound = load_model(str(TEST_CHIP), reference=bound, device="cpu")
     index = bound.gene("V").index
-    clean = pipeline.clean
+    clean = stages.clean
 
     def favouring_the_base(raw, genes):
         preds = clean(raw, genes)
@@ -61,7 +61,7 @@ def test_an_allele_the_read_matches_better_than_the_call_becomes_the_call(monkey
             v[:, index[NOVEL]] = v[:, index[base]] / 2
         return preds
 
-    monkeypatch.setattr(pipeline, "clean", favouring_the_base)
+    monkeypatch.setattr(stages, "clean", favouring_the_base)
     row = predict_sequences(model, bound, [reads[i]], device="cpu")[0]
     assert row["v_calls"][0] == base                    # the model's scores still favour the base allele
     assert row["v_call"].split(",")[0] == NOVEL
