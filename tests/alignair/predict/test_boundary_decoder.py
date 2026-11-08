@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from alignair.predict.clean import clean
+from alignair.predict.outputs import ModelOutputs
 from alignair.predict.decode import decode_boundaries, decoded_boundaries
 from alignair.predict.segment import correct_segments
 
@@ -78,7 +79,7 @@ def test_clean_reports_the_argmax_and_keeps_the_expectation_without_logits():
              "end_mask": np.ones((1, 12), bool),
              "j_allele": np.array([[0.5, 0.5]]), "j_start": np.array([[8.0]]), "j_end": np.array([[9.0]]),
              "mutation_rate": np.array([[0.1]]), "indel_count": np.array([[0.0]])}
-    preds = clean([batch], genes=("v", "j"))
+    preds = clean([ModelOutputs.from_network(batch, ("v", "j"))], genes=("v", "j"))
     assert preds.start["v"].tolist() == [10] and preds.end["v"].tolist() == [10]
     assert preds.start["j"].tolist() == [8.0]
 

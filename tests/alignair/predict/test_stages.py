@@ -8,7 +8,7 @@ import json
 import numpy as np
 import pytest
 
-from alignair.errors import InferenceError
+from alignair.errors import InferenceError, InputError
 from alignair.predict import PredictConfig
 from alignair.predict.pipeline import PIPELINE, STAGE_NAMES, Stage, Trace, predict, run_stages
 from alignair.predict.stages import canonicalize
@@ -120,3 +120,12 @@ def test_take_keeps_every_per_read_field_of_its_rows(golden):
             assert _row(getattr(part, name), 0) == _row(getattr(state, name), 7), name
             assert _row(getattr(part, name), 1) == _row(getattr(state, name), 2), name
             assert _rows(getattr(part, name)) == 2, name
+
+
+@pytest.mark.parametrize("given, message", [([1], "1 orientations for 10 reads"),
+                                            ([7] + [None] * 9, "orientation id 7 of read 0 is not one of 0, 1, 2, 3")])
+def test_orientations_that_do_not_fit_the_reads_are_refused(golden, given, message):
+    model, reference, reads = golden
+    cfg = PredictConfig.for_model(model, reference, batch_size=8)
+    with pytest.raises(InputError, match=message):
+        run_stages(PredictionState.start(model, reference, cfg, "cpu", reads, orientation=given))

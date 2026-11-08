@@ -18,6 +18,7 @@ from .clean import NOT_OBSERVED, clean
 from .forward import run_model
 from .germline import align_germline, realign_v
 from .junction import derive_junction
+from .outputs import ModelOutputs
 from .segment import correct_segments
 from .state import PredictionState
 from .threshold import select_alleles
@@ -33,7 +34,8 @@ def prepare_reads(state: PredictionState) -> PredictionState:
 
 
 def run_forward(state: PredictionState) -> PredictionState:
-    """``forward``: the model's batched forward pass over the reads, with the given orientations teacher-forced.
+    """``forward``: the model's batched forward pass over the reads, with the given orientations teacher-forced, each
+    batch's outputs typed (``ModelOutputs``).
     InputError for orientations that are not one per read, or an id that is not one of ``ORIENTATION_IDS``."""
     context, given = state.context, state.orientation_given
     if given is not None:
@@ -44,7 +46,8 @@ def run_forward(state: PredictionState) -> PredictionState:
         if bad is not None:
             raise InputError(f"orientation id {given[bad]} of read {bad} is not one of 0, 1, 2, 3",
                              context={"field": "orientation", "read": bad})
-    batches = run_model(context.model, state.reads, context.cfg, context.device, orientation=given)
+    batches = [ModelOutputs.from_network(batch, context.cfg.genes)
+               for batch in run_model(context.model, state.reads, context.cfg, context.device, orientation=given)]
     return replace(state, batches=batches)
 
 

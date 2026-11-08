@@ -26,7 +26,7 @@ class ObservedModel(torch.nn.Module):
         return {'v_allele': torch.ones(count, 1), 'j_allele': torch.ones(count, 1),
                 'v_start': torch.zeros(count), 'v_end': torch.full((count,), 2.),
                 'j_start': torch.full((count,), 2.), 'j_end': torch.full((count,), 4.),
-                'productive': torch.ones(count), 'mutation_rate': torch.zeros(count),
+                'mutation_rate': torch.zeros(count),
                 'indel_count': torch.zeros(count), 'orientation': torch.full((count,), self.orientation)}
 
 

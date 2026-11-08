@@ -42,6 +42,7 @@ import torch
 from alignair.api import load_model
 from alignair.network.orientation import NUM_ORIENTATIONS
 from alignair.predict import PredictConfig
+from alignair.predict.clean import expectations
 from alignair.predict.pipeline import PIPELINE, STAGE_NAMES, Trace, run_stages
 from alignair.predict.state import PredictionState, Segments
 
@@ -194,7 +195,8 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
     trace = Trace()
     start = PredictionState.start(model, reference_set, cfg, device, sequences, orientation=subs.orientation)
     final = run_stages(start, PIPELINE, hooks=(trace, _SubstitutionHook(subs)))
-    raw = {key: np.concatenate([batch[key] for batch in final.batches]) for key in final.batches[0]}
+    batches = [batch.network_dict() for batch in final.batches]
+    raw = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
     return StageOutputs(ids=list(ids), raw=raw, predictions=trace.states["clean"].predictions,
                         canonical=final.canonical, segments=final.segments, calls=final.calls,
                         germline=final.alignments, records=final.records, airr_rows=final.rows,
@@ -222,10 +224,10 @@ class _SubstitutionHook:
     def _segments(self, state, run):
         subs = self.subs
         if subs.decoder == "soft":
-            raw = {key: np.concatenate([batch[key] for batch in state.batches]) for key in state.batches[0]}
             genes = state.context.cfg.genes
-            soft = replace(state.predictions, start={g: raw[f"{g}_start"].reshape(-1) for g in genes},
-                           end={g: raw[f"{g}_end"].reshape(-1) for g in genes})
+            soft_spans = {g: expectations(state.batches, g) for g in genes}
+            soft = replace(state.predictions, start={g: soft_spans[g][0] for g in genes},
+                           end={g: soft_spans[g][1] for g in genes})
             out = replace(run(replace(state, predictions=soft)), predictions=state.predictions)
         else:
             out = run(state)

@@ -3,11 +3,16 @@ import pytest
 import numpy as np
 
 from alignair.predict.clean import clean
+from alignair.predict.outputs import ModelOutputs
 
 pytestmark = pytest.mark.component
 
 
 def _batch(vp, vs, ve):
+    return ModelOutputs.from_network(_network(vp, vs, ve), ("v", "j"))
+
+
+def _network(vp, vs, ve):
     return {"v_allele": np.array([vp]), "v_start": np.array([[vs]]), "v_end": np.array([[ve]]),
             "j_allele": np.array([[0.5, 0.5]]), "j_start": np.array([[60.0]]), "j_end": np.array([[90.0]]),
             "mutation_rate": np.array([[0.1]]), "indel_count": np.array([[0.0]])}

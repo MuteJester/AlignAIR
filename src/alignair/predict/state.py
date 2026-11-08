@@ -101,7 +101,7 @@ class PredictionState:
     orientation_given: Optional[tuple] = None           # input: an orientation id per read to teacher-force (None: own)
     reads: Optional[list] = None                        # input_policy: post-crop, pre-orientation
     cropped: Optional[list] = None                      # input_policy: whether each read was cropped
-    batches: Optional[list] = None                      # forward: the network's outputs, one dict per batch
+    batches: Optional[list] = None                      # forward: the network's outputs, one ModelOutputs per batch
     predictions: Optional[Predictions] = None           # clean
     canonical: Optional[list] = None                    # canonicalize: the reads in the model's forward frame
     segments: Optional[Segments] = None                 # segments
