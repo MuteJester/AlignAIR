@@ -14,9 +14,13 @@ chip takes the product at inference only (the scan trains on its own posterior).
 On the lab's dev suites (chip-v1b, 20k steps; refiner, local D and bank orientation on) a parasail spike of the same
 re-score took the V call from 98.9% to 99.3% (S5, V polymerase indels: 96.2% to 98.6%; S12, noise: 97.1% to 99.5%);
 IgBLAST 99.4%.
+
+The band runs in a compiled kernel (``_vband_cy``) when it is built, else in torch (``VBAND_BACKEND`` reports which);
+the two give the same scores bit for bit.
 """
 from __future__ import annotations
 
+import numpy as np
 import torch
 
 from ..core.anchors import ANCHOR_LOGITS
@@ -30,6 +34,18 @@ BEHIND = -1e4               # how far behind the candidates every other allele f
 RATE = (0.01, 0.25)         # the mutation rate the ratios use, clamped
 _NEG = -1e9
 
+try:                                                        # optional compiled band (the torch band's scores)
+    from ._vband_cy import band_scores as _compiled_band
+    VBAND_BACKEND = "cython"
+except (ImportError, OSError):                              # pragma: no cover - optional compiled kernel
+    _compiled_band = None
+    VBAND_BACKEND = "python"
+
+
+def _pair_scores(m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """(B, 1) each: a matched and a mismatched base's score at the read's mutation rate ``m``."""
+    return torch.log(4 * (1 - m)), torch.log(4 * m / 3)
+
 
 def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor, anchors: torch.Tensor,
                   rows: torch.Tensor, row_anchors: torch.Tensor, m: torch.Tensor) -> torch.Tensor:
@@ -38,7 +54,29 @@ def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor
     ``tokens`` (B, L); ``starts``, ``ends``, ``anchors`` (B,): the span and the read position of the V anchor;
     ``rows`` (B, K, R): the candidates' ungapped germline tokens (0 past the end); ``row_anchors`` (B, K): their
     anchor bases; ``m`` (B, 1). Row base ``i + row_anchor - anchor + d`` is read base i's partner on band diagonal d.
+    The compiled kernel runs on the CPU whatever the reads' device (its inputs are a few small integer tensors); the
+    scores come back on the reads' device.
     """
+    if _compiled_band is None or m.dtype != torch.float32 or rows.shape[0] == 0:
+        return _torch_banded_scores(tokens, starts, ends, anchors, rows, row_anchors, m)
+    match, mismatch = _pair_scores(m)
+
+    def host(x, dtype):
+        return x.detach().to("cpu", dtype).contiguous().numpy()
+
+    starts_, ends_ = host(starts, torch.int64), host(ends, torch.int64)
+    if starts_.min() < 0 or ends_.max() > tokens.shape[1]:
+        raise IndexError(f"a V span [{starts_.min()}, {ends_.max()}) runs past the read's {tokens.shape[1]} bases")
+    out = np.empty(rows.shape[:2], dtype=np.float32)
+    _compiled_band(host(tokens, torch.int64), starts_, ends_, host(anchors, torch.int64), host(rows, torch.int64),
+                   host(row_anchors, torch.int64), host(match.reshape(-1), torch.float32),
+                   host(mismatch.reshape(-1), torch.float32), BAND, GAP, OUTSIDE, _NEG, out)
+    return torch.from_numpy(out).to(tokens.device)
+
+
+def _torch_banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor, anchors: torch.Tensor,
+                         rows: torch.Tensor, row_anchors: torch.Tensor, m: torch.Tensor) -> torch.Tensor:
+    """``banded_scores`` in torch: every position's pair scores at once, then the band's recursion (``band_dp``)."""
     width = 2 * BAND + 1
     band = torch.arange(width, device=tokens.device)
     first, last = int(starts.min()), int(ends.max())
@@ -50,8 +88,8 @@ def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor
     germline = rows.gather(-1, partner.clamp(0, rows.shape[-1] - 1).reshape(batch, candidates, -1)).view(
         partner.shape)
     base = tokens[:, positions][:, None, :, None]
-    match = torch.log(4 * (1 - m))[..., None, None]
-    pair = torch.where(germline == base, match, torch.log(4 * m / 3)[..., None, None])
+    match, mismatch = _pair_scores(m)
+    pair = torch.where(germline == base, match[..., None, None], mismatch[..., None, None])
     pair = torch.where(inside & (germline > 0), pair, torch.full_like(pair, OUTSIDE))
     pair = torch.where((base >= 1) & (base <= 4), pair, torch.zeros_like(pair))          # an N base: no evidence
     active = ((positions >= starts[:, None]) & (positions < ends[:, None]))[:, None, :, None]   # (B, 1, T, 1)

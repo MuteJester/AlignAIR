@@ -76,3 +76,44 @@ def test_the_band_recursion_is_the_base_by_base_definition():
     pair[0, :, :5] = OUTSIDE
     active = torch.rand(3, 1, 40, 1) < 0.8
     assert torch.allclose(band_dp(pair, active), _reference_band_dp(pair, active), atol=1e-4)
+
+
+def _random_band_inputs(seed, batch=24, candidates=5, length=120, row_length=110):
+    """Inputs shaped like the chip's call: right-padded reads with N bases, zero-padded rows of varying lengths, spans
+    (some empty, as an unusable read's 0..0), anchors that put the band past either end of a row, and rates within
+    ``RATE``."""
+    g = torch.Generator().manual_seed(seed)
+    tokens = torch.randint(1, 5, (batch, length), generator=g)
+    tokens[torch.rand(batch, length, generator=g) < 0.03] = 5
+    for b, n in enumerate(torch.randint(length // 2, length + 1, (batch,), generator=g).tolist()):
+        tokens[b, n:] = 0
+    rows = torch.randint(1, 5, (batch, candidates, row_length), generator=g)
+    for b in range(batch):
+        for k, n in enumerate(torch.randint(row_length // 2, row_length + 1, (candidates,), generator=g).tolist()):
+            rows[b, k, n:] = 0
+    starts = torch.randint(0, length // 3, (batch,), generator=g)
+    ends = torch.minimum(starts + torch.randint(0, length, (batch,), generator=g), torch.tensor(length))
+    starts[:3], ends[:3] = 0, 0
+    anchors = torch.randint(0, length, (batch,), generator=g)
+    row_anchors = torch.randint(-1, row_length, (batch, candidates), generator=g)
+    m = (0.01 + 0.24 * torch.rand(batch, 1, generator=g)).float()
+    return tokens, starts, ends, anchors, rows, row_anchors, m
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_the_compiled_band_gives_the_torch_band_scores_bit_for_bit(seed):
+    pytest.importorskip("alignair.refine._vband_cy")
+    from alignair.refine import vrescore
+    inputs = _random_band_inputs(seed)
+    assert vrescore.VBAND_BACKEND == "cython"
+    assert torch.equal(vrescore.banded_scores(*inputs), vrescore._torch_banded_scores(*inputs))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA device")
+def test_the_compiled_band_takes_and_returns_the_reads_device_with_the_torch_band_scores():
+    pytest.importorskip("alignair.refine._vband_cy")
+    from alignair.refine import vrescore
+    inputs = [x.cuda() for x in _random_band_inputs(0)]
+    scores = vrescore.banded_scores(*inputs)
+    assert scores.device == inputs[0].device
+    assert torch.equal(scores, vrescore._torch_banded_scores(*inputs))

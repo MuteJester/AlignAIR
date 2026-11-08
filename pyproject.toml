@@ -85,9 +85,10 @@ where = ["src"]
 # the installed wheel. They stay importable from a source checkout (PYTHONPATH=src) for development and CI.
 exclude = ["alignair_assay*", "alignair_lab*"]
 
-# ship the Cython source so an sdist can (re)build the optional germline-CIGAR kernel
+# ship the Cython sources so an sdist can (re)build the optional kernels (germline CIGAR, the V re-score's band)
 [tool.setuptools.package-data]
 "alignair.predict" = ["*.pyx"]
+"alignair.refine" = ["*.pyx"]
 
 # ── Wheel building (cibuildwheel) ───────────────────────────────────────────
 # Builds binary wheels (with the compiled germline-CIGAR kernel) for Linux/macOS/Windows in CI.
