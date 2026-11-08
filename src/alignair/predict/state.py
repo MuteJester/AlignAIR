@@ -6,12 +6,20 @@ chains).
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import numpy as np
 
 from .config import PredictConfig
+
+if TYPE_CHECKING:                       # annotations only: results imports this module, and torch is heavy
+    import torch
+
+    from ..reference.reference_set import ReferenceSet
+    from .outputs import ModelOutputs
+    from .results import ReadResult
 
 GENES = ("v", "d", "j")
 
@@ -87,8 +95,8 @@ class GermlineAlignment:
 @dataclass(frozen=True)
 class PredictionContext:
     """What a prediction runs with: the model, its bound reference, the configuration and the device."""
-    model: object
-    reference: object
+    model: torch.nn.Module
+    reference: ReferenceSet
     cfg: PredictConfig
     device: str
 
@@ -97,20 +105,22 @@ class PredictionContext:
 class PredictionState:
     """One prediction's state, stage by stage: the input, then the field each stage sets (None until it has run)."""
     context: PredictionContext
-    sequences: object                                   # the input as given (any iterable of strings)
-    orientation_given: Optional[tuple] = None           # input: an orientation id per read to teacher-force (None: own)
-    reads: Optional[list] = None                        # input_policy: post-crop, pre-orientation
-    cropped: Optional[list] = None                      # input_policy: whether each read was cropped
-    batches: Optional[list] = None                      # forward: the network's outputs, one ModelOutputs per batch
+    sequences: Optional[Iterable[str]]                  # the input as given (any iterable of strings)
+    # input: an orientation id per read to teacher-force (None: the model's own)
+    orientation_given: Optional[tuple[Optional[int], ...]] = None
+    reads: Optional[list[str]] = None                   # input_policy: post-crop, pre-orientation
+    cropped: Optional[list[bool]] = None                # input_policy: whether each read was cropped
+    batches: Optional[list[ModelOutputs]] = None        # forward: the network's outputs, one per batch
     predictions: Optional[Predictions] = None           # clean
-    canonical: Optional[list] = None                    # canonicalize: the reads in the model's forward frame
+    canonical: Optional[list[str]] = None               # canonicalize: the reads in the model's forward frame
     segments: Optional[Segments] = None                 # segments
-    calls: Optional[dict] = None                        # alleles: gene -> one GeneCall per read
-    alignments: Optional[dict] = None                   # germline, then better_v: gene -> GermlineAlignment | None
-    no_v: Optional[list] = None                         # v_presence: whether each read has no V
-    v_ties: Optional[list] = None                       # ties: each read's V call and the alleles tied with it
-    results: Optional[list] = None                      # records: one ReadResult per read
-    rows: Optional[list] = None                         # airr: what predict returns
+    calls: Optional[dict[str, list[GeneCall]]] = None   # alleles: gene -> one call per read
+    # germline, then better_v: gene -> one alignment per read (None: no call)
+    alignments: Optional[dict[str, list[Optional[GermlineAlignment]]]] = None
+    no_v: Optional[list[bool]] = None                   # v_presence: whether each read has no V
+    v_ties: Optional[list[tuple[str, ...]]] = None      # ties: each read's V call and the alleles tied with it
+    results: Optional[list[ReadResult]] = None          # records: one typed result per read
+    rows: Optional[list[dict]] = None                   # airr: what predict returns
 
     @classmethod
     def start(cls, model, reference, cfg: PredictConfig, device: str, sequences, *,
