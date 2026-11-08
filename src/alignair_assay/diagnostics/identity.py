@@ -3,11 +3,10 @@
 ``weights_sha256`` identifies the weights (a model file's bytes, or an in-memory model's weights, configuration,
 module tree and allele order), ``alignair_code`` the ``alignair`` package this process imported (with the torch it
 runs on), and ``model_key`` joins the two into the directory name ``workflow.diagnose`` writes a model's diagnostics
-under, so a new checkpoint or an AlignAIR code edit never meets another model's results. ``replay_pin`` is the
-digest of the product code the replay mirrors and what changed in it (``diagnostics.pin``).
+under, so a new checkpoint or an AlignAIR code edit never meets another model's results.
 
-The code digest and the replay pin are taken once, together, when this module is imported: they describe the code
-the process runs, whatever happens to the files later. The modules the replay's stages import lazily
+The code digest is taken once, when this module is imported: it describes the code the process runs, whatever
+happens to the files later. The modules the replay's stages import lazily
 (``load_model``'s ``alignair.model_file`` and ``align_germline``'s matcher) are imported here first, so every module
 the evaluator runs is loaded before its files are digested.
 """
@@ -25,7 +24,6 @@ import alignair.predict.heuristic_matcher  # noqa: F401 (loaded before the code 
 import torch
 
 from alignair_assay.core.provenance import code_identity, sha256_file
-from alignair_assay.diagnostics.pin import current_digests, pin_changes, replay_digest
 from alignair_assay.diagnostics.replay import unwrap_model
 
 # The alignair package this process imported.
@@ -34,16 +32,6 @@ ALIGNAIR_DIR = Path(alignair.__file__).resolve().parent
 KEY_DIGITS = 12
 
 _ALIGNAIR_CODE = code_identity(ALIGNAIR_DIR)
-_REPLAY_DIGESTS = current_digests()
-_REPLAY_PIN = (replay_digest(_REPLAY_DIGESTS), pin_changes(_REPLAY_DIGESTS))
-
-
-def replay_pin() -> tuple[str, dict[str, str]]:
-    """``(replay_digest, pin_changes)`` of the AlignAIR product code the replay mirrors (``diagnostics.pin``), taken
-    when this module was imported, with ``alignair_code``: the replay pin and the model key describe the same code,
-    the code the process runs, whatever happens to the files later."""
-    digest, changes = _REPLAY_PIN
-    return digest, dict(changes)
 
 
 def alignair_code() -> dict:

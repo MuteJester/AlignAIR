@@ -119,8 +119,7 @@ def build_diagnostics_report(*, model: dict, config: dict, suites: dict, profile
     """The diagnostics report: ``kind``, ``version``, the ``model`` (``model_key``, ``source``,
     ``weights_sha256``, ``code_sha256``, ``alignair_source``, ``torch_version``, ``assay_code_sha256``), the run
     ``config`` (``run_dir``, ``suites``, ``device``, ``batch_size``, ``variants``, ``max_cases``, ``profile``, and
-    when known ``seconds`` (the call's wall time), ``stale_builds`` (suite -> what changed), ``replay_verified`` and
-    ``replay_changes``), the per-suite results by suite name, the ``profile`` (None when not measured), the
+    when known ``seconds`` (the call's wall time) and ``stale_builds`` (suite -> what changed)), the per-suite results by suite name, the ``profile`` (None when not measured), the
     comparison with another model (``against``: ``workflow.diagnose.compare_models``; None without one) and the
     ``summary`` (``diagnostics_summary``), all strictly JSON-serializable. The inputs are not changed."""
     report = {"kind": DIAGNOSTICS_KIND, "version": DIAGNOSTICS_VERSION, "model": clean(model),
@@ -135,7 +134,7 @@ def diagnostics_summary(report: dict) -> dict:
     """The one-page summary of a report (built without ``summary``), as a plain dict:
 
     ``model_key``, ``source``, ``device``, ``batch_size``, ``split``, ``reads`` (suite -> diagnosed reads),
-    ``computed`` and ``reused`` (suite names), ``seconds``, ``replay_verified`` and ``replay_changes`` (names);
+    ``computed`` and ``reused`` (suite names), ``seconds``;
     ``clustered`` (suite -> ``keys`` and ``clusters``, for the suites whose comparisons are cluster-aware: those
     with a cluster of two or more reads, as the suite's ``clusters`` record counts them);
     ``errors`` (metric of ``SUMMARY_METRICS`` -> suite -> ``baseline`` summary entry, ``steps`` (stage of
@@ -156,8 +155,6 @@ def diagnostics_summary(report: dict) -> dict:
         "computed": [name for name, suite in suites.items() if not suite.get("reused")],
         "reused": [name for name, suite in suites.items() if suite.get("reused")],
         "seconds": config.get("seconds"),
-        "replay_verified": config.get("replay_verified", True) is not False,
-        "replay_changes": list(config.get("replay_changes") or {}),
         "clustered": {name: {"keys": suite["clusters"]["keys"], "clusters": suite["clusters"]["clusters"]}
                       for name, suite in suites.items() if (suite.get("clusters") or {}).get("clusters")},
         "errors": {metric: {name: row for name, suite in suites.items() if (row := _error_row(suite, metric))}
@@ -293,14 +290,10 @@ def _speed(profile: dict | None) -> dict | None:
 
 
 def _flags(report: dict, summary: dict) -> list[str]:
-    """The flags: an unverified replay, stale builds, low baseline coverage, frequent fallbacks, significantly worse
+    """The flags: stale builds, low baseline coverage, frequent fallbacks, significantly worse
     steps, too few clusters, crops and misoriented reads, then the Holm-family note; at most ``MAX_FLAGS``."""
     config, suites = report["config"], report["suites"]
     flags = []
-    if not summary["replay_verified"]:
-        flags.append("Unverified replay: the AlignAIR code the replay mirrors changed since it was pinned ("
-                     f"{', '.join(summary['replay_changes']) or 'unknown'}); re-pin (diagnostics/pin.py) before "
-                     "trusting these numbers.")
     stale = config.get("stale_builds") or {}
     if stale:
         flags.append(_listed("Stale builds, diagnosed as built (rebuild to use this checkout's suite and truth "
@@ -516,8 +509,6 @@ def suite_markdown(report: dict, name: str) -> str:
     model, config, suite = report["model"], report["config"], report["suites"][name]
     lines = [f"# AlignAIR diagnostics: model {model['model_key']}, suite {name}", "",
              f"Back to the [summary](../diagnostics.md). {_model_text(model, config)}", ""]
-    if suite.get("replay_verified") is False:
-        lines += [_unverified_text(suite.get("replay_changes") or {}), ""]
     reads = suite["reads"]
     clusters = suite.get("clusters") or {}
     lines += markdown_table(["Built", "Diagnosed", "Scored", "Excluded", "Cropped", "Misoriented", "Clusters"],
@@ -542,15 +533,8 @@ def _model_text(model: dict, config: dict) -> str:
             f"max cases {max_cases if max_cases else 'all'} per suite, variants "
             f"{', '.join(config['variants']) or 'none'}; run directory {config['run_dir']}. Every suite is on the "
             "dev split. A suite's result is cached under the model key and reused only while the model's weights, "
-            "the AlignAIR code, torch, the assay's scoring code, the suite's build, the replay pin and the "
+            "the AlignAIR code, torch, the assay's scoring code, the suite's build and the "
             "configuration (variants, max cases, device, batch size) are all unchanged.")
-
-
-def _unverified_text(changes) -> str:
-    names = ", ".join(f"`{name}`" for name in changes) or "unknown"
-    return (f"**Unverified replay.** The AlignAIR code the replay mirrors has changed since it was pinned ({names}), "
-            "and these diagnostics were run anyway (`allow_unverified_replay`): the replay may not be the product "
-            "pipeline. Re-pin it (`diagnostics/pin.py`) before trusting them.")
 
 
 def _with_cluster_note(suite: dict, field: str, note: str) -> str:

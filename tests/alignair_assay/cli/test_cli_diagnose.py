@@ -26,7 +26,7 @@ def _family(comparison: dict) -> dict:
 
 
 def test_the_significant_metrics_are_printed_with_their_direction(tmp_path, capsys):
-    against = {"baseline": BASELINE, "source": "/models/b.alignair", "same_model": False, "replay_verified": True,
+    against = {"baseline": BASELINE, "source": "/models/b.alignair", "same_model": False,
                "code": {"this": "fedcba987654" + "1" * 52, "baseline": "0badc0de0000" + "2" * 52},
                "suites": {"S1": {"cases": 100, "clusters": {"clusters": 0},
                                  "baseline": _family({"junction.nt_exact": _entry(0.6, 0.55, "a_better"),

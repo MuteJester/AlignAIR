@@ -96,9 +96,8 @@ characters): after the edit, `diagnose --checkpoint CAND --against <BASE model k
 results, and the report names each model key's code and flags "different AlignAIR code". End to end, keep the
 pre-edit `all` run directory, run `all` after the edit into another one on the same build (suites, split, seed,
 scale), and compare the two runs' `runs/<tool>/<S>/<arm>/predictions.tsv` with `compare --truth
-<run>/suites/<S>/truth.jsonl.gz`. An edit of the predict orchestration the replay is pinned to makes `diagnose`
-refuse until the replay is updated and re-pinned (`diagnostics/pin.py`, see The pin under Replay), or until
-`--allow-unverified-replay` is passed (its results are then marked unverified).
+<run>/suites/<S>/truth.jsonl.gz`. The replay is the product pipeline run with hooks (see Replay), so an edit of the
+predict pipeline reaches `diagnose` with nothing to re-pin.
 
 **The test split is locked for claims.** Never iterate on it. Score it once, at the end (`all --split test`, and
 `real --split test` on the test donors), on the frozen copy (`PYTHONPATH=FROZEN:src`), preferably frozen while
@@ -184,14 +183,12 @@ a speed profile. It runs in process (no subprocess, no AIRR files) on suites alr
 PYTHONPATH=src python -m alignair_assay build --run-dir .private/assay/dev --suites S1,S3 --scale 0.1
 PYTHONPATH=src python -m alignair_assay diagnose --run-dir .private/assay/dev --checkpoint MODEL.alignair \
     --suites S1,S3 [--device cuda] [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] \
-    [--max-cases 500] [--allow-unverified-replay]
+    [--max-cases 500]
 ```
 
 It writes a one-page summary, `diagnostics/<model_key>/diagnostics.md`, with each suite's detail in
 `<S>/report.md`, the speed profile in `profile.md` and everything as data in `diagnostics.json`, and prints one line
-per suite. A suite built on the `test` split is refused: `test` stays locked for claims. So is an AlignAIR checkout
-whose predict pipeline has changed since the replay was pinned, unless `--allow-unverified-replay` (see The pin
-under Replay).
+per suite. A suite built on the `test` split is refused: `test` stays locked for claims.
 
 **From a training loop.** Call the evaluator with the in-memory model and its `ReferenceSet` (for example every few
 thousand steps); `max_cases` takes that many reads per suite, evenly spaced. On a GPU, 500 S1 reads with every
@@ -240,7 +237,7 @@ and reused, and the wall time; which comparisons are cluster-aware. Then:
    as "7→44". A large jump points at the decoder, not the network.
 4. *Metadata heads*: orientation and productive accuracy, mutation-rate and indel-count absolute error.
 5. *Speed*: reads per second, and the top three stages and modules with their shares.
-6. *Flags* (at most 8): an unverified replay, stale builds, baseline coverage below 95%, fallbacks above 5% of
+6. *Flags* (at most 8): stale builds, baseline coverage below 95%, fallbacks above 5% of
    reads, significantly worse steps, comparisons with too few clusters, cropped and misoriented reads, and the
    Holm-family note (Holm is per comparison, not across steps × suites).
 
@@ -725,7 +722,7 @@ python -m alignair_assay speed --run-dir RUN [--tools igblast,alignair] [--threa
     [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
 python -m alignair_assay diagnose --run-dir RUN --checkpoint [LABEL=]MODEL.alignair --suites S1,S3 [--device cuda] \
     [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N] \
-    [--allow-unverified-replay] [--against OTHER.alignair | --against MODEL_KEY]
+    [--against OTHER.alignair | --against MODEL_KEY]
 python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000] \
     [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64] \
     [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE] \
@@ -795,8 +792,7 @@ python -m alignair_assay compare --truth TRUTH --a A.tsv --a-name A --b B.tsv --
   `diagnostics/<model_key>/diagnostics.md`. A suite whose build is not current for this checkout
   (`workflow.diagnose.stale_builds`, from `workflow.build.build_changes`) is diagnosed as built, with a warning and a
   flag in the summary. An unbuilt suite, a suite on the `test` split, an unknown variant, a missing checkpoint, a
-  model on another reference, a CUDA device torch does not see, or AlignAIR code the replay is not pinned to
-  (without `--allow-unverified-replay`) exits with status 2 before anything is written. The other commands never
+  model on another reference or a CUDA device torch does not see exits with status 2 before anything is written. The other commands never
   import torch: `diagnose` imports the diagnostics layer when it runs. With `--against` (the baseline: an existing
   file is a checkpoint, made absolute; otherwise a model key), the baseline is diagnosed first (or read by its key),
   and one more line per suite gives the headline Δ (this model − the baseline), the significant metrics, the reads
@@ -1380,9 +1376,10 @@ raw forward outputs (logits included, concatenated over batches), the cleaned an
 forward-frame reads, the corrected `Segments`, the allele calls, the germline alignments, the light records, the
 AIRR rows, the wall time per stage (`STAGES`), each allele head's allele names (`allele_names`) and the per-read
 allowed-allele masks the selector applied (`allowed`: a multi-locus model's locus masks, None for a one-locus
-model). Each stage is AlignAIR's own function, called in the order `alignair.predict.pipeline.predict` calls it,
-with the `PredictConfig` that `alignair.api.predict_sequences` builds (`predict_config`); the forward pass builds
-each batch dict itself, so orientation can be teacher-forced.
+model). It is the product's own pipeline (`alignair.predict.pipeline.PIPELINE`, run by `run_stages`), with the
+`PredictConfig` that `alignair.api.predict_sequences` builds (`PredictConfig.for_model`, `predict_config`), run with
+two hooks: `Trace`, which keeps every stage's output and seconds, and a substitution hook. A teacher-forced
+orientation goes in through `run_model`'s `orientation`.
 
 `replay(..., substitutions=Substitutions(...))` feeds values in between the stages, never inside one; the default
 substitutes nothing. Each per-read list has one entry per read, and a None entry keeps the model's value for that
@@ -1417,21 +1414,8 @@ rows and light records to equal `predict_sequences`' on S0 reads (plus an over-l
 read) with small random-init models shaped to cover every orientation, indels and two loci, and on 200 S1 reads
 with the released checkpoint (`ALIGNAIR_ASSAY_MODEL`).
 
-**The pin.** `diagnostics.pin.PINNED` holds a digest of the code of the product functions the replay mirrors
-(`pipeline.predict`, `predict_sequences`, `run_model`; `pin.code_digest`), and `predict_sequences` must still run
-`pipeline.predict` (`api._predict`). `pin.pin_changes()` names what no longer holds, with the new digests:
-- the equivalence test fails on any change, and stays the place that re-pins;
-- `diagnostics.identity.replay_pin()` takes it once, when `diagnostics.identity` is imported, beside the model
-  key's code digest, so the two describe the same code. `workflow.diagnose.evaluate` refuses to run on a changed
-  pin, naming the changed functions and their new digests, unless `allow_unverified_replay=True`
-  (`diagnose --allow-unverified-replay`). Then it warns (`UnverifiedReplayWarning`) and stamps
-  `replay_verified: false` and `replay_changes` into the result, every `suite.json` and the report. Whether the
-  replay is verified, and the digest of the product code, are part of each suite's cache key, so verified and
-  unverified results never mix.
-
-To re-pin after an AlignAIR change: update `diagnostics/replay.py` to the new code, run the equivalence tests
-(`tests/alignair_assay/diagnostics/test_replay.py`, with `ALIGNAIR_ASSAY_MODEL` set), then put the new digests in
-`PINNED`.
+Nothing mirrors the product, so there is nothing to pin: a change to a product stage reaches the replay as it reaches
+the product (`test_a_product_stage_change_reaches_the_replay`).
 
 The small random-init models (`make_small_model`, `small_model`) come from `tests/alignair_assay/conftest.py`;
 `tests/alignair_assay/diagnostics/conftest.py` adds the shaped ones (`make_shaped_model`) and a built S0
@@ -1662,7 +1646,7 @@ back to its own device afterwards, also in a `finally`.
 ### The evaluator
 
 `workflow.diagnose.evaluate(model_or_checkpoint, layout, suites, *, device=None, batch_size=256,
-variants=DEFAULT_VARIANTS, profile=None, max_cases=None, allow_unverified_replay=False, against=None)
+variants=DEFAULT_VARIANTS, profile=None, max_cases=None, against=None)
 -> DiagnosticsResult` composes the pieces above over a run
 directory; it is the `diagnose` command and the training-loop entry point (see Model diagnostics). It lives in
 `workflow` because it reads and writes the run directory and renders the report; the `diagnostics` layer holds the

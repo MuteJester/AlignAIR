@@ -58,7 +58,7 @@ _AGAINST_DETAIL_NOTE = ("Each model's own mean over its own reads (n, coverage),
 
 def against_summary(against: dict | None) -> dict | None:
     """The one-page summary of a comparison with a baseline model (``workflow.diagnose.compare_models``; None for
-    None): the ``baseline``'s model key, its ``source``, ``same_model``, ``replay_verified`` and the AlignAIR
+    None): the ``baseline``'s model key, its ``source``, ``same_model`` and the AlignAIR
     ``code`` each model was diagnosed under (``this``, ``baseline``: their code digests, None when not recorded, and
     ``same``: whether they are one code, None when either is unknown); per suite
     (``suites``) the ``cases``, the ``clusters`` of two or more reads, how many metrics each family ``compared``, the
@@ -107,7 +107,6 @@ def against_summary(against: dict | None) -> dict | None:
     same = None if None in (this, baseline) else this == baseline
     return {"baseline": against["baseline"], "source": against.get("source"),
             "same_model": bool(against.get("same_model")),
-            "replay_verified": against.get("replay_verified") is not False,
             "code": {"this": this, "baseline": baseline, "same": same}, "suites": suites, "totals": totals}
 
 
@@ -120,8 +119,6 @@ def against_section(summary: dict) -> list[str]:
         lines += ["", "Both are the same model key, so this compares one record with itself: every Δ is 0. Compare "
                       "with the model in memory, or another file of the same weights (other bytes), to diagnose it "
                       "twice."]
-    if not against["replay_verified"]:
-        lines += ["", "**The baseline was diagnosed with an unverified replay.**"]
     rows = []
     for name, suite in against["suites"].items():
         for metric in AGAINST_HEADLINE:

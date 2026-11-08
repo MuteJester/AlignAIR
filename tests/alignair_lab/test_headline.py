@@ -42,7 +42,7 @@ def comparison(suites=12):
     del found["S3"]["headline"]["junction.nt_exact"]
     found["S9"]["headline"]["j.top1_in_set"] = entry(0.02, test="too_few_clusters")
     return {"baseline": "a" * 12 + "-" + "b" * 12, "source": "/base/model.step20000.alignair", "same_model": False,
-            "replay_verified": True, "code": {"this": "c" * 64, "baseline": "c" * 64, "same": True},
+            "code": {"this": "c" * 64, "baseline": "c" * 64, "same": True},
             "suites": found, "totals": {"baseline": {"fixed": 1, "broken": 2}}}
 
 

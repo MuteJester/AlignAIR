@@ -24,16 +24,6 @@ from alignair_assay.core.cases import read_fasta  # noqa: E402
 from alignair_assay.core.reference import Reference  # noqa: E402
 from alignair_assay.diagnostics.heads import decode_boundaries  # noqa: E402
 from alignair_assay.diagnostics.identity import weights_sha256  # noqa: E402
-from alignair_assay.diagnostics.pin import (  # noqa: E402
-    PINNED,
-    PREDICT_ALIAS,
-    code_digest,
-    current_digests,
-    mirrored,
-    pin_changes,
-    replay_digest,
-    unverified_message,
-)
 from alignair_assay.diagnostics.replay import (  # noqa: E402
     STAGES,
     StageOutputs,
@@ -145,36 +135,9 @@ def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout, de
     assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device=device, batch_size=64)
 
 
-def test_mirrored_product_code_is_pinned():
-    # The place that re-pins: when this fails, update diagnostics/replay.py to the new AlignAIR code, run these
-    # equivalence tests (with ALIGNAIR_ASSAY_MODEL), then put the new digests in diagnostics/pin.py's PINNED.
-    assert api._predict is pipeline.predict  # predict_sequences runs the pipeline the replay mirrors
-    assert set(mirrored()) == set(PINNED)
-    changed = {name: code_digest(function) for name, function in mirrored().items()
-               if code_digest(function) != PINNED[name]}
-    assert not changed, (f"AlignAIR code that diagnostics/replay.py mirrors has changed: {sorted(changed)}. Re-check "
-                         f"the replay against it, then pin the new digests in diagnostics/pin.py: {changed}")
-    assert pin_changes() == {}
-
-
-def test_pin_changes_name_what_changed(monkeypatch):
-    digests = current_digests()
-    assert digests[PREDICT_ALIAS] == "alignair.predict.pipeline.predict"
-    monkeypatch.setitem(PINNED, "alignair.predict.forward.run_model", "0" * 64)
-    assert pin_changes() == {"alignair.predict.forward.run_model": digests["alignair.predict.forward.run_model"]}
-    monkeypatch.undo()
-
-    def elsewhere(*args, **kwargs):
-        return pipeline.predict(*args, **kwargs)
-
-    monkeypatch.setattr(api, "_predict", elsewhere)
-    changes = pin_changes()
-    assert list(changes) == [PREDICT_ALIAS] and changes[PREDICT_ALIAS].endswith("elsewhere")
-    assert replay_digest() != replay_digest(digests)
-    message = unverified_message(changes)
-    for part in (PREDICT_ALIAS, changes[PREDICT_ALIAS], "update diagnostics/replay.py", "test_replay.py",
-                 "update PINNED", "allow_unverified_replay=True", "--allow-unverified-replay"):
-        assert part in message, part
+def test_predict_sequences_runs_the_product_pipeline():
+    # the equivalence tests compare the replay with predict_sequences: it must run the pipeline the replay runs
+    assert api._predict is pipeline.predict
 
 
 def test_predict_config_is_the_one_predict_sequences_builds(small_model, monkeypatch):

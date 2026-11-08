@@ -19,9 +19,8 @@ data (``summary``, flattened by ``scalars()``).
 
 **Refused** before the model is loaded or anything is written (ValueError): no suite, an unknown suite or variant,
 a batch size or ``max_cases`` below 1, a suite not built in ``layout``, a suite built on another split than ``dev``
-(``test`` is locked for claims), suites built against different references, a device torch cannot use, and an
-unverified replay: AlignAIR product code the replay no longer matches (``diagnostics.pin``, naming each changed
-function), unless ``allow_unverified_replay``. A missing model file is a FileNotFoundError. A model whose germline
+(``test`` is locked for claims), suites built against different references, and a device torch cannot use. A missing
+model file is a FileNotFoundError. A model whose germline
 reference is not the truth reference is refused by ``replay.load_model_checked`` (ValueError naming the first
 differing allele), an in-memory one included, and so is a model file whose bytes changed while it was loaded.
 
@@ -34,9 +33,9 @@ results.
 **Cache.** A suite's result is written to ``layout.diagnostics_suite_json(model_key, suite)`` with its ``key``,
 everything the result depends on (``suite_key``): the full weights and code digests and the torch version, the
 assay's own scoring code (``assay_code_sha256``), the suite's build (its recorded identity and config hash and the
-SHA-256 of its cases, truth and donors files), the variants, ``max_cases``, the device, the batch size and the
-``replay`` (whether it is verified, and the ``diagnostics.pin.replay_digest`` of the product code it mirrors). It is
-reused only when that key matches in full; otherwise it is removed and computed again, so a suite's record holds
+SHA-256 of its cases, truth and donors files), the variants, ``max_cases``, the device and the batch size. The replay
+is the product pipeline run with hooks (``diagnostics.replay``), so the AlignAIR code digest covers it. It is reused
+only when that key matches in full; otherwise it is removed and computed again, so a suite's record holds
 its latest configuration. The profile is cached the same way (``layout.diagnostics_profile_json``), keyed by the
 model, the assay code (the replay it times is assay code), the device (with its name, the host and torch's CPU
 threads), the batch size and the profiled reads. The report is rendered afresh from the results on every call.
@@ -73,7 +72,6 @@ import os
 import platform
 import re
 import time
-import warnings
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -105,10 +103,8 @@ from alignair_assay.diagnostics.identity import (
     KEY_DIGITS,
     alignair_code,
     model_key,
-    replay_pin,
     weights_sha256,
 )
-from alignair_assay.diagnostics.pin import unverified_message
 from alignair_assay.diagnostics.profile import profile_model
 from alignair_assay.diagnostics.replay import load_model_checked, model_device, replay, unwrap_model
 from alignair_assay.metrics import is_informational, lower_is_better
@@ -139,8 +135,8 @@ CASES_KIND = "alignair_assay.diagnostics_cases"
 # A model key (``diagnostics.identity.model_key``), as ``against`` tells one from a checkpoint path.
 MODEL_KEY = re.compile(rf"[0-9a-f]{{{KEY_DIGITS}}}-[0-9a-f]{{{KEY_DIGITS}}}")
 # The key fields of two suite records that may differ when two models are compared: the model's own (its weights,
-# AlignAIR code and torch) and the replay's (the product code it mirrors, which is the model key's code).
-MODEL_FIELDS = ("model", "replay")
+# AlignAIR code and torch).
+MODEL_FIELDS = ("model",)
 # Case ids named per metric for the reads fixed and broken.
 CHANGE_EXAMPLES = 10
 # The split diagnostics run on: test is locked for claims.
@@ -159,10 +155,6 @@ _ASSAY_CODE = files_digest(ASSAY_DIR, [*(path for layer in ASSAY_LAYERS for path
                                          if "__pycache__" not in path.parts), Path(__file__).resolve()])
 
 
-class UnverifiedReplayWarning(UserWarning):
-    """``evaluate`` ran, with ``allow_unverified_replay``, against AlignAIR code the replay is not pinned to."""
-
-
 @dataclass(frozen=True)
 class DiagnosticsResult:
     """What ``evaluate`` found for one model."""
@@ -176,14 +168,10 @@ class DiagnosticsResult:
     report_md: str
     # the same summary as data (``report.diagnostics.diagnostics_summary``); ``scalars()`` flattens it
     summary: dict = field(default_factory=dict)
-    # False when the replay ran on AlignAIR code it is not pinned to (``allow_unverified_replay``), with
-    # ``replay_changes`` (``diagnostics.pin.pin_changes``: name -> new digest)
-    replay_verified: bool = True
-    replay_changes: dict[str, str] = field(default_factory=dict)
     # suite -> what changed, for each suite whose build is not current for this checkout (diagnosed as built)
     stale_builds: dict[str, list[str]] = field(default_factory=dict)
     # the comparison with the ``against`` model, the baseline (see ``evaluate``): its key (``baseline``), ``source``,
-    # ``same_model``, ``replay_verified``, per suite its paired comparisons (``suites``; Δ = this − baseline) and their
+    # ``same_model``, per suite its paired comparisons (``suites``; Δ = this − baseline) and their
     # ``summary``; None without one
     against: dict | None = None
 
@@ -198,8 +186,7 @@ class DiagnosticsResult:
 
 def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, device: str | None = None,
              batch_size: int = 256, variants: Sequence[str] = DEFAULT_VARIANTS, profile: bool | None = None,
-             max_cases: int | None = None, allow_unverified_replay: bool = False,
-             against=None, label: str | None = None) -> DiagnosticsResult:
+             max_cases: int | None = None, against=None, label: str | None = None) -> DiagnosticsResult:
     """Diagnose a model on ``suites`` (suite names, or one name), built on the dev split in ``layout``, as the module
     docstring describes; reuses each cached suite result whose key matches in full.
 
@@ -210,14 +197,6 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     back to its own afterwards, whatever happens, and every replay puts it back in its training mode, so the
     training loop's optimizer carries on. ``profile`` (default: True for a model file, False for a pair, which a
     training loop would otherwise profile and cache again on every call) adds the speed profile.
-
-    **Replay pin.** The replay mirrors AlignAIR product code pinned by digest (``diagnostics.pin``), checked when
-    ``diagnostics.identity`` is imported, with the model key's code digest (``replay_pin``). When it has changed,
-    ``evaluate`` refuses to run (ValueError naming each changed function, its new digest and how to re-pin),
-    unless ``allow_unverified_replay``: then it warns (``UnverifiedReplayWarning``) and stamps ``replay_verified``
-    False and the ``replay_changes`` into the result, every suite's result and the report. Whether the replay is
-    verified, and the digest of the product code, are in every suite's cache key, so verified and unverified results
-    never mix.
 
     Each suite's result holds ``suite``; its cache ``key``; ``reads`` (``built``, ``diagnosed``, ``scored``,
     ``excluded``, ``cropped``: reads longer than the model's window, and ``misoriented``: scored reads the model put
@@ -237,8 +216,8 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
     **Against a baseline** (``against``; see the module docstring's Comparison): a ``.alignair`` checkpoint path, an
     in-memory ``(model, reference_set)`` pair, or the model key of a model already diagnosed in ``layout``
     (``MODEL_KEY``; a string naming an existing file is a path). A checkpoint or a pair is diagnosed first, by this
-    function and its cache, on the same suites with this call's device, batch size, variants, ``max_cases`` and
-    ``allow_unverified_replay``, without a profile. A model key's records are checked before any work. The result's
+    function and its cache, on the same suites with this call's device, batch size, variants and ``max_cases``, without
+    a profile. A model key's records are checked before any work. The result's
     ``against`` holds the comparison: this model − the baseline. FileNotFoundError for a missing checkpoint (before
     any work); ValueError for a model key without a current record of every suite, or records that differ in anything
     but the model.
@@ -268,24 +247,16 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
         own_device = model_device(own)
         device = parse_device(str(own_device) if device is None else device)
     profile = from_file if profile is None else bool(profile)
-    pin_digest, changes = replay_pin()
-    changes = dict(changes)
-    if changes and not allow_unverified_replay:
-        raise ValueError(unverified_message(changes))
-    if changes:
-        warnings.warn(UnverifiedReplayWarning(f"diagnosing with an unverified replay: {unverified_message(changes)}"),
-                      stacklevel=2)
-    replay_state = {"verified": not changes, "sha256": pin_digest}
     weights = weights_sha256(model_or_checkpoint)
     other = _against_input(against)
     if other is not None and other[0] != "key":
         # The other model first, through this function and its cache, with this call's settings.
         diagnosed = evaluate(other[1], layout, names, device=device, batch_size=batch_size, variants=variants,
-                             profile=False, max_cases=max_cases, allow_unverified_replay=allow_unverified_replay)
+                             profile=False, max_cases=max_cases)
         other = ("diagnosed", diagnosed.model_key, _source(other[1]))
     elif other is not None:
         this_key, _, _, keys = _suite_keys(layout, names, weights, variants=variants, max_cases=max_cases,
-                                           device=device, batch_size=batch_size, replay_state=replay_state)
+                                           device=device, batch_size=batch_size)
         if other[1] != this_key:
             other_records(layout, other[1], keys)  # refused before the model is loaded or anything is written
         other = ("key", other[1], None)
@@ -298,8 +269,7 @@ def evaluate(model_or_checkpoint, layout: RunLayout, suites: Sequence[str], *, d
                              "diagnose it again once it is completely written")
         return _evaluate(model, reference_set, reference, layout, names, weights=weights, variants=variants,
                          device=device, batch_size=batch_size, profile=profile, max_cases=max_cases,
-                         source=_source(model_or_checkpoint), replay_state=replay_state, replay_changes=changes,
-                         stale=stale, start=start, against=other, label=label)
+                         source=_source(model_or_checkpoint), stale=stale, start=start, against=other, label=label)
     finally:
         if own is not None:
             own.to(own_device)
@@ -349,16 +319,13 @@ def stale_builds(layout: RunLayout, names: Sequence[str]) -> dict[str, list[str]
 
 def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, names: list[str], *, weights: str,
               variants: tuple[str, ...], device: str, batch_size: int, profile: bool, max_cases: int | None,
-              source: str, replay_state: dict, replay_changes: dict[str, str], stale: dict[str, list[str]],
-              start: float, against: tuple | None = None, label: str | None = None) -> DiagnosticsResult:
-    """``evaluate`` on a checked model already on ``device``; ``replay_state`` (``verified`` and the product code's
-    ``sha256``) goes into every suite's cache key, ``stale`` (``stale_builds``) and the wall time since ``start``
-    into the report. ``against`` is ``("diagnosed", model_key, source)`` for another model ``evaluate`` has just
+              source: str, stale: dict[str, list[str]], start: float, against: tuple | None = None,
+              label: str | None = None) -> DiagnosticsResult:
+    """``evaluate`` on a checked model already on ``device``; ``stale`` (``stale_builds``) and the wall time since
+    ``start`` go into the report. ``against`` is ``("diagnosed", model_key, source)`` for another model ``evaluate`` has just
     diagnosed, or ``("key", model_key, None)`` for one named by its key (whose records ``evaluate`` has checked)."""
     key_name, identity, config, keys = _suite_keys(layout, names, weights, variants=variants, max_cases=max_cases,
-                                                   device=device, batch_size=batch_size, replay_state=replay_state)
-    verified = bool(replay_state["verified"])
-    stamp = {"replay_verified": verified, "replay_changes": dict(replay_changes)}
+                                                   device=device, batch_size=batch_size)
 
     results: dict[str, dict] = {}
     for name in names:
@@ -371,8 +338,7 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
                                            max_cases=max_cases, device=device, batch_size=batch_size)
             _write_jsonl(cases, lines, header={"kind": CASES_KIND, "version": CACHE_VERSION, "model_key": key_name,
                                                "suite": name, "key_sha256": digest(key)})
-            cached = {**found, "case_scores": {"file": cases.name, "cases": len(lines), "sha256": sha256_file(cases)},
-                      **stamp}
+            cached = {**found, "case_scores": {"file": cases.name, "cases": len(lines), "sha256": sha256_file(cases)}}
             _write_json(path, cached)  # last: the record marks a complete result
             results[name] = {**cached, "reused": False}
         else:
@@ -388,7 +354,7 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
     report = build_diagnostics_report(
         model={"model_key": key_name, "source": source, "label": label, **identity,
                "alignair_source": str(ALIGNAIR_DIR), "assay_code_sha256": assay_code_sha256()},
-        config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile), **stamp,
+        config={"run_dir": str(layout.root), "suites": names, **config, "profile": bool(profile),
                 "stale_builds": stale, "seconds": round(time.perf_counter() - start, 3)},
         suites=results, profile=measured, against=comparison)
     markdown = diagnostics_markdown(report)
@@ -406,22 +372,19 @@ def _evaluate(model, reference_set, reference: Reference, layout: RunLayout, nam
     _write_json(layout.diagnostics_json(key_name), report)
     _write_text(layout.diagnostics_md(key_name), markdown)
     return DiagnosticsResult(model_key=key_name, suites=results, profile=measured, report_md=markdown,
-                             summary=report["summary"], replay_verified=verified,
-                             replay_changes=dict(replay_changes), stale_builds=stale,
+                             summary=report["summary"], stale_builds=stale,
                              against=None if comparison is None else {**report["against"],
                                                                       "summary": report["summary"]["against"]})
 
 
 def _suite_keys(layout: RunLayout, names: Sequence[str], weights: str, *, variants: tuple[str, ...],
-                max_cases: int | None, device: str, batch_size: int, replay_state: dict
-                ) -> tuple[str, dict, dict, dict[str, dict]]:
+                max_cases: int | None, device: str, batch_size: int) -> tuple[str, dict, dict, dict[str, dict]]:
     """The model key of ``weights`` with the AlignAIR code this process runs, the model ``identity``, the run
-    ``config`` (``variants``, ``max_cases``, ``device``, ``batch_size``) and each suite's cache key (``suite_key``,
-    with the ``replay`` state)."""
+    ``config`` (``variants``, ``max_cases``, ``device``, ``batch_size``) and each suite's cache key (``suite_key``)."""
     code = alignair_code()
     identity = {"weights_sha256": weights, "code_sha256": code["code_sha256"], "torch_version": code["torch_version"]}
     config = {"variants": list(variants), "max_cases": max_cases, "device": device, "batch_size": batch_size}
-    keys = {name: suite_key(layout, name, identity, {**config, "replay": replay_state}) for name in names}
+    keys = {name: suite_key(layout, name, identity, config) for name in names}
     return model_key(weights, code["code_sha256"]), identity, config, keys
 
 
@@ -473,8 +436,7 @@ def suite_key(layout: RunLayout, suite: str, model: dict, config: dict) -> dict:
     """What a suite's result depends on (see the module docstring), as JSON reads it back: ``kind``, ``version``,
     the ``model`` identity, ``assay_code_sha256``, the ``suite`` build (``name``, the build record's ``identity``
     and ``config_hash``, the SHA-256 of its cases, truth and donors files; None for no donors) and ``config``'s
-    ``variants``, ``max_cases``, ``device``, ``batch_size`` and ``replay`` (whether the replay is verified, and the
-    ``diagnostics.pin.replay_digest`` of the product code it mirrors)."""
+    ``variants``, ``max_cases``, ``device`` and ``batch_size``."""
     build = json.loads(layout.build_json(suite).read_text(encoding="utf-8"))
     donors = layout.donors(suite)
     key = {"kind": SUITE_KIND, "version": CACHE_VERSION, "model": model, "assay_code_sha256": assay_code_sha256(),
@@ -686,7 +648,6 @@ def compare_models(layout: RunLayout, reference: Reference, names: Sequence[str]
         suites[name] = found
     first = names[0]
     return {"baseline": baseline_key, "source": source, "same_model": this_key == baseline_key,
-            "replay_verified": all(record.get("replay_verified") is not False for record in baselines.values()),
             "code": {"this": keys[first]["model"].get("code_sha256"),
                      "baseline": ((baselines[first].get("key") or {}).get("model") or {}).get("code_sha256")},
             "suites": suites}

@@ -36,9 +36,6 @@ def register(sub) -> None:
                         "scored with another; an empty list runs only the head metrics and profile)")
     p.add_argument("--no-profile", action="store_true", help="skip the speed profile")
     p.add_argument("--max-cases", type=int, help="diagnose at most this many reads per suite, evenly spaced")
-    p.add_argument("--allow-unverified-replay", action="store_true",
-                   help="diagnose even when the AlignAIR code the replay mirrors has changed since it was pinned "
-                        "(the results are marked unverified)")
     p.add_argument("--against", metavar="PATH_OR_MODEL_KEY",
                    help="compare with a baseline model on the same reads: a .alignair checkpoint (diagnosed first "
                         "with these settings) or the model key of one already diagnosed in --run-dir. Δ = "
@@ -53,9 +50,7 @@ def run(args) -> int:
     each suite's ``<S>/report.md``, under the model key). A suite whose build is not current for this checkout
     (``workflow.diagnose.stale_builds``) is diagnosed as built, with a warning. Input errors (an unbuilt or
     test-split suite, an unknown variant, a missing checkpoint, a model on another reference, a CUDA device torch
-    does not see) exit with status 2 before anything is written,
-    and so does AlignAIR code the replay is not pinned to, unless ``--allow-unverified-replay`` (then the results
-    are marked unverified, with a warning).
+    does not see) exit with status 2 before anything is written.
 
     With ``--against`` (``evaluate``'s ``against``, the baseline): an existing file is a checkpoint (made absolute),
     else a model key; a missing checkpoint, a model key without current diagnostics of every suite, or diagnostics that
@@ -77,11 +72,7 @@ def run(args) -> int:
     label, checkpoint = args.checkpoint
     result = evaluate(checkpoint, layout, names, device=device, batch_size=args.batch_size, label=label,
                       variants=DEFAULT_VARIANTS if args.variants is None else args.variants,
-                      profile=not args.no_profile, max_cases=args.max_cases,
-                      allow_unverified_replay=args.allow_unverified_replay, against=against)
-    if not result.replay_verified:
-        print(f"warning: diagnosed with an unverified replay (changed: {', '.join(result.replay_changes)}); the "
-              "results are marked unverified", file=sys.stderr)
+                      profile=not args.no_profile, max_cases=args.max_cases, against=against)
     for name, changes in result.stale_builds.items():
         print(f"warning: {name}'s build is not current (changed: {', '.join(changes)}); it was diagnosed as "
               f"built. Rebuild it to diagnose against this checkout's suite and truth code", file=sys.stderr)

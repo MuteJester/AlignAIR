@@ -1038,7 +1038,7 @@ def _fake_positive(monkeypatch, layout: RunLayout, *, effect="worse", row=None, 
                        1.0 if effect == "better" else scores[POSITIVE]} for case, scores in base.items()}
         suites = {"S0": {"cases": 20, "clusters": {"clusters": 0}, "heads": _compared(base, this), "baseline": None}}
         against = {"baseline": "kp" if same else "kb", "source": str(kwargs["against"]), "same_model": same,
-                   "replay_verified": True, "suites": suites}
+                   "suites": suites}
         summary = against_summary(against)
         verdict = AGAINST_VERDICTS[suites["S0"]["heads"]["comparison"][POSITIVE]["verdict"]]
         detail = layout.diagnostics_against_md("kp", "S0", against["baseline"])

@@ -25,8 +25,6 @@ from alignair_assay.core.cases import read_cases  # noqa: E402
 from alignair_assay.core.layout import RunLayout  # noqa: E402
 from alignair_assay.core.provenance import sha256_file  # noqa: E402
 from alignair_assay.diagnostics.ablation import DEFAULT_VARIANTS, SINGLE_SWAPS, VARIANTS  # noqa: E402
-from alignair_assay.diagnostics import identity as identity_module  # noqa: E402
-from alignair_assay.diagnostics import pin as pin_module  # noqa: E402
 from alignair_assay.diagnostics.identity import alignair_code, weights_sha256  # noqa: E402
 from alignair_assay.report.diagnostics import SUITE_SECTIONS, SUMMARY_SECTIONS  # noqa: E402
 from alignair_assay.runners.alignair import local_code_identity  # noqa: E402
@@ -34,7 +32,6 @@ from alignair_assay.workflow import diagnose as diagnose_module  # noqa: E402
 from alignair_assay.workflow.build import build_suite  # noqa: E402
 from alignair_assay.workflow.diagnose import (  # noqa: E402
     DiagnosticsResult,
-    UnverifiedReplayWarning,
     cluster_counts,
     evaluate,
     select_cases,
@@ -493,76 +490,6 @@ def test_a_bare_suite_name_is_one_suite(built, tmp_path, small_model):
     assert list(result.suites) == ["S0"]
 
 
-# --- the replay pin ---------------------------------------------------------------------------------------------
-
-CHANGED = {"alignair.predict.pipeline.predict": "f" * 64}
-
-
-def test_an_unverified_replay_is_refused_unless_allowed(built, tmp_path, small_model, monkeypatch, replays):
-    layout = _copy(built, tmp_path)
-    verified = evaluate(small_model, layout, ["S0"], **FAST)
-    assert verified.replay_verified is True and verified.replay_changes == {}
-    assert verified.suites["S0"]["replay_verified"] is True and verified.suites["S0"]["replay_changes"] == {}
-
-    monkeypatch.setattr(diagnose_module, "replay_pin", lambda: ("1" * 64, dict(CHANGED)))
-    before = len(replays)
-    with pytest.raises(ValueError) as error:
-        evaluate(small_model, layout, ["S0"], **FAST)
-    for part in ("alignair.predict.pipeline.predict", "f" * 64, "update diagnostics/replay.py", "test_replay.py",
-                 "PINNED", "allow_unverified_replay=True"):
-        assert part in str(error.value), part
-    assert len(replays) == before
-
-    with pytest.warns(UnverifiedReplayWarning, match="alignair.predict.pipeline.predict"):
-        unverified = evaluate(small_model, layout, ["S0"], **FAST, allow_unverified_replay=True)
-    assert unverified.replay_verified is False and unverified.replay_changes == CHANGED
-    # Never served from the verified record: the verification and the product code digest are in the key.
-    suite = unverified.suites["S0"]
-    assert suite["reused"] is False and len(replays) == before + 1
-    assert suite["replay_verified"] is False and suite["replay_changes"] == CHANGED
-    assert suite["key"]["replay"] == {"verified": False, "sha256": "1" * 64}
-    record = json.loads(layout.diagnostics_suite_json(unverified.model_key, "S0").read_text())
-    assert record["replay_verified"] is False and record["replay_changes"] == CHANGED
-    flags = unverified.summary["flags"]
-    assert flags[0].startswith("Unverified replay") and "alignair.predict.pipeline.predict" in flags[0]
-    assert f"- {flags[0]}" in unverified.report_md
-    detail = layout.diagnostics_suite_md(unverified.model_key, "S0").read_text(encoding="utf-8")
-    assert "**Unverified replay.**" in detail
-
-
-def test_the_replay_pin_is_taken_at_import_beside_the_code_digest(built, tmp_path, small_model, monkeypatch):
-    # The pin and the model key's code digest both describe the code this process imported: the pin is never taken
-    # again, so a product edit after the import cannot make the two describe different code.
-    layout = _copy(built, tmp_path)
-    pinned = identity_module.replay_pin()
-    assert pinned == (pin_module.replay_digest(), pin_module.pin_changes())
-    assert diagnose_module.replay_pin is identity_module.replay_pin
-
-    def taken_again(function):
-        raise AssertionError("the replay pin was taken after the import")
-
-    monkeypatch.setattr(pin_module, "code_digest", taken_again)
-    for _ in range(2):
-        result = evaluate(small_model, layout, ["S0"], **FAST)
-        assert result.suites["S0"]["key"]["replay"] == {"verified": not pinned[1], "sha256": pinned[0]}
-    assert identity_module.replay_pin() == pinned
-
-
-def test_diagnose_command_refuses_an_unverified_replay_unless_allowed(built, tmp_path, save_checkpoint, monkeypatch,
-                                                                       capsys):
-    layout = _copy(built, tmp_path)
-    checkpoint = save_checkpoint(tmp_path / "model.alignair")
-    monkeypatch.setattr(diagnose_module, "replay_pin", lambda: ("1" * 64, dict(CHANGED)))
-    argv = ["diagnose", "--run-dir", str(layout.root), "--checkpoint", str(checkpoint), "--suites", "S0",
-            "--device", "cpu", "--variants", "baseline", "--no-profile", "--max-cases", "2"]
-    assert main(argv) == 2
-    assert "--allow-unverified-replay" in capsys.readouterr().err
-    with pytest.warns(UnverifiedReplayWarning):
-        assert main([*argv, "--allow-unverified-replay"]) == 0
-    captured = capsys.readouterr()
-    assert "unverified" in captured.err and "alignair.predict.pipeline.predict" in captured.err
-
-
 # --- refusals and subsets ---------------------------------------------------------------------------------------
 
 def test_the_test_split_is_refused(tmp_path, small_model):
@@ -758,3 +685,15 @@ def test_the_released_checkpoint(built, tmp_path, device):
     assert result.profile["device"] == device and result.profile["reads_per_second"] > 0
     again = evaluate(checkpoint, layout, ["S1"], device=device, batch_size=64, max_cases=60)
     assert again.suites["S1"]["reused"] and again.profile["reused"]
+
+
+def test_a_diagnosis_carries_no_replay_pin(built, tmp_path, small_model, capsys):
+    """The replay is the product pipeline run with hooks, so nothing mirrors product code: no code-digest pin, no
+    unverified-replay path, and no replay field in a suite's cache key."""
+    import importlib.util
+    result = evaluate(small_model, _copy(built, tmp_path), ["S0"], **FAST)
+    assert "replay" not in result.suites["S0"]["key"] and not hasattr(result, "replay_verified")
+    assert importlib.util.find_spec("alignair_assay.diagnostics.pin") is None
+    with pytest.raises(SystemExit):
+        main(["diagnose", "--help"])
+    assert "--allow-unverified-replay" not in capsys.readouterr().out

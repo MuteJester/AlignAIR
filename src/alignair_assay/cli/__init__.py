@@ -16,7 +16,7 @@
       [--alignair-model alignair-igh-human@1.0.0] [--alignair-checkpoint MODEL.alignair]
   python -m alignair_assay diagnose --run-dir RUN --checkpoint [LABEL=]MODEL.alignair --suites S1,S3 [--device cuda]
       [--batch-size 256] [--variants baseline,true_spans,...] [--no-profile] [--max-cases N]
-      [--allow-unverified-replay] [--against BASE.alignair|MODEL_KEY]
+      [--against BASE.alignair|MODEL_KEY]
   python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,W-97 [--split dev] [--cap 50000]
       [--tools igblast,alignair,alignair-api] [--threads 8] [--device cpu] [--batch-size 64]
       [--paper-length-filter] [--accept-assembly-loss] [--igblast-dir DIR] [--alignair-image IMAGE]

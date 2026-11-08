@@ -134,7 +134,7 @@ def _against(*, same=False, baseline=True, code=CODE) -> dict:
                                  "clone_key.exact": _paired(0.5, 0.5, test="too_few_clusters", k=5, p=1.0)},
                   "changes": _changes({"junction.nt_exact": _changed(["S1:3"], ["S1:1", "S1:2"]),
                                        "clone_key.exact": _changed([], [])}, ["S1:3"], ["S1:1", "S1:2"])}
-    return {"baseline": OTHER, "source": "/models/b.alignair", "same_model": same, "replay_verified": True,
+    return {"baseline": OTHER, "source": "/models/b.alignair", "same_model": same,
             "code": {"this": CODE, "baseline": code},
             "suites": {"S1": {"cases": 100, "clusters": {"keys": ["clone"], "clusters": 40, "cases": 80},
                               "heads": heads, "baseline": end_to_end if baseline else None}}}
@@ -220,12 +220,10 @@ def test_flags():
     suite["variants"]["baseline"]["scores"]["junction.nt_exact"]["coverage"] = 0.9
     suite["swaps"][0]["metrics"]["junction.nt_exact"].update(test="too_few_clusters", n_clusters=5)
     report = _report({"S1": suite, "S3": _suite("S3")})
-    report["config"].update(stale_builds={"S3": ["truth_source"]}, replay_verified=False,
-                            replay_changes={"alignair.predict.pipeline.predict": "f" * 64})
+    report["config"].update(stale_builds={"S3": ["truth_source"]})
     flags = diagnostics_summary({k: v for k, v in report.items() if k != "summary"})["flags"]
     assert len(flags) <= MAX_FLAGS and flags[-1] == HOLM_NOTE
     text = "\n".join(flags)
-    assert flags[0].startswith("Unverified replay") and "alignair.predict.pipeline.predict" in flags[0]
     assert "Stale builds" in text and "S3 (truth_source)" in text
     assert "Baseline coverage below 95%: S1 junction.nt_exact 90.0%." in text
     assert "S1 spans.d.unobserved 10.0% (true_spans)" in text  # 5 of 50 diagnosed reads
