@@ -5,7 +5,8 @@ import torch
 
 
 # A forward's width in evaluation is rounded up to a multiple of this (``width_bucket``): reads predicted together are
-# grouped by their bucket, so a read's width, and its outputs, depend on the read alone (``predict.forward.run_model``).
+# batched with reads of their bucket, so a read's width is its bucket's and reads of other buckets never change its
+# outputs (``predict.forward.run_model``).
 WIDTH_BUCKET = 32
 
 

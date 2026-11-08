@@ -72,8 +72,8 @@ def valve(x: torch.Tensor, scale: float) -> torch.Tensor:
 
 
 def trimmed_width(mask: torch.Tensor) -> int:
-    """The positions a forward needs: the batch's longest read and the end slot after it, at most the window (in
-    evaluation, rounded up to its width bucket)."""
+    """The positions a forward needs: the batch's longest read and the end slot after it, at most the window (the
+    forward rounds it up to its width bucket in evaluation)."""
     return min(mask.shape[1], int(mask.sum(1).max()) + 1)
 
 

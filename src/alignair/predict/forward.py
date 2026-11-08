@@ -152,9 +152,9 @@ def run_model(model, sequences, cfg, device: str = "cpu", *, orientation=None) -
     per read, None for the model's own) is teacher-forced; each id travels with its read into its batch.
 
     Reads are batched with reads of their width bucket (``core.boundaries.width_bucket`` of the read and its end
-    slot), in input order, so a read is computed at its own bucket's width: the reads outside its bucket, their
-    lengths included, never change its outputs. How many reads of its bucket share its batch (the bucket's last batch
-    may be part-full) can still move their last float bits."""
+    slot), in input order, so a read is computed at its own bucket's width: the reads outside its bucket never change
+    its outputs. Which and how many reads of its bucket share its batch (the bucket's last batch may be part-full)
+    can still move their last float bits."""
     reads, _ = prepare_nucleotide_inputs(sequences, cfg.window)
     adapter = SequenceInputAdapter(NucleotideTokenizer(), cfg.max_seq_length, device,
                                     vocab_size=6)

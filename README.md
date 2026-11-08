@@ -135,12 +135,14 @@ reference/config/model size without training with `--plan`. Then just
 per-gene candidate-set column (`*_call_set`) for alleles a read cannot distinguish. The gapped
 alignment fields are produced by AlignAIR's own IMGT-gap reconstruction (no external aligner required).
 
-**Reproducible rows.** The same file with the same settings always gives the same rows, and `--threads N` gives the
-rows of one process. Reads are batched with reads of similar length, so the lengths of the other reads in a file do
-not change a read's row. How many similar-length reads share its batch, the batch size, the CPU thread count and the
-device can still move the last bits of the floating-point results and, rarely (about 1 read in 2,000), a call between
-two near-tied alleles. The default batch size depends on the device and on `--threads`, so pass `--batch-size` and
-`--threads` to reproduce a run exactly.
+**Reproducible rows.** On the CPU, the same file with the same settings always gives the same rows, and
+`--threads N` gives the rows of one single-threaded process at the same `--batch-size`. On a GPU, some of the
+model's sums run in an order that can vary between runs, so the last bits of a row's floats can differ from run to
+run. Reads are batched with reads of their 32-position length bucket, so reads in other buckets never change a
+read's row. Which and how many reads of its own bucket share its batch, the batch size, the chunk size, the CPU
+thread count and the device can still move the last bits of the floats and, rarely (in one measurement, 1 read in
+2,000), a call between two near-tied alleles. The default batch size depends on the device and on `--threads`, so
+pass `--batch-size`, `--chunk-size` and `--threads` to reproduce a run exactly.
 
 Every run also writes a **`<output>.run.json` provenance sidecar** (model + fingerprint, reference,
 command, device, seed, and package versions). Validate any TSV explicitly:
