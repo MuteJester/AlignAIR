@@ -6,9 +6,9 @@ runs on), and ``model_key`` joins the two into the directory name ``workflow.dia
 under, so a new checkpoint or an AlignAIR code edit never meets another model's results.
 
 The code digest is taken once, when this module is imported: it describes the code the process runs, whatever
-happens to the files later. The modules the replay's stages import lazily
-(``load_model``'s ``alignair.model_file`` and ``align_germline``'s matcher) are imported here first, so every module
-the evaluator runs is loaded before its files are digested.
+happens to the files later. The modules the pipeline's stages import lazily (``load_model``'s
+``alignair.model_file``, ``align_germline``'s matcher and the ``airr`` stage's ``alignair.predict.airr``) are imported
+here first, so every module the evaluator runs is loaded before its files are digested.
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from pathlib import Path
 import alignair
 import alignair.model_file  # noqa: F401 (loaded before the code digest, see the module docstring)
 import alignair.predict.heuristic_matcher  # noqa: F401 (loaded before the code digest, see the module docstring)
+import alignair.predict.airr  # noqa: F401 (loaded before the code digest, see the module docstring)
 import torch
 
 from alignair_assay.core.provenance import code_identity, sha256_file

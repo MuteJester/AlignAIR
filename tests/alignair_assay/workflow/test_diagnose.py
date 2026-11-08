@@ -199,6 +199,18 @@ def test_end_to_end_report_renders_every_section(built, make_small_model):
     assert not list(built.diagnostics_dir(result.model_key).rglob("*.tmp"))
 
 
+def test_the_modules_the_stages_import_lazily_are_loaded_with_the_code_digest():
+    """In a fresh process, importing diagnostics.identity (which takes the code digest) loads every module the
+    pipeline's stages import lazily, the AIRR assembly among them, so the digest is of the code the evaluator runs."""
+    import subprocess
+    lazy = ("alignair.model_file", "alignair.predict.heuristic_matcher", "alignair.predict.airr",
+            "alignair.predict.airr.builder")
+    code = ("import sys, alignair_assay.diagnostics.identity; "
+            f"print(sorted(m for m in {lazy!r} if m not in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True, env=os.environ)
+    assert out.stdout.strip() == "[]"
+
+
 def test_the_model_key_is_its_weights_and_the_alignair_code(built, tmp_path, save_checkpoint):
     layout = _copy(built, tmp_path)
     checkpoint = save_checkpoint(tmp_path / "model.alignair")
