@@ -87,15 +87,13 @@ def test_a_v_cut_at_its_5_end_with_a_deletion_keeps_v_and_j_identities():
     v_read = v_seq[cut:gone] + v_seq[gone + 1:]
     read = v_read + "NNNNN" + j_seq
     v_len = len(v_read)
-    rec = {"sequence_id": "t2", "sequence": read, "v_call": v0, "d_call": "Short-D", "j_call": j0,
-           "v_sequence_start": 0, "v_sequence_end": v_len,
-           "v_germline_start": cut, "v_germline_end": len(v_seq),
-           "v_cigar": f"{gone - cut}M1D{len(v_seq) - gone - 1}M",
-           "d_sequence_start": v_len, "d_sequence_end": v_len + 5,
-           "d_germline_start": 0, "d_germline_end": 0,
-           "j_sequence_start": v_len + 5, "j_sequence_end": len(read),
-           "j_germline_start": 0, "j_germline_end": len(j_seq), "j_cigar": f"{len(j_seq)}M",
-           "productive": True, "indel_count": 1}
+    from alignair.predict.state import GermlineAlignment
+    from tests.support.read_results import make_read
+    rec = make_read(read, calls={"v": v0, "d": "Short-D", "j": j0}, genes=("v", "d", "j"), indel_count=1.0,
+                    alignments={"v": GermlineAlignment(v0, 0, v_len, cut, len(v_seq),
+                                                       f"{gone - cut}M1D{len(v_seq) - gone - 1}M"),
+                                "d": GermlineAlignment("Short-D", v_len, v_len + 5, 0, 0, ""),
+                                "j": GermlineAlignment(j0, v_len + 5, len(read), 0, len(j_seq), f"{len(j_seq)}M")})
     out = build_airr([rec], ref, chain="heavy")[0]
     covered = len(v_seq) - cut
     assert out["v_identity"] == pytest.approx((covered - 1) / covered)

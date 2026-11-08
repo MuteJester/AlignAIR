@@ -126,13 +126,13 @@ def build_records(state: PredictionState) -> PredictionState:
 
 
 def build_rows(state: PredictionState) -> PredictionState:
-    """``airr``: the full AIRR rows (``cfg.airr``), else each read's light record."""
+    """``airr``: the full AIRR rows of the reads' results (``cfg.airr``), else each read's light record."""
     context, cfg = state.context, state.context.cfg
-    records = [light_record(result) for result in state.results]
     if not cfg.airr:
-        return replace(state, rows=records)
+        return replace(state, rows=[light_record(result) for result in state.results])
     from .airr import build_airr
-    return replace(state, rows=build_airr(records, context.reference, chain=("heavy" if cfg.has_d else "light")))
+    return replace(state, rows=build_airr(state.results, context.reference,
+                                          chain=("heavy" if cfg.has_d else "light")))
 
 
 def assert_finite(allele: dict, stage: str) -> None:
