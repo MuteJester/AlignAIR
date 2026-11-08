@@ -51,3 +51,13 @@ def test_a_called_read_reports_its_calls_and_placements():
     assert (record["v_call"], record["v_calls"], record["d_call"], record["j_likelihoods"]) == (
         "V1", ["V1"], "D1", [0.9])
     assert record["v_sequence_end"] == 40 and record["d_presence"] == "callable" and "v_presence" not in record
+
+
+def test_a_multi_locus_read_without_a_v_has_a_blank_locus():
+    import GenAIRR.data as gd
+    from alignair.predict.stages import record_loci
+    from alignair.reference.reference_set import ReferenceSet
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    igk = reference.gene("V").names[int(np.flatnonzero(reference.locus_mask("IGK", "V"))[0])]
+    alignment = GermlineAlignment(igk, 0, 10, 0, 10, "10M")
+    assert record_loci([alignment, alignment], reference, [True, False], ("IGK", "IGL")) == ["", "IGK"]
