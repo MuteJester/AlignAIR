@@ -14,7 +14,6 @@ are all in by then, and each would otherwise spend half a second tearing torch d
 """
 from __future__ import annotations
 
-import math
 import multiprocessing
 import os
 import pickle
@@ -67,6 +66,7 @@ class ProcessPool:
         if workers < 1:
             raise ValueError(f"workers must be at least 1 (got {workers})")
         self.workers = workers
+        self._max_seq_length = aligner.model.cfg.max_seq_length
         handle, self._path = tempfile.mkstemp(prefix="alignair-workers-", suffix=".pickle")
         try:
             with os.fdopen(handle, "wb") as out:
@@ -79,14 +79,25 @@ class ProcessPool:
 
     def predict(self, sequences, *, batch_size: int, **options) -> list:
         """The records of ``sequences`` (``Aligner.predict(...).to_dicts()``, ``options`` passed on), in input
-        order."""
+        order. The workers run the batches one process runs (``forward.bucket_batches``): each part is whole
+        batches dealt round-robin, so a bucket's batches keep their order in a part, its part-full one last, and the
+        worker batches them the same way; the records are the ones one process gives."""
+        from ..core.boundaries import read_window
+        from ..data.inputs import prepare_nucleotide_inputs
+        from .forward import bucket_batches
         sequences = list(sequences)
         if not sequences:
             return []
-        parts = max(1, min(self.workers * self.PARTS_PER_WORKER, math.ceil(len(sequences) / batch_size)))
-        size = math.ceil(len(sequences) / parts)
-        jobs = [(sequences[i:i + size], batch_size, options) for i in range(0, len(sequences), size)]
-        return [record for part in self._pool.starmap(_predict, jobs) for record in part]
+        reads, _ = prepare_nucleotide_inputs(sequences, read_window(self._max_seq_length))
+        batches = bucket_batches(reads, max_seq_length=self._max_seq_length, batch_size=batch_size)
+        parts = max(1, min(self.workers * self.PARTS_PER_WORKER, len(batches)))
+        shares = [[i for batch in batches[k::parts] for i in batch] for k in range(parts)]
+        jobs = [([sequences[i] for i in share], batch_size, options) for share in shares]
+        records: list = [None] * len(sequences)
+        for share, part in zip(shares, self._pool.starmap(_predict, jobs)):
+            for i, record in zip(share, part):
+                records[i] = record
+        return records
 
     def close(self) -> None:
         """Stop the workers (every prediction has returned by now) and remove their copy of the aligner."""

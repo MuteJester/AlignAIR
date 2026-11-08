@@ -206,3 +206,24 @@ def test_a_reference_without_one_of_the_chips_genes_is_refused(chip):
     light = ReferenceSet({"V": toy.gene("V"), "J": toy.gene("J")}, has_d=False)
     with pytest.raises(ConfigurationError, match="D"):
         model.bind_reference(light)
+
+
+def test_in_evaluation_the_chip_reads_its_width_bucket_and_in_training_its_longest_read(chip):
+    """A forward in evaluation computes over the width bucket of the batch's longest read (``core.boundaries.
+    width_bucket``), so a read predicted with reads of its bucket has the same width whatever they are; training keeps
+    the batch's longest read and its end slot."""
+    from alignair.core.boundaries import width_bucket
+    model, batch, _ = chip
+    tokens = batch.inputs["tokenized_sequence"]
+    longest, whole = chip_core.trimmed_width(tokens != 0), tokens.shape[1]
+    assert longest != width_bucket(longest, whole)               # the fixture's reads do not end on a bucket edge
+    seen = []
+    handle = model.core.trunk.register_forward_hook(lambda module, inputs, out: seen.append(inputs[0].shape[1]))
+    try:
+        model.train()
+        model(batch.inputs)
+        model.eval()
+        model(batch.inputs)
+    finally:
+        handle.remove()
+    assert seen == [longest, width_bucket(longest, whole)]

@@ -221,3 +221,79 @@ def test_a_none_orientation_is_the_models_own_from_an_unforced_eval_forward():
     (batch,) = run_model(model, ["ACGT", "AC"], PredictConfig(max_seq_length=8, batch_size=2), orientation=[1, None])
     assert batch["orientation"].tolist() == [1, 3]
     assert model.calls == [(False, False, False), (False, False, True)] and model.training
+
+
+@pytest.fixture(scope="module")
+def chip_and_reads():
+    import json
+    from alignair.api import load_model
+    from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP
+    model, reference = load_model(str(TEST_CHIP), device="cpu")
+    return model, reference, json.loads(FIXTURE.read_text())["reads"]
+
+
+def _same_rows(a: list, i: int, b: list, j: int) -> bool:
+    """Whether row i of batches a equals row j of batches b, bit for bit, in every output."""
+    def row(batches, k):
+        sizes = [len(next(iter(batch.values()))) for batch in batches]
+        n = 0
+        for batch, size in zip(batches, sizes):
+            if k < n + size:
+                return {key: value[k - n] for key, value in batch.items()}
+            n += size
+        raise IndexError(k)
+    x, y = row(a, i), row(b, j)
+    return x.keys() == y.keys() and all(np.array_equal(x[key], y[key]) for key in x)
+
+
+def test_a_reads_outputs_are_the_same_whatever_the_reads_of_other_buckets(chip_and_reads):
+    """A read predicted with short reads and the same read predicted with long ones (batch size and threads fixed)
+    give bit-identical outputs when those reads fall in other width buckets: reads are batched by bucket, so the
+    read's width is its own. Eight threads: at two, a width change happens not to move these reads' floats (the
+    harness restores the thread count)."""
+    from alignair.core.boundaries import width_bucket
+    torch.set_num_threads(8)
+    model, reference, reads = chip_and_reads
+    cfg = PredictConfig.for_model(model, reference, batch_size=8)
+    bucket = lambda read: width_bucket(min(len(read), cfg.window) + 1, cfg.max_seq_length)
+    short = [read[:60] for read in reads[:3]]
+    long_ = [(read + read)[:400] for read in reads[:3]]
+    assert not {bucket(r) for r in reads} & {bucket(r) for r in short + long_}
+    assert all(_same_rows(run_model(model, [read, *short], cfg), 0, run_model(model, [read, *long_], cfg), 0)
+               for read in reads)
+
+
+def test_outputs_come_back_in_input_order_in_batch_size_chunks():
+    """Reads are batched by width bucket, and their outputs come back in input order, in ``batch_size`` chunks, one row
+    per read (no read added)."""
+    cfg = PredictConfig(max_seq_length=64, batch_size=2)
+    reads = ["ACGTACGTAC" * 5, "AC", "ACGTACGTAC" * 4, "A", "ACG"]          # buckets 64, 32, 64, 32, 32
+    alone = [run_model(Echo(), [read], cfg)[0]["tokenized_sequence"][0].tolist() for read in reads]
+    model = Echo()
+    batches = run_model(model, reads, cfg)
+    assert [len(batch["tokenized_sequence"]) for batch in batches] == [2, 2, 1]
+    assert [row.tolist() for batch in batches for row in batch["tokenized_sequence"]] == alone
+    assert model.calls == 3                                                  # bucket 64: 2 reads; bucket 32: 2 + 1
+
+
+def test_outputs_that_change_keys_between_batches_are_refused():
+    class Shifting(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def forward(self, inputs):
+            self.calls += 1
+            tokens = inputs["tokenized_sequence"]
+            out = {"tokenized_sequence": tokens}
+            if self.calls > 1:
+                out["extra"] = tokens
+            return out
+    with pytest.raises(InferenceError, match="changed between batches"):
+        run_model(Shifting(), ["ACGT", "AC", "A"], PredictConfig(max_seq_length=8, batch_size=2))
+
+
+def test_bucket_batches_are_each_buckets_reads_in_input_order_in_batch_size_chunks():
+    from alignair.predict.forward import bucket_batches
+    reads = ["A" * 40, "A", "A" * 50, "AC", "A" * 45, "ACG", "A" * 63]      # buckets 64, 32, 64, 32, 64, 32, 64
+    assert bucket_batches(reads, max_seq_length=576, batch_size=2) == [[0, 2], [4, 6], [1, 3], [5]]

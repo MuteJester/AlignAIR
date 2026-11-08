@@ -341,13 +341,14 @@ def test_run_variants_scores_only_against_the_models_own_reference(make_small_mo
 def test_run_variants_reuses_a_given_baseline_replay(small_model, s0_cases, s0_truths, reference):
     model, reference_set = small_model
     ids, seqs = _ids_seqs(s0_cases)
-    baseline = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     calls = []
     handle = model.orientation_head.register_forward_hook(lambda *_: calls.append(1))  # once per forward pass
     try:
+        baseline = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+        passes, calls[:] = len(calls), []
         given = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
                              batch_size=BATCH, variants=("baseline", "soft_decoder"), _baseline=baseline)
-        assert len(calls) == math.ceil(len(ids) / BATCH)  # the argmax variant's replay only
+        assert len(calls) == passes  # the argmax variant's replay only
     finally:
         handle.remove()
     own = run_variants(model, reference_set, s0_cases, s0_truths, reference=reference, device="cpu",
@@ -462,15 +463,16 @@ def test_variants_with_excluded_cases_run_one_forward_pass_per_batch(make_shaped
     model, reference_set = make_shaped_model("igh")
     ids, seqs = _ids_seqs(s0_cases)
     truths = [replace(t, excluded="non_biological_orientation") if k % 3 == 0 else t for k, t in enumerate(s0_truths)]
-    baseline = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     calls = []
     handle = model.orientation_head.register_forward_hook(lambda *_: calls.append(1))  # once per forward pass
     try:
+        baseline = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
+        passes = len(calls)                                  # the forward passes of a replay: one per batch
         for name in ("true_orientation", "true_germline"):
             substitutions, _ = substitutions_for(name, truths, baseline)
             assert None not in substitutions.orientation
             calls.clear()
             replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH, substitutions=substitutions)
-            assert len(calls) == math.ceil(len(ids) / BATCH), name
+            assert len(calls) == passes, name
     finally:
         handle.remove()

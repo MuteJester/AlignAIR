@@ -34,6 +34,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
+from ..core.boundaries import width_bucket
 from ..core.d_presence import D_PRESENCE_LOGITS
 from ..errors import ConfigurationError
 from ..refine.boundaries import refine_boundaries
@@ -71,7 +72,8 @@ def valve(x: torch.Tensor, scale: float) -> torch.Tensor:
 
 
 def trimmed_width(mask: torch.Tensor) -> int:
-    """The positions a forward needs: the batch's longest read and the end slot after it, at most the window."""
+    """The positions a forward needs: the batch's longest read and the end slot after it, at most the window (in
+    evaluation, rounded up to its width bucket)."""
     return min(mask.shape[1], int(mask.sum(1).max()) + 1)
 
 
@@ -115,6 +117,8 @@ class ChipCore(nn.Module):
         counts = {gene: (batch[f"bank_order_{gene}"].numel() if f"bank_order_{gene}" in batch else self.counts[gene])
                   for gene in self.genes}
         whole, width = mask.shape[1], trimmed_width(mask)
+        if not self.training:      # evaluation: the read's own width bucket, the same whatever its batch-mates
+            width = width_bucket(width, whole)
         if width == whole:
             return self._forward(emb, mask, end_mask, tokens=tokens, batch=batch, bank=bank, counts=counts)
         batch = {key: value[:, :width] if key.startswith("teacher_") else value for key, value in batch.items()}
