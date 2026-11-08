@@ -10,20 +10,18 @@ from dataclasses import replace
 
 import numpy as np
 
-from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS
-from ..core.d_presence import ABSENT, CALLABLE, D_CLASSES, D_PRESENCE
 from ..data.inputs import prepare_nucleotide_inputs
 from ..errors import InputError, NumericalError
-from .clean import NOT_OBSERVED, clean
+from .clean import clean
 from .forward import run_model
 from .germline import align_germline, realign_v
-from .junction import derive_junction
 from .outputs import ModelOutputs
+from .results import light_record, read_results
 from .segment import correct_segments
 from .state import PredictionState
 from .threshold import select_alleles
 from .ties import better_v_alleles, tied_alleles
-from .v_presence import V_ABSENT, V_PRESENCE, v_absent
+from .v_presence import v_absent
 
 
 def prepare_reads(state: PredictionState) -> PredictionState:
@@ -117,24 +115,24 @@ def list_v_ties(state: PredictionState) -> PredictionState:
 
 
 def build_records(state: PredictionState) -> PredictionState:
-    """``records``: one record per read. ``reads`` is the post-crop, pre-orientation read and ``canonical`` its forward
-    frame: the record owns the pre-orientation read, so the AIRR writer emits the right ``sequence``/``rev_comp`` for
-    the Python API and the CLI alike."""
+    """``records``: each read's typed result (``predict.results.ReadResult``). ``reads`` is the post-crop,
+    pre-orientation read and ``canonical`` its forward frame: the result owns the pre-orientation read, so the AIRR
+    writer emits the right ``sequence``/``rev_comp`` for the Python API and the CLI alike."""
     context, cfg = state.context, state.context.cfg
-    records = to_records(state.canonical, state.calls, state.alignments, cfg.genes, state.predictions,
-                         cfg.chain_types, state.segments.low_quality, state.cropped, input_sequences=state.reads,
-                         no_v=state.no_v, v_ties=state.v_ties,
-                         read_loci=called_loci(state.alignments["v"], context.reference, state.no_v))
-    return replace(state, records=records)
+    loci = record_loci(state.alignments["v"], context.reference, state.no_v, cfg.chain_types)
+    results = read_results(state.canonical, state.reads, state.predictions, state.calls, state.alignments,
+                           state.segments.low_quality, state.cropped, state.no_v, state.v_ties, loci)
+    return replace(state, results=results)
 
 
 def build_rows(state: PredictionState) -> PredictionState:
-    """``airr``: the full AIRR rows (``cfg.airr``), else the records themselves."""
+    """``airr``: the full AIRR rows (``cfg.airr``), else each read's light record."""
     context, cfg = state.context, state.context.cfg
+    records = [light_record(result) for result in state.results]
     if not cfg.airr:
-        return replace(state, rows=state.records)
+        return replace(state, rows=records)
     from .airr import build_airr
-    return replace(state, rows=build_airr(state.records, context.reference, chain=("heavy" if cfg.has_d else "light")))
+    return replace(state, rows=build_airr(records, context.reference, chain=("heavy" if cfg.has_d else "light")))
 
 
 def assert_finite(allele: dict, stage: str) -> None:
@@ -173,6 +171,16 @@ def called_loci(v_alignments, reference, no_v) -> list[str] | None:
             for i, aln in enumerate(v_alignments)]
 
 
+def record_loci(v_alignments, reference, no_v, chain_types) -> list[str | None]:
+    """Per read, its locus label: its V call's locus in a reference of several loci (``called_loci``), else the one
+    locus of ``chain_types`` when there is exactly one, else None (no label)."""
+    loci = called_loci(v_alignments, reference, no_v)
+    if loci is not None:
+        return loci
+    one = chain_types[0] if chain_types is not None and len(chain_types) == 1 else None
+    return [one] * len(v_alignments)
+
+
 _COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 ORIENTATION_IDS = range(4)          # canonicalize's transforms: identity, reverse complement, complement, reverse
 
@@ -189,86 +197,3 @@ def canonicalize(seq: str, orientation_id: int) -> str:
     if orientation_id == 3:
         return seq[::-1]
     return seq
-
-
-def _anchor(position) -> int | None:
-    """A decoded anchor as a record holds it: the read position, or None when it is not observed."""
-    return None if position == NOT_OBSERVED else int(position)
-
-
-def to_records(sequences, calls, alignments, genes, preds, chain_types=None, low_quality=None,
-                was_cropped=None, input_sequences=None, no_v=None, v_ties=None, read_loci=None) -> list:
-    orientation = preds.orientation
-    anchors = getattr(preds, "anchors", None)
-    records = []
-    for i, seq in enumerate(sequences):
-        absent_v = no_v is not None and no_v[i]
-        oid = int(orientation[i]) if orientation is not None else 0
-        rec = {"sequence": seq, "orientation_id": oid,
-               "mutation_rate": float(preds.mutation_rate[i]),
-               "indel_count": float(preds.indel_count[i]),
-               "productive": None}
-        if anchors is not None:
-            # a model with anchor heads: its record carries the anchors (forward frame, like `seq`) and the
-            # productivity they give over the read's V start and J end (predict.junction), not a learned call
-            rec.update({ANCHOR_KEYS[g]: _anchor(anchors[g][i]) for g in ANCHOR_GENES})
-            if absent_v:                                       # no V, so no V anchor to open a junction
-                rec[ANCHOR_KEYS["v"]] = None
-            v, j = (None if absent_v else alignments["v"][i]), alignments["j"][i]
-            rec["productive"] = derive_junction(seq, *(rec[ANCHOR_KEYS[g]] for g in ANCHOR_GENES), coding_span=(
-                None if v is None else v.seq_start, None if j is None else j.seq_end)).productive
-        if input_sequences is not None:
-            # the post-crop, pre-orientation read (== `seq` when the read was already forward). The AIRR
-            # writer uses THIS as the emitted `sequence` for a reverse-complement read, so `RC(sequence)`
-            # equals the coordinate frame (`seq`) — regardless of any external sequence list.
-            rec["input_sequence"] = input_sequences[i]
-        if low_quality is not None:
-            rec["segmentation_low_quality"] = bool(low_quality[i])
-        if was_cropped is not None and was_cropped[i]:
-            rec["length_cropped"] = True
-        if read_loci is not None:                              # several loci: the called V's
-            rec["locus"] = read_loci[i]
-        elif chain_types is not None and len(chain_types) == 1:  # the reference's one locus
-            rec["locus"] = chain_types[0]
-        for g in genes:
-            call, aln = calls[g][i], alignments[g][i]
-            # the V call is listed with the alleles the read cannot tell from it (predict.ties)
-            listed = v_ties[i] if g == "v" and v_ties is not None and v_ties[i] else call.names[:1]
-            rec[f"{g}_call"] = ",".join(listed)
-            rec[f"{g}_calls"] = list(call.names)
-            rec[f"{g}_likelihoods"] = list(call.likelihoods)
-            if aln is not None:
-                rec[f"{g}_sequence_start"] = aln.seq_start
-                rec[f"{g}_sequence_end"] = aln.seq_end
-                rec[f"{g}_germline_start"] = aln.germ_start
-                rec[f"{g}_germline_end"] = aln.germ_end
-                rec[f"{g}_cigar"] = aln.cigar
-        d_presence = getattr(preds, "d_presence", None)
-        if d_presence is not None and "d" in genes:
-            gate_d(rec, int(d_presence[i]))
-        if absent_v:
-            gate_v(rec)
-        records.append(rec)
-    return records
-
-
-def gate_v(rec: dict) -> None:
-    """Drop the V of a read that holds none (``predict.v_presence``) and record it: no call, no coordinates; the AIRR
-    assembly then gives the read no junction or alignment, and its D and J calls stand."""
-    rec[V_PRESENCE] = V_ABSENT
-    rec["v_call"], rec["v_calls"], rec["v_likelihoods"] = "", [], []
-    for key in ("v_sequence_start", "v_sequence_end", "v_germline_start", "v_germline_end", "v_cigar"):
-        rec.pop(key, None)
-
-
-def gate_d(rec: dict, klass: int) -> None:
-    """Gate a record's D on the D presence head's class (``core.d_presence``) and record the class: an absent D is
-    dropped (no call, no coordinates: the AIRR assembly then treats the read as one without a D), a short one keeps
-    its span and alignment without a call (an abstention), a callable one is left as it is."""
-    rec[D_PRESENCE] = D_CLASSES[klass]
-    if klass == CALLABLE:
-        return
-    rec["d_call"], rec["d_calls"], rec["d_likelihoods"] = "", [], []
-    if klass == ABSENT:
-        for key in ("d_sequence_start", "d_sequence_end", "d_germline_start", "d_germline_end", "d_cigar"):
-            rec.pop(key, None)

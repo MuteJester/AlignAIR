@@ -15,18 +15,17 @@ pytestmark = pytest.mark.integration
 D_FIELDS = ("d_call", "d_sequence_start", "d_sequence_end", "d_germline_start", "d_germline_end", "d_cigar")
 
 
-def _product_record(record):
-    """The light record AlignAIR's pipeline would give for a GenAIRR record read perfectly (forward, its own calls,
-    coordinates and CIGARs)."""
-    sequence = record["sequence"].upper()
-    light = {"sequence": sequence, "input_sequence": sequence, "orientation_id": 0, "productive": True,
-             "indel_count": 0.0, "mutation_rate": 0.0}
-    for g in "vdj":
-        call = record[f"{g}_call"].split(",")[0]
-        light.update({f"{g}_call": call, f"{g}_calls": [call], f"{g}_likelihoods": [1.0]})
-        for key in ("sequence_start", "sequence_end", "germline_start", "germline_end", "cigar"):
-            light[f"{g}_{key}"] = record[f"{g}_{key}"]
-    return light
+def _product_read(record, d_presence):
+    """The typed read AlignAIR's pipeline would give for a GenAIRR record read perfectly (forward, its own calls,
+    coordinates and CIGARs), its D gated by the D presence class ``d_presence``."""
+    from alignair.predict.state import GermlineAlignment
+    from tests.support.read_results import make_read
+    calls = {g: record[f"{g}_call"].split(",")[0] for g in "vdj"}
+    alignments = {g: GermlineAlignment(calls[g], record[f"{g}_sequence_start"], record[f"{g}_sequence_end"],
+                                       record[f"{g}_germline_start"], record[f"{g}_germline_end"], record[f"{g}_cigar"])
+                  for g in "vdj"}
+    return make_read(record["sequence"].upper(), calls=calls, alignments=alignments, genes=("v", "d", "j"),
+                     d_presence=d_presence)
 
 
 def test_a_file_mixing_rows_with_and_without_d_fields_has_one_header_and_empty_d_cells(tmp_path):
@@ -34,16 +33,14 @@ def test_a_file_mixing_rows_with_and_without_d_fields_has_one_header_and_empty_d
     from alignair.core.d_presence import D_CLASSES
     from alignair.io.airr import COLUMNS, write_airr
     from alignair.predict.airr import build_airr
-    from alignair.predict.stages import gate_d as _gate_d
+    from alignair.predict.results import light_record
     from alignair.reference.reference_set import ReferenceSet
     from alignair.train.gym import Curriculum
     from alignair.train.gym.streams import stream_records
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     found = [r for r in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, dict(Curriculum().params(0.3)), 5), 20)
              if all(r.get(f"{g}_cigar") for g in "vdj")][:3]
-    records = [_product_record(r) for r in found]
-    for record, klass in zip(records, (0, 1, 2)):                  # absent, short, callable
-        _gate_d(record, klass)
+    records = [light_record(_product_read(r, D_CLASSES[klass])) for r, klass in zip(found, (0, 1, 2))]
     assert not any(key in records[0] for key in D_FIELDS[1:]) and records[0]["d_call"] == ""
     rows = build_airr(records, reference, chain="heavy")
     path = tmp_path / "gated.tsv"

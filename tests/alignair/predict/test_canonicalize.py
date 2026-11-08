@@ -22,23 +22,24 @@ def test_canonicalize_preserves_length():
         assert len(_canonicalize(seq, oid)) == len(seq)
 
 
-def test_to_records_stores_post_crop_pre_orientation_input():
+def test_a_record_stores_its_post_crop_pre_orientation_input():
     """Each record OWNS its post-crop, pre-orientation read as `input_sequence`, and its canonical
     `sequence` is exactly the re-oriented input — so the AIRR writer never needs an external list to get
     orientation right (the fix for the Python-API double-reverse defect)."""
-    from types import SimpleNamespace
+    import numpy as np
 
-    from alignair.predict.stages import to_records as _to_records
+    from alignair.predict.results import light_record, read_results
+    from alignair.predict.state import GeneCall, Predictions
     fwd = "ACGTACGTAC"
     original = _canonicalize(fwd, 1)                  # the read as submitted (reverse-complemented)
     canonical = _canonicalize(original, 1)            # re-oriented back to forward == fwd
     assert canonical == fwd
-    calls = {"v": [SimpleNamespace(names=["IGHV1-1*01"], likelihoods=[0.9])],
-             "j": [SimpleNamespace(names=["IGHJ1*01"], likelihoods=[0.8])]}
+    calls = {"v": [GeneCall(("IGHV1-1*01",), (0.9,))], "j": [GeneCall(("IGHJ1*01",), (0.8,))]}
     aligns = {"v": [None], "j": [None]}
-    preds = SimpleNamespace(orientation=[1], mutation_rate=[0.0], indel_count=[0.0],
-                            productive=[True], chain_type=None)
-    recs = _to_records([canonical], calls, aligns, ("v", "j"), preds, input_sequences=[original])
-    assert recs[0]["sequence"] == canonical
-    assert recs[0]["input_sequence"] == original
-    assert _canonicalize(recs[0]["input_sequence"], recs[0]["orientation_id"]) == recs[0]["sequence"]
+    preds = Predictions(allele={}, start={}, end={}, mutation_rate=np.array([0.0]), indel_count=np.array([0.0]),
+                        orientation=np.array([1]))
+    (read,) = read_results([canonical], [original], preds, calls, aligns, None, None, None, None, [None])
+    record = light_record(read)
+    assert record["sequence"] == canonical
+    assert record["input_sequence"] == original
+    assert _canonicalize(record["input_sequence"], record["orientation_id"]) == record["sequence"]

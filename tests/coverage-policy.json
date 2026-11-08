@@ -11,6 +11,7 @@
     "src/alignair/predict/forward.py": {"statements": 98, "branches": 95},
     "src/alignair/predict/outputs.py": {"statements": 98, "branches": 95},
     "src/alignair/predict/pipeline.py": {"statements": 98, "branches": 95},
+    "src/alignair/predict/results.py": {"statements": 98, "branches": 95},
     "src/alignair/predict/stages.py": {"statements": 98, "branches": 95},
     "src/alignair/errors/base.py": {"statements": 100, "branches": 100},
     "src/alignair/errors/context.py": {"statements": 90, "branches": 85},

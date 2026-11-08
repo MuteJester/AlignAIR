@@ -34,7 +34,7 @@ def test_the_pipeline_is_the_stages_in_their_order():
                            "better_v", "v_presence", "ties", "records", "airr")
     assert [stage.sets for stage in PIPELINE] == [("reads", "cropped"), ("batches",), ("predictions",),
                                                   ("canonical",), ("segments",), ("calls",), ("alignments",),
-                                                  ("alignments",), ("no_v",), ("v_ties",), ("records",), ("rows",)]
+                                                  ("alignments",), ("no_v",), ("v_ties",), ("results",), ("rows",)]
 
 
 def test_predict_is_the_pipeline_run_without_hooks(golden):

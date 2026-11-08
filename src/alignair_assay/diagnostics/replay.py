@@ -44,6 +44,7 @@ from alignair.network.orientation import NUM_ORIENTATIONS
 from alignair.predict import PredictConfig
 from alignair.predict.clean import expectations
 from alignair.predict.pipeline import PIPELINE, STAGE_NAMES, Trace, run_stages
+from alignair.predict.results import light_record
 from alignair.predict.state import PredictionState, Segments
 
 from alignair_assay.core.reference import Reference
@@ -71,7 +72,7 @@ class StageOutputs:
     calls: dict[str, list]
     # gene -> one alignair.predict.state.GermlineAlignment (or None) per read
     germline: dict[str, list]
-    # _to_records output
+    # each read's light record (alignair.predict.results.light_record)
     records: list[dict]
     # build_airr output: the records predict_sequences returns
     airr_rows: list[dict]
@@ -83,6 +84,8 @@ class StageOutputs:
     no_v: list[bool] | None = None
     # per read: its V call and the alleles tied with it (stages.tied_alleles), () without a V alignment
     v_ties: list[tuple] | None = None
+    # per read: its typed result (alignair.predict.results.ReadResult); None when not replayed
+    results: list | None = None
 
 
 @dataclass(frozen=True)
@@ -199,8 +202,9 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
     raw = {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
     return StageOutputs(ids=list(ids), raw=raw, predictions=trace.states["clean"].predictions,
                         canonical=final.canonical, segments=final.segments, calls=final.calls,
-                        germline=final.alignments, records=final.records, airr_rows=final.rows,
-                        seconds=dict(trace.seconds), allele_names=names, no_v=final.no_v, v_ties=final.v_ties)
+                        germline=final.alignments, records=[light_record(r) for r in final.results],
+                        airr_rows=final.rows, seconds=dict(trace.seconds), allele_names=names, no_v=final.no_v,
+                        v_ties=final.v_ties, results=final.results)
 
 
 class _SubstitutionHook:

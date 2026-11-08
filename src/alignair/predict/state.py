@@ -109,7 +109,7 @@ class PredictionState:
     alignments: Optional[dict] = None                   # germline, then better_v: gene -> GermlineAlignment | None
     no_v: Optional[list] = None                         # v_presence: whether each read has no V
     v_ties: Optional[list] = None                       # ties: each read's V call and the alleles tied with it
-    records: Optional[list] = None                      # records: one record dict per read
+    results: Optional[list] = None                      # records: one ReadResult per read
     rows: Optional[list] = None                         # airr: what predict returns
 
     @classmethod
@@ -130,7 +130,7 @@ class PredictionState:
 # The PredictionState fields that hold one entry per read (as a list, an array, a gene dict of them, or Predictions or
 # Segments): what ``PredictionState.take`` cuts.
 PER_READ_FIELDS = ("orientation_given", "reads", "cropped", "predictions", "canonical", "segments", "calls",
-                   "alignments", "no_v", "v_ties", "records", "rows")
+                   "alignments", "no_v", "v_ties", "results", "rows")
 
 
 def _pick(value, rows: list):

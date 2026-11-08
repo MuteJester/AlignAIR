@@ -38,7 +38,7 @@ PIPELINE: tuple[Stage, ...] = (
     Stage("better_v", stages.promote_better_v, ("alignments",)),
     Stage("v_presence", stages.find_absent_v, ("no_v",)),
     Stage("ties", stages.list_v_ties, ("v_ties",)),
-    Stage("records", stages.build_records, ("records",)),
+    Stage("records", stages.build_records, ("results",)),
     Stage("airr", stages.build_rows, ("rows",)),
 )
 STAGE_NAMES: tuple[str, ...] = tuple(stage.name for stage in PIPELINE)

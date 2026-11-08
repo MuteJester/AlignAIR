@@ -60,3 +60,16 @@ def test_only_a_read_holding_no_v_kmer_is_gated(golden):
     assert all(row["v_call"] and "v_presence" not in row for row, held in zip(rows, holds) if held)
     gated = [row for row in rows if row.get("v_presence") == "absent"]
     assert gated and all(not held for row, held in zip(rows, holds) if row.get("v_presence") == "absent")
+
+
+def test_a_read_without_a_v_whose_d_is_short_keeps_its_d_span_without_a_call(golden):
+    """The two gates on one read: no V call and the D presence head's short class: the D's span is kept without a
+    call, and the row is a partial no-V assembly."""
+    from alignair.api import predict_sequences
+    from tests.alignair.predict.test_d_gate import DPresenceStub, _encoded
+    model, reference = golden
+    read = _dj_read(reference)
+    (row,) = predict_sequences(DPresenceStub(model, {_encoded(read): 1}), reference, [read], device="cpu")
+    assert (row["v_presence"], row["d_presence"], row["d_call"]) == ("absent", "short", "")
+    assert row["d_sequence_start"] is not None
+    assert (row["airr_assembly_status"], row["airr_assembly_reason"]) == ("partial", "no_v")

@@ -1,31 +1,32 @@
-"""A record is labelled with the reference's locus when the reference has one."""
+"""A record is labelled with the reference's locus when the reference has one (``stages.record_loci``)."""
 import numpy as np
 import pytest
 
-from alignair.predict.stages import to_records as _to_records
+from alignair.predict.results import light_record, read_results
+from alignair.predict.stages import record_loci
 from alignair.predict.state import GeneCall, GermlineAlignment, Predictions
 
 pytestmark = pytest.mark.component
 
 
-def _inputs():
+def _record(chain_types):
     calls = {"v": [GeneCall(("IGKV1",), (1.0,))], "j": [GeneCall(("IGKJ1",), (1.0,))]}
     alignments = {"v": [GermlineAlignment("IGKV1", 0, 10, 0, 10, "10M")],
                   "j": [GermlineAlignment("IGKJ1", 20, 30, 0, 10, "10M")]}
     preds = Predictions(allele={}, start={}, end={}, mutation_rate=np.array([0.0]), indel_count=np.array([0.0]),
                         orientation=np.array([0]))
-    return calls, alignments, preds
+    loci = record_loci(alignments["v"], object(), None, chain_types)     # a reference without a locus schema
+    (read,) = read_results(["ACGT"], ["ACGT"], preds, calls, alignments, None, None, None, None, loci)
+    return light_record(read)
 
 
 def test_a_one_locus_reference_labels_the_record():
-    calls, alignments, preds = _inputs()
-    assert _to_records(["ACGT"], calls, alignments, ("v", "j"), preds, chain_types=("IGK",))[0]["locus"] == "IGK"
+    assert _record(("IGK",))["locus"] == "IGK"
 
 
 @pytest.mark.parametrize("chain_types", [None, ("IGH", "IGK")])
 def test_no_locus_label_without_a_one_locus_reference(chain_types):
-    calls, alignments, preds = _inputs()
-    assert "locus" not in _to_records(["ACGT"], calls, alignments, ("v", "j"), preds, chain_types=chain_types)[0]
+    assert "locus" not in _record(chain_types)
 
 
 def test_a_multi_locus_reference_labels_each_row_with_its_called_vs_locus():
