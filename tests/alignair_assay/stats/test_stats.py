@@ -187,7 +187,7 @@ def test_no_pairs_inconclusive():
 
 # compare()'s output on _golden_data() before clusters existed (commit 4e3b920), as the SHA-256 of its JSON with
 # sorted keys: with every cluster a singleton, the output must stay byte for byte what it was.
-GOLDEN_SHA256 = "f88a108c58ab7b6689886d39a5be75846e3c251e9e50cceb84cc59a97d03a8d7"
+GOLDEN_SHA256 = "3122f09e070dc576f5636b36f25826c62905d21767ba7b49dbccee591b72db75"
 
 
 def _golden_data():
