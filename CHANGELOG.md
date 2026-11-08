@@ -171,7 +171,7 @@ All notable changes to AlignAIR are documented here. The format follows
   whitespace, and maps unknown characters to N before tokenization, alignment and reporting.
   Literal P input no longer becomes padding. Eager empty batches raise a typed input error.
 - Genotype repertoire alignment consumes generators once and uses prepared read lengths while retaining
-  crop flags in prediction records. Assay replay uses shared adaptation/forward execution with verified pins.
+  crop flags in prediction records. The assay replay runs the product's own prediction stages with hooks.
 - Nucleotide CLI metadata joins use original source IDs, preventing generated suffixes from matching
   another read's metadata. Unnamed reads receive no metadata through invented fallback join keys.
 - Both metadata loaders reject duplicate keys. Inserts are transactional; temporary indexes support
