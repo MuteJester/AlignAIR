@@ -117,3 +117,31 @@ def test_the_compiled_band_takes_and_returns_the_reads_device_with_the_torch_ban
     scores = vrescore.banded_scores(*inputs)
     assert scores.device == inputs[0].device
     assert torch.equal(scores, vrescore._torch_banded_scores(*inputs))
+
+
+def test_the_v_rescore_keeps_a_small_locus_calls_in_it():
+    """A read's locus holds 3 V alleles (``refine.locus`` put the others at ``OUT``), so the re-score's top 5 takes 2
+    alleles of another locus; those match the read exactly, the locus's own alleles carry two substitutions. The call
+    stays in the locus and the other locus's alleles keep a score of 0."""
+    from types import SimpleNamespace
+
+    from alignair.core.anchors import ANCHOR_LOGITS
+    from alignair.network.scan import OUT
+    from alignair.refine.vrescore import rescore_v
+    read = V1[10:]
+    length = len(read) + 1
+    rows = torch.cat([_tokens(V2)] * 3 + [_tokens(V1)] * 3)                      # 3 in the locus, 3 outside
+    bank = SimpleNamespace(anchor_base_v=torch.full((6,), ANCHOR), sequence_v=rows)
+
+    def peak(at):
+        logits = torch.full((1, length), -10.)
+        logits[0, at] = 10.
+        return logits
+
+    log_posterior = torch.log_softmax(torch.tensor([[0., -0.5, -1., OUT, OUT, OUT]]), -1)
+    out = {"v_log_posterior": log_posterior, ANCHOR_LOGITS["v"]: peak(ANCHOR - 10), "v_start_logits": peak(0),
+           "v_end_logits": peak(len(read)), "mutation_rate": torch.tensor([[M]])}
+    tokens = torch.cat([_tokens(read), torch.zeros(1, 1, dtype=torch.long)], 1)
+    rescore_v(out, tokens, bank)
+    assert not torch.equal(out["v_log_posterior"], log_posterior)                # the re-score ran on this read
+    assert int(out["v_log_posterior"][0].argmax()) < 3 and (out["v_allele"][0, 3:] == 0).all()
