@@ -15,7 +15,7 @@ from functools import partial
 from GenAIRR import Experiment
 
 from alignair_assay.suites.base import RecipeContext, Stratum, Suite
-from alignair_assay.suites.recipes import mutated, symmetric_d_trim
+from alignair_assay.suites.recipes import experiment_on, mutated, symmetric_d_trim
 
 # Poisson per-base SHM rate (0 to 1) of the S5F ``hh_s5f`` kernel.
 _RATE = 0.02
@@ -34,10 +34,10 @@ def junction_repertoire(ctx: RecipeContext, *, sweep: str, value: int) -> Experi
     if sweep == "d_both":
         experiment = symmetric_d_trim(ctx, value)
     elif sweep in ("np1", "np2"):
-        experiment = Experiment.on(ctx.config).recombine(**{f"{sweep}_lengths": [(value, 1.0)]})
+        experiment = experiment_on(ctx.config).recombine(**{f"{sweep}_lengths": [(value, 1.0)]})
     else:
-        experiment = Experiment.on(ctx.config).recombine().trim(**{_TRIM_SIDES[sweep]: [(value, 1.0)]})
-    return mutated(experiment, _RATE)
+        experiment = experiment_on(ctx.config).recombine().trim(**{_TRIM_SIDES[sweep]: [(value, 1.0)]})
+    return mutated(experiment, _RATE, config=ctx.config)
 
 
 def p_nucleotide_label(record: dict, ctx: RecipeContext) -> dict[str, str]:

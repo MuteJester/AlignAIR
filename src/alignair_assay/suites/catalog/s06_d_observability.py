@@ -13,7 +13,7 @@ from functools import partial
 from GenAIRR import Experiment
 
 from alignair_assay.suites.base import RecipeContext, Stratum, Suite
-from alignair_assay.suites.recipes import mutated, symmetric_d_trim
+from alignair_assay.suites.recipes import experiment_on, mutated, symmetric_d_trim
 
 # Poisson per-base SHM rate (0 to 1) of the S5F ``hh_s5f`` kernel.
 _RATE = 0.02
@@ -24,13 +24,13 @@ _TRIMS = (0, 3, 6, 9, 12)
 def trimmed_d_repertoire(ctx: RecipeContext, *, per_side: int) -> Experiment:
     """Recombination with D trimmed exactly ``per_side`` nucleotides at both ends, then SHM at Poisson per-base
     rate 0.02; no end loss."""
-    return mutated(symmetric_d_trim(ctx, per_side), _RATE)
+    return mutated(symmetric_d_trim(ctx, per_side), _RATE, config=ctx.config)
 
 
 def inverted_d_repertoire(ctx: RecipeContext) -> Experiment:
     """Recombination with every D inverted (reverse-complemented) and default trims, then SHM at Poisson per-base
     rate 0.02; no end loss."""
-    return mutated(Experiment.on(ctx.config).recombine().invert_d(prob=1.0), _RATE)
+    return mutated(experiment_on(ctx.config).recombine().invert_d(prob=1.0), _RATE, config=ctx.config)
 
 
 S6 = Suite(

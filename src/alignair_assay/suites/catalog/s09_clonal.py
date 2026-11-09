@@ -14,6 +14,7 @@ from __future__ import annotations
 from GenAIRR import Experiment
 
 from alignair_assay.suites.base import RecipeContext, Stratum, Suite
+from alignair_assay.suites.recipes import experiment_on
 
 # Per-base SHM rate (0 to 1) per lineage generation.
 _RATE = 0.008
@@ -24,7 +25,7 @@ _SAMPLE = 25
 def lineage_repertoire(ctx: RecipeContext) -> Experiment:
     """``ctx.n`` clonal lineages grown from recombined founders, up to 25 sampled cells each, with S5F ``hh_s5f``
     SHM at per-base rate 0.008 per generation over GenAIRR's default 10 generations; no end loss."""
-    return Experiment.on(ctx.config).recombine().clonal_lineage(n_clones=ctx.n, n_sample=_SAMPLE, rate=_RATE)
+    return experiment_on(ctx.config).recombine().clonal_lineage(n_clones=ctx.n, n_sample=_SAMPLE, rate=_RATE)
 
 
 S9 = Suite(

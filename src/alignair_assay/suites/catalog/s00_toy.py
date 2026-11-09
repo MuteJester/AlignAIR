@@ -6,11 +6,12 @@ from GenAIRR import Experiment
 
 from alignair_assay.suites.base import RecipeContext, Stratum, Suite
 from alignair_assay.suites.donors import DonorSpec
+from alignair_assay.suites.recipes import experiment_on, mutated
 
 
 def toy_repertoire(ctx: RecipeContext) -> Experiment:
     """Recombined heavy chains with light somatic hypermutation (Poisson rate 0.03 per base)."""
-    return Experiment.on(ctx.config).recombine().mutate(rate=0.03)
+    return mutated(experiment_on(ctx.config).recombine(), 0.03, config=ctx.config, model=None)
 
 
 def has_d_call(record: dict) -> bool:

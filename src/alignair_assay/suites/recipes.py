@@ -7,6 +7,11 @@ truth reference is built from, so an unshifted recipe samples exactly what GenAI
 
 The targeted suites build their own chains from ``mutated`` (the SHM step) and ``symmetric_d_trim`` (a fixed trim
 at both D ends that GenAIRR can always apply; see ``d_alleles_for_trim``).
+
+Every chain starts from ``experiment_on``: GenAIRR's ``Experiment.on`` of the config with curatable refdata allowed, as
+AlignAIR's trainer allows it (TRB's dataconfig holds V alleles whose anchor codon is not a Cys, which a strict compile
+refuses; a reference without such alleles simulates the same records either way). ``mutated`` skips SHM on a TCR
+reference, which has none (GenAIRR refuses ``mutate`` there).
 """
 from __future__ import annotations
 
@@ -37,10 +42,15 @@ _TRIM_MARGIN = 3
 _D_TRIM_KEEP = 2
 
 
+def experiment_on(config) -> Experiment:
+    """A fresh GenAIRR ``Experiment.on`` of ``config`` with curatable refdata allowed (see the module docstring)."""
+    return Experiment.on(config).allow_curatable_refdata()
+
+
 def repertoire(ctx: RecipeContext, *, design: str = "full", rate: float = 0.075, model: str = "s5f",
                s5f_model: str = "hh_s5f", np_shift: int = 0, trim_shift: int = 0,
                noise: tuple[str, dict] | None = None) -> Experiment:
-    """A fresh ``Experiment.on(ctx.config)`` repertoire chain: recombination, SHM, one noise step and the end loss
+    """A fresh ``experiment_on(ctx.config)`` repertoire chain: recombination, SHM, one noise step and the end loss
     of read ``design`` (a ``READ_DESIGNS`` key; ValueError otherwise).
 
     ``rate`` is the Poisson per-base SHM rate (0 to 1; 0 skips ``mutate``) of ``model`` (``"s5f"`` or
@@ -57,14 +67,14 @@ def repertoire(ctx: RecipeContext, *, design: str = "full", rate: float = 0.075,
         np_lengths = {"np1_lengths": _shift(_np_lengths(config, "NP1"), np_shift)}
         if config.d_alleles:
             np_lengths["np2_lengths"] = _shift(_np_lengths(config, "NP2"), np_shift)
-        experiment = Experiment.on(config).recombine(**np_lengths)
+        experiment = experiment_on(config).recombine(**np_lengths)
     else:
-        experiment = Experiment.on(config).recombine()
+        experiment = experiment_on(config).recombine()
     if trim_shift:
         caps = _trim_caps(config)
         experiment = experiment.trim(**{side: _shift(pairs, trim_shift, cap=caps.get(side))
                                         for side, pairs in pooled_trim_marginals(config).items()})
-    experiment = mutated(experiment, rate, model=model, s5f_model=s5f_model)
+    experiment = mutated(experiment, rate, config=config, model=model, s5f_model=s5f_model)
     if noise is not None:
         step, kwargs = noise
         experiment = getattr(experiment, step)(**kwargs)
@@ -76,11 +86,16 @@ def repertoire(ctx: RecipeContext, *, design: str = "full", rate: float = 0.075,
     return experiment
 
 
-def mutated(experiment: Experiment, rate: float, *, model: str = "s5f", s5f_model: str = "hh_s5f") -> Experiment:
+def mutated(experiment: Experiment, rate: float, *, config, model: str | None = "s5f",
+            s5f_model: str = "hh_s5f") -> Experiment:
     """``experiment`` followed by GenAIRR's SHM step: Poisson per-base ``rate`` (0 to 1) of ``model`` (``"s5f"`` or
-    ``"uniform"``) with S5F kernel ``s5f_model``; ``experiment`` unchanged at rate 0."""
-    if not rate:
+    ``"uniform"``) with S5F kernel ``s5f_model``, or GenAIRR's own defaults at ``rate`` for ``model`` None;
+    ``experiment`` unchanged at rate 0 and on a TCR ``config`` (no SHM in T cells)."""
+    from alignair.reference.reference_set import is_tcr
+    if not rate or is_tcr(config):
         return experiment
+    if model is None:
+        return experiment.mutate(rate=rate)
     return experiment.mutate(model=model, rate=rate, s5f_model=s5f_model)
 
 
@@ -101,11 +116,11 @@ def d_alleles_for_trim(config, per_side: int) -> list[str] | None:
 
 
 def symmetric_d_trim(ctx: RecipeContext, per_side: int) -> Experiment:
-    """A fresh ``Experiment.on(ctx.config)`` recombination whose D is trimmed exactly ``per_side`` nucleotides at
+    """A fresh ``experiment_on(ctx.config)`` recombination whose D is trimmed exactly ``per_side`` nucleotides at
     both ends, every other trim and NP length keeping GenAIRR's defaults. When some D allele is too short for that
     trim, D is restricted to the alleles that fit (``d_alleles_for_trim``), sampled uniformly; otherwise the D pool
     is GenAIRR's default. Every record then carries ``d_trim_5 == d_trim_3 == per_side``."""
-    experiment = Experiment.on(ctx.config)
+    experiment = experiment_on(ctx.config)
     fitting = d_alleles_for_trim(ctx.config, per_side)
     if fitting is not None:
         experiment = experiment.restrict_alleles(d=fitting)

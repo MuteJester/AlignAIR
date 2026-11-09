@@ -5,7 +5,7 @@ from alignair_assay.cli.common import comma_list
 from alignair_assay.core.layout import RunLayout
 from alignair_assay.core.reference import DEFAULT_REFERENCE
 from alignair_assay.suites import get_suite
-from alignair_assay.suites.engine import DEFAULT_SEED, SPLITS
+from alignair_assay.suites.engine import DEFAULT_SEED, SPLITS, SuiteNotApplicable
 from alignair_assay.workflow.build import build_suite
 
 
@@ -24,7 +24,8 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    """Build every named suite (each name checked before anything is built) and print one line per suite."""
+    """Build every named suite (each name checked before anything is built) and print one line per suite; a suite
+    that does not apply to the reference (``suites.engine.SuiteNotApplicable``) is reported and skipped."""
     names = list(comma_list(args.suites))
     if not names:
         raise ValueError("--suites names no suite")
@@ -32,8 +33,12 @@ def run(args) -> int:
         get_suite(name)
     layout = RunLayout(args.run_dir)
     for name in names:
-        build = build_suite(name, layout, reference_name=args.reference, split=args.split, seed=args.seed,
-                            scale=args.scale, workers=args.workers)
+        try:
+            build = build_suite(name, layout, reference_name=args.reference, split=args.split, seed=args.seed,
+                                scale=args.scale, workers=args.workers)
+        except SuiteNotApplicable as error:
+            print(f"not applicable to {args.reference}: {name} ({error})")
+            continue
         print(_summary_line(build, layout))
     return 0
 

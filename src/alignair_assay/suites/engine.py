@@ -33,6 +33,11 @@ _MAX_FACTOR = 20
 _MIN_ACCEPTANCE = 0.05
 
 
+class SuiteNotApplicable(ValueError):
+    """A suite none of whose strata applies to the reference it is asked to be built against (``Stratum.applies``):
+    a D suite on a light chain, a clonal SHM suite on a T-cell receptor."""
+
+
 def derive_seed(seed: int, *parts) -> int:
     """A seed in [0, 2**31) for ``parts`` under ``seed``: the first 4 bytes (big-endian) of the SHA-256 of
     ``"seed:part1:part2:..."``, modulo 2**31."""
@@ -61,6 +66,7 @@ class GeneratedSuite:
     cases: list[dict]
     donors: tuple[Donor, ...]
     stats: dict
+    skipped: tuple[str, ...] = ()           # the strata that do not apply to the reference (``Stratum.applies``)
 
 
 def generate_suite(suite: Suite, *, reference_name: str, split: str, seed: int, scale: float,
@@ -69,29 +75,36 @@ def generate_suite(suite: Suite, *, reference_name: str, split: str, seed: int, 
 
     ``workers`` processes (at most one per stratum) generate the strata; with one, generation runs in-process.
     The output does not depend on ``workers``. Parallel generation resolves the suite by name, so it needs a
-    registered suite. Raises ValueError for an unknown split, a scale that is not positive or a bad worker count,
-    and RuntimeError when a stratum cannot be filled.
+    registered suite. A stratum that does not apply to the reference (``Stratum.applies``) is skipped and named in
+    ``skipped``. Raises ValueError for an unknown split, a scale that is not positive or a bad worker count,
+    SuiteNotApplicable when no stratum applies, and RuntimeError when a stratum cannot be filled.
     """
     check_split(split)
     if not (scale > 0 and math.isfinite(scale)):
         raise ValueError(f"scale must be a positive number, got {scale!r}")
     if workers < 1:
         raise ValueError(f"workers must be at least 1, got {workers!r}")
-    processes = min(workers, len(suite.strata))
+    ctx = make_context(suite, reference_name, split=split, seed=seed)
+    applicable = [index for index, stratum in enumerate(suite.strata)
+                  if stratum.applies is None or stratum.applies(ctx)]
+    skipped = tuple(stratum.name for index, stratum in enumerate(suite.strata) if index not in applicable)
+    if not applicable:
+        raise SuiteNotApplicable(f"suite {suite.name} is not applicable to {reference_name}: none of its strata "
+                                 f"({', '.join(skipped)}) applies")
+    processes = min(workers, len(applicable))
     if processes > 1 and SUITES.get(suite.name) is not suite:
         raise ValueError(f"suite {suite.name}: parallel generation needs a registered suite (see suites.SUITES)")
-    ctx = make_context(suite, reference_name, split=split, seed=seed)
     if processes > 1:
-        tasks = [(suite.name, index, reference_name, split, seed, scale) for index in range(len(suite.strata))]
+        tasks = [(suite.name, index, reference_name, split, seed, scale) for index in applicable]
         # Spawned, not forked: the parent has usually started threads (torch), and forking those can deadlock.
         with ProcessPoolExecutor(max_workers=processes, mp_context=multiprocessing.get_context("spawn")) as pool:
             results = list(pool.map(_generate_registered, tasks))
     else:
-        results = [generate_stratum(suite, stratum, ctx, split=split, seed=seed, scale=scale)
-                   for stratum in suite.strata]
+        results = [generate_stratum(suite, suite.strata[index], ctx, split=split, seed=seed, scale=scale)
+                   for index in applicable]
     cases = [case for stratum_cases, _ in results for case in stratum_cases]
-    stats = {stratum.name: stratum_stats for stratum, (_, stratum_stats) in zip(suite.strata, results)}
-    return GeneratedSuite(cases=cases, donors=ctx.donors, stats=stats)
+    stats = {suite.strata[index].name: stratum_stats for index, (_, stratum_stats) in zip(applicable, results)}
+    return GeneratedSuite(cases=cases, donors=ctx.donors, stats=stats, skipped=skipped)
 
 
 def make_context(suite: Suite, reference_name: str, *, split: str, seed: int) -> RecipeContext:

@@ -12,7 +12,7 @@ from GenAIRR import Experiment
 
 from alignair_assay.core.reference import Reference
 from alignair_assay.suites.base import RecipeContext, Stratum, Suite
-from alignair_assay.suites.recipes import mutated
+from alignair_assay.suites.recipes import experiment_on, mutated
 
 # The largest sibling distance (Hamming, in bases) an allele may have to be sampled.
 MAX_DISTANCE = 5
@@ -59,7 +59,7 @@ def sibling_repertoire(ctx: RecipeContext, *, rate: float) -> Experiment:
     """Recombination with V sampled uniformly from the sibling alleles of ``ctx.reference``, then SHM at Poisson
     per-base ``rate`` (0 to 1; 0 skips it); no end loss."""
     siblings = sorted(sibling_alleles(ctx.reference, "v", MAX_DISTANCE))
-    return mutated(Experiment.on(ctx.config).restrict_alleles(v=siblings).recombine(), rate)
+    return mutated(experiment_on(ctx.config).restrict_alleles(v=siblings).recombine(), rate, config=ctx.config)
 
 
 def sibling_label(record: dict, ctx: RecipeContext) -> dict[str, str]:
