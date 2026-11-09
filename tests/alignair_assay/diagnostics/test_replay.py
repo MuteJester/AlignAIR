@@ -418,9 +418,9 @@ def test_reference_mismatch_refused_naming_allele(small_model, reference, tmp_pa
     assert f"first difference: {v[3]} has a different sequence in the model reference" in str(err.value)
     assert "it has V=198 D=33 J=7" in str(err.value)
 
+    # A model reference holding every truth allele and more (an all-loci model on a one-locus suite) is accepted.
     fewer = Reference({**reference.alleles, "v": {k: s for k, s in reference.alleles["v"].items() if k != v[0]}}, {})
-    with pytest.raises(ValueError, match=re.escape(f"{v[0]} is extra in the model reference")):
-        load_model_checked((model, reference_set), fewer, device="cpu")
+    assert load_model_checked((model, reference_set), fewer, device="cpu")[0] is model
     more = Reference({**reference.alleles, "v": {**reference.alleles["v"], "IGHVX9*01": "ACGT"}}, {})
     with pytest.raises(ValueError) as err:
         load_model_checked((model, reference_set), more, device="cpu")
@@ -503,3 +503,22 @@ def test_a_substituted_v_call_holds_its_read_out_of_better_v(make_shaped_model, 
                                                               for i in range(n)]})
     assert all(out.germline["v"][i].allele == base.calls["v"][i].names[0] for i in held)
     assert all(out.germline["v"][i] == base.germline["v"][i] for i in range(n) if i not in held)
+
+
+def test_a_model_reference_containing_the_truths_is_accepted():
+    """IGH + IGK against the IGK truth reference: every IGK allele is there with its sequence."""
+    import GenAIRR.data as gd
+    from alignair.reference.reference_set import ReferenceSet
+    from alignair_assay.diagnostics.replay import check_reference
+    check_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB),
+                    Reference.from_dataconfig("HUMAN_IGK_OGRDB"))
+
+
+def test_a_model_reference_missing_a_truth_allele_is_refused():
+    import GenAIRR.data as gd
+    from alignair.reference.reference_set import ReferenceSet
+    from alignair_assay.diagnostics.replay import check_reference
+    truth = Reference.from_dataconfig("HUMAN_IGK_OGRDB")
+    extra = Reference({**truth.alleles, "v": {**truth.alleles["v"], "IGKVX9*01": "ACGT"}}, {})
+    with pytest.raises(ValueError, match=r"not the truth reference.*IGKVX9\*01 is missing from the model reference"):
+        check_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB), extra)

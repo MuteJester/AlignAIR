@@ -181,9 +181,9 @@ def test_spurious_call_on_unobserved_segment(reference, fixture_truth):
     assert score_case(no_d, oracle_prediction(no_d), reference)["d.spurious_call"] == 0.0
     assert math.isnan(score_case(no_d, None, reference)["d.spurious_call"])  # no row: not covered
 
-    # A locus without D genes has no D presence metric at all.
+    # A locus without D genes gets only the D spurious-call metric (a model of several loci may call a D there).
     light = Reference(alleles={g: t for g, t in reference.alleles.items() if g != "d"}, anchors=reference.anchors)
-    assert not any(k.startswith("d") for k in score_case(no_d, oracle_prediction(truth), light))
+    assert [k for k in score_case(no_d, oracle_prediction(truth), light) if k.startswith("d")] == ["d.spurious_call"]
 
 
 def test_unscorable_gene_emits_nothing(reference, fixture_truth):
@@ -381,3 +381,14 @@ def test_interval_distances():
         assert signed_interval_distance(x, (4, 6)) == signed, x
         assert interval_distance(x, (4, 6)) == abs(signed), x
     assert signed_interval_distance(5, (5, 5)) == 0 and signed_interval_distance(4, (5, 5)) == -1
+
+
+def test_a_d_call_on_a_read_of_a_no_d_locus_is_spurious(reference, fixture_truth):
+    """Scored against a reference without D (a light chain's), a D call is spurious: a model of several loci may
+    call one on a light-chain read."""
+    from alignair_assay.core.reference import Reference
+    truth = fixture_truth("amplicon_janchor_000000.json")
+    no_d = replace(truth, segments={g: s for g, s in truth.segments.items() if g != "d"})
+    light = Reference({g: table for g, table in reference.alleles.items() if g != "d"}, {})
+    assert score_case(no_d, oracle_prediction(truth), light)["d.spurious_call"] == 1.0
+    assert score_case(no_d, oracle_prediction(no_d), light)["d.spurious_call"] == 0.0

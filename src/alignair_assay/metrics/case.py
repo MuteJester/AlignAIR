@@ -26,7 +26,8 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
     Observed segments get allele and boundary metrics; a segment with fewer observed germline bases than its
     ``{g}_min_observed`` gets only the ``{g}_short`` call/abstention metrics instead of every ``{g}.*`` allele,
     boundary, indel and SHM metric. Segments of the locus absent from the read get a
-    spurious-call metric. Genes whose truth could not be built (``truth.unscorable``) get no metric at all.
+    spurious-call metric, and so does D on a read of a locus without D (a model of several loci may call one
+    there). Genes whose truth could not be built (``truth.unscorable``) get no metric at all.
     Observed V and J also get indel metrics, and observed V mutation-count and germline-reconstruction metrics;
     an observed V from a novel allele that shows its SNPs also gets ``v_novel.snp_mutations`` (``metrics.novel``).
     A missing row fails every accuracy metric (abstention included) and leaves error and presence metrics
@@ -45,7 +46,7 @@ def score_case(truth: ObservableTruth, pred: Prediction | None, reference: Refer
         p = pred.segments.get(g, _NO_CALL) if pred is not None else _NO_CALL
         seg = truth.segments.get(g)
         if seg is None:
-            if reference.alleles.get(g):
+            if reference.alleles.get(g) or g == "d":       # a no-D reference too: a D call on its read is spurious
                 scores.update(spurious_call(g, p, missing=missing))
         elif seg.observed_length < min_observed[g]:
             scores.update(short_call_metrics(f"{g}_short", seg.alleles, p, missing=missing))

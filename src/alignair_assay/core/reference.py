@@ -112,6 +112,18 @@ class Reference:
                 return f"{name} has a different sequence in the {label} reference"
         return "the same alleles under other gene letters"
 
+    def first_missing(self, truth: "Reference", label: str) -> str | None:
+        """The first allele of ``truth``, in name order, that this reference (called ``label``) lacks or holds with
+        another sequence, as text naming the allele; None when it holds every truth allele with its sequence (it
+        may hold more: a reference of several loci holds a one-locus truth reference)."""
+        mine, theirs = self.sequences(), truth.sequences()
+        for name in sorted(theirs):
+            if name not in mine:
+                return f"{name} is missing from the {label} reference"
+            if mine[name] != theirs[name]:
+                return f"{name} has a different sequence in the {label} reference"
+        return None
+
     @classmethod
     def from_reference_set(cls, rs) -> "Reference":
         """Copy an ``alignair`` ReferenceSet: uppercase sequences per gene (D only when the locus has one) and the

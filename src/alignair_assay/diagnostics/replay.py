@@ -161,14 +161,18 @@ def model_device(model) -> torch.device:
 
 
 def check_reference(reference_set, truth_reference: Reference) -> None:
-    """ValueError unless the ``alignair`` ReferenceSet ``reference_set`` holds exactly the truth reference's
-    alleles and sequences (equal digests), naming both references' allele counts and the first allele, in name
-    order, that is missing from the model's reference, extra in it, or has a different sequence there."""
+    """ValueError unless the ``alignair`` ReferenceSet ``reference_set`` holds every allele of the truth reference
+    with its sequence, naming both references' allele counts and the first truth allele, in name order, that is
+    missing from the model's reference or has a different sequence there. A model reference may hold more alleles
+    than the truth's: a model of several loci is scored on a one-locus suite (its calls of the other loci's alleles
+    are simply wrong)."""
     model_reference = Reference.from_reference_set(reference_set)
-    if model_reference.digest() != truth_reference.digest():
+    if model_reference.digest() == truth_reference.digest():
+        return
+    problem = model_reference.first_missing(truth_reference, "model")
+    if problem is not None:
         raise ValueError(f"the model's reference is not the truth reference: it has {model_reference.counts_text()}, "
-                         f"the truth reference has {truth_reference.counts_text()}; first difference: "
-                         f"{model_reference.first_difference(truth_reference, 'model')}")
+                         f"the truth reference has {truth_reference.counts_text()}; first difference: {problem}")
 
 
 def predict_config(model, reference_set, *, batch_size: int, **overrides) -> PredictConfig:
