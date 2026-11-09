@@ -1,9 +1,9 @@
 {
  "batch_sha256": [
-  "3c75635db97a98e14b2b91a2dd23e4431632c0733d54fa26e1d7e014bf52c9c4",
-  "269716829c4e69078a648c810d66e0e1276068810c2480a5f446381ae5917761"
+  "d05dc2c379b35cff103603fe4ac0266521f46beab14258c98a25289bf60dbe53",
+  "f8ed6e8dc9c029ce71615a26a195cee23fa86f3408bc5e53542591d7f2594326"
  ],
- "commit": "fa2a9e52",
+ "commit": "6eaddf45",
  "genairr_freeze": "c4c73b62",
  "records_sha256": "f8eeadb9057005f550363f19252656e75431e9c7232afeaf07a87d0aa7d40b2b",
  "schema": "alignair.training-pin.v1",

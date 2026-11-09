@@ -137,6 +137,20 @@ def allele_set(record: dict, gene: str, reference_set) -> set[str]:
     return _names(record[f"{gene}_call"]) | recalled
 
 
+def observed_mutation_rate(record: dict, germline: dict) -> float:
+    """The record's mutation-rate target: its observable mutations (``n_observable_mutations``, the hypermutation
+    substitutions still visible in the read) per observed germline base, ``germline_end - germline_start`` summed over
+    the read's segments (``germline``: gene -> (start, end), the assay's observed length) — the owner's decision 10,
+    2026-11-06, in place of GenAIRR 2.4's ``mutation_rate``, a mutation burden per input-molecule base. 0.0 for a read
+    with no observed germline; a record without the count (GenAIRR before 2.4, whose ``mutation_rate`` counted
+    mutations per read base) keeps its ``mutation_rate``. The chip's loss reads no rate target (its ``mutation_rate``
+    is the reader's, ``network.chip``): this is the batch's target and the ``mutation_mae`` training metric."""
+    if record.get("n_observable_mutations") is None:
+        return float(record["mutation_rate"])
+    observed = sum(end - start for start, end in germline.values())
+    return float(record["n_observable_mutations"]) / observed if observed > 0 else 0.0
+
+
 def build_targets(record: dict, reference_set, has_d: bool) -> dict:
     with error_context(stage="build_targets", record_id=record.get("sequence_id")):
         try:
@@ -196,6 +210,6 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         "inseq": coords,
         "calls": calls,
         "d_inverted": bool(record.get("d_inverted", False)),   # an inverted D is RC(germline) in the read
-        "mutation_rate": float(record["mutation_rate"]),
+        "mutation_rate": observed_mutation_rate(record, germ),
         "indel_count": float(record["n_indels"]),
     }

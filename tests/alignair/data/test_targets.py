@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from alignair.errors import TrainingDataError
-from alignair.data.targets import allele_set, build_targets
+from alignair.data.targets import allele_set, build_targets, observed_mutation_rate
 
 pytestmark = pytest.mark.component
 
@@ -119,3 +119,22 @@ def test_the_recalled_alleles_join_the_records_targets():
     record = {**_record(), "recalled_v_call": "V*02", "recalled_j_call": "J*01"}
     calls = build_targets(record, _two_alleles(), True)["calls"]
     assert calls == {"V": {"V*01", "V*02"}, "D": {"D*01"}, "J": {"J*01"}}
+
+
+def test_the_mutation_rate_target_is_observable_mutations_per_observed_germline_base():
+    germline = {"v": (10, 290), "d": (2, 14), "j": (0, 40)}           # 280 + 12 + 40 = 332 germline bases
+    record = {"n_observable_mutations": 33, "mutation_rate": 0.9}
+    assert observed_mutation_rate(record, germline) == pytest.approx(33 / 332)
+
+
+def test_a_record_from_before_genairr_2_4_keeps_its_mutation_rate():
+    assert observed_mutation_rate({"mutation_rate": 0.07}, {"v": (0, 300)}) == 0.07
+
+
+def test_a_record_with_no_observed_germline_has_a_rate_of_zero():
+    assert observed_mutation_rate({"n_observable_mutations": 0, "mutation_rate": 0.1}, {}) == 0.0
+
+
+def test_the_records_targets_carry_its_observed_mutation_rate():
+    record = {**_record(), "n_observable_mutations": 3, "mutation_rate": 0.5}    # 3 of its 12 germline bases
+    assert build_targets(record, _reference(), True)["mutation_rate"] == pytest.approx(0.25)
