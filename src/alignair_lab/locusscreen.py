@@ -6,10 +6,13 @@ dataconfigs, whose records are interleaved round-robin (``gym.streams.training_r
 ``n * k`` steps each gets ``k`` steps' worth; each per-locus arm on one dataconfig at ``k`` steps. Every arm trains
 from each of the screen's seeds. Each locus is scored on its own dev build: the shared arm's run of seed ``s`` against
 the locus's per-locus run of seed ``s`` (Δ = shared - per-locus), and the locus's noise is its band, the largest |pooled
-Δ| among its per-locus runs' seed pairs (runs of one recipe differing by their data draw). A metric is ``worse`` on a
-locus when its mean Δ is below minus the band, ``better`` above the band, else ``within``; the shared arm passes
-when no headline metric (``headline.HEADLINE``) is worse on any locus. Speed (reads per second of the product
-pipeline on the locus's S1 reads, after a warm-up) is measured for each arm on each of its loci; it is reported, not
+Δ| among its per-locus runs' seed pairs (runs of one recipe differing by their data draw), floored at ``BAND_FLOOR``
+(a metric every seed scores alike would otherwise call any shortfall worse). A metric is ``worse`` on a locus when its
+mean Δ is below minus the band, ``better`` above the band, else ``within``; ``unscored`` when some seed does not
+compare it or the band does not hold it. The shared arm passes when no headline metric (``headline.HEADLINE``) is
+worse or unscored on any locus (a metric no seed compares on a locus, D on IGK, does not apply there). Speed (reads
+per second of the product pipeline on the locus's S1 reads, the median of 3 passes after a warm-up, on the screen's
+device and on the CPU with 8 threads) is measured for each arm's first seed on each of its loci; it is reported, not
 gated.
 
 ``run_locus_screen(...)``, as ``databand.run_data_band`` runs:
@@ -23,7 +26,8 @@ gated.
 2. Claims ``out_root/<name>``, or resumes the unfinished screen of this request there, and records its progress in
    ``locus_screen.json`` (a failure is recorded before it is raised).
 3. Trains each arm's missing runs in ``<screen>/<arm>/run-seed<d>`` (``python -m alignair_lab train``, at most
-   ``parallel`` at once); a finished run is reused, and so is every run of a ``reuse`` arm (a directory holding its
+   ``parallel`` at once, the per-locus arms first: a failure shows before the long shared runs); a finished run is
+   reused, and so is every run of a ``reuse`` arm (a directory holding its
    ``run-seed<d>`` runs, such as the data band's), each checked by its checkpoint.
 4. Scores each locus in ``<screen>/assay/<locus>`` (``alignair_assay.workflow.diagnose.evaluate``, as ``calibrate``
    compares), then measures speed.
@@ -65,6 +69,9 @@ DEFAULT_LOCI = {"IGH": Path("/home/thomas/Desktop/AlignAIR/.private/arch/iter_de
                 "TRB": Path("/media/thomas/NVMe_Data/alignair_arch/dev_builds/HUMAN_TCRB_IMGT")}
 DEFAULT_NAME = f"locus-screen-{RECIPE}"
 SPEED_SUITE = "S1"                        # the reads speed is measured on (a build's first suite without it)
+SPEED_PASSES = 3                          # timed passes per measurement; the median is kept
+CPU_THREADS = 8                           # the CPU speed's torch threads
+BAND_FLOOR = 0.001                        # the smallest band: a tenth of a point
 HEADLINE_METRICS = tuple(metric for metric, _ in HEADLINE)
 
 
@@ -99,36 +106,73 @@ def _check_builds(arms: Mapping, per: Mapping[str, str], loci: Mapping, names: M
                                  f"{built.get('reference')}, not {want}")
 
 
-def _speed(checkpoint: str, build: Path, names: Sequence[str], device: str) -> float:
-    """Reads per second of the product pipeline (``alignair.api.predict_sequences``) on a build's speed suite's
-    reads, after a warm-up on the first 64."""
+def _reads_per_second(checkpoint: str, reads: Sequence[str], device: str) -> float:
+    """Reads per second of the product pipeline (``alignair.api.predict_sequences``) on ``reads`` on ``device``: the
+    median of ``SPEED_PASSES`` timed passes after a warm-up on the first 64."""
+    import statistics
+
     import torch
     from alignair import api
+    model, reference = api.load_model(checkpoint, device=device)
+
+    def synchronize():
+        if device.startswith("cuda"):
+            torch.cuda.synchronize()
+
+    api.predict_sequences(model, reference, reads[:64], device=device)
+    rates = []
+    for _ in range(SPEED_PASSES):
+        synchronize()
+        start = time.perf_counter()
+        api.predict_sequences(model, reference, reads, device=device)
+        synchronize()
+        rates.append(len(reads) / (time.perf_counter() - start))
+    return statistics.median(rates)
+
+
+def _speed(checkpoint: str, build: Path, names: Sequence[str], device: str) -> dict:
+    """``{"device": reads/s, "cpu8": reads/s}`` on a build's speed suite's reads: on ``device``, and on the CPU with
+    ``CPU_THREADS`` threads."""
+    import torch
     from alignair_assay.core.cases import read_fasta
     suite = SPEED_SUITE if SPEED_SUITE in names else names[0]
     reads = [sequence for _, sequence in read_fasta(build / "suites" / suite / "reads.fasta")]
-    model, reference = api.load_model(checkpoint, device=device)
-    api.predict_sequences(model, reference, reads[:64], device=device)
-    if device.startswith("cuda"):
-        torch.cuda.synchronize()
-    start = time.perf_counter()
-    api.predict_sequences(model, reference, reads, device=device)
-    if device.startswith("cuda"):
-        torch.cuda.synchronize()
-    return len(reads) / (time.perf_counter() - start)
+    out = {"device": _reads_per_second(checkpoint, reads, device)}
+    threads = torch.get_num_threads()
+    torch.set_num_threads(CPU_THREADS)
+    try:
+        out["cpu8"] = _reads_per_second(checkpoint, reads, "cpu")
+    finally:
+        torch.set_num_threads(threads)
+    return out
 
 
 def _verdict(pairs: Mapping[str, Mapping], band: Mapping[str, float]) -> dict:
-    """Per metric of ``band``: the seeds' pooled Δs, their mean, the band and the call (see the module docstring)."""
+    """Per metric some seed compares: the seeds' pooled Δs, their mean, the band (floored at ``BAND_FLOOR``) and the
+    call (see the module docstring); ``unscored`` when some seed does not compare it or the band does not hold it."""
     out = {}
-    for metric, width in band.items():
+    compared = sorted({metric for found in pairs.values() for metric in found["pooled"]})
+    for metric in compared:
         deltas = [found["pooled"][metric] for found in pairs.values() if metric in found["pooled"]]
-        if not deltas:
-            continue
         mean = sum(deltas) / len(deltas)
+        if len(deltas) < len(pairs) or metric not in band:
+            out[metric] = {"deltas": deltas, "mean_delta": mean, "band": band.get(metric), "call": "unscored"}
+            continue
+        width = max(band[metric], BAND_FLOOR)
         call = "worse" if mean < -width else "better" if mean > width else "within"
         out[metric] = {"deltas": deltas, "mean_delta": mean, "band": width, "call": call}
     return out
+
+
+def _passes(verdict: Mapping[str, Mapping]) -> bool:
+    """Whether no headline metric is worse or unscored on any locus (``verdict``: locus -> ``_verdict``)."""
+    return not any(call["call"] in ("worse", "unscored") for calls in verdict.values()
+                   for metric, call in calls.items() if metric in HEADLINE_METRICS)
+
+
+def training_order(arms: Mapping) -> list[str]:
+    """The arms in the order their runs train: the per-locus arms (scored on one locus) first, then the shared one."""
+    return sorted(arms, key=lambda arm: len(arms[arm][2]) > 1)
 
 
 def _report(record: Mapping) -> str:
@@ -139,16 +183,19 @@ def _report(record: Mapping) -> str:
              f"{record['arms'][shared]['steps']} steps. Δ = shared − per-locus, in pp; band = the largest |pooled Δ| "
              "among the per-locus arm's seed pairs.", ""]
     for locus, calls in record["verdict"].items():
-        lines += [f"## {locus}", "", "| metric | mean Δ | band | call |", "|---|---|---|---|"]
+        lines += [f"## {locus}", "", "| metric | gated | mean Δ | band | call |", "|---|---|---|---|---|"]
         ordered = [m for m in HEADLINE_METRICS if m in calls] + sorted(m for m in calls if m not in HEADLINE_METRICS)
-        lines += [f"| {m} | {100 * calls[m]['mean_delta']:+.2f} | {100 * calls[m]['band']:.2f} | {calls[m]['call']} |"
-                  for m in ordered]
+        for m in ordered:
+            band = "n/a" if calls[m]["band"] is None else f"{100 * calls[m]['band']:.2f}"
+            lines.append(f"| {m} | {'yes' if m in HEADLINE_METRICS else ''} | {100 * calls[m]['mean_delta']:+.2f} | "
+                         f"{band} | {calls[m]['call']} |")
         lines.append("")
-    lines += ["## Speed (reads/s)", "", "| arm | " + " | ".join(record["verdict"]) + " |",
-              "|---|" + "---|" * len(record["verdict"])]
+    loci = list(record["verdict"])
+    lines += ["## Speed (reads/s: the screen's device / CPU, 8 threads)", "", "| arm | " + " | ".join(loci) + " |",
+              "|---|" + "---|" * len(loci)]
     for arm, by_locus in record["speed"].items():
-        lines.append(f"| {arm} | " + " | ".join(f"{by_locus[locus]:.1f}" if locus in by_locus else "" for locus in
-                                                 record["verdict"]) + " |")
+        lines.append(f"| {arm} | " + " | ".join(f"{by_locus[locus]['device']:.1f} / {by_locus[locus]['cpu8']:.1f}"
+                                                 if locus in by_locus else "" for locus in loci) + " |")
     lines += ["", f"**Verdict:** the shared arm {'passes' if record['passes'] else 'fails'}: "
                   f"{'no' if record['passes'] else 'a'} headline metric is worse than its locus's band on "
                   f"{'any locus' if record['passes'] else 'some locus'}.", ""]
@@ -233,7 +280,8 @@ def run_locus_screen(*, arms: Mapping = DEFAULT_ARMS, loci: Mapping = DEFAULT_LO
                                                           schedule=schedule, model_options=model_options,
                                                           device=device, data_workers=data_workers,
                                                           dataconfigs=arms[arm][0]))
-                for arm in arms if arm not in reuse for seed in seeds if not (run_dir(arm, seed) / DONE).is_file()]
+                for arm in training_order(arms) if arm not in reuse for seed in seeds
+                if not (run_dir(arm, seed) / DONE).is_file()]
         stage(f"training {len(plan)} run(s), reusing {len(arms) * len(seeds) - len(plan)}")
         train_screens(plan, directory, parallel, echo, label="locus-screen", what="run", seed_label="data seed")
         runs = {arm: {str(seed): {"checkpoint": check_run(run_dir(arm, seed), request_of(arm, seed))["model"]}
@@ -264,8 +312,7 @@ def run_locus_screen(*, arms: Mapping = DEFAULT_ARMS, loci: Mapping = DEFAULT_LO
                 speed[arm][locus] = _speed(runs[arm][str(seeds[0])]["checkpoint"], Path(loci[locus]), names[locus],
                                            device)
         verdict = {locus: _verdict(pairs[locus], bands[locus]) for locus in pairs}
-        passes = not any(call["call"] == "worse" for calls in verdict.values()
-                         for metric, call in calls.items() if metric in HEADLINE_METRICS)
+        passes = _passes(verdict)
         record.update(status="done", pairs=pairs, bands=bands, verdict=verdict, passes=passes, speed=speed,
                       code=code_digests(), finished=now())
         write_json(directory / LOCUS_SCREEN, record)
