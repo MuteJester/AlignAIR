@@ -1,5 +1,7 @@
 """The training recipe of every screen and record cache, and of the chip baseline they are compared with: the 1.0.0
-recipe's settings under the product's record recipe v3 (``alignair.train.trainer.RECIPE``).
+recipe's settings under the product's record recipe (``alignair.train.trainer.RECIPE``, v4 since 2026-11-09). A cache,
+a baseline screen, a null band or a milestone of another recipe (every v3 one on disk) is refused, not compared: a
+cache-based screen first needs a v4 cache (``cache``) and v4 baseline screens and calibration (``calibrate``).
 
 - Data: HUMAN_IGH_OGRDB, nucleotide input, allele labels.
 - Model: the chip (chip-v1) with its default options, chosen by the reference-bound model setup (``prepare_model``).
@@ -23,8 +25,8 @@ The retrain recipe (``retrain_config``, ``cooldown_config``) is the product run'
 workers, the flank policy's defaults and chip-v1 at its defaults, then a cooldown resumed at 300k to 320,000 steps at
 3e-5; with novel alleles in its banks (``NOVEL_ALLELES``), which stop the memorization of the training alleles (the
 memorization probe of 2026-11-08: a novel read's own-call 97% with them, 74% without, at 60k steps). It trains live
-from GenAIRR, not from a record cache, so any seed and dataconfigs serve. Screens keep ``POLICY``: every cache and
-baseline screen of the lab stays comparable.
+from GenAIRR, not from a record cache, so any seed and dataconfigs serve. Screens keep ``POLICY`` (no novel alleles),
+so the lab's screens of one recipe stay comparable with each other.
 """
 from __future__ import annotations
 

@@ -9,13 +9,16 @@ the runs are compared pairwise with the assay: their pooled Δs bound the noise 
 ``run_data_band(seeds=(0, 1, 2), steps=..., schedule=..., ...)``, as ``calibrate.run_calibration`` runs:
 
 1. **Refuses** before anything runs: fewer than two seeds, one given twice or one that is not a uint32, a parallel
-   count below 1, an unknown schedule (ValueError); a band name that is not one path component (ValueError) or in use
-   (FileExistsError); a suite not built in the dev build.
-2. Claims the band directory ``out_root/<name>`` (default ``data-band-<recipe>-s<steps>-<schedule>``) and records the
-   request and its progress in its ``data_band.json`` (a failure is recorded before it is raised).
+   count below 1, an unknown schedule (ValueError); a band name that is not one path component (ValueError); a suite
+   not built in the dev build; a band directory of that name that is not an unfinished band of this request (another
+   request's, a finished one, or no band at all: FileExistsError).
+2. Claims the band directory ``out_root/<name>`` (default ``data-band-<recipe>-s<steps>-<schedule>``), or resumes the
+   unfinished band of this request there (one that failed or was interrupted), and records the request and its
+   progress in its ``data_band.json`` (a failure is recorded before it is raised).
 3. Trains each seed's run in ``<band>/run-seed<d>`` with ``python -m alignair_lab train`` under the GenAIRR and the
    code this process imports, at most ``parallel`` at once, each one's output in ``<band>/run-seed<d>.log``; a
-   finished run is reused.
+   finished run is reused, and every run is checked to be a run of this request by its checkpoint
+   (``runs.check_run``) before it is compared.
 4. Compares each pair of runs, the later seed's against the earlier's, with the assay in ``<band>/assay``.
 5. Writes ``data_band.json`` (kind ``alignair_lab.data_band``): the request, each run's checkpoint and assay model key
    (``runs``), each pair's pooled and per-suite Δs (``pairs``, ``noise.pair``), the band (``band``: each metric's
@@ -26,6 +29,7 @@ the runs are compared pairwise with the assay: their pooled Δs bound the noise 
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from itertools import combinations
@@ -36,7 +40,7 @@ from alignair_lab.calibrate import VARIANTS, train_screens
 from alignair_lab.headline import HEADLINE
 from alignair_lab.noise import baseline_summary, null_band, pair, seed_values
 from alignair_lab.recipe import RECIPE, schedule as learning_schedule
-from alignair_lab.runs import DEFAULT_DATA_WORKERS, DONE
+from alignair_lab.runs import DEFAULT_DATA_WORKERS, DONE, check_run, run_request
 from alignair_lab.screen import DEV_BUILD, SCREENS, assay_layout, built_suites, code_digests, suite_builds
 from alignair_lab.secondary import METRIC, cached_comparison, merged
 
@@ -60,6 +64,22 @@ def _seeds(seeds: Sequence[int]) -> list[int]:
     if len(found) < 2 or len(set(found)) != len(found):
         raise ValueError(f"a data band compares two data seeds or more, each once; got {found}")
     return found
+
+
+def _unfinished(directory: Path, name: str, request: Mapping) -> dict:
+    """The record of the unfinished data band of ``request`` in ``directory``, which a run of the same request resumes;
+    FileExistsError for a finished band, another request's or a directory that holds none."""
+    try:
+        previous = json.loads((directory / DATA_BAND).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = None
+    if not isinstance(previous, dict) or any(previous.get(key) != value for key, value in request.items()):
+        raise FileExistsError(f"{directory} exists and is not an unfinished data band of this request; choose another "
+                              "--name")
+    if previous.get("status") == "done":
+        raise FileExistsError(f"the data band {name!r} is done ({directory / DATA_BAND}); choose another --name to "
+                              "measure it again")
+    return previous
 
 
 def _command(out: Path, seed: int, *, steps: int, schedule: str, model_options: Mapping, device: str,
@@ -92,21 +112,27 @@ def run_data_band(*, seeds: Sequence[int] = DEFAULT_SEEDS, steps: int = DEFAULT_
         raise ValueError(f"a data band name is 1 to 64 letters, digits, '.', '_' or '-', starting with a letter or "
                          f"digit; got {name!r}")
     directory = out_root / name
-    if directory.exists():
-        raise FileExistsError(f"a data band named {name!r} exists ({directory}); choose another --name")
     names = built_suites(Path(dev_build), suites)
     builds = suite_builds(Path(dev_build), names)
-    out_root.mkdir(parents=True, exist_ok=True)
-    try:
-        directory.mkdir()
-    except FileExistsError:
-        raise FileExistsError(f"a data band named {name!r} exists ({directory}); choose another --name") from None
+    request = {"kind": DATA_BAND_KIND, "version": DATA_BAND_VERSION, "recipe": RECIPE, "steps": steps,
+               "schedule": schedule, "data_seeds": seeds, "options": model_options, "suites": names,
+               "suite_builds": builds, "max_cases": max_cases}
+    previous = _unfinished(directory, name, request) if directory.exists() else None
+    if previous is None:
+        out_root.mkdir(parents=True, exist_ok=True)
+        try:
+            directory.mkdir()
+        except FileExistsError:
+            raise FileExistsError(f"a data band named {name!r} exists ({directory}); choose another --name") from None
 
     runs = {str(seed): {"directory": str(directory / f"run-seed{seed}")} for seed in seeds}
-    record = {"kind": DATA_BAND_KIND, "version": DATA_BAND_VERSION, "name": name, "status": "preparing",
-              "started": now(), "recipe": RECIPE, "steps": steps, "schedule": schedule, "data_seeds": seeds,
-              "options": model_options, "suites": names, "suite_builds": builds, "max_cases": max_cases,
+    record = {**request, "name": name, "status": "preparing",
+              "started": now() if previous is None else previous.get("started"),
               "variants": list(VARIANTS), "device": device, "eval_batch_size": eval_batch_size, "runs": runs}
+    if previous is not None:
+        record["resumed"] = now()
+        echo(f"[data-band] resuming the unfinished data band {name} ({previous.get('status')}): its finished runs "
+             "are reused")
 
     def stage(status: str, **fields):
         record.update(status=status, **fields)
@@ -121,10 +147,13 @@ def run_data_band(*, seeds: Sequence[int] = DEFAULT_SEEDS, steps: int = DEFAULT_
         stage(f"training {len(plan)} run(s), reusing {len(seeds) - len(plan)}")
         train_screens(plan, directory, parallel, echo, label="data-band", what="run", seed_label="data seed")
         for seed in seeds:
-            done = json.loads((directory / f"run-seed{seed}" / DONE).read_text(encoding="utf-8"))
+            done = check_run(directory / f"run-seed{seed}",
+                             run_request(seed=seed, steps=steps, schedule=schedule, model_options=model_options))
             runs[str(seed)]["checkpoint"] = done["model"]
         stage(f"comparing the {len(seeds) * (len(seeds) - 1) // 2} pairs of runs")
         from alignair_assay.workflow.diagnose import evaluate
+        if previous is not None and (directory / "assay").exists():     # a resumed band compares afresh
+            shutil.rmtree(directory / "assay")
         layout = assay_layout(directory / "assay", Path(dev_build), names)
         pairs, code = [], None
         for first, second in combinations(seeds, 2):

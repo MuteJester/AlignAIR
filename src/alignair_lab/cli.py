@@ -314,7 +314,8 @@ def run_train(args) -> int:
     record = runs.train_run(args.out, seed=args.seed, steps=args.steps, schedule=args.schedule,
                             dataconfigs=tuple(args.dataconfig or DATACONFIGS), device=args.device,
                             data_workers=args.data_workers, model_options=model_options(args.model_option))
-    print(f"trained {record['model']} ({record['steps']} steps, data seed {record['seed']}, {record['hours']} h)")
+    done = "reused the finished run" if record["reused"] else "trained"
+    print(f"{done} {record['model']} ({record['steps']} steps, data seed {record['seed']}, {record['hours']} h)")
     return 0
 
 

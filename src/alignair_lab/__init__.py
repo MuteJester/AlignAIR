@@ -5,7 +5,8 @@ A development package, excluded from the wheel like ``alignair_assay``. The lab 
 and the assay (``alignair_assay``); neither imports the lab. Its modules, each importing only those before it in this
 list (``tests/alignair_lab/test_layering.py``):
 
-- ``recipe``: the training recipe every screen and record cache uses (the 1.0.0 settings under record recipe v3).
+- ``recipe``: the training recipe every screen and record cache uses (the 1.0.0 settings under the product's record
+  recipe, v4), and the retrain recipe.
 - ``records``: the record cache, the recipe's curriculum records written once and replayed by any number of runs.
 - ``noise``: run-to-run training noise: a comparison's pooled Δ, the null band of baseline screens and the decision
   rule; pure.
@@ -18,5 +19,7 @@ list (``tests/alignair_lab/test_layering.py``):
   step: a baseline screen (lab-null-v2, an init seed's) or a milestone.
 - ``calibrate``: baseline screens of several init seeds compared pair by pair into the null band of their protocol.
 - ``novel``: the novel-allele screen: chip-v1 trained from a novel record cache, gated on held-out novel alleles.
+- ``runs``: a live run of the retrain recipe from a data seed, no record cache (the ``train`` command).
+- ``databand``: runs of several data seeds compared pair by pair into the data-seed band (the ``data-band`` command).
 - ``cli``: ``python -m alignair_lab``.
 """
