@@ -76,8 +76,8 @@ def test_the_flags_agree_with_the_assays_truth_given_the_true_anchors_and_spans(
     The residue is one kind of read. The assay's truth calls a read with a V or J frameshift (a net indel that is not
     a multiple of 3) unproductive. The anchors cannot see an indel, so the rule calls such a read productive when
     its junction is in frame and stop-free. On these records the frame and the stop agree on every read (1436 of
-    1436 each) and the productivity on 1432 of 1436 (99.72%). The 4 others are frameshift reads:
-    ``2:unselected-0:799``, ``2:unselected-0:904`` and ``4:unselected-0:1425`` (V), ``4:unselected-0:1284`` (J)."""
+    1436 each) and the productivity on 1434 of 1436 (99.86%). The 2 others are frameshift reads:
+    ``4:unselected-0:1425`` (V) and ``4:unselected-0:1284`` (J)."""
     from alignair.predict.junction import derive_junction
     scored = {flag: 0 for flag in FLAGS}
     agree = {flag: 0 for flag in FLAGS}
@@ -103,7 +103,7 @@ def test_the_flags_agree_with_the_assays_truth_given_the_true_anchors_and_spans(
                                 getattr(call, flag), getattr(truth, flag)))
     assert scored == {"vj_in_frame": 1436, "stop_codon": 1436, "productive": 1436} and frame_unambiguous == 520
     assert agree["vj_in_frame"] == agree["stop_codon"] == 1436
-    assert len(residue) == 4
+    assert len(residue) == 2
     for flag in FLAGS:
         assert agree[flag] / scored[flag] >= 0.995, (flag, agree[flag], scored[flag], residue)
     # every disagreement is a frameshift read the rule calls productive and the truth does not
