@@ -18,6 +18,9 @@
   python -m alignair_lab data-band [--seeds 0,1,2] [--steps 20000] [--parallel 1] [--model-option KEY=VALUE ...]
       [--name NAME] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N] [--device cuda]
       [--data-workers 6] [--eval-batch-size 256] [--dev-build DIR] [--out-root DIR]
+  python -m alignair_lab locus-screen [--seeds 0,1,2] [--schedule cosine|constant] [--parallel 1]
+      [--reuse ARM=DIR ...] [--name NAME] [--max-cases N] [--device cuda] [--data-workers 6] [--eval-batch-size 256]
+      [--out-root DIR]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
       [--segment-records N] [--novel]
   python -m alignair_lab novel-screen --name NAME --novel-cache DIR [--heldout DIR] [--steps 20000] [--init-seed K]
@@ -38,7 +41,9 @@ writes the null band and the baseline seeds' values of their protocol, which the
 finished screens, and pools them into one report against the baseline seeds (``replicates.run_replicates``; with
 ``--reuse`` it trains nothing). ``train`` trains the retrain recipe (``recipe.retrain_config``) live from a data seed,
 no record cache (``runs.train_run``); ``data-band`` trains it from several data seeds and writes the band of their
-pairwise Δs, the noise of training on another data draw (``databand.run_data_band``). ``cache`` writes the recipe's record cache (``records.write_record_cache``;
+pairwise Δs, the noise of training on another data draw (``databand.run_data_band``). ``locus-screen`` trains a
+chip shared by the seven human loci against one chip per locus (IGH, IGK, TRB) at equal training per locus and scores
+each locus on its own dev build (``locusscreen.run_locus_screen``). ``cache`` writes the recipe's record cache (``records.write_record_cache``;
 ``--novel``: the novel-allele recipe's, ``recipe.NOVEL_POLICY``). ``novel-screen`` trains chip-v1 from a novel cache
 and scores it and the protocol's baseline seeds on the held-out S7 novel alleles (``novel.run_novel_screen``).
 ``igblast-dev`` runs IgBLAST on the dev build's reads, and ``against-igblast`` pairs a checkpoint with it read by read
@@ -180,6 +185,29 @@ def build_parser() -> argparse.ArgumentParser:
                                      "data-band-<recipe>-s<steps>-<schedule>)")
     add_protocol_arguments(band, cache=False)
     band.set_defaults(func=run_data_band)
+
+    screen_loci = commands.add_parser("locus-screen", help="train a chip shared by several loci against one chip per "
+                                                           "locus at equal training per locus, scored on each locus's "
+                                                           "dev build (locusscreen.run_locus_screen)")
+    screen_loci.add_argument("--seeds", default="0,1,2", help="comma-separated data seeds, two or more (default "
+                                                              "%(default)s)")
+    screen_loci.add_argument("--schedule", choices=SCHEDULES, default="cosine",
+                             help="the runs' learning-rate schedule (default %(default)s)")
+    screen_loci.add_argument("--parallel", type=int, default=1, help="runs trained at once (default %(default)s)")
+    screen_loci.add_argument("--reuse", action="append", default=[], metavar="ARM=DIR",
+                             help="reuse ARM's finished run-seed<d> runs in DIR (checked by their checkpoints; "
+                                  "repeatable), e.g. IGH=<the data band's directory>")
+    screen_loci.add_argument("--name", default=None, help="the screen's directory under --out-root (default "
+                                                          "locus-screen-<recipe>)")
+    screen_loci.add_argument("--max-cases", type=int, help="reads per suite, evenly spaced (default: all)")
+    screen_loci.add_argument("--device", default="cuda")
+    screen_loci.add_argument("--data-workers", type=int, default=runs.DEFAULT_DATA_WORKERS,
+                             help="training data worker processes per run (default %(default)s)")
+    screen_loci.add_argument("--eval-batch-size", type=int, default=256,
+                             help="the assay's batch size (default %(default)s)")
+    screen_loci.add_argument("--out-root", default=str(screen.SCREENS),
+                             help="where screens are written (default %(default)s)")
+    screen_loci.set_defaults(func=run_locus_screen)
 
     cache = commands.add_parser("cache", help="write the recipe's record cache")
     cache.add_argument("--out", default=str(screen.CACHE), help="the new cache directory (default %(default)s)")
@@ -329,6 +357,25 @@ def run_data_band(args) -> int:
                            max_cases=args.max_cases, device=args.device, data_workers=args.data_workers,
                            eval_batch_size=args.eval_batch_size, dev_build=args.dev_build, out_root=args.out_root,
                            name=args.name)
+    return 0
+
+
+def run_locus_screen(args) -> int:
+    from alignair_lab import locusscreen                     # imported here: a train subprocess never needs it
+    try:
+        seeds = [int(seed) for seed in _names(args.seeds)]
+    except ValueError:
+        raise ValueError(f"--seeds takes comma-separated integers, got {args.seeds!r}") from None
+    reuse = {}
+    for pair in args.reuse:
+        arm, separator, path = pair.partition("=")
+        if not separator or not arm or not path:
+            raise ValueError(f"--reuse takes ARM=DIR, got {pair!r}")
+        reuse[arm] = path
+    locusscreen.run_locus_screen(seeds=seeds, schedule=args.schedule, parallel=args.parallel, reuse=reuse,
+                                 name=args.name or locusscreen.DEFAULT_NAME, max_cases=args.max_cases,
+                                 device=args.device, data_workers=args.data_workers,
+                                 eval_batch_size=args.eval_batch_size, out_root=args.out_root)
     return 0
 
 

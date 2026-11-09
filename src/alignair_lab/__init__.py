@@ -21,5 +21,7 @@ list (``tests/alignair_lab/test_layering.py``):
 - ``novel``: the novel-allele screen: chip-v1 trained from a novel record cache, gated on held-out novel alleles.
 - ``runs``: a live run of the retrain recipe from a data seed, no record cache (the ``train`` command).
 - ``databand``: runs of several data seeds compared pair by pair into the data-seed band (the ``data-band`` command).
+- ``locusscreen``: a chip shared by several loci against one chip per locus, at equal training per locus (the
+  ``locus-screen`` command).
 - ``cli``: ``python -m alignair_lab``.
 """

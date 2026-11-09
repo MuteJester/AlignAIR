@@ -56,38 +56,44 @@ def data_band_name(steps: int, schedule: str) -> str:
     return f"data-band-{RECIPE}-s{steps}-{schedule}"
 
 
-def _seeds(seeds: Sequence[int]) -> list[int]:
+def check_seeds(seeds: Sequence[int], what: str = "data band") -> list[int]:
+    """``seeds`` as a list: two or more distinct uint32 data seeds (ValueError otherwise, naming ``what``)."""
     found = list(seeds)
     for seed in found:
         if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed < 2**32:
             raise ValueError(f"a data seed is an integer from 0 to 2**32 - 1, got {seed!r}")
     if len(found) < 2 or len(set(found)) != len(found):
-        raise ValueError(f"a data band compares two data seeds or more, each once; got {found}")
+        raise ValueError(f"a {what} compares two data seeds or more, each once; got {found}")
     return found
 
 
-def _unfinished(directory: Path, name: str, request: Mapping) -> dict:
-    """The record of the unfinished data band of ``request`` in ``directory``, which a run of the same request resumes;
-    FileExistsError for a finished band, another request's or a directory that holds none."""
+def unfinished(directory: Path, name: str, request: Mapping, *, record: str = DATA_BAND,
+               what: str = "data band") -> dict:
+    """The record (the file ``record``) of the unfinished ``what`` of ``request`` in ``directory``, which a run of the
+    same request resumes; FileExistsError for a finished one, another request's or a directory that holds none."""
     try:
-        previous = json.loads((directory / DATA_BAND).read_text(encoding="utf-8"))
+        previous = json.loads((directory / record).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         previous = None
     if not isinstance(previous, dict) or any(previous.get(key) != value for key, value in request.items()):
-        raise FileExistsError(f"{directory} exists and is not an unfinished data band of this request; choose another "
+        raise FileExistsError(f"{directory} exists and is not an unfinished {what} of this request; choose another "
                               "--name")
     if previous.get("status") == "done":
-        raise FileExistsError(f"the data band {name!r} is done ({directory / DATA_BAND}); choose another --name to "
+        raise FileExistsError(f"the {what} {name!r} is done ({directory / record}); choose another --name to "
                               "measure it again")
     return previous
 
 
-def _command(out: Path, seed: int, *, steps: int, schedule: str, model_options: Mapping, device: str,
-             data_workers: int) -> list[str]:
+def train_command(out: Path, seed: int, *, steps: int, schedule: str, model_options: Mapping, device: str,
+                  data_workers: int, dataconfigs: Sequence[str] = ()) -> list[str]:
+    """The ``python -m alignair_lab train`` command of one run of the retrain recipe (``dataconfigs``: the recipe's
+    own when empty)."""
     options = [part for key, value in model_options.items()
                for part in ("--model-option", f"{key}={json.dumps(value)}")]
+    loci = [part for name in dataconfigs for part in ("--dataconfig", name)]
     return [sys.executable, "-m", "alignair_lab", "train", "--out", str(out), "--seed", str(seed), "--steps",
-            str(steps), "--schedule", schedule, "--device", device, "--data-workers", str(data_workers), *options]
+            str(steps), "--schedule", schedule, "--device", device, "--data-workers", str(data_workers), *loci,
+            *options]
 
 
 def run_data_band(*, seeds: Sequence[int] = DEFAULT_SEEDS, steps: int = DEFAULT_STEPS, schedule: str = "cosine",
@@ -101,7 +107,7 @@ def run_data_band(*, seeds: Sequence[int] = DEFAULT_SEEDS, steps: int = DEFAULT_
     if echo is None:
         def echo(line: str) -> None:
             print(line, flush=True)
-    seeds = _seeds(seeds)
+    seeds = check_seeds(seeds)
     if isinstance(parallel, bool) or not isinstance(parallel, int) or parallel < 1:
         raise ValueError(f"parallel is a positive integer, got {parallel!r}")
     learning_schedule(schedule, steps)                       # an unknown schedule is refused here
@@ -117,7 +123,7 @@ def run_data_band(*, seeds: Sequence[int] = DEFAULT_SEEDS, steps: int = DEFAULT_
     request = {"kind": DATA_BAND_KIND, "version": DATA_BAND_VERSION, "recipe": RECIPE, "steps": steps,
                "schedule": schedule, "data_seeds": seeds, "options": model_options, "suites": names,
                "suite_builds": builds, "max_cases": max_cases}
-    previous = _unfinished(directory, name, request) if directory.exists() else None
+    previous = unfinished(directory, name, request) if directory.exists() else None
     if previous is None:
         out_root.mkdir(parents=True, exist_ok=True)
         try:
@@ -140,9 +146,9 @@ def run_data_band(*, seeds: Sequence[int] = DEFAULT_SEEDS, steps: int = DEFAULT_
         echo(f"[data-band] {status}")
 
     try:
-        plan = [(seed, f"run-seed{seed}", _command(directory / f"run-seed{seed}", seed, steps=steps,
-                                                   schedule=schedule, model_options=model_options, device=device,
-                                                   data_workers=data_workers))
+        plan = [(seed, f"run-seed{seed}", train_command(directory / f"run-seed{seed}", seed, steps=steps,
+                                                        schedule=schedule, model_options=model_options,
+                                                        device=device, data_workers=data_workers))
                 for seed in seeds if not (directory / f"run-seed{seed}" / DONE).is_file()]
         stage(f"training {len(plan)} run(s), reusing {len(seeds) - len(plan)}")
         train_screens(plan, directory, parallel, echo, label="data-band", what="run", seed_label="data seed")

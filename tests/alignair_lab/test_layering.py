@@ -15,7 +15,7 @@ pytestmark = pytest.mark.component
 
 PACKAGE = Path(alignair_lab.__file__).resolve().parent
 MODULES = ("recipe", "records", "noise", "headline", "secondary", "architectures", "sizes", "baselines", "screen",
-           "calibrate", "replicates", "igblast", "novel", "runs", "databand", "cli")
+           "calibrate", "replicates", "igblast", "novel", "runs", "databand", "locusscreen", "cli")
 ALLOWED = {"recipe": {"recipe"}, "records": {"records"}, "noise": {"noise"}, "headline": {"headline", "noise"},
            "secondary": {"noise", "secondary"},
            "architectures": {"architectures"}, "sizes": {"architectures", "sizes"},
@@ -30,6 +30,8 @@ ALLOWED = {"recipe": {"recipe"}, "records": {"records"}, "noise": {"noise"}, "he
            "runs": {"recipe", "screen", "runs"},
            "databand": {"recipe", "noise", "headline", "secondary", "baselines", "screen", "calibrate", "runs",
                         "databand"},
+           "locusscreen": {"recipe", "noise", "headline", "secondary", "baselines", "screen", "calibrate", "runs",
+                           "databand", "locusscreen"},
            "cli": set(MODULES), "__main__": {"cli"}, "__init__": set()}
 
 
