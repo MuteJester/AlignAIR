@@ -17,13 +17,22 @@ recipe's settings under the product's record recipe v3 (``alignair.train.trainer
 asked for: a run of the recipe may validate and use any number of data workers, and neither changes its training
 batches. A schedule and an init seed may be given (``TrainingConfig.init_seed``: replicate runs on the same batches).
 ``recipe_train_args`` are the ``train_args`` entries that identify the recipe, and the schedule, in a checkpoint.
+
+The retrain recipe (``retrain_config``, ``cooldown_config``) is the product run's (``chip_full_w64_5272fc63``, the
+19-hour chip-v1-w64 model): 300,000 steps of batch 64 at a constant 3e-4, seed 0, validation every 2,000 steps, 7 data
+workers, the flank policy's defaults and chip-v1 at its defaults, then a cooldown resumed at 300k to 320,000 steps at
+3e-5; with novel alleles in its banks (``NOVEL_ALLELES``), which stop the memorization of the training alleles (the
+memorization probe of 2026-11-08: a novel read's own-call 97% with them, 74% without, at 60k steps). It trains live
+from GenAIRR, not from a record cache, so any seed and dataconfigs serve. Screens keep ``POLICY``: every cache and
+baseline screen of the lab stays comparable.
 """
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from alignair import TrainingConfig
+from alignair.data.flanks import FlankPolicy
 from alignair.errors import ConfigurationError
 from alignair.train import CosineSchedule
 from alignair.train.gym.novel import NovelAlleles
@@ -42,6 +51,14 @@ LR = 3e-4
 MIN_LR = LR / 100                       # where a screen's cosine schedule ends
 SCHEDULES = ("cosine", "constant")
 BASELINE_ARCHITECTURE = "chip-v1"
+RETRAIN_STEPS = 300_000                 # the retrain (the product run): steps at the constant rate
+COOLDOWN_STEPS = 320_000                # its cooldown runs on from RETRAIN_STEPS to this step, at COOLDOWN_LR
+COOLDOWN_LR = 3e-5
+RETRAIN_VAL_EVERY = 2000
+RETRAIN_WORKERS = 7
+# The checkpoints the product run kept, per phase.
+RETRAIN_MILESTONES = {"full": (*range(10_000, 150_001, 10_000), 200_000, 300_000),
+                      "cool": (305_000, 310_000, 315_000, 320_000)}
 
 
 def schedule(name: str, steps: int) -> CosineSchedule | None:
@@ -69,6 +86,23 @@ def training_config(*, steps: int, architecture: str = BASELINE_ARCHITECTURE, mo
                           short_boost=POLICY.short_boost, seed=SEED, model_options=options,
                           data_workers=data_workers, schedule=schedule, init_seed=init_seed,
                           novel_alleles=novel_alleles)
+
+
+def retrain_config(*, dataconfigs: Sequence[str] = DATACONFIGS, steps: int = RETRAIN_STEPS, seed: int = SEED,
+                   schedule: CosineSchedule | None = None, val_every: int = RETRAIN_VAL_EVERY, device: str = "cuda",
+                   data_workers: int = RETRAIN_WORKERS, model_options: Mapping | None = None) -> TrainingConfig:
+    """The retrain recipe's ``TrainingConfig`` (see the module docstring): chip-v1 with ``model_options`` (None: its
+    defaults, the product chip's), its data and initial weights from ``seed``, under ``schedule`` (None: constant)."""
+    return TrainingConfig(dataconfigs=tuple(dataconfigs), steps=steps, batch_size=BATCH_SIZE, lr=LR, device=device,
+                          short_boost=POLICY.short_boost, seed=seed, init_seed=None, val_every=val_every,
+                          model_options=dict(model_options or {}), data_workers=data_workers, schedule=schedule,
+                          flanks=FlankPolicy(), novel_alleles=NOVEL_ALLELES)
+
+
+def cooldown_config(config: TrainingConfig, checkpoint: str) -> TrainingConfig:
+    """``config``'s cooldown: resumed from ``checkpoint`` (its step-``RETRAIN_STEPS`` model) to ``COOLDOWN_STEPS`` at
+    ``COOLDOWN_LR``."""
+    return dataclasses.replace(config, steps=COOLDOWN_STEPS, lr=COOLDOWN_LR, resume_path=checkpoint)
 
 
 def recipe_train_args(schedule: CosineSchedule | None = None) -> dict:
