@@ -4,6 +4,7 @@ allele of the reference ties. ``v_call`` lists the call, then its ties. An allel
 bases than the call is better (``better_v_alleles``): it becomes the call."""
 import random
 
+import numpy as np
 import pytest
 
 from alignair.predict.state import GermlineAlignment
@@ -135,3 +136,24 @@ def test_a_better_allele_is_found_at_imgt_columns():
 
 def test_a_read_without_a_v_alignment_has_no_better_allele():
     assert better_v_alleles([A], [None], _Reference({"A": A}), [()]) == [None]
+
+
+def test_an_allele_outside_the_reads_locus_is_never_better():
+    read, aln = B[60:], GermlineAlignment("A", 0, 60, 60, 120, "60M")         # B is better, but of another locus
+    assert better_v_alleles([read], [aln], _Reference({"A": A, "B": B}), [()],
+                            allowed=[np.array([True, False])]) == [None]
+
+
+def test_the_best_allele_of_the_reads_locus_is_better_when_the_best_of_all_is_outside_it():
+    x = _substituted(B, 110)                        # the read is x: x matches every base, B all but 110, A two fewer
+    read, aln = x[60:], GermlineAlignment("A", 0, 60, 60, 120, "60M")
+    alleles = {"A": A, "B": B, "X": x}
+    assert better_v_alleles([read], [aln], _Reference(alleles), [()]) == ["X"]
+    assert better_v_alleles([read], [aln], _Reference(alleles), [()], allowed=[np.array([True, True, False])]) == ["B"]
+
+
+def test_ties_outside_the_reads_locus_are_not_listed():
+    read, aln = A[:90], GermlineAlignment("A", 0, 90, 0, 90, "90M")           # B ties: its SNP is past the read
+    reference = _Reference({"A": A, "B": B})
+    assert tied_alleles([read], [aln], reference) == [("A", "B")]
+    assert tied_alleles([read], [aln], reference, allowed=[np.array([True, False])]) == [("A",)]

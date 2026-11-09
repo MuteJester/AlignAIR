@@ -5,7 +5,8 @@ network's output keys.
 and its boundary expectations (``{g}_allele``, ``{g}_start``, ``{g}_end``, required) and its log posterior; the
 parser gives boundary logits for every gene it scores (a light chain's D included); the read gives its mutation rate
 and indel count (required), and, from the heads a model may have, its orientation, the slot masks, the V and J anchor
-logits and the D presence logits. A required key missing, a key outside these, or one key of a pair without the other
+logits and the D presence logits; a model bound to a reference of several loci gives each read's locus index
+(``read_locus``, ``refine.locus``). A required key missing, a key outside these, or one key of a pair without the other
 (a gene's start and end logits, the V and J anchor logits, anchor logits and the start mask) is an InferenceError.
 The arrays are kept as given; ``network_dict`` gives the network's dict back.
 """
@@ -21,7 +22,8 @@ from ..core.d_presence import D_PRESENCE_LOGITS
 from ..errors import InferenceError
 
 PARSED_GENES = ("v", "d", "j")      # the genes a parser may give boundary logits for
-_READ_KEYS = ("mutation_rate", "indel_count", "orientation", "orientation_logits", "start_mask", "end_mask")
+_READ_KEYS = ("mutation_rate", "indel_count", "orientation", "orientation_logits", "start_mask", "end_mask",
+              "read_locus")
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,7 @@ class ModelOutputs:
     end_mask: np.ndarray | None = None
     anchor_logits: Mapping[str, np.ndarray] | None = None           # "v", "j" -> (B, L + 1)
     d_presence_logits: np.ndarray | None = None                     # (B, 3)
+    read_locus: np.ndarray | None = None                            # (B,) the read's locus index (several loci)
 
     @classmethod
     def from_network(cls, outputs: Mapping[str, np.ndarray], genes: Sequence[str]) -> "ModelOutputs":
@@ -82,7 +85,7 @@ class ModelOutputs:
             mutation_rate=outputs["mutation_rate"], indel_count=outputs["indel_count"],
             orientation=outputs.get("orientation"), orientation_logits=outputs.get("orientation_logits"),
             start_mask=outputs.get("start_mask"), end_mask=outputs.get("end_mask"), anchor_logits=anchors,
-            d_presence_logits=outputs.get(D_PRESENCE_LOGITS))
+            d_presence_logits=outputs.get(D_PRESENCE_LOGITS), read_locus=outputs.get("read_locus"))
 
     def network_dict(self) -> dict[str, np.ndarray]:
         """The network's dict these outputs were read from: its keys, the same arrays."""
@@ -94,7 +97,7 @@ class ModelOutputs:
         for g, (start, end) in self.boundary_logits.items():
             out.update({f"{g}_start_logits": start, f"{g}_end_logits": end})
         out.update({"mutation_rate": self.mutation_rate, "indel_count": self.indel_count})
-        for key in ("orientation", "orientation_logits", "start_mask", "end_mask"):
+        for key in ("orientation", "orientation_logits", "start_mask", "end_mask", "read_locus"):
             if getattr(self, key) is not None:
                 out[key] = getattr(self, key)
         if self.anchor_logits is not None:

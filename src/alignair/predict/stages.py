@@ -93,12 +93,23 @@ def align_reads(state: PredictionState) -> PredictionState:
     return replace(state, alignments=alignments)
 
 
+def locus_alleles(state: PredictionState) -> list | None:
+    """Per read, a bool array over the V alleles of its locus (``Predictions.read_locus``, ``refine.locus``), or None
+    for a model bound to one locus."""
+    loci = state.predictions.read_locus
+    if loci is None:
+        return None
+    reference = state.context.reference
+    masks = [reference.locus_mask(locus, "V") for locus in reference.locus_names()]
+    return [masks[int(k)] for k in loci]
+
+
 def promote_better_v(state: PredictionState) -> PredictionState:
     """``better_v``: an allele the read matches better than the model's V call (a bound allele it never trained on)
     becomes the call, V realigned to it; a new alignments dict, the germline stage's is left as it was."""
     reference = state.context.reference
     better = better_v_alleles(state.canonical, state.alignments["v"], reference,
-                              [call.names for call in state.calls["v"]])
+                              [call.names for call in state.calls["v"]], allowed=locus_alleles(state))
     v = realign_v(state.canonical, state.segments, state.alignments["v"], better, reference,
                   indel_counts=state.predictions.indel_count)
     return replace(state, alignments={**state.alignments, "v": v})
@@ -111,7 +122,8 @@ def find_absent_v(state: PredictionState) -> PredictionState:
 
 def list_v_ties(state: PredictionState) -> PredictionState:
     """``ties``: the V alleles each read cannot tell from its call, among those it may be called with."""
-    return replace(state, v_ties=tied_alleles(state.canonical, state.alignments["v"], state.context.reference))
+    return replace(state, v_ties=tied_alleles(state.canonical, state.alignments["v"], state.context.reference,
+                                              allowed=locus_alleles(state)))
 
 
 def build_records(state: PredictionState) -> PredictionState:

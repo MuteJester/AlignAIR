@@ -57,6 +57,9 @@ class Predictions:
     anchors: Optional[dict[str, np.ndarray]] = None
     # [N] int: the D presence head's class (core.d_presence: absent, short, callable), which gates the D call
     d_presence: Optional[np.ndarray] = None
+    # [N] int: the read's locus, an index into the reference's ``locus_names()`` (``refine.locus``); None for a model
+    # bound to one locus
+    read_locus: Optional[np.ndarray] = None
 
     def take(self, rows) -> "Predictions":
         """The predictions of ``rows`` (read indices), in that order."""

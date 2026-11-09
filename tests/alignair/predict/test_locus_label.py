@@ -60,3 +60,36 @@ def test_a_rows_locus_is_its_reported_v_alleles_not_the_models_top_name():
     igl = v.names[int(np.flatnonzero(reference.locus_mask("IGL", "V"))[0])]
     alignments = [GermlineAlignment(igl, 0, 10, 0, 10, "10M"), GermlineAlignment(igk, 0, 10, 0, 10, "10M"), None]
     assert _called_loci(alignments, reference, np.array([False, True, False])) == ["IGL", "", ""]
+
+
+def test_every_rows_v_d_and_j_are_of_its_locus_and_a_light_row_has_no_d():
+    """IGH + IGK, an untrained tiny chip: whatever the model calls, a row's V, D and J alleles are of one locus (the
+    row's), and an IGK row has no D call and no D placement (``refine.locus``)."""
+    import GenAIRR.data as gd
+    import torch
+    from alignair.api import predict_sequences
+    from alignair.core import prepare_model
+    from alignair.reference.reference_set import ReferenceSet
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB)
+    torch.manual_seed(0)
+    model = prepare_model(reference, embed_dim=4, trunk_channels=8).build_model().eval()
+
+    def of(locus, gene):
+        return np.asarray(reference.gene(gene).names)[reference.locus_mask(locus, gene)]
+
+    def germline(locus, gene, k):
+        alleles = reference.gene(gene)
+        return alleles.sequences[alleles.index[of(locus, gene)[k]]]
+
+    reads = ([germline("IGH", "V", k) + germline("IGH", "D", k) + germline("IGH", "J", 0) for k in (0, 7, 20)]
+             + [germline("IGK", "V", k) + germline("IGK", "J", 0) for k in (0, 7, 20)])
+    rows = predict_sequences(model, reference, reads, device="cpu")
+    assert {row["locus"] for row in rows} <= {"IGH", "IGK", ""}
+    for row in rows:
+        if not row["locus"]:
+            continue
+        for gene in "vdj":
+            names = set(of(row["locus"], gene.upper()))
+            assert all(name in names for name in filter(None, row[f"{gene}_call"].split(","))), (row["locus"], gene)
+        if row["locus"] == "IGK":
+            assert not row["d_call"] and row.get("d_sequence_start") in (None, "")

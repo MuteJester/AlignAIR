@@ -88,4 +88,6 @@ def clean(batches: Sequence[ModelOutputs], genes) -> Predictions:
         mutation_rate=_flat(b.mutation_rate for b in batches),
         indel_count=_flat(b.indel_count for b in batches),
         orientation=orientation, anchors=_anchors(batches), d_presence=_d_presence(batches),
+        read_locus=(_flat(b.read_locus for b in batches).astype(int)
+                    if batches and all(b.read_locus is not None for b in batches) else None),
     )

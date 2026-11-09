@@ -77,19 +77,28 @@ class _Bank:
         return (self.bases[:, own[germs]] == read).sum(1), call
 
 
-def better_v_alleles(sequences, alignments, reference, candidates) -> list:
+def _allowed(matches, allowed, i):
+    """``matches`` with the alleles outside read i's ``allowed`` (a bool array over the V alleles; None: all) at -1."""
+    if allowed is None or allowed[i] is None:
+        return matches
+    return np.where(allowed[i], matches, -1)
+
+
+def better_v_alleles(sequences, alignments, reference, candidates, allowed=None) -> list:
     """Per read (forward frame), the V allele of the bound bank that matches strictly more of the read bases its V
     alignment puts on germline bases than the call does, or None (no alignment, or the call matches most). Among the
     alleles matching most, the first of the read's ``candidates`` (the model's called names, in its order) that is one,
-    else the first in reference order."""
+    else the first in reference order. ``allowed`` (per read, a bool array over the V alleles, or None) keeps a read
+    to its locus's alleles (``refine.locus``): no other allele is better."""
     bank = None
     out = []
-    for sequence, aln, named in zip(sequences, alignments, candidates):
+    for i, (sequence, aln, named) in enumerate(zip(sequences, alignments, candidates)):
         if aln is None:
             out.append(None)
             continue
         bank = bank or _Bank(reference)
         matches, call = bank.matches(sequence, aln)
+        matches = _allowed(matches, allowed, i)
         top = matches.max()
         if matches[call] >= top:
             out.append(None)
@@ -100,19 +109,20 @@ def better_v_alleles(sequences, alignments, reference, candidates) -> list:
     return out
 
 
-def tied_alleles(sequences, alignments, reference) -> list:
+def tied_alleles(sequences, alignments, reference, allowed=None) -> list:
     """Per read (forward frame), its V call and the V alleles of the bound bank tied with it, the call first (a tuple
-    of names), or ``()`` for a read without a V alignment."""
+    of names), or ``()`` for a read without a V alignment. ``allowed`` (per read, a bool array over the V alleles, or
+    None) keeps a read's ties to its locus's alleles (``refine.locus``)."""
     bank = None
     out = []
-    for sequence, aln in zip(sequences, alignments):
+    for i, (sequence, aln) in enumerate(zip(sequences, alignments)):
         if aln is None:
             out.append(())
             continue
         bank = bank or _Bank(reference)
         names = bank.names
         matches, call = bank.matches(sequence, aln)
-        tied = matches >= matches[call]
+        tied = (matches >= matches[call]) & (_allowed(matches, allowed, i) >= 0)
         others = sorted((a for a in np.flatnonzero(tied) if a != call), key=lambda a: (-matches[a], a))
         out.append((names[call], *(names[a] for a in others)))
     return out
