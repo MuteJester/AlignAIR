@@ -227,3 +227,9 @@ def test_in_evaluation_the_chip_reads_its_width_bucket_and_in_training_its_longe
     finally:
         handle.remove()
     assert seen == [longest, width_bucket(longest, whole)]
+
+
+def test_a_single_locus_bank_has_no_locus_step(chip):
+    model, batch, _ = chip
+    assert model.core.bank.locus_count == 0
+    assert "read_locus" not in model.eval()(batch.inputs)

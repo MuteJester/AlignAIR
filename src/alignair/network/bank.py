@@ -106,6 +106,17 @@ class BankCompiler(nn.Module):
                 self.register_buffer(f"anchor_base_{gene}", torch.tensor(_anchor_bases(alleles, alleles.names)),
                                      persistent=False)
             self.genes.append(gene)
+        # A reference of several loci: each locus's alleles per gene, (L, n alleles), and whether it has a D; the chip
+        # restricts a read's calls to one locus at inference (``refine.locus``). 0 loci for a one-locus reference.
+        loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
+        self.locus_count = len(loci) if len(loci) > 1 else 0
+        if self.locus_count:
+            for gene in self.genes:
+                masks = [torch.from_numpy(reference.locus_mask(locus, gene.upper())) for locus in loci]
+                self.register_buffer(f"locus_alleles_{gene}", torch.stack(masks), persistent=False)
+            self.register_buffer("locus_has_d", torch.tensor(
+                [bool(reference.locus_mask(locus, "D").any()) if "d" in self.genes else False for locus in loci]),
+                persistent=False)
 
     def width(self, gene: str) -> int:
         return getattr(self, f"cover_{gene}").shape[1]

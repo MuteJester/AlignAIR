@@ -40,6 +40,7 @@ from ..errors import ConfigurationError
 from ..refine.boundaries import refine_boundaries
 from ..refine.dlocal import local_d_log_posterior
 from ..refine.drefine import refine_d_boundaries
+from ..refine.locus import read_loci, restrict_to_locus
 from ..refine.vrescore import rescore_v
 from .bank import BankCompiler
 from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser
@@ -201,6 +202,8 @@ class ChipCore(nn.Module):
         in_vdj = sum(parsed.marginals[..., STATE_OF[gene]] for gene in self.genes)
         out["mutation_rate"] = (reading.m * in_vdj).sum(1, keepdim=True) / in_vdj.sum(1, keepdim=True).clamp_min(1.)
         out["indel_count"] = (reading.inserted * in_vdj).sum(1, keepdim=True)
+        if not self.training and bank.locus_count:    # one locus per read: V, D and J of its best same-locus V-J pair
+            restrict_to_locus(out, read_loci(out, bank), bank)
         if self.anchors is not None:                  # the V end and J start, counted along the bank from the anchors
             refine_boundaries(out, tokens, mask, end_mask, bank)
         if "d" in self.genes and not self.training:   # the D call: the scan's times the junction's local alignment
