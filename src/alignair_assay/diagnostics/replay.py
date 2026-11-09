@@ -125,9 +125,9 @@ def load_model_checked(checkpoint_or_model, truth_reference: Reference, *, devic
     comes back in eval mode). A ``(model, reference_set)`` pair, for example from a training loop, is passed through:
     the model is unwrapped (``unwrap_model``), its reference checked, and only then moved to ``device`` in place;
     moving it back is the caller's (``workflow.diagnose.evaluate`` does). ValueError when the reference does not
-    hold exactly the truth reference's alleles and sequences (equal digests), naming both references' allele counts
-    and the first allele, in name order, that is missing from the model's reference, extra in it, or has a different
-    sequence there."""
+    hold the truth reference (``check_reference``: every truth allele with its sequence and, in the truth's loci, no
+    other), naming both references' allele counts and the first allele, in name order, that is missing from the
+    model's reference, extra in a truth locus, or has a different sequence there."""
     if isinstance(checkpoint_or_model, (str, os.PathLike)):
         model, reference_set = load_model(str(Path(checkpoint_or_model).expanduser()), device=device)
         check_reference(reference_set, truth_reference)
@@ -160,16 +160,43 @@ def model_device(model) -> torch.device:
     return torch.device("cpu") if parameter is None else parameter.device
 
 
+def _extra_in_truth_loci(reference_set, truth_reference: Reference) -> str | None:
+    """The first allele, in name order, that the model's reference holds in a locus of the truth's and the truth
+    lacks (``"<name> is extra in the model reference"``), or None. A locus is the truth's when one of its J alleles is
+    a truth allele (J alleles are never shared between loci); a reference of one locus (no locus schema) has only
+    the truth's. An extra allele of the truth's own locus would be scored by name and count as a wrong call (an
+    OGRDB+EXTENDED model on the OGRDB truth holds the same sequences under other names), so it is refused; the
+    alleles of other loci (a model of several loci on a one-locus suite) are not."""
+    truth = truth_reference.sequences()
+    loci = reference_set.locus_names() if hasattr(reference_set, "locus_names") else ()
+    genes = [g for g in ("V", "D", "J") if g in reference_set.genes]
+    if len(loci) < 2:
+        own = [np.ones(len(reference_set.gene(g)), dtype=bool) for g in genes]
+    else:
+        j_names = np.asarray(reference_set.gene("J").names)
+        theirs = [locus for locus in loci if any(n in truth for n in j_names[reference_set.locus_mask(locus, "J")])]
+        own = []
+        for g in genes:
+            mask = np.zeros(len(reference_set.gene(g)), dtype=bool)
+            for locus in theirs:
+                mask |= reference_set.locus_mask(locus, g)
+            own.append(mask)
+    extra = sorted(name for g, mask in zip(genes, own)
+                   for name, keep in zip(reference_set.gene(g).names, mask) if keep and name not in truth)
+    return f"{extra[0]} is extra in the model reference" if extra else None
+
+
 def check_reference(reference_set, truth_reference: Reference) -> None:
     """ValueError unless the ``alignair`` ReferenceSet ``reference_set`` holds every allele of the truth reference
-    with its sequence, naming both references' allele counts and the first truth allele, in name order, that is
-    missing from the model's reference or has a different sequence there. A model reference may hold more alleles
-    than the truth's: a model of several loci is scored on a one-locus suite (its calls of the other loci's alleles
-    are simply wrong)."""
+    with its sequence and, in the truth's loci, no other (``_extra_in_truth_loci``), naming both references' allele
+    counts and the first allele, in name order, that is missing from the model's reference, has a different sequence
+    there or is extra in a truth locus. A model of several loci is scored on a one-locus suite: its other loci's
+    alleles are accepted (its calls of them are simply wrong)."""
     model_reference = Reference.from_reference_set(reference_set)
     if model_reference.digest() == truth_reference.digest():
         return
-    problem = model_reference.first_missing(truth_reference, "model")
+    problem = (model_reference.first_missing(truth_reference, "model")
+               or _extra_in_truth_loci(reference_set, truth_reference))
     if problem is not None:
         raise ValueError(f"the model's reference is not the truth reference: it has {model_reference.counts_text()}, "
                          f"the truth reference has {truth_reference.counts_text()}; first difference: {problem}")

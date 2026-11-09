@@ -49,8 +49,8 @@ Excluded cases and reads without a truth keep every model value and are not coun
 (``airr_text_rows``: ``alignair.io.airr._build_row`` over its full column set) and are read with the assay's AIRR
 reader (``airr.reader.rows_to_predictions``, the parser ``load_airr_tsv`` uses), without a file. The tests pin this
 against a TSV written by ``alignair.io.airr.write_airr``. Rows are scored against the truth reference the caller
-gives, and ``run_variants`` refuses a model whose own reference is not that one (``replay.check_reference``), so an
-in-memory model never reaches scoring unchecked.
+gives, and ``run_variants`` refuses a model whose own reference does not hold that one (``replay.check_reference``),
+so an in-memory model never reaches scoring unchecked.
 
 **Stage contributions.** ``stage_contributions`` compares each consecutive pair of the chain (paired, Holm-corrected
 over the metrics: ``stats.compare``): the change when the truth of one more stage is fed in is the error that stage
@@ -189,8 +189,8 @@ def run_variants(model, reference_set, cases: Sequence[dict], truths: Sequence[O
     A pure replay (the baseline) comes first: it gives the substitutions their reads and the model's own values.
     Each variant's rows are scored against the truths of the replayed cases (others are ignored), with the donor
     ``genotypes`` when given, and against ``reference``, the truth reference. ValueError, before anything is
-    replayed, when the model's reference is not ``reference`` (``replay.check_reference``: it names the first
-    differing allele), for an unknown variant, or when no truth is scored.
+    replayed, when the model's reference does not hold ``reference`` (``replay.check_reference``: it names the
+    first differing allele), for an unknown variant, or when no truth is scored.
 
     ``_baseline`` is private to ``workflow.diagnose``, which has already replayed the cases for the head metrics: it
     must be that pure replay, of this ``model`` and ``reference_set`` on these cases' reads with this device and batch

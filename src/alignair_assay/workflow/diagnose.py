@@ -21,8 +21,9 @@ data (``summary``, flattened by ``scalars()``).
 a batch size or ``max_cases`` below 1, a suite not built in ``layout``, a suite built on another split than ``dev``
 (``test`` is locked for claims), suites built against different references, and a device torch cannot use. A missing
 model file is a FileNotFoundError. A model whose germline
-reference is not the truth reference is refused by ``replay.load_model_checked`` (ValueError naming the first
-differing allele), an in-memory one included, and so is a model file whose bytes changed while it was loaded.
+reference does not hold the truth reference (every truth allele and, in the truth's loci, no other; a model of
+several loci is accepted on a one-locus suite) is refused by ``replay.load_model_checked`` (ValueError naming the
+first differing allele), an in-memory one included, and so is a model file whose bytes changed while it was loaded.
 
 **Model key.** ``diagnostics.identity.model_key``: ``<weights>-<code>``, the first ``KEY_DIGITS`` hex digits of
 ``weights_sha256`` (the SHA-256 of a model file's bytes, or of an in-memory model's weights, configuration, module

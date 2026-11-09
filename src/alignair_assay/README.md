@@ -190,6 +190,14 @@ It writes a one-page summary, `diagnostics/<model_key>/diagnostics.md`, with eac
 `<S>/report.md`, the speed profile in `profile.md` and everything as data in `diagnostics.json`, and prints one line
 per suite. A suite built on the `test` split is refused: `test` stays locked for claims.
 
+**Per locus.** `build --reference` builds the suites against any GenAIRR reference, one reference per run directory:
+the IGK and TRB dev builds (`/media/thomas/NVMe_Data/alignair_arch/dev_builds/<reference>`) sit beside the IGH one.
+A TCR reference's reads take no SHM, a stratum that needs a D or SHM is skipped where the reference lacks it
+(`build.json`'s `skipped_strata`), and a suite none of whose strata applies is reported and not built (S6 on IGK,
+S9 on TRB). A model of several loci is diagnosed on each locus's build: its reference may hold other loci's
+alleles, never extra ones of the suite's own locus (`replay.check_reference`); a D call on a read of a locus
+without D is scored as spurious.
+
 **From a training loop.** Call the evaluator with the in-memory model and its `ReferenceSet` (for example every few
 thousand steps); `max_cases` takes that many reads per suite, evenly spaced. On a GPU, 500 S1 reads with every
 variant take about 5 s:
@@ -207,8 +215,10 @@ s1["variants"]["baseline"]["scores"]["junction.nt_exact"]["mean"]     # the prod
 [step["metrics"]["junction.nt_exact"]["delta"] for step in s1["contributions"]]  # error added per stage
 ```
 
-- The model's reference must be the truth reference (`HUMAN_IGH_OGRDB` for the built-in suites); another is
-  refused, naming the first differing allele, before the model is moved.
+- The model's reference must hold the truth reference (`HUMAN_IGH_OGRDB` for the built-in suites): every truth
+  allele with its sequence and, in the truth's loci, no other (a model of several loci is accepted on a one-locus
+  suite; an extra allele of the suite's own locus is refused). Another is refused, naming the first differing
+  allele, before the model is moved.
 - The model runs on its own device unless `device` names another. A model moved to another device is moved back
   to its own afterwards, even when a suite fails, and every replay puts it back in its training mode, so the
   optimizer's next step works. A `torch.compile`, `DataParallel` or `DistributedDataParallel` wrapper is
@@ -1073,7 +1083,9 @@ A suite is a declarative GenAIRR recipe per stratum; `suites.engine` turns it in
    contain `:`.
 2. Give each `Stratum` a `name`, `n` (cases at scale 1.0; clones for a clonal stratum) and a `recipe`: a
    module-level function (or `functools.partial` of one) `recipe(ctx) -> Experiment` that returns a fresh
-   `Experiment.on(ctx.config)` chain. `ctx.config` is the GenAIRR DataConfig the truth reference
+   `suites.recipes.experiment_on(ctx.config)` chain (GenAIRR's `Experiment.on` with curatable refdata allowed, as
+   AlignAIR's trainer allows it; a test refuses a direct `Experiment.on`), its SHM through `suites.recipes.mutated`
+   (a no-op on a TCR reference). `ctx.config` is the GenAIRR DataConfig the truth reference
    (`ctx.reference`) is built from; never build from a short alias. `ctx.n` is the stratum's requested count at
    the current scale (a clonal recipe passes it as `n_clones`), and `ctx.donors` the suite's donors. A
    repertoire-style stratum uses `functools.partial(suites.recipes.repertoire, ...)` (see Suite catalog).
@@ -1083,6 +1095,9 @@ A suite is a declarative GenAIRR recipe per stratum; `suites.engine` turns it in
    - `rc_fraction`, the probability a case is presented reverse-complemented, or `both_orientations`, which
      presents every record as `:fwd` and `:rc` cases grouped by `groups["pair"]`;
    - `accept(record)` for rejection sampling (plain strata only);
+   - `applies(ctx)` (e.g. `suites.base.has_d`, `has_shm`, `suites.recipes.d_trim_applies`) when the stratum needs
+     something a reference may lack: it is skipped on such a reference and named in `build.json`'s
+     `skipped_strata`, and a suite none of whose strata applies is reported as not applicable by `build`;
    - `cohort` (run over the suite's donors with `run_cohort`, which needs `Suite.donors`; cases get
      `groups["subject"]`) or `clonal` (the recipe ends in `clonal_lineage`; every record is kept; cases get
      `groups["clone"]`).

@@ -7,7 +7,8 @@ from alignair_assay.suites.base import RecipeContext, Stratum, Suite
 from alignair_assay.suites.donors import DonorParams, DonorSpec
 from alignair_assay.suites.recipes import SHM_CLASSES, repertoire
 
-# Each donor carries 25 V genes as a homozygous novel allele with 1, 2, ..., 6, 1, ... SNPs.
+# Each donor carries 25 V genes (at most half the reference's V genes: 15 on IGK) as a homozygous novel allele with
+# 1, 2, ..., 6, 1, ... SNPs.
 _NOVEL_V_GENES = 25
 
 

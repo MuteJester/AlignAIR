@@ -100,7 +100,8 @@ class GeneReference:
 class LocusInfo:
     """One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has
     a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union's allele order. A read's
-    locus is its V call's (``predict.stages.called_loci``). ``shared`` names, per gene, the alleles of another
+    locus is the network's (``refine.locus``: its V, D and J calls are of it; ``predict.stages.record_loci``).
+    ``shared`` names, per gene, the alleles of another
     locus's block that this locus lists too (TRAV/DV alleles, which rearrange in TRA and TRD alike): they belong to
     both loci (``ReferenceSet.locus_mask``)."""
     locus: str

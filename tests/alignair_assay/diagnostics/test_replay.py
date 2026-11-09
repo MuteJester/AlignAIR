@@ -418,9 +418,10 @@ def test_reference_mismatch_refused_naming_allele(small_model, reference, tmp_pa
     assert f"first difference: {v[3]} has a different sequence in the model reference" in str(err.value)
     assert "it has V=198 D=33 J=7" in str(err.value)
 
-    # A model reference holding every truth allele and more (an all-loci model on a one-locus suite) is accepted.
+    # An extra allele of the truth's own locus is refused: scored by name, its calls would count as wrong.
     fewer = Reference({**reference.alleles, "v": {k: s for k, s in reference.alleles["v"].items() if k != v[0]}}, {})
-    assert load_model_checked((model, reference_set), fewer, device="cpu")[0] is model
+    with pytest.raises(ValueError, match=re.escape(f"{v[0]} is extra in the model reference")):
+        load_model_checked((model, reference_set), fewer, device="cpu")
     more = Reference({**reference.alleles, "v": {**reference.alleles["v"], "IGHVX9*01": "ACGT"}}, {})
     with pytest.raises(ValueError) as err:
         load_model_checked((model, reference_set), more, device="cpu")
@@ -522,3 +523,24 @@ def test_a_model_reference_missing_a_truth_allele_is_refused():
     extra = Reference({**truth.alleles, "v": {**truth.alleles["v"], "IGKVX9*01": "ACGT"}}, {})
     with pytest.raises(ValueError, match=r"not the truth reference.*IGKVX9\*01 is missing from the model reference"):
         check_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB), extra)
+
+
+def test_a_model_with_extra_alleles_of_the_truths_own_locus_is_refused():
+    """IGH OGRDB + EXTENDED on the IGH OGRDB truth: its extra IGH alleles (many the same sequences under other
+    names) would be scored as wrong calls, so the model is refused as before."""
+    import GenAIRR.data as gd
+    from alignair.reference.reference_set import ReferenceSet
+    from alignair_assay.diagnostics.replay import check_reference
+    with pytest.raises(ValueError, match="is extra in the model reference"):
+        check_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGH_EXTENDED),
+                        Reference.from_dataconfig("HUMAN_IGH_OGRDB"))
+
+
+def test_a_model_of_several_loci_is_accepted_on_a_locus_whose_v_alleles_another_shares():
+    """TRA + TRD on the TRD truth: TRD's V alleles include the TRAV/DV ones of the TRA block; TRA's own alleles
+    are of another locus, so they are extra but accepted."""
+    import GenAIRR.data as gd
+    from alignair.reference.reference_set import ReferenceSet
+    from alignair_assay.diagnostics.replay import check_reference
+    check_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_TCRA_IMGT, gd.HUMAN_TCRD_IMGT),
+                    Reference.from_dataconfig("HUMAN_TCRD_IMGT"))
