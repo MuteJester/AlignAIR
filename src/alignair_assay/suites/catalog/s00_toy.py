@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from GenAIRR import Experiment
 
-from alignair_assay.suites.base import RecipeContext, Stratum, Suite
+from alignair_assay.suites.base import RecipeContext, Stratum, Suite, has_d
 from alignair_assay.suites.donors import DonorSpec
 from alignair_assay.suites.recipes import experiment_on, mutated
 
@@ -32,7 +32,7 @@ S0 = Suite(
     primary=("v.top1_in_set", "j.top1_in_set", "junction.nt_exact"),
     strata=(
         Stratum("plain", 30, toy_repertoire, rc_fraction=0.5),
-        Stratum("with_d", 20, toy_repertoire, accept=has_d_call),
+        Stratum("with_d", 20, toy_repertoire, accept=has_d_call, applies=has_d),
     ),
 )
 

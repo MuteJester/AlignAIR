@@ -24,6 +24,12 @@ def dataconfig(name: str):
         raise ValueError(f"unknown GenAIRR dataconfig {name!r}") from error
 
 
+def is_tcr(config) -> bool:
+    """Whether the GenAIRR DataConfig ``config`` is a T-cell receptor's (no somatic hypermutation)."""
+    from alignair.reference.reference_set import is_tcr as declares_tcr
+    return declares_tcr(config)
+
+
 def gene_name(allele: str) -> str:
     """Gene part of an allele name (text before ``*``)."""
     return allele.split("*", 1)[0]

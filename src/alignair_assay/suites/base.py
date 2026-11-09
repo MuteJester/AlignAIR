@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from alignair_assay.core.reference import Reference
+from alignair_assay.core.reference import Reference, is_tcr
 from alignair_assay.suites.donors import Donor, DonorSpec
 
 if TYPE_CHECKING:
@@ -79,7 +79,6 @@ def has_d(ctx: RecipeContext) -> bool:
 
 def has_shm(ctx: RecipeContext) -> bool:
     """Whether the reference's reads take somatic hypermutation: a B-cell receptor's, not a T-cell receptor's."""
-    from alignair.reference.reference_set import is_tcr
     return not is_tcr(ctx.config)
 
 

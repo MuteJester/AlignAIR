@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from GenAIRR import Experiment
 
-from alignair_assay.suites.base import RecipeContext, Stratum, Suite
+from alignair_assay.suites.base import RecipeContext, Stratum, Suite, has_shm
 from alignair_assay.suites.recipes import experiment_on
 
 # Per-base SHM rate (0 to 1) per lineage generation.
@@ -35,5 +35,5 @@ S9 = Suite(
     purpose="Measures whether a tool assigns every member of a clone the same V gene, J gene and junction length "
             "as the members diverge by SHM.",
     primary=("clone_key.exact", "clone.agree_modal", "junction.nt_exact", "v.top1_in_set"),
-    strata=(Stratum("lineages", 60, lineage_repertoire, clonal=True, rc_fraction=0.5),),
+    strata=(Stratum("lineages", 60, lineage_repertoire, clonal=True, rc_fraction=0.5, applies=has_shm),),
 )

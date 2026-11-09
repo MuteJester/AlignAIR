@@ -14,8 +14,8 @@ from functools import partial
 
 from GenAIRR import Experiment
 
-from alignair_assay.suites.base import RecipeContext, Stratum, Suite
-from alignair_assay.suites.recipes import experiment_on, mutated, symmetric_d_trim
+from alignair_assay.suites.base import RecipeContext, Stratum, Suite, has_d
+from alignair_assay.suites.recipes import d_trim_applies, experiment_on, mutated, symmetric_d_trim
 
 # Poisson per-base SHM rate (0 to 1) of the S5F ``hh_s5f`` kernel.
 _RATE = 0.02
@@ -47,6 +47,15 @@ def p_nucleotide_label(record: dict, ctx: RecipeContext) -> dict[str, str]:
     return {"p_nt": "yes" if any(record.get(field) for field in _P_FIELDS) else "no"}
 
 
+
+def _applies(sweep: str, value: int):
+    """The stratum's ``applies``: an NP2 sweep needs a D; a D trim needs a D allele that keeps 2 bases after it."""
+    if sweep == "np2":
+        return has_d
+    if sweep == "d_both":
+        return partial(d_trim_applies, per_side=value)
+    return None
+
 S3 = Suite(
     name="S3",
     slug="junction",
@@ -55,6 +64,7 @@ S3 = Suite(
     primary=("junction.nt_exact", "junction.length_exact", "clone_key.exact", "junction.start_abs_err",
              "junction.end_abs_err", "v.seq_end_exact", "j.seq_start_exact"),
     strata=tuple(Stratum(f"{sweep}_{value}", 150, partial(junction_repertoire, sweep=sweep, value=value),
-                         labels={"sweep": sweep, "value": str(value)}, case_labels=p_nucleotide_label)
+                         labels={"sweep": sweep, "value": str(value)}, case_labels=p_nucleotide_label,
+                         applies=_applies(sweep, value))
                  for sweep, values in _SWEEPS.items() for value in values),
 )

@@ -12,8 +12,8 @@ from functools import partial
 
 from GenAIRR import Experiment
 
-from alignair_assay.suites.base import RecipeContext, Stratum, Suite
-from alignair_assay.suites.recipes import experiment_on, mutated, symmetric_d_trim
+from alignair_assay.suites.base import RecipeContext, Stratum, Suite, has_d
+from alignair_assay.suites.recipes import d_trim_applies, experiment_on, mutated, symmetric_d_trim
 
 # Poisson per-base SHM rate (0 to 1) of the S5F ``hh_s5f`` kernel.
 _RATE = 0.02
@@ -41,7 +41,9 @@ S6 = Suite(
     primary=("d.top1_in_set", "d_short.abstain_ok", "d.seq_start_exact", "d.seq_end_exact"),
     strata=(
         *(Stratum(f"trim_{k}", 400, partial(trimmed_d_repertoire, per_side=k),
+                  applies=partial(d_trim_applies, per_side=k),
                   labels={"d_trim": str(k), "inverted": "no"}) for k in _TRIMS),
-        Stratum("inverted", 500, inverted_d_repertoire, labels={"d_trim": "default", "inverted": "yes"}),
+        Stratum("inverted", 500, inverted_d_repertoire, labels={"d_trim": "default", "inverted": "yes"},
+                applies=has_d),
     ),
 )

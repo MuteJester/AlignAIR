@@ -39,9 +39,9 @@ class DonorParams:
     """How donors are drawn. ``het_fraction`` (0 to 1) is the probability that a gene with two or more reference
     alleles is heterozygous. ``mean_deleted_genes`` is the Poisson mean of homozygously deleted genes per donor,
     drawn from the genes of the ``deletable`` segments (``"v"``, ``"d"``; J is never deleted); the count is capped
-    so every deletable segment keeps at least one gene. ``novel_v_genes`` carried V genes per donor are made
-    homozygous for a novel allele (``suites.novel``), the i-th with ``novel_snp_cycle[i % len(cycle)]`` SNPs.
-    ValueError for values outside these ranges."""
+    so every deletable segment keeps at least one gene. ``novel_v_genes`` carried V genes per donor (at most half the
+    reference's V genes) are made homozygous for a novel allele (``suites.novel``), the i-th with
+    ``novel_snp_cycle[i % len(cycle)]`` SNPs. ValueError for values outside these ranges."""
 
     het_fraction: float = 0.40
     mean_deleted_genes: float = 6.7
@@ -177,7 +177,8 @@ def sample_donors(reference: Reference, n: int, seed: int, params: DonorParams =
     (``suites.novel.make_novel_allele``) and replaces the gene's alleles, homozygously. A gene whose base gives no
     accepted novel allele is passed over. ``config`` is the GenAIRR DataConfig ``reference`` was built from, which
     validates the novel alleles; ValueError without it when novel alleles are asked for, and RuntimeError when a
-    donor has fewer eligible V genes than ``novel_v_genes``. ValueError when ``n`` is not a positive integer."""
+    donor has fewer eligible V genes than it asks novel alleles of (``novel_v_genes``, at most half the reference's
+    V genes). ValueError when ``n`` is not a positive integer."""
     if isinstance(n, bool) or not isinstance(n, int) or n < 1:
         raise ValueError(f"donors: n must be a positive integer, got {n!r}")
     if params.novel_v_genes and config is None:
@@ -208,16 +209,18 @@ def sample_donors(reference: Reference, n: int, seed: int, params: DonorParams =
 
 def _novel_v_alleles(rng: random.Random, reference: Reference, alleles: dict[str, tuple[str, ...]],
                      v_genes: list[str], params: DonorParams, config, subject_id: str) -> dict[str, NovelAllele]:
-    """Give ``params.novel_v_genes`` of the carried ``v_genes`` a homozygous novel allele, in place in ``alleles``
-    (see ``sample_donors``); returns the novel alleles by name."""
+    """Give ``params.novel_v_genes`` of the carried ``v_genes`` (at most half the reference's V genes, so a small
+    V locus such as IGK keeps known genes too) a homozygous novel allele, in place in ``alleles`` (see
+    ``sample_donors``); returns the novel alleles by name."""
     from GenAIRR import Genotype
 
     validator = Genotype.from_dataconfig(config)
     candidates = [gene for gene in v_genes if gene in alleles]
     rng.shuffle(candidates)
+    wanted = min(params.novel_v_genes, len(v_genes) // 2)       # a small V locus (IGK: 31 genes) keeps half known
     novel: dict[str, NovelAllele] = {}
     for gene in candidates:
-        if len(novel) == params.novel_v_genes:
+        if len(novel) == wanted:
             break
         index = len(novel)
         k = params.novel_snp_cycle[index % len(params.novel_snp_cycle)]
@@ -228,9 +231,9 @@ def _novel_v_alleles(rng: random.Random, reference: Reference, alleles: dict[str
             continue  # no functional variant (a base with a stop codon in its coding frame) or too few positions
         novel[allele.name] = allele
         alleles[gene] = (allele.name,)
-    if len(novel) < params.novel_v_genes:
+    if len(novel) < wanted:
         raise RuntimeError(f"{subject_id}: only {len(novel)} of {len(candidates)} carried V genes take a novel "
-                           f"allele, {params.novel_v_genes} requested")
+                           f"allele, {wanted} requested")
     return novel
 
 

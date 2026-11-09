@@ -79,3 +79,54 @@ def test_build_skips_a_suite_that_does_not_apply(tmp_path, capsys, monkeypatch):
     assert "not applicable to HUMAN_IGK_OGRDB: S6" in capsys.readouterr().out
     assert not (tmp_path / "suites" / "S6").exists()
     assert json.loads((tmp_path / "suites" / "S12" / "build.json").read_text())["skipped_strata"] == []
+
+
+def _strata(suite):
+    return [stratum.name for stratum in get_suite(suite).strata]
+
+
+def _without(suite, *prefixes):
+    return [name for name in _strata(suite) if not name.startswith(prefixes)]
+
+
+def _trb_s6():
+    """S6 on TRB: the trims some TRB D allele can take (it keeps 2 bases), and the inversion."""
+    from alignair_assay.core.reference import dataconfig
+    from alignair_assay.suites.recipes import d_alleles_for_trim
+    config = dataconfig("HUMAN_TCRB_IMGT")
+    return [name for name in _strata("S6") if name == "inverted"
+            or d_alleles_for_trim(config, int(name.split("_")[1])) != []]
+
+
+NOT_APPLICABLE = None
+EXPECTED = {
+    "HUMAN_IGK_OGRDB": {
+        "S0": ["plain"], "S1": _strata("S1"), "S2": _strata("S2"), "S3": _without("S3", "np2_", "d_both_"),
+        "S4": _strata("S4"), "S5": _strata("S5"), "S6": NOT_APPLICABLE, "S7": ["cohort"], "S8": ["cohort"],
+        "S9": ["lineages"], "S10": _strata("S10"), "S11": _strata("S11"), "S12": _strata("S12"),
+        "S13": _strata("S13"),
+    },
+    "HUMAN_TCRB_IMGT": {
+        "S0": ["plain", "with_d"], "S1": ["full_igm", "fr1_igm", "fr2_igm", "fr3_igm"], "S2": ["shm_0"],
+        "S3": _without("S3", "d_both_8"), "S4": _strata("S4"), "S5": _strata("S5"), "S6": "trb_s6",
+        "S7": ["cohort"], "S8": ["cohort"], "S9": NOT_APPLICABLE, "S10": ["np_shift", "trim_shift"],
+        "S11": _strata("S11"), "S12": _strata("S12"), "S13": _strata("S13"),
+    },
+}
+
+
+@pytest.mark.parametrize("reference,suite", [(reference, suite) for reference, suites in EXPECTED.items()
+                                             for suite in suites])
+def test_each_suite_builds_its_strata_for_igk_and_trb(reference, suite):
+    expected = EXPECTED[reference][suite]
+    if expected is NOT_APPLICABLE:
+        with pytest.raises(SuiteNotApplicable):
+            _generate(suite, reference)
+        return
+    if expected == "trb_s6":
+        expected = _trb_s6()
+    generated = _generate(suite, reference)
+    assert list(generated.stats) == expected
+    assert list(generated.skipped) == [name for name in _strata(suite) if name not in expected]
+    if reference == "HUMAN_TCRB_IMGT":
+        assert all(case["record"]["n_mutations"] == 0 for case in generated.cases)

@@ -91,12 +91,18 @@ def mutated(experiment: Experiment, rate: float, *, config, model: str | None = 
     """``experiment`` followed by GenAIRR's SHM step: Poisson per-base ``rate`` (0 to 1) of ``model`` (``"s5f"`` or
     ``"uniform"``) with S5F kernel ``s5f_model``, or GenAIRR's own defaults at ``rate`` for ``model`` None;
     ``experiment`` unchanged at rate 0 and on a TCR ``config`` (no SHM in T cells)."""
-    from alignair.reference.reference_set import is_tcr
+    from alignair_assay.core.reference import is_tcr
     if not rate or is_tcr(config):
         return experiment
     if model is None:
         return experiment.mutate(rate=rate)
     return experiment.mutate(model=model, rate=rate, s5f_model=s5f_model)
+
+
+def d_trim_applies(ctx: RecipeContext, *, per_side: int) -> bool:
+    """Whether the reference holds a D allele that a trim of ``per_side`` nucleotides at both ends leaves at least 2
+    bases of (``d_alleles_for_trim``): a stratum of that trim applies (``Stratum.applies``)."""
+    return bool(ctx.reference.alleles.get("d")) and d_alleles_for_trim(ctx.config, per_side) != []
 
 
 def d_alleles_for_trim(config, per_side: int) -> list[str] | None:

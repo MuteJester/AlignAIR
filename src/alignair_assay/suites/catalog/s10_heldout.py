@@ -4,7 +4,7 @@ from __future__ import annotations
 from functools import partial
 
 from alignair_assay.core.headline import HEADLINE
-from alignair_assay.suites.base import Stratum, Suite
+from alignair_assay.suites.base import Stratum, Suite, has_shm
 from alignair_assay.suites.donors import DonorSpec
 from alignair_assay.suites.recipes import SHM_CLASSES, repertoire
 
@@ -23,7 +23,8 @@ S10 = Suite(
     title="Held-out generative settings",
     purpose="Measures how accuracy holds when the SHM kernel, NP lengths or trims leave the default distributions.",
     primary=HEADLINE,
-    strata=tuple(Stratum(name, 600, recipe, labels={"heldout": name}, rc_fraction=0.5, cohort=True)
+    strata=tuple(Stratum(name, 600, recipe, labels={"heldout": name}, rc_fraction=0.5, cohort=True,
+                         applies=has_shm if name in ("uniform", "hkl_s5f") else None)
                  for name, recipe in _SETTINGS.items()),
     donors=DonorSpec(20, "S10"),
 )

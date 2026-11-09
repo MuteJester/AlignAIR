@@ -11,7 +11,7 @@ from functools import lru_cache, partial
 from GenAIRR import Experiment
 
 from alignair_assay.core.reference import Reference
-from alignair_assay.suites.base import RecipeContext, Stratum, Suite
+from alignair_assay.suites.base import RecipeContext, Stratum, Suite, has_shm
 from alignair_assay.suites.recipes import experiment_on, mutated
 
 # The largest sibling distance (Hamming, in bases) an allele may have to be sampled.
@@ -74,6 +74,7 @@ S2 = Suite(
     title="V allele siblings",
     purpose="Measures whether a tool tells a V allele from a sibling one to five bases away as SHM rises.",
     primary=("v.top1_in_set", "v.set_precision", "v.gene_top1", "j.top1_in_set"),
-    strata=tuple(Stratum(f"shm_{name}", 600, partial(sibling_repertoire, rate=rate), case_labels=sibling_label)
+    strata=tuple(Stratum(f"shm_{name}", 600, partial(sibling_repertoire, rate=rate), case_labels=sibling_label,
+                         applies=None if rate == 0 else has_shm)
                  for name, rate in _RATES.items()),
 )
