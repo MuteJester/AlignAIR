@@ -709,3 +709,13 @@ def test_a_diagnosis_carries_no_replay_pin(built, tmp_path, small_model, capsys)
     with pytest.raises(SystemExit):
         main(["diagnose", "--help"])
     assert "--allow-unverified-replay" not in capsys.readouterr().out
+
+
+def test_a_light_chain_model_is_diagnosed_on_light_chain_suites(make_small_model, tmp_path):
+    """IGK: the model calls no D (its parser still gives D boundary logits), so the head diagnostics leave D out
+    instead of decoding boundaries the model does not give."""
+    layout = RunLayout(tmp_path / "igk")
+    build_suite("S0", layout, reference_name="HUMAN_IGK_OGRDB", split="dev", seed=5, scale=SCALE, workers=1)
+    result = evaluate(make_small_model("HUMAN_IGK_OGRDB"), layout, ["S0"], **FAST)
+    suite = (layout.diagnostics_root / result.model_key / "S0" / "suite.json").read_text()
+    assert "head.v.start_exact" in suite and "head.d." not in suite

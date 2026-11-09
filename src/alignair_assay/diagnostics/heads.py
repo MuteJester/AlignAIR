@@ -134,7 +134,8 @@ def head_scores(outputs: StageOutputs, truths: list[ObservableTruth],
     records = _records(cases, pairs)
     width = _width(outputs)
     raw = {key: _flat(outputs.raw[key]) for key in ("mutation_rate", "indel_count") if key in outputs.raw}
-    genes = [g for g in GENES if f"{g}_start_logits" in outputs.raw]
+    # the genes the model calls: a light-chain model's parser gives D boundary logits but the model no D boundaries
+    genes = [g for g in GENES if f"{g}_start_logits" in outputs.raw and f"{g}_start" in outputs.raw]
     decoded = {g: {decoder: decode_boundaries(outputs, g, decoder) for decoder in DECODERS} for g in genes}
     alleles = [g for g in genes if g in outputs.allele_names]
     ranking = {g: allele_ranking(outputs, g) for g in alleles}
