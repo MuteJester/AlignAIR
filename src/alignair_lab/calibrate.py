@@ -115,10 +115,12 @@ def _environment() -> dict:
 
 
 def train_screens(plan: list[tuple[int, str, list[str]]], directory: Path, parallel: int,
-                  echo: Callable[[str], None], *, label: str = "calibrate", what: str = "baseline screen") -> None:
+                  echo: Callable[[str], None], *, label: str = "calibrate", what: str = "baseline screen",
+                  seed_label: str = "init seed") -> None:
     """Run each ``(seed, name, command)`` of ``plan``, at most ``parallel`` at once, its output in
-    ``directory/<name>.log``, echoing ``[label]`` progress lines that call each run a ``what``; RuntimeError, naming
-    the logs, once the runs under way have finished if any failed. Interrupted, it ends the runs under way."""
+    ``directory/<name>.log``, echoing ``[label]`` progress lines that call each run a ``what`` and its seed a
+    ``seed_label``; RuntimeError, naming the logs, once the runs under way have finished if any failed. Interrupted,
+    it ends the runs under way."""
     pending, running, failed = list(plan), {}, []
     environment = _environment()
     try:
@@ -128,7 +130,7 @@ def train_screens(plan: list[tuple[int, str, list[str]]], directory: Path, paral
                 log = open(directory / f"{name}.log", "w", encoding="utf-8")
                 process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=environment)
                 running[process] = (seed, name, log, time.perf_counter())
-                echo(f"[{label}] training the {what} {name} (init seed {seed}); output: {log.name}")
+                echo(f"[{label}] training the {what} {name} ({seed_label} {seed}); output: {log.name}")
             for process in [process for process in running if process.poll() is not None]:
                 seed, name, log, begun = running.pop(process)
                 log.close()

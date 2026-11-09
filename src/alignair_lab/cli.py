@@ -13,6 +13,11 @@
       [--baseline-model-option KEY=VALUE ...] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N]
       [--variants baseline] [--device cuda] [--data-workers 2] [--eval-batch-size 256] [--cache DIR] [--dev-build DIR]
       [--out-root DIR]
+  python -m alignair_lab train --out DIR --seed N --steps N [--schedule cosine|constant] [--dataconfig NAME ...]
+      [--device cuda] [--data-workers 6] [--model-option KEY=VALUE ...]
+  python -m alignair_lab data-band [--seeds 0,1,2] [--steps 20000] [--parallel 1] [--model-option KEY=VALUE ...]
+      [--name NAME] [--schedule cosine|constant] [--suites S1,S3] [--max-cases N] [--device cuda]
+      [--data-workers 6] [--eval-batch-size 256] [--dev-build DIR] [--out-root DIR]
   python -m alignair_lab cache [--out DIR] [--steps 40000] [--workers N] [--progress-seconds 60]
       [--segment-records N] [--novel]
   python -m alignair_lab novel-screen --name NAME --novel-cache DIR [--heldout DIR] [--steps 20000] [--init-seed K]
@@ -31,7 +36,9 @@ with the baseline's milestone (``--against-milestone``, Tier 2; its directory de
 writes the null band and the baseline seeds' values of their protocol, which the headlines of its screens weigh their
 Δs against (``calibrate.run_calibration``). ``replicates`` screens a candidate from several init seeds, reusing the
 finished screens, and pools them into one report against the baseline seeds (``replicates.run_replicates``; with
-``--reuse`` it trains nothing). ``cache`` writes the recipe's record cache (``records.write_record_cache``;
+``--reuse`` it trains nothing). ``train`` trains the retrain recipe (``recipe.retrain_config``) live from a data seed,
+no record cache (``runs.train_run``); ``data-band`` trains it from several data seeds and writes the band of their
+pairwise Δs, the noise of training on another data draw (``databand.run_data_band``). ``cache`` writes the recipe's record cache (``records.write_record_cache``;
 ``--novel``: the novel-allele recipe's, ``recipe.NOVEL_POLICY``). ``novel-screen`` trains chip-v1 from a novel cache
 and scores it and the protocol's baseline seeds on the held-out S7 novel alleles (``novel.run_novel_screen``).
 ``igblast-dev`` runs IgBLAST on the dev build's reads, and ``against-igblast`` pairs a checkpoint with it read by read
@@ -46,7 +53,7 @@ import argparse
 import json
 import sys
 
-from alignair_lab import calibrate, igblast, replicates, screen
+from alignair_lab import calibrate, databand, igblast, replicates, runs, screen
 from alignair_lab.recipe import BASELINE_ARCHITECTURE, BATCH_SIZE, DATACONFIGS, POLICY, SCHEDULES, SEED
 
 CACHE_STEPS = 40_000
@@ -145,6 +152,35 @@ def build_parser() -> argparse.ArgumentParser:
                            help="the assay's variants of each screen (default %(default)s)")
     replicate.set_defaults(func=run_replicates)
 
+    train = commands.add_parser("train", help="train the retrain recipe live from a data seed (runs.train_run)")
+    train.add_argument("--out", required=True, help="the run's directory (a finished run there is reused)")
+    train.add_argument("--seed", type=int, required=True, help="the data seed, which also draws the initial weights")
+    train.add_argument("--steps", type=int, required=True, help="training steps")
+    train.add_argument("--schedule", choices=SCHEDULES, default=screen.DEFAULT_SCHEDULE,
+                       help="cosine to a hundredth of the rate over the steps, or the recipe's constant rate "
+                            "(default %(default)s)")
+    train.add_argument("--dataconfig", action="append", default=None, metavar="NAME",
+                       help=f"a GenAIRR dataconfig to train on (repeatable; default {','.join(DATACONFIGS)})")
+    train.add_argument("--device", default="cuda")
+    train.add_argument("--data-workers", type=int, default=runs.DEFAULT_DATA_WORKERS,
+                       help="training data worker processes (default %(default)s)")
+    train.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
+                       help="a model configuration field (repeatable)")
+    train.set_defaults(func=run_train)
+
+    band = commands.add_parser("data-band", help="train the retrain recipe from several data seeds and write the "
+                                                 "band of their pairwise assay Δs (databand.run_data_band)")
+    band.add_argument("--seeds", default=",".join(map(str, databand.DEFAULT_SEEDS)),
+                      help="comma-separated data seeds, two or more (default %(default)s)")
+    band.add_argument("--steps", type=int, default=databand.DEFAULT_STEPS, help="training steps (default %(default)s)")
+    band.add_argument("--parallel", type=int, default=1, help="runs trained at once (default %(default)s)")
+    band.add_argument("--model-option", action="append", default=[], metavar="KEY=VALUE",
+                      help="a model configuration field of the runs (repeatable)")
+    band.add_argument("--name", help="the band's directory under --out-root (default "
+                                     "data-band-<recipe>-s<steps>-<schedule>)")
+    add_protocol_arguments(band, cache=False)
+    band.set_defaults(func=run_data_band)
+
     cache = commands.add_parser("cache", help="write the recipe's record cache")
     cache.add_argument("--out", default=str(screen.CACHE), help="the new cache directory (default %(default)s)")
     cache.add_argument("--steps", type=int, default=CACHE_STEPS,
@@ -205,8 +241,9 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def add_protocol_arguments(command) -> None:
-    """The arguments ``screen`` and ``calibrate`` share: the schedule, the assay's reads and the run's places."""
+def add_protocol_arguments(command, *, cache: bool = True) -> None:
+    """The arguments ``screen`` and ``calibrate`` share: the schedule, the assay's reads and the run's places (the
+    record cache among them unless ``cache`` is False: ``data-band`` trains live)."""
     command.add_argument("--schedule", choices=SCHEDULES, default=screen.DEFAULT_SCHEDULE,
                          help="the learning-rate schedule: cosine to a hundredth of the rate over the steps, or the "
                               "recipe's constant rate (default %(default)s)")
@@ -217,7 +254,8 @@ def add_protocol_arguments(command) -> None:
                          help="training data worker processes (default %(default)s)")
     command.add_argument("--eval-batch-size", type=int, default=256,
                          help="the assay's batch size (default %(default)s)")
-    command.add_argument("--cache", default=str(screen.CACHE), help="the record cache (default %(default)s)")
+    if cache:
+        command.add_argument("--cache", default=str(screen.CACHE), help="the record cache (default %(default)s)")
     command.add_argument("--dev-build", default=str(screen.DEV_BUILD),
                          help="the assay's dev build (default %(default)s)")
     command.add_argument("--out-root", default=str(screen.SCREENS),
@@ -269,6 +307,27 @@ def run_calibrate(args) -> int:
                               max_cases=args.max_cases, device=args.device, data_workers=args.data_workers,
                               eval_batch_size=args.eval_batch_size, cache=args.cache, dev_build=args.dev_build,
                               out_root=args.out_root, name=args.name)
+    return 0
+
+
+def run_train(args) -> int:
+    record = runs.train_run(args.out, seed=args.seed, steps=args.steps, schedule=args.schedule,
+                            dataconfigs=tuple(args.dataconfig or DATACONFIGS), device=args.device,
+                            data_workers=args.data_workers, model_options=model_options(args.model_option))
+    print(f"trained {record['model']} ({record['steps']} steps, data seed {record['seed']}, {record['hours']} h)")
+    return 0
+
+
+def run_data_band(args) -> int:
+    try:
+        seeds = [int(seed) for seed in _names(args.seeds)]
+    except ValueError:
+        raise ValueError(f"--seeds takes comma-separated integers, got {args.seeds!r}") from None
+    databand.run_data_band(seeds=seeds, steps=args.steps, schedule=args.schedule, parallel=args.parallel,
+                           model_options=model_options(args.model_option), suites=_names(args.suites),
+                           max_cases=args.max_cases, device=args.device, data_workers=args.data_workers,
+                           eval_batch_size=args.eval_batch_size, dev_build=args.dev_build, out_root=args.out_root,
+                           name=args.name)
     return 0
 
 
