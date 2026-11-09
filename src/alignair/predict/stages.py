@@ -173,7 +173,9 @@ def validate_predictions(preds, stage: str = "model forward") -> None:
 
 def called_loci(v_alignments, reference, no_v) -> list[str] | None:
     """Per read, the locus of its V call (the allele its V is aligned to) in a reference of several loci, ``""`` for a
-    read without a V call; None for a reference of one locus or none (its records are labelled otherwise)."""
+    read without a V call; None for a reference of one locus or none (its records are labelled otherwise). Its J and D
+    calls are of the same locus: the network keeps each read to one locus (``refine.locus``), and better-V and the
+    ties keep to it (``locus_alleles``)."""
     loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
     if len(loci) < 2:
         return None

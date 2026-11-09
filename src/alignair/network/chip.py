@@ -10,6 +10,10 @@ weights each base by its soft region weight (through a gradient valve: the scans
 a gene's columns are read only over each read's window of bases whose region marginal for the gene is over
 ``SUPPORT`` (``ShmReader.top_columns``): a base outside it would weigh at most that in the scan.
 
+At inference, with a bank of several loci, each read then keeps to one locus (``refine.locus``): the locus of its most
+probable same-locus V-J pair; its V, D and J posteriors are restricted to that locus before any refinement below reads
+them, a read of a locus without D is called D-absent, and ``read_locus`` gives each read's locus index.
+
 Outputs, under the product's keys: the parser's boundary logits and their expectations, the V end and J start refined
 by the called alleles' germlines from the anchors (``refine.boundaries``, with the anchor heads); at inference, the D posterior
 times the junction's local alignment to every D row (``dlocal``), the D start and end refined on the called D's
