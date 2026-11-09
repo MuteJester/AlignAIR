@@ -28,7 +28,7 @@ def test_a_baseline_screen_cools_its_rate_down_and_compares_with_nothing(baselin
     record = json.loads((baseline / 'screen.json').read_text())
     assert (record['status'], record['role'], record['architecture']) == ('done', 'baseline', 'lab-null-v2')
     assert (record['init_seed'], record['schedule'], record['baseline']) == (0, 'cosine', None)
-    assert record['protocol'] == {'recipe': 'v3', 'cache': record['cache']['identity'], 'steps': 2,
+    assert record['protocol'] == {'recipe': 'v4', 'cache': record['cache']['identity'], 'steps': 2,
                                   'schedule': {'policy': 'cosine-v1', 'total_steps': 2, 'min_lr': MIN_LR}}
     assert record['model_options'] == SMALL and not (baseline / 'assay').exists()
     checkpoint = baseline / 'train' / 'model.alignair'

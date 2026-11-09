@@ -78,7 +78,7 @@ def test_a_run_draws_its_selected_fraction_and_records_its_recipe(tmp_path, opti
     policy = CurriculumStreamPolicy(selected_fraction=fraction)
     assert seen == [name.startswith('selected') for streams in policy.substreams_for(gd.HUMAN_IGH_OGRDB)
                     for name, _ in streams]
-    assert train_args['recipe'] == 'v3' and train_args['selected_fraction'] == fraction
+    assert train_args['recipe'] == 'v4' and train_args['selected_fraction'] == fraction
     assert train_args['selected_shares'] == list(policy.selected_shares())
     assert train_args['selection_unavailable'] == []
 

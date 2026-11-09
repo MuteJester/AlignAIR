@@ -1,6 +1,6 @@
 """The byte pin of what the default recipe trains on: its first 64 records, the two batches the training adapter makes
 of them, and the loss and gradient norm of one training step on the first (``PIN``,
-``tests/alignair/fixtures/training_pin_v3.json``). ``python -m tests.support.training_pin`` measures them on the tree
+``tests/alignair/fixtures/training_pin_v4.json``). ``python -m tests.support.training_pin`` measures them on the tree
 it runs on; a moved digest is a moved training batch."""
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PIN_PATH = Path(__file__).resolve().parents[1] / "alignair" / "fixtures" / "training_pin_v3.json"
+PIN_PATH = Path(__file__).resolve().parents[1] / "alignair" / "fixtures" / "training_pin_v4.json"
 PIN = json.loads(PIN_PATH.read_text()) if PIN_PATH.exists() and PIN_PATH.stat().st_size else None
 SMALL = {"embed_dim": 4, "trunk_channels": 8}
 

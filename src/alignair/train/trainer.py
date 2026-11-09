@@ -26,10 +26,12 @@ from .random_state import restore_rng_state as _restore_rng
 from .schedules import CosineSchedule
 from .study import TrainingStudy, StudySession
 
-# How a run's curriculum records are built, recorded as ``train_args["recipe"]``: "v3" draws every stream from its
-# own reserved seed block and a selected fraction of each full-length component under productive_only(). The options
-# recorded beside it (indel form and fraction, selected fraction) are the recipe's parameters.
-RECIPE = 'v3'
+# How a run's curriculum records and targets are built, recorded as ``train_args["recipe"]``: "v3" draws every stream
+# from its own reserved seed block and a selected fraction of each full-length component under productive_only(); "v4"
+# is v3 with the sequencing errors at the chip's level under GenAIRR 2.4 (``SEQUENCING_ERROR_SCALE``) and the allele-set
+# and mutation-rate targets of the owner's decisions 9 and 10 (``data.targets``). The options recorded beside it
+# (indel form and fraction, selected fraction) are the recipe's parameters.
+RECIPE = 'v4'
 
 
 from ..genairr.identity import _recorded_genairr_source, genairr_source_sha256  # noqa: F401  (re-exported)

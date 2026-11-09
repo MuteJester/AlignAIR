@@ -16,6 +16,11 @@ INDEL_FORMS = ("uniform", "weighted")
 INDEL_FRACTION = (0.05, 0.25)
 # Requested weights of 1, 2 and 3 indels among the weight of reads with indels; GenAIRR draws the realised counts.
 INDEL_COUNT_WEIGHTS = ((1, 0.75), (2, 0.20), (3, 0.05))
+# Since GenAIRR 8ed62e9 a sequencing-error, PCR-error or uniform-mutate replacement base is drawn from the 3 other
+# bases, so the realised rate is the requested one; the chip trained when a quarter of those draws were silent, at about
+# 1/1.32 of the requested rate. The curriculum's sequencing-error rate is scaled by this to keep the chip's level (the
+# owner's decision 11, 2026-11-06); S5F mutation is unchanged, and the curriculum sets no PCR or uniform-mutate rate.
+SEQUENCING_ERROR_SCALE = 0.757
 
 
 def _lerp(a, b, p):
@@ -82,7 +87,7 @@ class Curriculum:
             "end_loss_5": (0, int(round(_lerp(0, 40, p)))),
             "end_loss_3": (0, int(round(_lerp(0, 40, p)))),
             "indel_count": self.indel_count(p),
-            "seq_error_rate": _lerp(0.0, 0.02, p),
+            "seq_error_rate": _lerp(0.0, 0.02, p) * SEQUENCING_ERROR_SCALE,
             "ambiguous_count": (0, int(round(_lerp(0, 5, p)))),
         }
 

@@ -72,3 +72,11 @@ def test_indel_form_is_uniform_or_weighted(value):
     with pytest.raises(ConfigurationError) as caught:
         Curriculum(indel_form=value)
     assert caught.value.context["field"] == "indel_form"
+
+
+def test_sequencing_errors_stay_at_the_level_the_chip_trained_on():
+    from alignair.train.gym.curriculum.base import SEQUENCING_ERROR_SCALE
+    assert SEQUENCING_ERROR_SCALE == 0.757
+    assert Curriculum().params(1.0)["seq_error_rate"] == pytest.approx(0.02 * 0.757)
+    assert Curriculum().params(0.5)["seq_error_rate"] == pytest.approx(0.01 * 0.757)
+    assert Curriculum().params(0.0)["seq_error_rate"] == 0.0
