@@ -121,6 +121,7 @@ def test_a_two_locus_batch_puts_a_novel_reads_target_in_its_locus():
     sequence = base[:p] + ("A" if base[p] != "A" else "C") + base[p + 1:]
     allele = NovelAllele(novel_name(call, sequence), call, sequence)
     first["v_call"], first[NOVEL_FIELD] = allele.name, {"V": allele.to_dict()}
+    first["recalled_v_call"] = allele.name            # GenAIRR re-calls a novel read as its novel allele alone
     setup = prepare_model(reference, input_space="nucleotide", label_space="alleles", embed_dim=4, trunk_channels=8)
     batch = NucleotideBatchAdapter(reference, setup.config, augment_orientation=False)(records)
     assert batch.targets["v_allele"][0].nonzero().flatten().tolist() == [198]

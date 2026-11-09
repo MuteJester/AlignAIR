@@ -87,6 +87,7 @@ def test_reads_from_novel_alleles_name_them_and_carry_their_definition():
     assert 0.06 <= len(novel) / len(records) <= 0.22
     for r in novel:
         assert r["v_call"] == r[NOVEL_FIELD]["V"]["name"] and r["v_call"] in drawn
+        assert r["recalled_v_call"] == r["v_call"]      # so the allele-set target (decision 9) adds no base allele
     assert not any(r["v_call"] in drawn for r in records if NOVEL_FIELD not in r)
     assert [r["sequence_id"] for r in records] == [f"seq{k}" for k in range(len(records))]
 

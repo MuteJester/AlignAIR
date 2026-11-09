@@ -121,6 +121,22 @@ def _label_segment_states(state, seq, ss, gref, gs, cigar):
     return n_del
 
 
+def _names(value) -> set[str]:
+    return {name.strip() for name in str(value or "").split(",") if name.strip()}
+
+
+def allele_set(record: dict, gene: str, reference_set) -> set[str]:
+    """The record's allele-set target of ``gene``: its call (the generating allele) and the alleles GenAIRR re-calls
+    from the read (``recalled_{gene}_call``) that ``reference_set`` holds (the owner's decision 9, 2026-11-06). A
+    recalled name outside the reference is dropped: in a novel batch the reference is the batch bank's, so a novel
+    allele its bank aliases to a reference allele drops out and that allele is the call. The call itself is not
+    filtered (a call the reference lacks is refused where the target is encoded). A record without recalled calls
+    (GenAIRR before 2.4) targets its call alone."""
+    index = reference_set.gene(gene.upper()).index
+    recalled = {name for name in _names(record.get(f"recalled_{gene}_call")) if name in index}
+    return _names(record[f"{gene}_call"]) | recalled
+
+
 def build_targets(record: dict, reference_set, has_d: bool) -> dict:
     with error_context(stage="build_targets", record_id=record.get("sequence_id")):
         try:
@@ -171,8 +187,7 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         cigar = record.get(f"{g}_cigar")
         _label_segment_states(state, seq, ss, ref.sequences[idx], gs, cigar)
 
-    calls = {g.upper(): set(str(record[f"{g}_call"]).split(","))
-             for g in _GENES if record.get(f"{g}_call")}
+    calls = {g.upper(): allele_set(record, g, reference_set) for g in _GENES if record.get(f"{g}_call")}
     return {
         "tokens": _tok(seq),
         "region_labels": region,

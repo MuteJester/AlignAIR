@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 
 from alignair.errors import TrainingDataError
-from alignair.data.targets import build_targets
+from alignair.data.targets import allele_set, build_targets
 
 pytestmark = pytest.mark.component
 
@@ -97,3 +97,25 @@ def test_batch_masks_removed_genes_in_training_and_metrics():
     targets["j_supervise"].zero_()
     metrics = alignment_metrics(outputs, targets, cfg.genes).means()
     assert "j_allele_top1" not in metrics and "j_seg_mae" not in metrics
+
+
+def _two_alleles():
+    """A reference of two alleles per gene, ``<G>*01`` and ``<G>*02``."""
+    return SimpleNamespace(gene=lambda gene: SimpleNamespace(
+        index={gene + "*01": 0, gene + "*02": 1}, sequences=["ACGTACGTACGT", "ACGTACGTACGA"]))
+
+
+def test_the_allele_set_is_the_call_and_its_recalled_alleles_the_reference_holds():
+    record = {"v_call": "V*01", "recalled_v_call": "V*02, V*01,IGHV-NOT-IN-THE-BANK*01,"}
+    assert allele_set(record, "v", _two_alleles()) == {"V*01", "V*02"}
+
+
+def test_a_record_without_recalled_alleles_targets_its_call():
+    for recalled in ({}, {"recalled_v_call": None}, {"recalled_v_call": ""}):
+        assert allele_set({"v_call": "V*01", **recalled}, "v", _two_alleles()) == {"V*01"}
+
+
+def test_the_recalled_alleles_join_the_records_targets():
+    record = {**_record(), "recalled_v_call": "V*02", "recalled_j_call": "J*01"}
+    calls = build_targets(record, _two_alleles(), True)["calls"]
+    assert calls == {"V": {"V*01", "V*02"}, "D": {"D*01"}, "J": {"J*01"}}
