@@ -100,12 +100,15 @@ class GeneReference:
 class LocusInfo:
     """One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has
     a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union's allele order. A read's
-    locus is its V call's (``predict.stages.called_loci``)."""
+    locus is its V call's (``predict.stages.called_loci``). ``shared`` names, per gene, the alleles of another
+    locus's block that this locus lists too (TRAV/DV alleles, which rearrange in TRA and TRD alike): they belong to
+    both loci (``ReferenceSet.locus_mask``)."""
     locus: str
     chain_type: str
     has_d: bool
     ranges: Dict[str, tuple] = field(default_factory=dict)   # {"V": (s,e), "J": (s,e), ["D": (s,e)]}
     species: str | None = None                                # the species of all its alleles, when they share one
+    shared: Dict[str, tuple] = field(default_factory=dict)   # {"V": (name, ...)}: other loci's alleles it lists too
 
 
 class ReferenceSet:
@@ -154,6 +157,11 @@ class ReferenceSet:
         if info is not None and gene.upper() in info.ranges:
             s, e = info.ranges[gene.upper()]
             m[s:e] = True                                # else: known schema, locus lacks this gene -> no-call
+        if info is not None:                             # alleles of another locus's block this locus lists too
+            index = self.gene(gene).index
+            for name in info.shared.get(gene.upper(), ()):
+                if name in index:
+                    m[index[name]] = True
         return m
 
     @classmethod
@@ -187,6 +195,8 @@ class ReferenceSet:
                      "ranges": {G: list(se) for G, se in l.ranges.items()}}
             if l.species is not None:
                 locus["species"] = l.species
+            if l.shared:                                 # additive: written only for loci that share alleles
+                locus["shared"] = {G: list(names) for G, names in l.shared.items()}
             loci.append(locus)
         out = {"schema": "alignair.reference.v1", "has_d": self.has_d, "genes": genes, "loci": loci}
         if self.provenance:
@@ -213,7 +223,8 @@ class ReferenceSet:
         loci = [LocusInfo(locus=l["locus"], chain_type=l.get("chain_type", l["locus"]),
                           has_d=bool(l.get("has_d")),
                           ranges={G: tuple(se) for G, se in (l.get("ranges") or {}).items()},
-                          species=l.get("species"))
+                          species=l.get("species"),
+                          shared={G: tuple(names) for G, names in (l.get("shared") or {}).items()})
                 for l in data.get("loci", [])]
         if not loci:                                     # references serialized before the schema existed
             loci = _infer_loci_from_names(out)

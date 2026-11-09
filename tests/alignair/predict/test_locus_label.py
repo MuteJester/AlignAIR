@@ -93,3 +93,15 @@ def test_every_rows_v_d_and_j_are_of_its_locus_and_a_light_row_has_no_d():
             assert all(name in names for name in filter(None, row[f"{gene}_call"].split(","))), (row["locus"], gene)
         if row["locus"] == "IGK":
             assert not row["d_call"] and row.get("d_sequence_start") in (None, "")
+
+
+def test_a_rows_locus_is_the_reads_locus_when_its_v_allele_is_shared():
+    """TRA + TRD: a read's label is its locus (``read_locus``, the network's), so a TRD read whose V is a TRAV/DV
+    allele (listed by both loci) is labelled TRD."""
+    import GenAIRR.data as gd
+    from alignair.reference.reference_set import ReferenceSet
+    reference = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRA_IMGT, gd.HUMAN_TCRD_IMGT)
+    aln = GermlineAlignment("TRAV29/DV5*01", 0, 10, 0, 10, "10M")
+    trd = reference.locus_names().index("TRD")
+    assert record_loci([aln, None], reference, [False, True], None, read_locus=np.array([trd, trd])) == ["TRD", ""]
+    assert record_loci([aln], reference, [False], None) == ["TRA"]            # without it: the allele's first locus

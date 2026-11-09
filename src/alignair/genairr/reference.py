@@ -47,6 +47,7 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
         locus_species.setdefault(locus, set()).add(species_of[id(dc)])
     genes: Dict[str, GeneReference] = {}
     per_index: Dict[str, list] = {}
+    shared: Dict[str, Dict[str, list]] = {}           # locus -> gene -> alleles of another locus's block it lists
     collisions: List[str] = []
     for g in wanted:
         gene = g.upper()
@@ -64,6 +65,10 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
                 if allele.name in index:
                     if sequences[index[allele.name]] != sequence and allele.name not in collisions:
                         collisions.append(allele.name)
+                    elif membership[index[allele.name]] != locus:     # one allele, two loci (TRAV/DV): both
+                        names_of = shared.setdefault(locus, {}).setdefault(gene, [])
+                        if allele.name not in names_of:
+                            names_of.append(allele.name)
                     continue
                 index[allele.name] = len(names)
                 names.append(allele.name)
@@ -94,7 +99,8 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
                                  f"{', '.join(collisions[:5])}", context={"alleles": collisions, "dataconfigs": sources},
                                  hint="Use one of these dataconfigs, or rename the alleles of one.")
     loci = [dataclasses.replace(info, species=next(iter(locus_species[info.locus]))
-                                if len(locus_species[info.locus]) == 1 else None)
+                                if len(locus_species[info.locus]) == 1 else None,
+                                shared={g: tuple(names) for g, names in shared.get(info.locus, {}).items()})
             for info in _loci_from_membership(per_index, locus_order, locus_chain)]
     provenance = list(dict.fromkeys(
         SourceProvenance("genairr_dataconfig", locator=locator[id(dc)], sha256=dc.compute_checksum(),

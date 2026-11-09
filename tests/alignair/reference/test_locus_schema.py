@@ -82,3 +82,39 @@ def test_a_fasta_naming_an_allele_twice_with_two_sequences_is_refused(tmp_path):
         ReferenceSet.from_fasta(str(path))
     path.write_text(">IGHV1-2*02\nACGTACGT\n>IGHV1-2*02\nACGTACGT\n>IGHJ6*02\nCCCCAAAA\n")
     assert ReferenceSet.from_fasta(str(path)).gene("V").names == ["IGHV1-2*02"]
+
+
+def _shared_v():
+    """The V alleles both the TRA and the TRD dataconfig list (TRAV/DV: they rearrange in either locus)."""
+    return sorted({a.name for a in gd.HUMAN_TCRA_IMGT.allele_list("v")}
+                  & {a.name for a in gd.HUMAN_TCRD_IMGT.allele_list("v")})
+
+
+def test_a_v_allele_shared_by_tra_and_trd_belongs_to_both():
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRA_IMGT, gd.HUMAN_TCRD_IMGT)
+    v = ref.gene("V")
+    tra, trd = ref.locus_mask("TRA", "V"), ref.locus_mask("TRD", "V")
+    shared = _shared_v()
+    assert len(shared) == 9 and all(tra[v.index[n]] and trd[v.index[n]] for n in shared)
+    assert int(trd.sum()) == len({a.name for a in gd.HUMAN_TCRD_IMGT.allele_list("v")})
+    assert not trd[v.index["TRAV1-1*01"]]                                     # a TRA-only allele stays TRA's
+    assert not ref.locus_mask("TRA", "J")[ref.gene("J").index["TRDJ1*01"]]      # J is not shared
+
+
+def test_a_reference_without_shared_alleles_keeps_its_range_masks():
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB)
+    again = ReferenceSet.from_serializable(ref.to_serializable())
+    assert all("shared" not in locus for locus in ref.to_serializable()["loci"])
+    for info in ref.loci:
+        for gene, (start, end) in info.ranges.items():
+            mask = ref.locus_mask(info.locus, gene)
+            assert mask.sum() == end - start and mask[start:end].all()
+            assert (again.locus_mask(info.locus, gene) == mask).all()
+
+
+def test_the_shared_alleles_round_trip_through_the_reference_json():
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRA_IMGT, gd.HUMAN_TCRD_IMGT)
+    again = ReferenceSet.from_serializable(ref.to_serializable())
+    for locus in ("TRA", "TRD"):
+        for gene in ("V", "J"):
+            assert (again.locus_mask(locus, gene) == ref.locus_mask(locus, gene)).all()

@@ -3,7 +3,8 @@ the locus screen train on, ``ReferenceSet.from_dataconfigs`` gives the ``alignai
 ``tests/alignair/fixtures/reference_v1_sha256.json`` (optional keys a v1 reader ignores aside), and the model card's
 two reference hashes stay. A moved digest is a moved training target; re-pin only with a retrain or a deliberate rule
 (GenAIRR G1/G2 move them by design; the owner's codon-104 rule of 2026-11-07 moved 27 dataconfigs, by 60 anchors of
-V alleles whose codon 104 is not Cys, and nothing else)."""
+V alleles whose codon 104 is not Cys, and nothing else; the owner's shared-V rule of 2026-11-09 moved the all-human
+union, whose TRD locus now also lists the 9 TRAV/DV alleles of the TRA block, and nothing else)."""
 import GenAIRR.data as gd
 import pytest
 

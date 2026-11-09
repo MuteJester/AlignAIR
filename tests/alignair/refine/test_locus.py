@@ -69,3 +69,21 @@ def test_a_read_of_a_locus_with_d_keeps_its_d_presence_and_its_locus_d_alleles()
     restrict_to_locus(out, read_loci(out, BANK), BANK)
     assert out["read_locus"].tolist() == [0, 1]
     assert out[D_PRESENCE_LOGITS].argmax(-1).tolist() == [2, ABSENT]
+
+
+def test_a_shared_v_allele_lets_a_trd_read_take_trd():
+    """TRA + TRD: a read whose V is TRAV29/DV5*01 (listed by both loci) and whose J is TRDJ1*01 is a TRD read."""
+    import GenAIRR.data as gd
+    import numpy as np
+    from alignair.reference.reference_set import ReferenceSet
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRA_IMGT, gd.HUMAN_TCRD_IMGT)
+    loci = ref.locus_names()
+    bank = SimpleNamespace(**{f"locus_alleles_{g}": torch.from_numpy(np.stack([ref.locus_mask(l, g.upper())
+                                                                               for l in loci])) for g in "vdj"})
+    v, j = ref.gene("V"), ref.gene("J")
+    v_lp = torch.full((1, len(v)), -20.)
+    v_lp[0, v.index["TRAV29/DV5*01"]] = 0.
+    j_lp = torch.full((1, len(j)), -20.)
+    j_lp[0, j.index["TRDJ1*01"]] = 0.
+    out = {"v_log_posterior": torch.log_softmax(v_lp, -1), "j_log_posterior": torch.log_softmax(j_lp, -1)}
+    assert loci[int(read_loci(out, bank))] == "TRD"
