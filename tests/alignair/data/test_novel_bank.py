@@ -102,8 +102,9 @@ def test_a_novel_d_allele_is_refused():
         _adapter()([record])
 
 
-@pytest.mark.integration
-def test_a_two_locus_batch_puts_a_novel_reads_target_in_its_locus():
+def _two_locus_novel_batch():
+    """(setup, batch): an IGH + IGK tiny chip's setup and its adapter's batch of 8 IGH reads, the first relabelled as
+    read from a novel V allele (a SNP variant of its call)."""
     from itertools import islice
 
     import GenAIRR.data as gd
@@ -123,6 +124,25 @@ def test_a_two_locus_batch_puts_a_novel_reads_target_in_its_locus():
     first["v_call"], first[NOVEL_FIELD] = allele.name, {"V": allele.to_dict()}
     first["recalled_v_call"] = allele.name            # GenAIRR re-calls a novel read as its novel allele alone
     setup = prepare_model(reference, input_space="nucleotide", label_space="alleles", embed_dim=4, trunk_channels=8)
-    batch = NucleotideBatchAdapter(reference, setup.config, augment_orientation=False)(records)
+    return setup, NucleotideBatchAdapter(reference, setup.config, augment_orientation=False)(records)
+
+
+@pytest.mark.integration
+def test_a_two_locus_batch_puts_a_novel_reads_target_in_its_locus():
+    _, batch = _two_locus_novel_batch()
     assert batch.targets["v_allele"][0].nonzero().flatten().tolist() == [198]
     assert int(batch.inputs["bank_order_v"][198]) == 366
+
+
+@pytest.mark.integration
+def test_a_two_locus_chip_validates_a_batch_with_novel_rows():
+    """Validation runs the chip in eval mode on the adapter's batches, novel rows included: the locus step
+    (``refine.locus``) is for prediction batches only, so the batch's extended bank never meets the bound bank's locus
+    masks, and the validation metrics read the scans as training does."""
+    import torch
+    setup, batch = _two_locus_novel_batch()
+    torch.manual_seed(0)
+    model = setup.build_model().eval()
+    with torch.no_grad():
+        out = model(batch.inputs)
+    assert out["v_allele"].shape[1] == batch.targets["v_allele"].shape[1] and "read_locus" not in out

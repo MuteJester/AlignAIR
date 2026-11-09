@@ -10,9 +10,10 @@ weights each base by its soft region weight (through a gradient valve: the scans
 a gene's columns are read only over each read's window of bases whose region marginal for the gene is over
 ``SUPPORT`` (``ShmReader.top_columns``): a base outside it would weigh at most that in the scan.
 
-At inference, with a bank of several loci, each read then keeps to one locus (``refine.locus``): the locus of its most
-probable same-locus V-J pair; its V, D and J posteriors are restricted to that locus before any refinement below reads
-them, a read of a locus without D is called D-absent, and ``read_locus`` gives each read's locus index.
+In a prediction batch, with a bank of several loci, each read then keeps to one locus (``refine.locus``): the locus
+of its most probable same-locus V-J pair; its V, D and J posteriors are restricted to that locus before any
+refinement below reads them, a read of a locus without D is called D-absent, and ``read_locus`` gives each read's
+locus index.
 
 Outputs, under the product's keys: the parser's boundary logits and their expectations, the V end and J start refined
 by the called alleles' germlines from the anchors (``refine.boundaries``, with the anchor heads); at inference, the D posterior
@@ -206,7 +207,10 @@ class ChipCore(nn.Module):
         in_vdj = sum(parsed.marginals[..., STATE_OF[gene]] for gene in self.genes)
         out["mutation_rate"] = (reading.m * in_vdj).sum(1, keepdim=True) / in_vdj.sum(1, keepdim=True).clamp_min(1.)
         out["indel_count"] = (reading.inserted * in_vdj).sum(1, keepdim=True)
-        if not self.training and bank.locus_count:    # one locus per read: V, D and J of its best same-locus V-J pair
+        # One locus per read (V, D and J of its best same-locus V-J pair), for prediction batches only: an adapter batch
+        # (training, and validation in eval mode) keeps the scans' posteriors, and may carry novel rows the bound bank's
+        # locus masks do not cover.
+        if not (self.training or chip_batch) and bank.locus_count:
             restrict_to_locus(out, read_loci(out, bank), bank)
         if self.anchors is not None:                  # the V end and J start, counted along the bank from the anchors
             refine_boundaries(out, tokens, mask, end_mask, bank)
