@@ -149,19 +149,26 @@ class Aligner:
 
     def push_to_hub(self, repo_id: str, *, token: str | None = None, private: bool = True,
                     filename: str = "model.alignair", create: bool = True, revision: str | None = None):
-        """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo. Requires
-        ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). Returns the upload result."""
+        """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo of its own, in one commit with the
+        bundle's ``model_card.md`` and ``reference_manifest.json`` when they sit beside the model file (as
+        ``alignair export`` writes them). Requires ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). For
+        the shared catalog repo, use ``alignair.registry.publish_bundle`` and ``upload_version``. Returns the commit."""
         import os
         self._assert_distributable()  # never upload a pickle checkpoint
         try:
-            from huggingface_hub import HfApi
+            import huggingface_hub
         except ImportError as e:                    # pragma: no cover - optional dep
             raise MissingDependencyError("push_to_hub needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
-        api = HfApi(token=token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+        api = huggingface_hub.HfApi(token=token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
         if create:
             api.create_repo(repo_id, private=private, exist_ok=True, repo_type="model")
-        return api.upload_file(path_or_fileobj=self.model_path, path_in_repo=filename,
-                               repo_id=repo_id, repo_type="model", revision=revision)
+        folder = os.path.dirname(os.path.abspath(self.model_path))
+        files = [(self.model_path, filename)] + [(os.path.join(folder, name), name)
+                                                 for name in ("model_card.md", "reference_manifest.json")
+                                                 if os.path.isfile(os.path.join(folder, name))]
+        operations = [huggingface_hub.CommitOperationAdd(path_in_repo=dest, path_or_fileobj=src) for src, dest in files]
+        return api.create_commit(repo_id=repo_id, operations=operations, repo_type="model", revision=revision,
+                                 commit_message=f"Upload {filename}")
 
     @classmethod
     def from_model(cls, model, reference, *, device: str = "auto") -> "Aligner":

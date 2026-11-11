@@ -42,6 +42,13 @@ def _validate_version(problems, mid, ver, entry, artifact_path) -> None:
     if entry.get("artifact_sha256") and entry["artifact_sha256"] != hashlib.sha256(data).hexdigest():
         problems.append(f"{mid}@{ver}: artifact_sha256 mismatch")
 
+    for name, companion in (entry.get("companions") or {}).items():
+        cpath = artifact_path(companion.get("file")) if companion.get("file") else None
+        if not cpath or not os.path.exists(cpath):
+            problems.append(f"{mid}@{ver}: {name} missing ({companion.get('file')})")
+        elif companion.get("sha256") and companion["sha256"] != hashlib.sha256(open(cpath, "rb").read()).hexdigest():
+            problems.append(f"{mid}@{ver}: {name} sha256 mismatch")
+
     md = read_metadata(path)
     secs = md.get("sections", {})
     if any(k.startswith("dataconfig/") or k == "train_state" for k in secs):
