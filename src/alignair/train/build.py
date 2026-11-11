@@ -162,11 +162,12 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
 
 
 def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optional[dict] = None,
-                  model_id: Optional[str] = None, description: str = "", validate: bool = True,
-                  sources: Optional[dict] = None, report=None, overwrite: bool = False) -> str:
+                  model_id: Optional[str] = None, model_version: Optional[str] = None, description: str = "",
+                  validate: bool = True, sources: Optional[dict] = None, report=None, overwrite: bool = False) -> str:
     """Export a **pickle-free**, distributable model bundle from a (resumable) training checkpoint:
     ``model.alignair`` (no trusted pickle) + ``model_card.md`` + ``reference_manifest.json`` + (unless
-    ``validate=False``) ``validation_report.json``. Returns the model path.
+    ``validate=False``) ``validation_report.json``. Returns the model path. ``model_id`` and ``model_version`` go
+    into the model file's card, where the catalog's ``publish_local`` checks them.
 
     Training provenance is read FROM ``checkpoint_path`` (:func:`_checkpoint_training`) so the
     distributable bundle carries the same record as the resumable checkpoint — actual steps, curriculum
@@ -205,7 +206,8 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optio
                              "batch); lower the validation batch size or disable validation")
         model_path = os.path.join(tmp, "model.alignair")
         mf.save_model(model_path, model, dataconfigs=dcs, training=training,
-                      include_trusted_pickle=False, model_id=model_id, description=description,
+                      include_trusted_pickle=False, model_id=model_id, model_version=model_version,
+                      description=description,
                       card={"training": training, "validation": metrics},
                       label_schema=mf.read_metadata(checkpoint_path).get('model', {}).get('label_schema'))
         load_model(model_path, device="cpu")                     # verify the export reloads
@@ -236,6 +238,40 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optio
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     return os.path.join(bundle_dir, "model.alignair")
+
+
+def checkpoint_dataconfigs(checkpoint_path: str) -> tuple[list, list[str]]:
+    """The GenAIRR dataconfigs a checkpoint was trained on, for ``export_bundle``, and a note per one read from the
+    checkpoint's own pickled section. A built-in dataconfig is taken by the name its card records (no unpickling) when
+    its schema digest matches the card's; any other (a custom FASTA reference) is read from the checkpoint's
+    ``dataconfig/<i>`` section, which unpickles it: export only checkpoints you trust, as for resuming one.
+    ConfigurationError when the card names none, or one is neither built-in nor stored."""
+    from ..errors import ConfigurationError
+    from ..genairr import resolve_dataconfig
+    from .. import model_file as mf
+    entries = mf.read_metadata(checkpoint_path).get("reference", {}).get("dataconfigs", [])
+    if not entries:
+        raise ConfigurationError(f"{checkpoint_path} records no dataconfig to export with",
+                                 context={"path": checkpoint_path})
+    dcs, notes = [], []
+    for i, entry in enumerate(entries):
+        dc = None
+        try:
+            dc = resolve_dataconfig(entry.get("name"))
+        except ConfigurationError:
+            pass
+        if dc is not None and entry.get("schema_sha256") not in (None, getattr(dc, "schema_sha256", None)):
+            dc = None                                  # a built-in of that name, but not the one trained on
+        if dc is None:
+            section = entry.get("section")
+            if not section:
+                raise ConfigurationError(f"{checkpoint_path}: dataconfig {entry.get('name')!r} is not built in and "
+                                         "the file stores none (export from the training checkpoint)",
+                                         context={"path": checkpoint_path, "dataconfig": entry.get("name")})
+            dc = mf.read_dataconfig(checkpoint_path, index=entry.get("index", i))
+            notes.append(f"read dataconfig {entry.get('name')!r} from the checkpoint's pickled {section} section")
+        dcs.append(dc)
+    return dcs, notes
 
 
 def _write_card(path: str, training: dict, manifest: dict, report: dict) -> None:

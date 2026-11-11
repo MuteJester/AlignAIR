@@ -133,8 +133,8 @@ class Aligner:
         if pickle_secs:
             raise ModelError(
                 f"{self.model_path} is a resumable checkpoint with pickle sections {pickle_secs}; it is "
-                f"not distributable. Export a pickle-free inference artifact first "
-                f"(`alignair convert <in> <out>` / save with include_trusted_pickle=False).")
+                f"not distributable. Export a pickle-free bundle first: `alignair export {self.model_path} "
+                f"<out_dir>` (alignair.train.build.export_bundle), then share <out_dir>/model.alignair.")
 
     def save_pretrained(self, directory: str, *, filename: str = "model.alignair") -> str:
         """Copy the loaded model artifact into ``directory`` (for local distribution or a later
