@@ -157,10 +157,11 @@ without retraining.
 
 - **Bind another reference** with `--reference germline.fasta`: one FASTA holding the model's segments (V, D and J;
   V and J for a model without D), each allele's segment read from its name. For example, the model's reference plus
-  novel alleles, or a curated set. An allele that is one of the model's keeps its IMGT gaps and anchor. A V allele that differs from one of the model's alleles of the same length at
-  no more than 10% of its bases takes that allele's gaps and anchor. Give other V alleles IMGT-gapped (`.` gaps), so
-  their anchor can be found from the gaps. Alleles left without an anchor are named in a warning on stderr. With
-  `--reference`, `--genotype` may name the reference's novel alleles.
+  novel alleles, or a curated set. An allele that is one of the model's keeps its IMGT gaps and anchor. A V allele
+  that differs from one of the model's alleles of the same length at no more than 10% of its bases takes that
+  allele's gaps and anchor. Give other V alleles IMGT-gapped (`.` gaps), so their anchor can be found from the gaps.
+  Alleles left without an anchor are named in a warning on stderr. With `--reference`, `--genotype` may name the
+  reference's novel alleles.
 - **Export the model's own reference** as a starting point: `alignair reference export model.alignair --fasta ref.fasta`.
 
 From Python, `Aligner.bound_to(reference)` returns a copy bound to another reference (the original is unchanged), and
