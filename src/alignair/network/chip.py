@@ -110,8 +110,12 @@ class ChipCore(nn.Module):
         input, not weights); the chip's allele outputs are then the bound reference's alleles, in its order."""
         missing = [gene.upper() for gene in self.genes if gene.upper() not in reference.genes]
         if missing:
+            segments = ", ".join(gene.upper() for gene in self.genes[:-1]) + " and " + self.genes[-1].upper()
             raise ConfigurationError(f"the bound reference has no {', '.join(missing)} alleles for the chip's genes",
-                                     context={"missing": missing, "genes": list(self.genes)})
+                                     context={"missing": missing, "genes": list(self.genes)},
+                                     hint=f"This model calls {segments}: give the reference all of them (alignair "
+                                          f"reference export writes the model's own), or use a model of the "
+                                          f"reference's locus.")
         self.counts = {gene: len(reference.gene(gene.upper())) for gene in self.genes}
         device = next(self.parameters()).device
         self.bank = BankCompiler(reference).to(device).train(self.training)    # in the core's mode

@@ -90,3 +90,15 @@ def test_predict_with_a_trb_reference_on_an_igh_model_writes_trb_rows_and_one_wa
     with open(tmp_path / "o.tsv", newline="") as handle:
         (row,) = list(csv.DictReader(handle, delimiter="\t"))
     assert row["locus"] == "TRB"
+
+
+def test_a_reference_without_the_models_d_is_refused_with_a_hint():
+    from alignair import Aligner
+    from alignair.errors import ConfigurationError
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    igk = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB)
+    with pytest.raises(ConfigurationError, match="no D alleles") as caught:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", LocusMismatchWarning)
+            Aligner.from_pretrained(str(TEST_CHIP), device="cpu", reference=igk)
+    assert caught.value.hint and "V, D and J" in caught.value.hint and "reference export" in caught.value.hint

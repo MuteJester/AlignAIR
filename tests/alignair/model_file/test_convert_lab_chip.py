@@ -49,3 +49,13 @@ def test_the_cli_converts_a_lab_chip_without_trust_pickle(tmp_path):
                           "convert", src, str(tmp_path / "v4.alignair")], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert "chip-v1" in out.stdout and read_metadata(str(tmp_path / "v4.alignair"))["sections"]
+
+
+def test_the_cli_says_an_alignair_3_model_file_is_one(tmp_path, capsys):
+    from argparse import Namespace
+
+    from alignair.cli import convert
+    rc = convert.run(Namespace(src=write_v3_header_file(tmp_path), dst=str(tmp_path / "out.alignair")))
+    err = capsys.readouterr().err
+    assert rc != 0 and "AlignAIR 3 model" in err and "alignair<4" in err and "not a lab chip" not in err
+    assert not (tmp_path / "out.alignair").exists()

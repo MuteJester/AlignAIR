@@ -26,10 +26,25 @@ def _lab_chip(path) -> bool:
     return serialize.lab_config_from_bytes(container.read_section(path, "config")).architecture in LAB_CHIPS
 
 
+def _v3_architecture(path) -> str | None:
+    """The architecture an AlignAIR 3 model file's configuration names (``conv-v1``, or none at all), else None; the
+    configuration is read as JSON, nothing unpickled."""
+    import json
+
+    from ..model_file.serialize import V3_ARCHITECTURE
+    raw = json.loads(container.read_section(path, "config").decode("utf-8"))
+    architecture = raw.get("architecture", V3_ARCHITECTURE)
+    return architecture if architecture == V3_ARCHITECTURE else None
+
+
 def run(args) -> int:
     if not container.is_alignair_file(args.src):
         from ..model_file import v3_checkpoint_error
         return report_error(v3_checkpoint_error(args.src))
+    v3 = _v3_architecture(args.src)
+    if v3 is not None:                       # an AlignAIR 3 model file: refused with the version that runs it
+        from ..model_file.serialize import _v3_refusal
+        return report_error(_v3_refusal(v3))
     if not _lab_chip(args.src):
         from ..model_file.convert import LAB_CHIPS
         return report_error(ConfigurationError(
