@@ -20,11 +20,15 @@ Run commands from the repository root unless an example says otherwise.
 
 ```bash
 alignair doctor
-alignair predict --input examples/reads.fasta --out out.tsv --model alignair-igh-human
+alignair predict --input examples/reads.fasta --out out.tsv --model <v4-igh-model>
 ```
 
-The model is downloaded on first use. For an offline trial with a tiny model trained
-locally, run `alignair demo`.
+`<v4-igh-model>` is a placeholder for an AlignAIR 4 human IGH model (a `.alignair` path, a Hugging Face repo
+`hf://org/repo`, or a catalog id); the id is not published yet. <!-- PENDING-V4-MODEL-ID -->
+A model named by catalog id or Hugging Face repo is downloaded on first use and cached. The
+donor genotypes and the reads' truth labels use OGRDB allele names (`IGHVF1-G3*02`), as a model
+trained on `HUMAN_IGH_OGRDB` does.
+For an offline trial with a tiny model trained locally, run `alignair demo`.
 
 See [installation](https://mutejester.github.io/AlignAIR/#/docs/getting-started),
 [models](https://mutejester.github.io/AlignAIR/#/docs/models), and the

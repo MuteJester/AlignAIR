@@ -12,7 +12,9 @@ alignair train --v-fasta examples/custom_reference/v.fasta \
   --chain-type BCR_HEAVY --out my_model --preset desktop --plan
 ```
 
-The plan reports configuration, model size, and reference checks. Remove `--plan` to
-train. The exported inference model is written to `my_model/bundle/model.alignair`.
+The plan prints the reference build's warnings and the plan: loci, allele counts, model
+size, steps and batch size. Remove `--plan` to train. Training writes resumable checkpoints
+(`my_model/model.alignair`, with pickled training sections) and exports the pickle-free model
+to share and predict with: `my_model/bundle/model.alignair`.
 See [custom-reference training](https://mutejester.github.io/AlignAIR/#/docs/training)
 for other loci, presets, and reference requirements.
