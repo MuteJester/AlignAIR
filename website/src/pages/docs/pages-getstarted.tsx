@@ -46,8 +46,8 @@ const gettingStarted: DocPage = {
       <CodeBlock code={`alignair doctor        # Python, PyTorch + CUDA/MPS, GenAIRR, cache and config dirs\nalignair demo          # offline end-to-end trial (no download)`} />
 
       <h3>Offline install and model caching</h3>
-      {/* PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's catalog id, not yet decided. */}
-      <CodeBlock code={`alignair models get <v4-igh-model>           # cache the model\nalignair predict --input reads.fasta --out out.tsv --model <v4-igh-model> --offline`} />
+{/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
+      <CodeBlock code={`alignair models get alignair4-igh-human           # cache the model\nalignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human --offline`} />
       <p>
         <code>--offline</code> never touches the network; <code>ALIGNAIR_NO_NETWORK=1</code> turns off the passive
         update check on its own. Catalog models cache in the per-OS user cache directory; <code>alignair doctor</code>{" "}
@@ -70,13 +70,16 @@ const gettingStarted: DocPage = {
         first use and cached; a public one needs no login. AlignAIR 4 pretrained models come one per locus: IGH first,
         then IGK, IGL, TRA, TRB, TRD and TRG.
       </p>
-      <Callout kind="note" title="Model ids are placeholders">
-        <code>{"<v4-igh-model>"}</code> on these pages stands for an AlignAIR 4 human IGH model; its id is not published
-        yet, and any AlignAIR 4 <code>.alignair</code> path works in its place. The hub catalog's current entries (
+      {/* PENDING-V4-PUBLISH: alignair4-igh-human and the other alignair4-* ids are not published yet. */}
+      <Callout kind="note" title="AlignAIR 4 model ids">
+        AlignAIR 4 models are to be published in the shared catalog, one per locus: <code>alignair4-igh-human</code>,{" "}
+        <code>alignair4-igk-human</code>, <code>alignair4-igl-human</code>, <code>alignair4-tra-human</code>,{" "}
+        <code>alignair4-trb-human</code>, <code>alignair4-trd-human</code> and <code>alignair4-trg-human</code>. None is
+        published yet; until then, pass an AlignAIR 4 <code>.alignair</code> path. The hub catalog's current entries (
         <code>alignair-igh-human@1.0.0</code> and the others) are AlignAIR 3 models, which AlignAIR 4 refuses with{" "}
         <em>use alignair&lt;4 to run it</em>.
       </Callout>
-      <CodeBlock code={`alignair models list                   # the catalog, fetched live from the hub\nalignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>\n\n# a Hugging Face repo, pinned to a branch, tag or commit (--hf-token or $HF_TOKEN for a private one)\nalignair predict --input reads.fasta --out out.tsv --model hf://<org>/<repo> --revision <commit>\n\nalignair info model.alignair           # a model file's card: reference, alleles, training, sections`} />
+      <CodeBlock code={`alignair models list                   # the catalog, fetched live from the hub\nalignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human\n\n# a Hugging Face repo, pinned to a branch, tag or commit (--hf-token or $HF_TOKEN for a private one)\nalignair predict --input reads.fasta --out out.tsv --model hf://<org>/<repo> --revision <commit>\n\nalignair info model.alignair           # a model file's card: reference, alleles, training, sections`} />
       <p>Or train your own for any reference or species:</p>
       <CodeBlock code={`alignair train --dataconfig HUMAN_IGH_OGRDB --out runs/my_igh --preset desktop\n# or your own germline FASTAs\nalignair train --v-fasta v.fa --d-fasta d.fa --j-fasta j.fa --chain-type BCR_HEAVY \\\n  --out runs/custom --preset desktop`} />
       <p>
@@ -91,7 +94,7 @@ const gettingStarted: DocPage = {
         <code>seq</code>, <code>nucleotide</code> or <code>read</code>) and its id column likewise (<code>sequence_id</code>,{" "}
         <code>id</code> or <code>name</code>). Name other columns explicitly:
       </p>
-      <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model <v4-igh-model> \\\n  --sequence-column nt_seq --id-column read_name`} />
+      <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model alignair4-igh-human \\\n  --sequence-column nt_seq --id-column read_name`} />
       <p>
         The output is an AIRR rearrangement TSV with the V/D/J calls, coordinates, junction, productivity, and a per-gene
         candidate-set column (<code>*_call_set</code>). When a read cannot tell V alleles apart, <code>v_call</code> lists

@@ -14,17 +14,17 @@ tail -n +2 examples/batch/manifest.tsv |
 while IFS=$'\t' read -r sample input metadata; do
     [[ -n "$sample" ]] || continue
     if [[ -n "$metadata" ]]; then
-        alignair predict --model <v4-igh-model> --input "examples/batch/$input" \
+        alignair predict --model alignair4-igh-human --input "examples/batch/$input" \
           --metadata "examples/batch/$metadata" --out "$out_dir/${sample}.tsv" --quiet
     else
-        alignair predict --model <v4-igh-model> --input "examples/batch/$input" \
+        alignair predict --model alignair4-igh-human --input "examples/batch/$input" \
           --out "$out_dir/${sample}.tsv" --quiet
     fi
 done
 ```
 
-`<v4-igh-model>` is a placeholder for an AlignAIR 4 human IGH model (a `.alignair` path, a Hugging Face repo
-`hf://org/repo`, or a catalog id); the id is not published yet. <!-- PENDING-V4-MODEL-ID -->
+`alignair4-igh-human` is the AlignAIR 4 human IGH model's id in the shared catalog. It is not published yet;
+until it is, pass an AlignAIR 4 `.alignair` path to `--model`. <!-- PENDING-V4-PUBLISH: alignair4-igh-human -->
 
 This skips the header, forwards metadata when supplied, and writes one AIRR table and
 run-provenance sidecar per sample under `$out_dir`. Each sample loads the model separately.

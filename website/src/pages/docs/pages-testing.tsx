@@ -1,4 +1,4 @@
-import { CodeBlock } from "../../components/ui";
+import { CodeBlock, Callout } from "../../components/ui";
 import { DocLink, DocTable, H2, type DocPage } from "./doc-kit";
 
 const testing: DocPage = {
@@ -93,6 +93,12 @@ python -m pytest tests -m "model_validation or acceptance or claim_evidence" \\
         replacement. These are synthetic regression checks; biological performance claims also require held-out
         benchmark evidence.
       </p>
+      {/* PENDING-V4-PUBLISH: re-pin tests/fixtures/models/validation.json to the alignair4-* models. */}
+      <Callout kind="note" title="Fixtures are re-pinned at release">
+        The manifest (<code>fixtures/models/validation.json</code>) still pins the AlignAIR 3 catalog models. It is
+        re-pinned to the AlignAIR 4 models (<code>alignair4-igh-human</code> and the other loci) once they are
+        published.
+      </Callout>
 
       <H2 id="coverage">Coverage evidence</H2>
       <CodeBlock code={`python -m pytest tests --cov=alignair \\

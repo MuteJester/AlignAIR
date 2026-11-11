@@ -18,12 +18,24 @@ const models: DocPage = {
       </p>
 
       <h2>AlignAIR 4 models: one per locus</h2>
-      {/* PENDING-V4-MODEL-ID: the v4 catalog ids / hub repos are not decided; fill this table when they are. */}
+      {/* PENDING-V4-PUBLISH: none of the alignair4-* ids is published yet. */}
       <p>
-        AlignAIR 4 pretrained models come one per locus, published in this order: IGH first, then IGK, IGL, TRA, TRB,
-        TRD and TRG. Their ids and hub repos are not published yet; on these pages <code>{"<v4-igh-model>"}</code> is a
-        placeholder for the IGH model, and any AlignAIR 4 <code>.alignair</code> path works in its place.
+        AlignAIR 4 pretrained models come one per locus, all in the shared catalog, published in this order: IGH
+        first, then IGK, IGL, TRA, TRB, TRD and TRG. None is published yet; until then, any AlignAIR 4{" "}
+        <code>.alignair</code> path works in its place.
       </p>
+      <DocTable
+        head={["Locus", "Catalog id"]}
+        rows={[
+          ["IGH", <code>alignair4-igh-human</code>],
+          ["IGK", <code>alignair4-igk-human</code>],
+          ["IGL", <code>alignair4-igl-human</code>],
+          ["TRA", <code>alignair4-tra-human</code>],
+          ["TRB", <code>alignair4-trb-human</code>],
+          ["TRD", <code>alignair4-trd-human</code>],
+          ["TRG", <code>alignair4-trg-human</code>],
+        ]}
+      />
       <Callout kind="warning" title="The catalog's current entries are AlignAIR 3 models">
         The hub catalog currently lists <code>alignair-igh-human</code>, <code>alignair-igkl-human</code> and{" "}
         <code>alignair-tcrb-human</code>, all at version 1.0.0 and all AlignAIR 3 models (architecture{" "}
@@ -42,7 +54,7 @@ const models: DocPage = {
       </ul>
 
       <h2>Using a model</h2>
-      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>\n# pin an exact catalog version for reproducibility\nalignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>@<version>\n# or a Hugging Face repo, pinned to a branch, tag or commit\nalignair predict --input reads.fasta --out out.tsv --model hf://<org>/<repo> --revision <commit>`} />
+      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human\n# pin an exact catalog version for reproducibility\nalignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human@<version>\n# or a Hugging Face repo, pinned to a branch, tag or commit\nalignair predict --input reads.fasta --out out.tsv --model hf://<org>/<repo> --revision <commit>`} />
       <CodeBlock lang="python" code={`from alignair import Aligner
 
 aligner = Aligner.from_pretrained("hf://<org>/<repo>", revision="<commit>", device="auto")
@@ -79,7 +91,7 @@ aligner.predict(["CAGGTGCAGCTG..."]).write_airr("out.tsv")`} />
       </Callout>
 
       <h2>Managing the cache</h2>
-      <CodeBlock code={`alignair models get <v4-igh-model>      # pre-download (id or id@version)\nalignair models info <v4-igh-model>     # model card (allele counts, fingerprints)\nalignair models path <v4-igh-model>     # cached file path\nalignair models verify                  # re-hash installed models\nalignair models update                  # update to the latest version\nalignair models prune                   # remove old cached versions`} />
+      <CodeBlock code={`alignair models get alignair4-igh-human      # pre-download (id or id@version)\nalignair models info alignair4-igh-human     # model card (allele counts, fingerprints)\nalignair models path alignair4-igh-human     # cached file path\nalignair models verify                  # re-hash installed models\nalignair models update                  # update to the latest version\nalignair models prune                   # remove old cached versions`} />
 
       <h2>Offline and private registries</h2>
       <ul>

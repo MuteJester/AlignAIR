@@ -8,12 +8,12 @@ Run from the repository root:
 
 ```bash
 alignair predict --input examples/10x/filtered_contig.fasta --out tenx_airr.tsv \
-  --model <v4-igh-model> --metadata examples/10x/filtered_contig_annotations.csv \
+  --model alignair4-igh-human --metadata examples/10x/filtered_contig_annotations.csv \
   --metadata-id-column contig_id
 ```
 
-`<v4-igh-model>` is a placeholder for an AlignAIR 4 human IGH model (a `.alignair` path, a Hugging Face repo
-`hf://org/repo`, or a catalog id); the id is not published yet. <!-- PENDING-V4-MODEL-ID -->
+`alignair4-igh-human` is the AlignAIR 4 human IGH model's id in the shared catalog. It is not published yet;
+until it is, pass an AlignAIR 4 `.alignair` path to `--model`. <!-- PENDING-V4-PUBLISH: alignair4-igh-human -->
 
 The output keeps the annotation's barcode, chain, count, cell and clonotype columns, and adds
 their AIRR names (`cell_id`, `umi_count`, `consensus_count`, `c_call`). Metadata is carried as

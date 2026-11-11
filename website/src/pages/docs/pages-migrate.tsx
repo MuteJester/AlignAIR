@@ -28,16 +28,16 @@ const migrating: DocPage = {
         title="IgBLAST (your existing command)"
         code={`igblastn -germline_db_V human_gl_V -germline_db_D human_gl_D -germline_db_J human_gl_J \\\n  -auxiliary_data human_gl.aux -organism human -ig_seqtype Ig \\\n  -outfmt 19 -query reads.fasta > igblast.tsv`}
       />
-      {/* PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's id, not yet decided. */}
+{/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
       <CodeBlock
         title="AlignAIR"
-        code={`alignair predict --input reads.fasta --out alignair.tsv --model <v4-igh-model>@<version>`}
+        code={`alignair predict --input reads.fasta --out alignair.tsv --model alignair4-igh-human@<version>`}
       />
       <p>
         Pin the model version (<code>@&lt;version&gt;</code>, or <code>--revision</code> for a Hugging Face repo)
         whenever a result must be reproducible. <code>alignair models list</code> shows what is installed and
-        available. <code>{"<v4-igh-model>"}</code> is a placeholder: the AlignAIR 4 IGH model's id is not published yet,
-        and any AlignAIR 4 <code>.alignair</code> path works in its place.
+        available. <code>alignair4-igh-human</code> (the AlignAIR 4 IGH model's catalog id) is not published yet; until it
+        is, pass an AlignAIR 4 <code>.alignair</code> path.
       </p>
 
       <h2>Reference selection</h2>
@@ -133,7 +133,7 @@ const migrating: DocPage = {
         separates shared ambiguity from a real conflict.
       </p>
       <CodeBlock
-        code={`# same reads through AlignAIR (igblastn is your existing command, above)\nalignair predict --input reads.fasta --out alignair.tsv --model <v4-igh-model>@<version>\n\n# structural check of the output\nalignair validate-airr alignair.tsv\n\n# where do the two tools agree?\nalignair compare --a alignair.tsv --b igblast.tsv --a-name AlignAIR --b-name IgBLAST`}
+        code={`# same reads through AlignAIR (igblastn is your existing command, above)\nalignair predict --input reads.fasta --out alignair.tsv --model alignair4-igh-human@<version>\n\n# structural check of the output\nalignair validate-airr alignair.tsv\n\n# where do the two tools agree?\nalignair compare --a alignair.tsv --b igblast.tsv --a-name AlignAIR --b-name IgBLAST`}
       />
 
       <h2>Migration checklist</h2>

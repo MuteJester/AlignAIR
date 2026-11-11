@@ -21,8 +21,8 @@ const workedExample: DocPage = {
       <Callout kind="warning" title="Results pending for AlignAIR 4">
         The download and merge steps are model-independent. The outputs recorded in steps 3-6 came from AlignAIR 3 and
         its <code>alignair-igh-human@1.0.0</code> model, which AlignAIR 4 refuses; a re-run with an AlignAIR 4 IGH model
-        is pending, so your counts will differ. <code>{"<v4-igh-model>"}</code> below is a placeholder for that model's id
-        (not published yet); any AlignAIR 4 <code>.alignair</code> path works in its place.
+        is pending, so your counts will differ. <code>alignair4-igh-human</code>, that model's catalog id, is not published
+        yet; until it is, pass an AlignAIR 4 <code>.alignair</code> path.
       </Callout>
 
       <h2>The dataset</h2>
@@ -72,8 +72,8 @@ const workedExample: DocPage = {
       </Callout>
 
       <h2>3. Predict</h2>
-      {/* PENDING-V4-MODEL-ID */}
-      <CodeBlock code={`alignair predict --input merged.fastq --out briney_merged.tsv --model <v4-igh-model>`} />
+{/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
+      <CodeBlock code={`alignair predict --input merged.fastq --out briney_merged.tsv --model alignair4-igh-human`} />
       <CodeBlock lang="text" title="Recorded with AlignAIR 3" code={`aligned 1945 reads (0 dropped) -> briney_merged.tsv; 0 failed / 43 partial AIRR assemblies tagged`} />
       <Callout kind="tip" title="Orientation was handled for you">
         In the recorded run, 1937 of 1945 reads (99.6%) come out <code>rev_comp=T</code> - this library's reads are

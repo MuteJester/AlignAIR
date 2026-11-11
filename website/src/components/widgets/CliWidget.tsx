@@ -5,9 +5,9 @@ import { useState } from "react";
 // full-length). Its format is the CLI's real format string in cli/predict.py: one line, no progress
 // spinner, no timing, no device banner. Do not embellish it - re-capture rather than hand-edit.
 // PENDING-V4-NUMBERS: re-capture with the AlignAIR 4 IGH model (the partial count will differ).
-// PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's id, not yet decided.
+// PENDING-V4-PUBLISH: alignair4-igh-human is not published yet.
 
-const COMMAND = "alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>";
+const COMMAND = "alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human";
 const OUTPUT = "aligned 400 reads (0 dropped) -> out.tsv; 0 failed / 68 partial AIRR assemblies tagged";
 
 const MONO = "IBM Plex Mono, monospace";
@@ -76,7 +76,7 @@ export function CliWidget() {
         >
           <div style={{ whiteSpace: "nowrap" }}>
             <span aria-hidden="true" style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv{" "}
-            <span style={{ color: "#b7f3d8" }}>--model {"<v4-igh-model>"}</span>
+            <span style={{ color: "#b7f3d8" }}>--model alignair4-igh-human</span>
           </div>
           <div aria-live="polite" style={{ marginTop: ran ? "6px" : 0, whiteSpace: "nowrap", color: "#a9a7ba" }}>
             {ran && <span style={{ display: "inline-block", animation: "aa-rise 0.3s ease-out both" }}>{OUTPUT}</span>}
@@ -119,7 +119,7 @@ export function CliWidget() {
         Captured from a real run with AlignAIR 3's <code style={{ color: "#4238c4" }}>alignair-igh-human@1.0.0</code> on 400
         simulated human IGH reads (clean and moderate-SHM, full-length); the AlignAIR 4 re-capture of{" "}
         <code style={{ color: "#4238c4" }}>{COMMAND}</code> is pending (results pending), and{" "}
-        <code style={{ color: "#4238c4" }}>{"<v4-igh-model>"}</code> is a placeholder for its model id. That
+        <code style={{ color: "#4238c4" }}>alignair4-igh-human</code> is not published yet. That
         single line is the whole of it: the CLI reports no timing, no device banner and no progress bar, so what you see
         here is what you get.
       </p>

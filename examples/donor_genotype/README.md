@@ -13,11 +13,11 @@ Run from the repository root:
 
 ```bash
 alignair predict --input examples/reads.fasta --out out_donor.tsv \
-  --model <v4-igh-model> --genotype examples/donor_genotype/donor.yaml
+  --model alignair4-igh-human --genotype examples/donor_genotype/donor.yaml
 ```
 
-`<v4-igh-model>` is a placeholder for an AlignAIR 4 human IGH model (a `.alignair` path, a Hugging Face repo
-`hf://org/repo`, or a catalog id); the id is not published yet. <!-- PENDING-V4-MODEL-ID -->
+`alignair4-igh-human` is the AlignAIR 4 human IGH model's id in the shared catalog. It is not published yet;
+until it is, pass an AlignAIR 4 `.alignair` path to `--model`. <!-- PENDING-V4-PUBLISH: alignair4-igh-human -->
 
 Use `small_donor.yaml` in the same command to try the smaller subset: its V alleles are all
 of one family, so most of the example reads get no V call (their rows are tagged `partial`,

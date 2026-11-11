@@ -29,11 +29,11 @@ const cli: DocPage = {
       />
 
       <h2 className="mt-8">alignair predict</h2>
-      {/* PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's id, not yet decided. */}
-      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>`} />
+{/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
+      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human`} />
       <ul className="list-disc pl-6 space-y-1.5 my-4">
         <li><code>--input</code> FASTA / FASTQ / CSV / TSV / TXT (<code>.gz</code> ok; <code>-</code> reads stdin). A table's sequence column is found by name (<code>sequence</code>, <code>seq</code>, <code>nucleotide</code>, <code>read</code>); otherwise pass <code>--sequence-column</code> / <code>--id-column</code>.</li>
-        <li><code>--model</code> a catalog id (pin with <code>id@version</code>), a local <code>.alignair</code>, or a Hugging Face repo (<code>hf://org/repo</code> or <code>org/repo</code>; <code>--revision</code>, <code>--hf-token</code>). <code>--registry URL</code> (repeatable) and <code>--offline</code> control catalog lookup. <code>{"<v4-igh-model>"}</code> is a placeholder: the AlignAIR 4 IGH model's id is not published yet.</li>
+        <li><code>--model</code> a catalog id (pin with <code>id@version</code>), a local <code>.alignair</code>, or a Hugging Face repo (<code>hf://org/repo</code> or <code>org/repo</code>; <code>--revision</code>, <code>--hf-token</code>). <code>--registry URL</code> (repeatable) and <code>--offline</code> control catalog lookup. <code>alignair4-igh-human</code> is a placeholder: the AlignAIR 4 IGH model's id is not published yet.</li>
         <li><code>--genotype FILE</code> a YAML/JSON genotype keyed <code>V</code>/<code>D</code>/<code>J</code>: the bank the calls come from, a subset of the bound reference.</li>
         <li><code>--reference FASTA</code> germline V, D and J alleles to call from instead of the embedded reference, novel alleles included (see the <DocLink to="model-contract">model contract</DocLink>).</li>
         <li><code>--infer-genotype</code> infer the donor's V genotype from the reads and re-call the reads it settles (below).</li>
@@ -69,7 +69,7 @@ const cli: DocPage = {
       <p>See <DocLink to="training">Training a custom model</DocLink> for the full guide.</p>
 
       <h2>Donor genotype: predict --infer-genotype</h2>
-      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model> --infer-genotype\n# -> out.tsv, out.tsv.genotype.json (AIRR GenotypeSet), out.tsv.run.json (with a genotype_pass record)`} />
+      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human --infer-genotype\n# -> out.tsv, out.tsv.genotype.json (AIRR GenotypeSet), out.tsv.run.json (with a genotype_pass record)`} />
       <p>
         The input is read twice, so it must be a file (not <code>-</code>), and all of its reads should come from one
         donor:
@@ -92,7 +92,7 @@ const cli: DocPage = {
 
       <h2>alignair benchmark</h2>
       <p>Evaluate call accuracy, coord MAE, and junction match rates against generated GenAIRR ground truth:</p>
-      <CodeBlock code={`alignair benchmark --model <v4-igh-model> --n 200 --seed 0 --format json --out benchmark.json`} />
+      <CodeBlock code={`alignair benchmark --model alignair4-igh-human --n 200 --seed 0 --format json --out benchmark.json`} />
       <ul className="list-disc pl-6 space-y-1.5 my-4">
         <li><code>--model</code> model to evaluate (id or path).</li>
         <li><code>--dataconfig</code> GenAIRR dataconfig(s) to generate from (default: the model card's).</li>
@@ -107,7 +107,7 @@ const cli: DocPage = {
 
       <h2>alignair info</h2>
       <p>Print a model file's card details (params count, creation timestamp, training hyperparameters, embedded references) without loading weights into memory:</p>
-      <CodeBlock code={`# 'models info' resolves a catalog id:\nalignair models info <v4-igh-model>\n\n# 'info' reads a model FILE directly (it does not resolve ids):\nalignair info runs/my_igh/bundle/model.alignair\nalignair info runs/my_igh/bundle/model.alignair --json    # the raw metadata`} />
+      <CodeBlock code={`# 'models info' resolves a catalog id:\nalignair models info alignair4-igh-human\n\n# 'info' reads a model FILE directly (it does not resolve ids):\nalignair info runs/my_igh/bundle/model.alignair\nalignair info runs/my_igh/bundle/model.alignair --json    # the raw metadata`} />
       <p>
         Its <code>sections</code> line tells a checkpoint from a shareable file: a resumable training checkpoint lists{" "}
         <code>dataconfig/0</code> and <code>train_state</code>; a bundle's model file lists only <code>config</code>,{" "}
@@ -116,11 +116,11 @@ const cli: DocPage = {
 
       <h2>alignair models</h2>
       <p>List, download, verify, or prune cache elements:</p>
-      <CodeBlock code={`alignair models list                             # list live models and status\nalignair models get <v4-igh-model>               # download model to cache\nalignair models path <v4-igh-model>              # print local path in cache\nalignair models info <v4-igh-model>              # print cached card\nalignair models verify                           # verify cache SHA-256 hashes\nalignair models prune --keep 1                   # clean old version directories`} />
+      <CodeBlock code={`alignair models list                             # list live models and status\nalignair models get alignair4-igh-human               # download model to cache\nalignair models path alignair4-igh-human              # print local path in cache\nalignair models info alignair4-igh-human              # print cached card\nalignair models verify                           # verify cache SHA-256 hashes\nalignair models prune --keep 1                   # clean old version directories`} />
 
       <h2>alignair reference &amp; export-reference</h2>
       <p>List built-in dataconfigs or dump reference sequences from a model:</p>
-      <CodeBlock code={`alignair reference list --species Human\n\n# 'reference export' takes a model FILE, not a catalog id - resolve the id to a path first:\nalignair models get <v4-igh-model>\nMODEL="$(alignair models path <v4-igh-model>)"\nalignair reference export "$MODEL" --fasta ref.fasta\n\n# export-reference is the same command, standalone:\nalignair export-reference "$MODEL" --fasta ref.fasta`} />
+      <CodeBlock code={`alignair reference list --species Human\n\n# 'reference export' takes a model FILE, not a catalog id - resolve the id to a path first:\nalignair models get alignair4-igh-human\nMODEL="$(alignair models path alignair4-igh-human)"\nalignair reference export "$MODEL" --fasta ref.fasta\n\n# export-reference is the same command, standalone:\nalignair export-reference "$MODEL" --fasta ref.fasta`} />
       <p>
         The exported FASTA is the starting point for <code>--reference</code>: add novel alleles to it and bind it at
         predict time. <code>--dataconfig</code> exports the pickled GenAIRR DataConfig, which only a training checkpoint
@@ -178,11 +178,11 @@ const pythonApi: DocPage = {
       <h2>Loading: device, offline, private repos</h2>
       <CodeBlock
         lang="python"
-        code={`Aligner.from_pretrained("<v4-igh-model>", device="cuda")        # cpu | cuda | mps | auto (default)\nAligner.from_pretrained("<v4-igh-model>", offline=True)         # cache only\nAligner.from_pretrained("hf://org/private-model", token="hf_...")\nAligner.from_pretrained("hf://org/repo", revision="v1.0")       # a branch, tag or commit\nAligner.from_pretrained("<v4-igh-model>@<version>")             # pin a catalog version`}
+        code={`Aligner.from_pretrained("alignair4-igh-human", device="cuda")        # cpu | cuda | mps | auto (default)\nAligner.from_pretrained("alignair4-igh-human", offline=True)         # cache only\nAligner.from_pretrained("hf://org/private-model", token="hf_...")\nAligner.from_pretrained("hf://org/repo", revision="v1.0")       # a branch, tag or commit\nAligner.from_pretrained("alignair4-igh-human@<version>")             # pin a catalog version`}
       />
       <p>
-        <code>{"<v4-igh-model>"}</code> is a placeholder for the AlignAIR 4 IGH model's catalog id, not published yet.{" "}
-        {/* PENDING-V4-MODEL-ID */}
+        <code>alignair4-igh-human</code> is the AlignAIR 4 IGH model's catalog id; it is not published yet.{" "}
+        {/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
         <code>device="auto"</code> picks CUDA, then Apple MPS, then CPU; an unavailable <code>cuda</code> or{" "}
         <code>mps</code> falls back to the CPU. <code>offline=True</code> uses only what is cached and raises if the
         model is not present locally.
@@ -268,8 +268,8 @@ const integrations: DocPage = {
         <li>Filter to complete records first (<code>airr_assembly_status == "complete"</code>) before clonotype or productivity analysis.</li>
         <li>AlignAIR is per-read; single-cell grouping (<code>cell_id</code>) and counts come from your <code>--metadata</code> table.</li>
       </ul>
-      {/* PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's id, not yet decided. */}
-      <CodeBlock code={`alignair predict --input contigs.fasta --out out.tsv --model <v4-igh-model> \\\n  --metadata filtered_contig_annotations.csv --keep-columns barcode,umis,c_gene`} />
+{/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
+      <CodeBlock code={`alignair predict --input contigs.fasta --out out.tsv --model alignair4-igh-human \\\n  --metadata filtered_contig_annotations.csv --keep-columns barcode,umis,c_gene`} />
       <Callout kind="note" title="Name the RAW columns, not the normalized ones">
         <code>--keep-columns</code> selects columns as they appear in your metadata file, and naming one that is not
         there is an error. Cell Ranger writes <code>barcode</code> and <code>umis</code>, so ask for those.
@@ -284,10 +284,10 @@ const integrations: DocPage = {
       />
 
       <h2>Change-O / Immcantation</h2>
-      <CodeBlock code={`# 1. keep only the fully-assembled records (see the rule above)\npython -c "import pandas as pd; t=pd.read_csv('out.tsv',sep='\\t'); \\\n  t[t.airr_assembly_status=='complete'].to_csv('out.complete.tsv',sep='\\t',index=False)"\n\n# 2. export the exact germline the model used, so germline reconstruction matches its calls\nMODEL="$(alignair models path <v4-igh-model>)"\nalignair reference export "$MODEL" --fasta germline.fasta\n\n# 3. hand off to Change-O\nDefineClones.py -d out.complete.tsv --act set --model ham --norm len --dist 0.16\nCreateGermlines.py -d out.complete_clone-pass.tsv -r germline.fasta`} />
+      <CodeBlock code={`# 1. keep only the fully-assembled records (see the rule above)\npython -c "import pandas as pd; t=pd.read_csv('out.tsv',sep='\\t'); \\\n  t[t.airr_assembly_status=='complete'].to_csv('out.complete.tsv',sep='\\t',index=False)"\n\n# 2. export the exact germline the model used, so germline reconstruction matches its calls\nMODEL="$(alignair models path alignair4-igh-human)"\nalignair reference export "$MODEL" --fasta germline.fasta\n\n# 3. hand off to Change-O\nDefineClones.py -d out.complete.tsv --act set --model ham --norm len --dist 0.16\nCreateGermlines.py -d out.complete_clone-pass.tsv -r germline.fasta`} />
 
       <h2>IgBLAST (for comparison)</h2>
-      <CodeBlock code={`# give IgBLAST the exact germline the model uses (resolve the id to a file first)\nMODEL="$(alignair models path <v4-igh-model>)"\nalignair reference export "$MODEL" --fasta germline.fasta\n\nigblastn -germline_db_V ... -germline_db_D ... -germline_db_J ... \\\n  -outfmt 19 -query reads.fasta > igblast.tsv\nalignair compare --a out.tsv --b igblast.tsv --a-name AlignAIR --b-name IgBLAST --out report.md`} />
+      <CodeBlock code={`# give IgBLAST the exact germline the model uses (resolve the id to a file first)\nMODEL="$(alignair models path alignair4-igh-human)"\nalignair reference export "$MODEL" --fasta germline.fasta\n\nigblastn -germline_db_V ... -germline_db_D ... -germline_db_J ... \\\n  -outfmt 19 -query reads.fasta > igblast.tsv\nalignair compare --a out.tsv --b igblast.tsv --a-name AlignAIR --b-name IgBLAST --out report.md`} />
 
       <h2>nf-core/airrflow (assembled mode)</h2>
       <p>AlignAIR produces the per-sample TSV; you provide the samplesheet:</p>
@@ -300,7 +300,7 @@ const integrations: DocPage = {
       <h2>Workflow engines</h2>
       <CodeBlock
         lang="groovy"
-        code={`process alignair {\n  container 'alignair/alignair:3.0.0'\n  input:  path reads\n  output: path 'out.tsv'\n  script: 'alignair predict --input $reads --out out.tsv --model <v4-igh-model>@<version>'\n}`}
+        code={`process alignair {\n  container 'alignair/alignair:3.0.0'\n  input:  path reads\n  output: path 'out.tsv'\n  script: 'alignair predict --input $reads --out out.tsv --model alignair4-igh-human@<version>'\n}`}
       />
       <p>Pre-cache the model and mount the cache (or run with <code>--offline</code>) so the pipeline never fetches at run time.</p>
     </>

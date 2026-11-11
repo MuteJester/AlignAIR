@@ -213,8 +213,8 @@ const troubleshooting: DocPage = {
         Run without installing anything. Mount an input and output directory, and a named volume for the
         model cache so a downloaded <code>--model &lt;id&gt;</code> is not re-fetched on every run:
       </p>
-      {/* PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's id, not yet decided. */}
-      <CodeBlock code={`docker run --rm \\\n  -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \\\n  alignair/alignair:latest \\\n  predict --input /data/reads.fasta --out /data/out.tsv --model <v4-igh-model>`} />
+{/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
+      <CodeBlock code={`docker run --rm \\\n  -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \\\n  alignair/alignair:latest \\\n  predict --input /data/reads.fasta --out /data/out.tsv --model alignair4-igh-human`} />
       <ul>
         <li><strong>Permission denied writing output.</strong> The image runs as a non-root user (uid 1000). Mount a writable output dir; add <code>--user $(id -u):$(id -g)</code> if your host uid differs.</li>
         <li><strong>Model re-downloads every run.</strong> Persist the cache with a volume mounted at <code>/home/appuser/.cache/alignair</code> (as above), or mount a local <code>.alignair</code> file and pass it as <code>--model</code>.</li>

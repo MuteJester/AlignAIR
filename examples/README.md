@@ -20,11 +20,11 @@ Run commands from the repository root unless an example says otherwise.
 
 ```bash
 alignair doctor
-alignair predict --input examples/reads.fasta --out out.tsv --model <v4-igh-model>
+alignair predict --input examples/reads.fasta --out out.tsv --model alignair4-igh-human
 ```
 
-`<v4-igh-model>` is a placeholder for an AlignAIR 4 human IGH model (a `.alignair` path, a Hugging Face repo
-`hf://org/repo`, or a catalog id); the id is not published yet. <!-- PENDING-V4-MODEL-ID -->
+`alignair4-igh-human` is the AlignAIR 4 human IGH model's id in the shared catalog. It is not published yet;
+until it is, pass an AlignAIR 4 `.alignair` path to `--model`. <!-- PENDING-V4-PUBLISH: alignair4-igh-human -->
 A model named by catalog id or Hugging Face repo is downloaded on first use and cached. The
 donor genotypes and the reads' truth labels use OGRDB allele names (`IGHVF1-G3*02`), as a model
 trained on `HUMAN_IGH_OGRDB` does.

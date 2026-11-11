@@ -39,9 +39,9 @@ const firstPrediction: Lesson = {
         <>
           <p>
             Pass a model <strong>id</strong>, a Hugging Face repo or a <code>.alignair</code> path; a remote model
-            downloads and caches on first use (no login for a public one). <code>{"<v4-igh-model>"}</code> stands for the
-            AlignAIR 4 IGH model, whose id is not published yet. Replay a real captured run to see exactly what it
-            prints:
+            downloads and caches on first use (no login for a public one). <code>alignair4-igh-human</code> is the AlignAIR 4
+            IGH model's catalog id; it is not published yet. {/* PENDING-V4-PUBLISH: alignair4-igh-human */} Replay a
+            real captured run to see exactly what it prints:
           </p>
           <CliWidget />
           <p>
@@ -53,7 +53,7 @@ const firstPrediction: Lesson = {
           <p>
             <code>--input</code> accepts FASTA, FASTQ, CSV/TSV or TXT (optionally <code>.gz</code>, or <code>-</code> for stdin). A <strong>table</strong>'s sequence column is found by name (<code>sequence</code>, <code>seq</code>, <code>nucleotide</code>, <code>read</code>); name any other column explicitly:
           </p>
-          <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model <v4-igh-model> \\\n  --sequence-column nt --id-column read_id`} />
+          <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model alignair4-igh-human \\\n  --sequence-column nt --id-column read_id`} />
           <p>
             No reads handy? <code>alignair demo</code> runs the whole pipeline offline on simulated data (the demo model is not accurate — it only proves the pipeline works).
           </p>
@@ -164,7 +164,7 @@ const modelsReferences: Lesson = {
         <>
           <p>At predict time, <code>--model</code> accepts three kinds of thing:</p>
           <ul className="list-disc pl-6 space-y-1.5 my-4">
-            <li>a <strong>catalog id</strong> (<code>{"<v4-igh-model>"}</code> here; the AlignAIR 4 ids are not published yet) — downloaded, hash-verified and cached on first use (no login). Pin an exact build with <code>id@version</code>;</li>
+            <li>a <strong>catalog id</strong> (<code>alignair4-igh-human</code> here; the AlignAIR 4 ids are not published yet {/* PENDING-V4-PUBLISH */}) — downloaded, hash-verified and cached on first use (no login). Pin an exact build with <code>id@version</code>;</li>
             <li>a local <strong><code>.alignair</code> file</strong>, e.g. <code>runs/igh/bundle/model.alignair</code>;</li>
             <li>a <strong>Hugging Face repo</strong>, <code>hf://org/repo</code> or <code>org/repo</code>; pin it with <code>--revision</code>.</li>
           </ul>
@@ -232,7 +232,7 @@ const genotype: Lesson = {
             code={`# donor.yaml\nV:\n  - IGHVF1-G3*02\n  - IGHVF6-G21*07\n  - IGHVF6-G21*12\nJ:\n  - IGHJ4*02\n  - IGHJ6*02`}
           />
           <p>Pass the file path to <code>--genotype</code>:</p>
-          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model <v4-igh-model> --genotype donor.yaml`} />
+          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model alignair4-igh-human --genotype donor.yaml`} />
           <p>
             The genotype becomes the bank: the model scores only its alleles. A read whose V gene is not in it gets no V
             call, and its row is tagged <code>partial</code> (reason <code>no_v</code>).

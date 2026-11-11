@@ -133,8 +133,9 @@ const fixedReference: Lesson = {
             retraining. Calls are hard-restricted to that donor's alleles:
           </p>
           <pre tabIndex={0} aria-label="AIRR output example" style={{ margin: "20px 0", padding: "16px", background: "#16151f", borderRadius: "12px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", lineHeight: "1.85", color: "#e6e5f0", overflowX: "auto" }}>
-            <code>{`alignair predict --input reads.fasta --out out.tsv \\\n  --model <v4-igh-model> --genotype donor.yaml`}</code>
+            <code>{`alignair predict --input reads.fasta --out out.tsv \\\n  --model alignair4-igh-human --genotype donor.yaml`}</code>
           </pre>
+          {/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
           <p>
             A genotype only <em>narrows</em> the callable set. To add alleles the model never saw, bind a FASTA that holds
             them with <code>--reference</code> - still no retraining. A new locus or species is a different matter: train

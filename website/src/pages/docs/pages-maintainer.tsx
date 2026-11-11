@@ -15,8 +15,9 @@ const publishing: DocPage = {
         </a>
         . It holds a <code>registry.json</code> catalog plus one pickle-free <code>&lt;id&gt;/&lt;version&gt;.alignair</code>{" "}
         per model. A model can also live in its own Hugging Face repo, loaded as <code>hf://org/repo</code>.
-        AlignAIR 4 models come one per locus (IGH first, then IGK, IGL, TRA, TRB, TRD, TRG); their ids and repos are
-        not decided, so <code>{"<v4-igh-model>"}</code> and <code>{"<org>/<repo>"}</code> below are placeholders.
+        AlignAIR 4 models come one per locus (IGH first, then IGK, IGL, TRA, TRB, TRD, TRG), all in this shared
+        catalog, as <code>alignair4-&lt;locus&gt;-human</code>; none is published yet.{" "}
+        {/* PENDING-V4-PUBLISH: the alignair4-* ids are not published yet. */}
       </p>
       <ul>
         <li><strong>Anyone can read/download</strong> - <code>alignair models list</code> and <code>predict --model &lt;id&gt;</code> fetch anonymously.</li>
@@ -46,13 +47,13 @@ const publishing: DocPage = {
       <CodeBlock lang="python" code={`from alignair.model_file import update_card
 
 update_card("runs/igh/bundle/model.alignair", "release/model.alignair",
-            {"model_id": "<v4-igh-model>", "model_version": "<version>", "locus": "IGH", "species": "Homo sapiens"})`} />
-      {/* PENDING-V4-MODEL-ID: the v4 ids and versions are not decided. */}
+            {"model_id": "alignair4-igh-human", "model_version": "<version>", "locus": "IGH", "species": "Homo sapiens"})`} />
+      {/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet; its first version is not set. */}
 
       <h2>3a. Into the catalog</h2>
       <CodeBlock lang="python" code={`from alignair.registry import publish_local
 
-problems = publish_local("release/model.alignair", "<v4-igh-model>", "<version>", ".private/registry",
+problems = publish_local("release/model.alignair", "alignair4-igh-human", "<version>", ".private/registry",
                          description="Human IGH aligner (AlignAIR 4)")
 assert not problems, problems`} />
       <p>
@@ -65,7 +66,7 @@ assert not problems, problems`} />
         <code>--no-private</code> keeps the repo world-readable and creates it on first upload. Then verify as an
         anonymous user:
       </p>
-      <CodeBlock code={`alignair models list\nalignair predict --input examples/reads.fasta --out out.tsv --model <v4-igh-model>@<version>`} />
+      <CodeBlock code={`alignair models list\nalignair predict --input examples/reads.fasta --out out.tsv --model alignair4-igh-human@<version>`} />
 
       <h2>3b. Or one Hugging Face repo per model</h2>
       <CodeBlock lang="python" code={`from alignair import Aligner

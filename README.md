@@ -28,8 +28,9 @@
   steps then refine the calls and boundaries against the germline and assemble a standard AIRR record (junction,
   productivity, gapped alignments).
 - **Self-contained models.** Each model file embeds a fingerprinted germline reference and loads without executing any
-  pickle. Load one from a local path, a Hugging Face repo (`hf://org/repo`), or a catalog id. AlignAIR 4 pretrained
-  models come one per locus: IGH first, then IGK, IGL, TRA, TRB, TRD and TRG.
+  pickle. Load one by catalog id, from a local path, or from a Hugging Face repo (`hf://org/repo`). AlignAIR 4
+  pretrained models are to be published in the shared catalog one per locus, as `alignair4-<locus>-human`: IGH first,
+  then IGK, IGL, TRA, TRB, TRD and TRG. <!-- PENDING-V4-PUBLISH -->
 - **Reference without retraining.** The model scores the alleles of whichever reference it is bound to. At predict time
   you can restrict calls to a donor's genotype, or bind another germline set: novel alleles, new genes, a curated
   reference. A reference missing one of the model's segments is refused; for a new locus or species, train a model.
@@ -68,8 +69,9 @@ docker run --rm alignair/alignair:latest doctor
 docker run --rm \
   -v "$PWD:/data" -v alignair-cache:/home/appuser/.cache/alignair \
   alignair/alignair:latest \
-  predict --input /data/reads.fasta --out /data/out.tsv --model <v4-igh-model>
+  predict --input /data/reads.fasta --out /data/out.tsv --model alignair4-igh-human
 ```
+<!-- PENDING-V4-PUBLISH: alignair4-igh-human -->
 
 The same image is mirrored at `ghcr.io/mutejester/alignair` (identical tags) if Docker Hub's anonymous
 pull limit is a problem, e.g. on a shared cluster. The default image is CPU-only; pin a version tag
@@ -93,23 +95,25 @@ Or use a **pretrained model**. `--model` takes a `.alignair` path, a Hugging Fac
 the catalog at the public [model hub](https://huggingface.co/AlignAIR/AlignAIR-pretrained); a remote model is
 downloaded on first use and cached.
 
-<!-- PENDING-V4-MODEL-ID: the AlignAIR 4 IGH model's id/repo is not decided. -->
-> `<v4-igh-model>` below is a placeholder for an AlignAIR 4 human IGH model; the id is not published yet. Any
-> AlignAIR 4 `.alignair` path works in its place. The hub catalog's current entries (`alignair-igh-human@1.0.0` and
-> the others) are AlignAIR 3 models, which AlignAIR 4 refuses ("use alignair<4 to run it").
+<!-- PENDING-V4-PUBLISH: alignair4-igh-human and the other alignair4-* ids -->
+> AlignAIR 4 models are to be published in the shared catalog, one per locus: `alignair4-igh-human`,
+> `alignair4-igk-human`, `alignair4-igl-human`, `alignair4-tra-human`, `alignair4-trb-human`, `alignair4-trd-human`
+> and `alignair4-trg-human`. None is published yet; until then, pass an AlignAIR 4 `.alignair` path to `--model`. The
+> catalog's current entries (`alignair-igh-human@1.0.0` and the others) are AlignAIR 3 models, which AlignAIR 4
+> refuses ("use alignair<4 to run it").
 
 ```bash
 alignair models list                          # the catalog (fetched live from the hub)
-alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>
+alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human
 
 # from a Hugging Face repo, pinned to a branch, tag or commit
 alignair predict --input reads.fasta --out out.tsv --model hf://<org>/<repo> --revision <commit>
 
 # restrict calls to a donor's genotype (YAML or JSON: V/D/J -> allele names of the model's reference)
-alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model> --genotype donor.yaml
+alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human --genotype donor.yaml
 
 # or infer the donor's V genotype from the reads themselves and re-call the reads it settles
-alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model> --infer-genotype
+alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human --infer-genotype
 ```
 
 A catalog id downloads, hash-verifies and caches the model on first use (pin a version with
@@ -122,10 +126,11 @@ From Python:
 ```python
 from alignair import Aligner
 
-aligner = Aligner.from_pretrained("model.alignair", device="auto")   # or "hf://org/repo" (revision=...), or a catalog id
+aligner = Aligner.from_pretrained("alignair4-igh-human", device="auto")   # or a .alignair path
 result = aligner.predict(["CAGGTGCAGCTGGTGCAGTCTGGG..."])
-result.write_airr("out.tsv")                                         # an AIRR rearrangement TSV
+result.write_airr("out.tsv")                                             # an AIRR rearrangement TSV
 ```
+<!-- PENDING-V4-PUBLISH: alignair4-igh-human -->
 
 Prefer your own reference or species? Train a model, then align with it:
 

@@ -20,8 +20,9 @@ const downstream: Lesson = {
             nf-core/airrflow directly. But AlignAIR is <strong>per-read</strong>: single-cell grouping and counts come
             from your metadata, joined at predict time:
           </p>
+          {/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
           <CodeBlock
-            code={`alignair predict --input contigs.fasta --out out.tsv --model <v4-igh-model> \\
+            code={`alignair predict --input contigs.fasta --out out.tsv --model alignair4-igh-human \\
   --metadata filtered_contig_annotations.csv --keep-columns barcode,umis,c_gene`}
           />
           <Callout kind="note" title="Isotype calling limitation">
@@ -147,7 +148,8 @@ const validate: Lesson = {
               </tbody>
             </table>
           </div>
-          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model <v4-igh-model> --columns core`} />
+          {/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
+          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model alignair4-igh-human --columns core`} />
           <p>
             You can also pass an explicit comma-separated field list instead of a preset name.
           </p>

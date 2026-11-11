@@ -213,15 +213,15 @@ export default function Home() {
           {alignType === "igh" && (
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-                {/* PENDING-V4-MODEL-ID: the AlignAIR 4 IGH model's id and source are not published yet. */}
+                {/* PENDING-V4-PUBLISH: alignair4-igh-human is not published yet. */}
                 <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#574fd6", padding: "4px 10px", borderRadius: "6px" }}>Pretrained (first)</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model ID: <strong>{"<v4-igh-model>"}</strong> (not published yet)</span>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model ID: <strong>alignair4-igh-human</strong> (not published yet)</span>
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
                 Aligns human immunoglobulin heavy chains: somatic hypermutation, fragments, any orientation. Bind a donor genotype or novel alleles at predict time. Limitations: D-allele calls carry inherent biological ambiguity.
               </p>
               <pre tabIndex={0} aria-label="Human IGH prediction command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model {"<v4-igh-model>"}
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human
               </pre>
             </div>
           )}
@@ -229,7 +229,8 @@ export default function Home() {
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
                 <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#6f6d85", padding: "4px 10px", borderRadius: "6px" }}>Planned</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>One model per locus: IGK, then IGL</span>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model IDs: <strong>alignair4-igk-human</strong>, <strong>alignair4-igl-human</strong> (not published yet)</span>
+                {/* PENDING-V4-PUBLISH: alignair4-igk-human, alignair4-igl-human */}
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
                 AlignAIR 4 publishes one pretrained model per locus; IGK and IGL follow IGH. The hub's <strong>alignair-igkl-human@1.0.0</strong> is an AlignAIR 3 model (it runs with <code>alignair&lt;4</code>). Until the AlignAIR 4 models are out, train one from a built-in light-chain reference.
@@ -243,7 +244,8 @@ export default function Home() {
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
                 <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#6f6d85", padding: "4px 10px", borderRadius: "6px" }}>Planned</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>One model per locus: TRA, TRB, TRD, TRG</span>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model IDs: <strong>alignair4-tra-human</strong>, <strong>-trb-</strong>, <strong>-trd-</strong>, <strong>-trg-</strong> (not published yet)</span>
+                {/* PENDING-V4-PUBLISH: alignair4-tra-human, alignair4-trb-human, alignair4-trd-human, alignair4-trg-human */}
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
                 The TCR loci follow the IG loci, one model each. TCR models train with somatic hypermutation set to zero, since T cells do not hypermutate. The hub's <strong>alignair-tcrb-human@1.0.0</strong> is an AlignAIR 3 model (it runs with <code>alignair&lt;4</code>). Until then, train one from a built-in TCR reference.

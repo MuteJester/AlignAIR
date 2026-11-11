@@ -20,10 +20,10 @@ const benchmarking: Lesson = {
             Shipped in the CLI, it generates fresh ground-truth reads per stratum and scores one model against that
             truth. Use it to sanity-check any model, including one you just trained:
           </p>
-          <CodeBlock code={`alignair benchmark --model <v4-igh-model> --n 200 --seed 0 --format json --out benchmark.json`} />
+          <CodeBlock code={`alignair benchmark --model alignair4-igh-human --n 200 --seed 0 --format json --out benchmark.json`} />
           <p>
-            (<code>{"<v4-igh-model>"}</code> is a placeholder for the AlignAIR 4 IGH model, whose id is not published
-            yet; a <code>.alignair</code> path works in its place.)
+            (<code>alignair4-igh-human</code> is the AlignAIR 4 IGH model's catalog id; it is not published yet, so
+            until then pass a <code>.alignair</code> path.) {/* PENDING-V4-PUBLISH: alignair4-igh-human */}
           </p>
           <p>
             <strong>Tier 2 — the head-to-head vs IgBLAST.</strong> Paired comparisons with confidence intervals and
@@ -41,7 +41,7 @@ const benchmarking: Lesson = {
           <Callout kind="note" title="Score both tools on the same germline">
             A fair comparison must give IgBLAST the exact germline the model uses. Export it from the model file, then
             run IgBLAST with <code>-outfmt 19</code>:
-            <CodeBlock code={`alignair reference export "$(alignair models path <v4-igh-model>)" --fasta germline.fasta`} />
+            <CodeBlock code={`alignair reference export "$(alignair models path alignair4-igh-human)" --fasta germline.fasta`} />
           </Callout>
         </>
       ),
