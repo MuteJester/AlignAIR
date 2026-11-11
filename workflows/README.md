@@ -8,7 +8,7 @@ and will change.
 Prerequisites:
 
 - a **model** — for container runs, prefer a local model file or bundle (`alignair models get
-  <id>`, or `alignair train ... -o my_model`). A catalog id such as `alignair-igh-human` also
+  <id>`, or `alignair train ... --out my_model`). A catalog id such as `alignair-igh-human` also
   works but needs network access inside the container, and without a mounted cache it is
   downloaded again for every task.
 - the **container** — the wrappers pin `alignair/alignair:3.0.0` (also mirrored at
