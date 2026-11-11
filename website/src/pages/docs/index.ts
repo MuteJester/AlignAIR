@@ -9,21 +9,15 @@ import { referencePages } from "./pages-reference";
 import { errorPages } from "./pages-errors";
 import { evalPages } from "./pages-eval";
 import { maintainerPages } from "./pages-maintainer";
-import { aaResearchPages } from "./pages-aa-research";
 import { testingPages } from "./pages-testing";
 import { setupPages } from "./pages-setup";
 import { compositionPages } from "./pages-composition";
-import { labelPages } from "./pages-labels";
-import { augmentationPages } from "./pages-augmentation";
 import { streamPages } from "./pages-streams";
-import { samplingPages } from "./pages-sampling";
 import { taskPages } from "./pages-tasks";
 import { batchingPages } from "./pages-batching";
 import { enginePages } from "./pages-engine";
 import { trainingWorkflowPages } from "./pages-training-workflow";
-import { evaluationReportPages } from "./pages-evaluation-reports";
 import { inferencePages } from "./pages-inference";
-import { calibrationPages } from "./pages-calibration";
 import { communityPages } from "./pages-community";
 
 /**
@@ -47,18 +41,12 @@ export const DOCS: DocPage[] = [
   ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
   ...compositionPages, // model-composition  [Design]
   ...setupPages, // model-setup  [Design]
-  ...labelPages, // reference-labels  [Design]
   ...streamPages, // curriculum-sources  [Design]
-  ...samplingPages, // sample-preparation  [Design]
-  ...augmentationPages, // protein-augmentation  [Design]
   ...taskPages, // training-tasks  [Design]
   ...batchingPages, // training-batches  [Design]
   ...enginePages, // training-engine  [Design]
-  ...evaluationReportPages, // evaluation-reports  [Design]
   ...inferencePages, // model-inference  [Design]
-  ...calibrationPages, // prediction-calibration  [Design]
   ...maintainerPages, // publishing  [Maintainer]
-  ...aaResearchPages, // aa-guard-research  [Maintainer]
   ...testingPages, // testing  [Maintainer]
   ...communityPages, // citation-support  [Community]
 ];
