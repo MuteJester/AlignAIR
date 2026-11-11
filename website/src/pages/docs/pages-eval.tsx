@@ -1,5 +1,5 @@
 import { CodeBlock, Callout } from "../../components/ui";
-import { DocTable, DocLink, type DocPage } from "./doc-kit";
+import { DocLink, type DocPage } from "./doc-kit";
 
 const benchmarks: DocPage = {
   slug: "benchmarks",
@@ -19,27 +19,33 @@ const benchmarks: DocPage = {
         commands used to produce it. This page describes evaluation methods; it does not publish comparative scores.
       </Callout>
 
+      {/* PENDING-V4-NUMBERS: the AlignAIR 4 vs IgBLAST head-to-head has not been run; no scores are published. */}
       <h2>Metrics</h2>
-      <p>Per gene (V, D, J):</p>
+      <p>
+        The head-to-head (<code>alignair_assay</code>, in the source repository) scores each read against its{" "}
+        <em>observable</em> truth: what a perfect aligner could recover from it. Per gene (V, D, J):
+      </p>
       <ul>
-        <li><code>call_top1_in_set</code>: the top call is inside the truth equivalence set (allele accuracy).</li>
-        <li><code>call_set_f1</code>: F1 of the predicted equivalence set against the truth set.</li>
-        <li><code>ss_mae</code>, <code>se_mae</code>: MAE of the in-read segment start and end.</li>
-        <li><code>gs_mae</code>, <code>ge_mae</code>: MAE of the germline start and end.</li>
+        <li><code>v.top1_in_set</code> (and <code>d.</code>, <code>j.</code>): the top call is inside the read's observable truth set (allele accuracy).</li>
+        <li>boundary <code>*_exact</code>: the predicted start or end lies inside its truth interval; <code>*_err</code> is the distance to it.</li>
       </ul>
-      <p>Global: junction nt/aa exact match, productivity and orientation accuracy, required-field presence, parseable-AIRR rate.</p>
+      <p>
+        Global: <code>junction.nt_exact</code>, <code>junction.aa_exact</code>, <code>clone_key.exact</code>,{" "}
+        <code>orientation.correct</code>, and AIRR validity (<code>airr.valid</code>). The assay's README lists every
+        metric.
+      </p>
 
       <p>
-        Genuinely ambiguous reads are reported as a set (<code>*_call_set</code>) rather than a forced single call, so
-        the benchmark scores set-valued as well as top-1 accuracy. Where AlignAIR is strong and weak by gene and read
+        Genuinely ambiguous reads are reported with their ties (<code>v_call</code>) and a set (<code>*_call_set</code>)
+        rather than a forced single call, so the scores read the top-1 against the truth set. Where AlignAIR is strong and weak by gene and read
         type is summarized qualitatively in <DocLink to="known-failure-modes">Known failure modes</DocLink>.
       </p>
 
       <h2>Throughput</h2>
       <p>
         Throughput depends on the device, batch size, and requested output fields. See{" "}
-        <DocLink to="performance">Speed and throughput</DocLink> for the measured per-device figures, stated with their
-        hardware, backend and timing boundary.
+        <DocLink to="performance">Speed and throughput</DocLink> for how throughput is measured; the AlignAIR 4 figures
+        are pending a re-timing on a quiet machine.
       </p>
       <Callout kind="note" title="Throughput is not part of the scored benchmark">
         Accuracy and throughput use different measurement boundaries. The linked speed figures describe AlignAIR's
@@ -48,7 +54,7 @@ const benchmarks: DocPage = {
 
       <h2>Methodology and reproducibility</h2>
       <p>A model self-check, built into the CLI (fresh ground-truth reads per stratum, no IgBLAST):</p>
-      <CodeBlock code={`alignair benchmark --model alignair-igh-human --n 200 --seed 0 --out benchmark.json`} />
+      <CodeBlock code={`alignair benchmark --model model.alignair --n 200 --seed 0 --format json --out benchmark.json`} />
       <p>
         The built-in CLI <code>alignair benchmark</code> command performs a quick self-evaluation on <strong>4 default strata</strong>:
       </p>
@@ -62,10 +68,13 @@ const benchmarks: DocPage = {
         It outputs simpler self-evaluation metrics: <code>v/d/j_call_acc</code> (top-1 classification accuracy), <code>junction_nt_exact</code> (exact CDR3 match), <code>junction_len_mae</code> (Mean Absolute Error of junction length), <code>*_sequence_start/end_mae</code> (MAE of coordinates), and <code>productive_acc</code>.
       </p>
       <p>
-        The full head-to-head vs IgBLAST lives in the <code>alignair_benchmark</code> package. This package is excluded from the installed PyPI wheel to minimize the runtime install footprint (preventing heavy dev/statistical dependencies in production). It must be installed from a source clone. Its <code>evaluate</code>/<code>compare</code> commands add paired case-bootstrap
-        confidence intervals, per-stratum intervals, and Bonferroni-corrected tests, and record provenance (AlignAIR
-        version + commit, package versions, CUDA detail, reference/case hashes). Run IgBLAST against the same germline
-        (resolve the id to a file with <code>alignair models path &lt;id&gt;</code>, then{" "}
+        The full head-to-head vs IgBLAST lives in the <code>alignair_assay</code> package
+        (<code>src/alignair_assay</code>), which is excluded from the installed PyPI wheel and runs from a source
+        clone (<code>python -m alignair_assay ...</code>; see its README). It builds GenAIRR suites against a frozen
+        simulator, runs each tool, scores the AIRR output against observable truth, and compares two tools with
+        analytic paired tests (cluster-aware when cases are grouped), Holm-corrected verdicts and simultaneous
+        confidence intervals, recording each run's provenance. Run IgBLAST against the same germline (resolve the id
+        to a file with <code>alignair models path &lt;id&gt;</code>, then{" "}
         <code>alignair reference export &lt;file&gt; --fasta germline.fasta</code>) with <code>-outfmt 19</code>.
       </p>
 
@@ -86,60 +95,34 @@ const performance: DocPage = {
   lead: "Measured resource numbers with the workload, backend, and timing boundary stated explicitly.",
   body: () => (
     <>
-      <p>
-        Measured 2026-07-16 on an Intel Core i7-10700F (8 cores / 16 threads) and NVIDIA GeForce RTX
-        3090 Ti, with Python 3.12.3, PyTorch 2.11.0+cu128, GenAIRR 2.2.0, and the compiled germline-CIGAR
-        derivation kernel (<code>alignair doctor</code>: <code>derive_backend=cython</code>). Workload: 400
-        GenAIRR human-IGH reads at curriculum progress 0.3 (average 369 nt), the 198-V / 33-D / 7-J
-        OGRDB model, and batch size 64.
-      </p>
+      {/* PENDING-V4-NUMBERS: prediction throughput and training step time for AlignAIR 4, re-timed on a quiet machine. */}
+      <Callout kind="note" title="Results pending for AlignAIR 4">
+        The figures this page carried were measured on 2026-07-16 with an earlier AlignAIR release. The AlignAIR 4
+        figures are pending a re-timing on a quiet machine; until then, measure on your own hardware.
+      </Callout>
       <h2>Prediction throughput</h2>
       <p>
-        Steady-state numbers below are the median of five warmed runs. Model loading is excluded; neural
-        prediction and the post-processing required by the selected output are included.
-      </p>
-      <DocTable
-        head={["Device", "Output", "Median reads/s", "Measured peak memory*"]}
-        rows={[
-          ["CPU", "full (109 fields)", "~112", "~0.75 GB host RSS"],
-          ["CPU", "core (27 fields)", "~123", "~0.75 GB host RSS"],
-          ["CUDA", "full (109 fields)", "~1,480", "~0.16 GB CUDA allocated"],
-          ["CUDA", "core (27 fields)", "~1,720", "~0.16 GB CUDA allocated"],
-        ]}
-      />
-      <p>
-        * Host RSS and CUDA allocator peaks are different measurements and should not be compared as if
-        they were the same pool. A fresh 400-read CLI invocation, including Python startup, model loading,
-        and file writing, took about 5.8 s on CPU and 3.4 s on CUDA; startup therefore dominates small jobs.
+        A throughput figure needs its hardware, software versions (<code>alignair doctor</code>), model, workload
+        (read count and length), batch size and timing boundary. Report steady-state numbers as the median of several
+        warmed runs, with model loading excluded and neural prediction plus the post-processing the selected output
+        needs included. A fresh CLI invocation also pays Python startup and model loading, which dominate small jobs.
       </p>
       <p>The main throughput knobs:</p>
       <ul>
         <li><code>--device cuda</code> - the largest lever; the neural stage is GPU-friendly.</li>
-        <li><code>--columns core</code> - a far smaller row (27 fields vs 109). Note both rows above still run the AIRR assembly: <code>core</code> asks for the junction, which is one of its products, so the ~10% gain is mostly writing less. Only <code>minimal</code> (calls + <code>productive</code>, no coordinates or junction) skips the assembly outright; it was not measured here.</li>
-        <li><code>--batch-size</code> - larger batches improve GPU utilisation up to memory limits.</li>
+        <li><code>--threads N</code> - on the CPU, N single-threaded worker processes (torch's own threads scale poorly on read batches).</li>
+        <li><code>--columns core</code> - a far smaller row (27 fields vs 109). It still runs the AIRR assembly: <code>core</code> asks for the junction, which is one of its products, so the gain is mostly writing less. Only <code>minimal</code> (calls + <code>productive</code>, no coordinates or junction) skips the assembly outright.</li>
+        <li><code>--batch-size</code> - larger batches improve GPU utilisation up to memory limits (default 256 on a GPU, 64 on the CPU, 16 per worker with <code>--threads</code>).</li>
         <li><code>--chunk-size</code> - bounds memory for large inputs, not speed.</li>
       </ul>
       <p>Memory stays flat regardless of input size, because prediction streams the input in chunks.</p>
 
       <h2>Training step time</h2>
       <p>
-        These measurements include GenAIRR record generation, collation, forward/backward, and the
-        optimizer step. The wall estimate is direct arithmetic from the preset step count; periodic
-        validation and checkpoint I/O add extra time.
-      </p>
-      <DocTable
-        head={["Preset", "Batch", "Device", "Median s / step", "Step-only estimate", "Measured peak memory*"]}
-        rows={[
-          ["desktop (50,000 steps)", "64", "CPU", "~1.69", "~23.5 h", "~3.0 GB host RSS"],
-          ["desktop (50,000 steps)", "64", "CUDA", "~0.177", "~2.5 h", "~1.9 GB CUDA allocated"],
-          ["full (300,000 steps)", "128", "CUDA", "~0.290", "~24.1 h", "~3.5 GB CUDA allocated"],
-        ]}
-      />
-      <p>
-        On this machine CUDA is roughly 9.6x faster per <code>desktop</code> step than CPU; training is not
-        purely data-generation-bound. The <code>full</code> preset uses a larger batch and six times as many
-        steps, which is why its estimated wall time is close to a day even though each step remains below
-        0.3 s. <code>--plan</code> reports the resolved configuration, but does not estimate wall time or memory.
+        A step's time includes GenAIRR record generation, collation, forward/backward, and the optimizer step; a
+        preset's wall time is its step count times that, plus periodic validation and checkpoint I/O.{" "}
+        <code>--data-workers N</code> generates the records in worker processes (at most one per curriculum stream).{" "}
+        <code>--plan</code> reports the resolved configuration, but does not estimate wall time or memory.
       </p>
     </>
   ),
@@ -149,27 +132,28 @@ const design: DocPage = {
   slug: "design",
   title: "Design & internals",
   section: "Design",
-  lead: "A single neural model produces the full V(D)J alignment; a light post-processing stage turns it into AIRR.",
+  lead: "A single neural model reads the read against the bound germline reference; deterministic refinement turns it into AIRR.",
   body: () => (
     <>
       <h2>End-to-end pipeline</h2>
       <CodeBlock
         lang="text"
-        code={`read (nucleotides)\n  |  tokenize (A/C/G/T/N + pad, fixed window)\n  v\nin-model orientation head -> detect orientation, re-orient to the forward frame\n  v\nconvolutional feature encoder (residual conv tower)\n  |- per-gene branches (V, D, J):\n  |    |- segmentation heads -> start / end position\n  |    '- classification head -> per-allele scores (over the embedded catalog)\n  '- meta heads -> mutation rate, indel count, productivity, locus\n  v\npost-processing (alignair.predict)\n  |- allele selection -> top call + candidate set\n  |- germline reader -> refined coordinates, per-segment CIGAR, % identity\n  '- AIRR assembly -> IMGT-gapped alignments, junction / CDR3, np1/np2, flags\n  v\nAIRR rearrangement record`}
+        code={`read (nucleotides)\n  |  tokenize (A/C/G/T/N + pad, fixed window)\n  v\norientation head (+ the bank's k-mer vote) -> re-orient to the forward frame\n  v\ndilated convolutional trunk -> every base's features, once\n  |- parser -> the read's V / D / J regions and boundaries\n  |- anchor heads -> V Cys and J Trp/Phe codon starts\n  |- mutation reader -> per-base mutation / insertion, germline columns\n  '- bank scans (V, D, J) -> a score for every allele of the BOUND reference\n  v\nrefinement (deterministic, against the germline)\n  |- one locus per read (multi-locus banks), D presence\n  |- V re-score (banded gapped alignment), D local alignment, boundaries\n  '- tied V alleles listed after the call\n  v\nAIRR assembly (alignair.predict) -> junction from the anchors, productivity,\n  IMGT-gapped alignments, per-segment CIGAR / identity, np1/np2, flags\n  v\nAIRR rearrangement record`}
       />
       <p>
-        The neural network localises each segment and scores alleles; a germline reader (a fast anchored aligner by
-        default, with an optional WFA / parasail backend) refines coordinates and produces per-segment CIGARs and
-        identity, and the AIRR assembler reconstructs the IMGT-gapped alignments and derives the junction. The germline
-        reference is embedded in the model file, so calls are always drawn from a known, fingerprinted catalog.
+        The network localises each segment, finds the junction anchors and scores every allele of the bound reference;
+        the refinement re-scores the top V alleles by a banded gapped alignment, aligns the junction to the D alleles,
+        and moves the boundaries to where the read stops following the called germline. The AIRR assembler
+        reconstructs the IMGT-gapped alignments and derives the junction and productivity by rule. The model file
+        embeds its training reference, fingerprinted, as the default bank; another can be bound at predict time.
       </p>
 
       <h2>Key design choices</h2>
       <ul>
-        <li><strong>In-model orientation.</strong> Orientation is predicted from the initial embeddings and corrected inside the model, so every downstream head and the coordinates operate on one canonical frame.</li>
-        <li><strong>Segmentation + classification, jointly.</strong> Each gene regresses boundaries and scores alleles from a shared convolutional representation - one forward pass yields calls, coordinates, and quality together.</li>
-        <li><strong>Honest ambiguity.</strong> Allele selection emits a ranked candidate set alongside the top call, so a read that cannot distinguish alleles is visible as such rather than reported as a confident single call.</li>
-        <li><strong>Fixed-reference classifier.</strong> The heads are tied to the embedded catalog; a donor genotype can subset it at inference, but adding alleles requires training.</li>
+        <li><strong>In-model orientation.</strong> Orientation is predicted from the initial embeddings and corrected inside the model, so every downstream unit and the coordinates operate on one canonical frame.</li>
+        <li><strong>Parsing + scanning, jointly.</strong> The parser's regions route each base to its gene's bank scan, and the anchor heads read only inside their region - one forward pass yields calls, boundaries and anchors together.</li>
+        <li><strong>The reference is an input.</strong> Each allele is a row of the bank on fixed frame columns (IMGT-gapped for V), rebuilt from whichever reference is bound; a donor genotype restricts its rows, and novel alleles are new rows - no retraining.</li>
+        <li><strong>Honest ambiguity.</strong> Tied V alleles are listed after the call, and each gene carries a candidate set, so a read that cannot distinguish alleles is visible as such rather than reported as a confident single call.</li>
       </ul>
 
       <h2>Evaluation</h2>
@@ -183,8 +167,8 @@ const design: DocPage = {
       <h2>Training</h2>
       <p>
         Models train on data streamed from the GenAIRR simulator (no static dataset) over a curriculum that mixes clean
-        reads with fragments, SHM, indels, and arbitrary orientation. A run embeds the germline reference into the
-        resulting <code>.alignair</code> file, so the model is self-contained.
+        reads with fragments, SHM, indels, library flanks, and arbitrary orientation. A run embeds the germline
+        reference into the resulting <code>.alignair</code> file, so the model is self-contained.
       </p>
     </>
   ),
