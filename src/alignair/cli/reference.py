@@ -14,7 +14,9 @@ def register(sub) -> None:
 
     lp = rsub.add_parser("list", help="list the built-in GenAIRR dataconfigs (train/predict references)")
     lp.add_argument("--species", default=None, help="filter by species substring (e.g. Human)")
-    lp.add_argument("--chain", default=None, help="filter by chain-type substring (e.g. IGH, TCR)")
+    lp.add_argument("--chain", default=None,
+                    help="filter by a chain type, locus, or a whole token of either or of the name, case-insensitive "
+                         "(e.g. IGH, TRB, TCR, BCR_LIGHT_KAPPA, light)")
     lp.add_argument("--json", action="store_true", help="emit JSON instead of a table")
     lp.set_defaults(func=run_list)
 
@@ -36,7 +38,7 @@ def run_list(args) -> int:
     if args.species:
         rows = [r for r in rows if args.species.lower() in r["species"].lower()]
     if args.chain:
-        rows = [r for r in rows if args.chain.lower() in (r["chain_type"] + r["name"]).lower()]
+        rows = [r for r in rows if _chain_matches(args.chain, r)]
     if args.json:
         import json
         print(json.dumps(rows, indent=2))
@@ -46,6 +48,15 @@ def run_list(args) -> int:
     for r in rows:
         print(f"  {r['name']:28s} {r['chain_type']:22s} {r['species']:22s} {r['has_d']}")
     return 0
+
+
+def _chain_matches(query: str, row: dict) -> bool:
+    """Whether ``query`` is, case-insensitively, the row's chain type or locus, or one whole ``_``-separated token of
+    its chain type or name (``BCR_LIGHT_KAPPA``: BCR, LIGHT, KAPPA; ``HUMAN_TCRB_IMGT``: TCRB), never a substring of
+    one (``IGH`` is in ``LIGHT``)."""
+    query = query.strip().upper()
+    chain, name, locus = (str(row.get(k) or "").upper() for k in ("chain_type", "name", "locus"))
+    return query in {chain, locus, *chain.split("_"), *name.split("_")}
 
 
 def _run_export(args) -> int:
