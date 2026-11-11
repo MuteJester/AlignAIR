@@ -192,6 +192,22 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
     return counts, dict(fail_reasons), dict(partial_reasons)
 
 
+def _load_reporting_locus(model_path: str, *, device: str, reference):
+    """``Aligner.from_pretrained``, its ``LocusMismatchWarning`` (a reference of another locus bound to a one-locus
+    model) printed as one ``warning:`` line on stderr; any other warning passes through as it would."""
+    import warnings
+    from ..reference import LocusMismatchWarning
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        aligner = Aligner.from_pretrained(model_path, device=device, reference=reference)
+    for w in caught:
+        if issubclass(w.category, LocusMismatchWarning):
+            print(f"warning: {w.message}", file=sys.stderr)
+        else:
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno, source=w.source)
+    return aligner
+
+
 def _sha256_file(path: str) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -281,7 +297,7 @@ def run(args) -> int:
         except (ValueError, OSError) as e:
             return fail(e, context={"stage": "reference_binding", "path": args.reference})
     try:  # the CLI is a thin client of the stable Aligner API
-        aligner = Aligner.from_pretrained(model_path, device=device, reference=bound)
+        aligner = _load_reporting_locus(model_path, device=device, reference=bound)
     except ValueError as e:                   # a ModelError is the file's; any other error with a reference, binding's
         if bound is None or isinstance(e, ModelError):
             return fail(e, error_type=ModelError, context={"path": model_path})

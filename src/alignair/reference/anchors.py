@@ -18,13 +18,18 @@ reference's, whatever the alleles' names show. ``anchor_report`` counts the anch
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from ..errors import InputError
 from .info import ANCHORED, AlleleInfo, AnchorEvidence
-from .reference_set import GeneReference, ReferenceSet, _loci_from_membership, _locus_from_name
+from .reference_set import _CHAIN_OF_LOCUS, GeneReference, ReferenceSet, _loci_from_membership, _locus_from_name
+
+class LocusMismatchWarning(UserWarning):
+    """A reference of another locus was bound to a model of one locus: allowed, but the model never trained on it."""
+
 
 MAX_DIFFERENT = 0.1          # the largest share of a V's bases its nearest known allele may differ at
 GAP = "."
@@ -211,7 +216,37 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
         per_index[gene] = [dict(placed)[n] for n in order]
     ranges = _loci_from_membership(per_index, loci)
     schema = [dataclasses.replace(info, ranges=new.ranges) for info, new in zip(known.loci, ranges)]
+    other = _other_locus(reference, loci)
+    if other is not None:          # one-locus model, a reference wholly of another locus: label its records by it
+        warnings.warn(f"the bound reference is {other}, but the model was trained on {loci[0]}: binding is "
+                      f"allowed, but its calls on {other} have not been measured; records are labelled {other}",
+                      LocusMismatchWarning, stacklevel=4)
+        mine = next((info for info in reference.loci if info.locus == other), None)
+        schema = [dataclasses.replace(schema[0], locus=other, chain_type=_CHAIN_OF_LOCUS.get(other, other),
+                                      species=mine.species if mine is not None else None, shared={})]
     return ReferenceSet(genes, reference.has_d, loci=schema, provenance=reference.provenance)
+
+
+def _named_loci(name: str) -> set:
+    """The loci an allele's name shows: its prefix's (IGKV1-5*01 -> IGK), and TRD too for a TRAV/DV allele, which
+    rearranges in TRA and TRD alike; none for a name that shows no locus."""
+    named = _locus_from_name(name)
+    if named is None:
+        return set()
+    return {named, "TRD"} if named == "TRA" and "/DV" in str(name).upper() else {named}
+
+
+def _other_locus(reference: ReferenceSet, loci: list) -> str | None:
+    """For a model of one locus: the one other locus every locus-showing allele name of ``reference`` shows, when none
+    shows the model's; else None (a reference of the model's locus, of several, or whose names show none)."""
+    if len(loci) != 1:
+        return None
+    shown = [_named_loci(name) for alleles in reference.genes.values() for name in alleles.names]
+    shown = [s for s in shown if s]
+    if not shown or any(loci[0] in s for s in shown):
+        return None
+    common = set.intersection(*shown)
+    return next(iter(sorted(common))) if len(common) == 1 else None
 
 
 @dataclass(frozen=True)
