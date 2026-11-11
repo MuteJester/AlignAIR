@@ -5,7 +5,7 @@ const workedExample: DocPage = {
   slug: "worked-example",
   title: "Worked example: real repertoire data",
   section: "Get started",
-  lead: "A full run on a real, public human IGH repertoire - download, merge, predict, inspect, validate, summarise. Every number here is captured from an actual run.",
+  lead: "A full run on a real, public human IGH repertoire - download, merge, predict, inspect, validate, summarise. Every number here is captured from an actual run (with AlignAIR 3; the AlignAIR 4 re-run is pending).",
   body: () => (
     <>
       <p>
@@ -17,6 +17,13 @@ const workedExample: DocPage = {
         </a>{" "}
         and its commands are checked against the real CLI in CI.
       </p>
+      {/* PENDING-V4-NUMBERS: re-run steps 3-6 with the AlignAIR 4 IGH model and replace the recorded outputs. */}
+      <Callout kind="warning" title="Results pending for AlignAIR 4">
+        The download and merge steps are model-independent. The outputs recorded in steps 3-6 came from AlignAIR 3 and
+        its <code>alignair-igh-human@1.0.0</code> model, which AlignAIR 4 refuses; a re-run with an AlignAIR 4 IGH model
+        is pending, so your counts will differ. <code>{"<v4-igh-model>"}</code> below is a placeholder for that model's id
+        (not published yet); any AlignAIR 4 <code>.alignair</code> path works in its place.
+      </Callout>
 
       <h2>The dataset</h2>
       <DocTable
@@ -26,7 +33,7 @@ const workedExample: DocPage = {
           ["Accession", <>ENA/SRA run <code>SRR8283604</code>, BioProject <code>PRJNA406949</code></>],
           ["Material", "Human IGH (heavy chain) repertoire, Illumina paired-end 2x250"],
           ["Data access", "INSDC record; under INSDC's data-access policy the sequence data is free to reuse without restriction (a data-access policy, not a software license)"],
-          ["Model", <code>alignair-igh-human@1.0.0</code>],
+          ["Model", <>an AlignAIR 4 IGH model; the recorded outputs: AlignAIR 3, <code>alignair-igh-human@1.0.0</code></>],
         ]}
       />
       <p>We use a small, reproducible subset: the first 2000 read pairs.</p>
@@ -65,18 +72,19 @@ const workedExample: DocPage = {
       </Callout>
 
       <h2>3. Predict</h2>
-      <CodeBlock code={`alignair predict --input merged.fastq --out briney_merged.tsv --model alignair-igh-human@1.0.0`} />
-      <CodeBlock lang="text" code={`aligned 1945 reads (0 dropped) -> briney_merged.tsv; 0 failed / 43 partial AIRR assemblies tagged`} />
+      {/* PENDING-V4-MODEL-ID */}
+      <CodeBlock code={`alignair predict --input merged.fastq --out briney_merged.tsv --model <v4-igh-model>`} />
+      <CodeBlock lang="text" title="Recorded with AlignAIR 3" code={`aligned 1945 reads (0 dropped) -> briney_merged.tsv; 0 failed / 43 partial AIRR assemblies tagged`} />
       <Callout kind="tip" title="Orientation was handled for you">
-        1937 of 1945 reads (99.6%) come out <code>rev_comp=T</code> - this library's reads are antisense, and
-        AlignAIR's orientation head detected and re-framed every one, with no primer trimming and no orientation
+        In the recorded run, 1937 of 1945 reads (99.6%) come out <code>rev_comp=T</code> - this library's reads are
+        antisense, and AlignAIR detected and re-framed every one, with no primer trimming and no orientation
         flag. The calls use the model's embedded OGRDB nomenclature (<code>IGHVF10-G41*03</code>), not classic IMGT
         names.
       </Callout>
 
       <h2>4. Inspect the failures</h2>
-      <p>43 of 1945 records assembled only partially:</p>
-      <CodeBlock lang="text" code={`assembly_status:       complete 1902, partial 43\nairr_assembly_reason:  nonproductive_indel 42, collapsed_segment 1`} />
+      <p>In the recorded run, 43 of 1945 records assembled only partially:</p>
+      <CodeBlock lang="text" title="Recorded with AlignAIR 3" code={`assembly_status:       complete 1902, partial 43\nairr_assembly_reason:  nonproductive_indel 42, collapsed_segment 1`} />
       <p>
         These are not dropped - they keep their V/D/J calls, they just could not have a junction assembled (an indel
         broke the reading frame). Filter to <code>airr_assembly_status == complete</code> before junction or clonotype
@@ -85,7 +93,7 @@ const workedExample: DocPage = {
 
       <h2>5. Validate the AIRR output</h2>
       <CodeBlock code={`alignair validate-airr briney_merged.tsv`} />
-      <CodeBlock lang="text" code={`OK: briney_merged.tsv - 1945 rows, no coordinate/CIGAR violations`} />
+      <CodeBlock lang="text" title="Recorded with AlignAIR 3" code={`OK: briney_merged.tsv - 1945 rows, no coordinate/CIGAR violations`} />
       <p>
         A structural check (columns, coordinate bounds, CIGAR consumption). For formal AIRR-schema validation, also run{" "}
         <code>airr.validate_rearrangement("briney_merged.tsv")</code>.
@@ -95,14 +103,15 @@ const workedExample: DocPage = {
       <p>Real CDR3s come straight out for the productive rearrangements:</p>
       <CodeBlock
         lang="text"
+        title="Recorded with AlignAIR 3"
         code={`IGHVF3-G6*01    IGHD6-13*01  IGHJ5*02  CAKNRVAAAGTMFATW\nIGHVF10-G41*02  IGHD4-11*01  IGHJ5*02  CAKDSTLRLRYNWFDPW`}
       />
       <p>
-        Top V genes in the subset: <code>IGHVF10-G41*03</code> (256), <code>IGHVF3-G5*01</code> (215),{" "}
+        Top V genes in the subset (recorded run): <code>IGHVF10-G41*03</code> (256), <code>IGHVF3-G5*01</code> (215),{" "}
         <code>IGHVF6-G24*04</code> (113).
       </p>
-      <Callout kind="note" title="Why only 687 of 1902 complete records are productive">
-        That fraction is lower than a polished repertoire study reports, and honestly so: these are <strong>raw reads</strong>{" "}
+      <Callout kind="note" title="Why so few complete records are productive">
+        In the recorded run only 687 of 1902 complete records are productive. That fraction is lower than a polished repertoire study reports, and honestly so: these are <strong>raw reads</strong>{" "}
         with no UMI-based error correction, merged with a demo-grade tool, so uncorrected sequencing errors show up as
         frameshifts. AlignAIR reports them as non-productive rather than hiding them - which is the point of the
         productivity flag. For functional analysis, apply UMI consensus and quality control upstream, then filter to{" "}
