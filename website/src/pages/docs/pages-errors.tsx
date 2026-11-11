@@ -18,7 +18,7 @@ const errors: DocPage = {
 from alignair.errors import AlignAIRError, RegistryError, report_error
 
 try:
-    aligner = Aligner.from_pretrained("alignair-igh-human")
+    aligner = Aligner.from_pretrained("hf://org/repo")   # a Hugging Face repo, a catalog id, or a path
 except RegistryError as error:
     report_error(error, json_output=True)
 except AlignAIRError as error:
