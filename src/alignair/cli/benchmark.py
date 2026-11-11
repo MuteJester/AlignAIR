@@ -19,7 +19,7 @@ def register(sub) -> None:
     p.add_argument("--n", type=int, default=200, help="reads per stratum")
     p.add_argument("--strata", default=None, help="comma-list subset (default: all)")
     p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--device", default=None)
+    p.add_argument("--device", default=None, help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--out", default=None)
     p.add_argument("--format", choices=["text", "json"], default="text")
@@ -45,7 +45,8 @@ def run(args) -> int:
     from ..genairr import resolve_dataconfigs
     from ..evaluate import format_text, run_benchmark
     from ..registry import resolve_model, sources as _sources
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    from ..aligner import resolve_device
+    device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     try:
         model_path = str(resolve_model(args.model, sources=_sources.resolve_sources(args.registry),
                                         offline=args.offline))

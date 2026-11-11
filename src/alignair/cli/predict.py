@@ -43,7 +43,7 @@ def register(sub) -> None:
     p.add_argument("--columns", default=None,
                    help="output columns: a preset (full/core/minimal/airr) or a comma-separated "
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
-    p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
+    p.add_argument("--device", default=None, help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
     p.add_argument("--batch-size", type=int, default=None,
                    help="reads per batch (default: 256 on a GPU, 16 per worker with --threads on the CPU, else 64)")
     p.add_argument("--threads", type=int, default=None,
@@ -270,7 +270,8 @@ def run(args) -> int:
     import torch
     from ..model_file import container
     from ..registry import maybe_notify_updates, resolve_model, sources as _sources
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    from ..aligner import resolve_device
+    device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
 
     if args.chunk_size <= 0 or (args.batch_size is not None and args.batch_size <= 0):
         return report_error(ConfigurationError("--chunk-size and --batch-size must be positive"))

@@ -20,7 +20,7 @@ def register(sub) -> None:
     p.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB", help="GenAIRR dataconfig to demo on")
     p.add_argument("--steps", type=int, default=5, help="training steps (tiny; 1 in the smoke test)")
     p.add_argument("--reads", type=int, default=8, help="number of simulated reads to predict")
-    p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
+    p.add_argument("--device", default=None, help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
     p.set_defaults(func=run)
 
 
@@ -38,7 +38,8 @@ def run(args) -> int:
     from ..genairr import resolve_dataconfig
     from ..io.airr import write_airr
 
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    from ..aligner import resolve_device
+    device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     out = args.out or __import__("tempfile").mkdtemp(prefix="alignair_demo_")  # zero-arg `alignair demo`
     os.makedirs(out, exist_ok=True)
     bundle = os.path.join(out, "bundle")
