@@ -48,7 +48,7 @@ from pathlib import Path
 
 import torch
 from alignair import AirrWriter, iter_sequences, predict_sequences, resolve_device
-from alignair.errors import InputError
+from alignair.errors import ConfigurationError, InputError
 from alignair.genotype.bank import genotype_bank
 from alignair.genotype.files import load_genotype
 
@@ -65,7 +65,7 @@ GENOTYPE_NOTE = "genotype API path failed"
 # The errors that are the genotype path's: AlignAIR's refusal of a genotype the model cannot take, and what a
 # genotype of another type than ``predict_sequences`` expects raises where it is applied. Any other error is the
 # tool's, with or without a genotype.
-GENOTYPE_ERRORS = (InputError, AttributeError, TypeError, KeyError)
+GENOTYPE_ERRORS = (InputError, ConfigurationError, AttributeError, TypeError, KeyError)
 API = "alignair.predict_sequences"
 COUNTS = ("input_records", "accepted_records", "rejected_records", "written_records", "complete_assemblies",
           "partial_assemblies", "failed_assemblies")

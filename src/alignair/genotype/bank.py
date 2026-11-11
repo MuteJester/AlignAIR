@@ -10,8 +10,11 @@ from ..reference.reference_set import ReferenceSet
 def genotype_bank(reference: ReferenceSet, genotype: Mapping[str, Iterable[str]]) -> ReferenceSet:
     """``reference``'s subset of the alleles ``genotype`` names (``{gene letter: allele names}``, any case), in the
     reference's order and with its locus schema (every locus stays, its ranges over the kept alleles); a gene it
-    does not name keeps all its alleles. InputError when it names alleles the reference does not hold (give their
-    sequences in the reference) or leaves a gene with no allele."""
+    does not name keeps all its alleles. ConfigurationError for a key that is not a segment (V, D, J), gene names
+    included; InputError when it names alleles the reference does not hold (give their sequences in the reference) or
+    leaves a gene with no allele."""
+    from .files import check_segment_keys
+    check_segment_keys(genotype)
     allowed = {gene.upper(): list(names) for gene, names in genotype.items()}
     missing = sorted(name for gene, names in allowed.items() for name in names
                      if gene not in reference.genes or name not in reference.gene(gene).index)

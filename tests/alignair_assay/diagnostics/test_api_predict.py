@@ -104,6 +104,15 @@ def test_a_failure_on_the_genotype_path_is_told_apart(checkpoint, inputs, refere
     assert list(tmp_path.glob("refused.tsv*")) == []
 
 
+def test_a_genotype_keyed_by_gene_names_is_a_genotype_failure(checkpoint, inputs, tmp_path, capsys):
+    fasta, truth = inputs
+    genotype = tmp_path / "genotype.json"
+    genotype.write_text(json.dumps({"IGHV1-2": ["IGHV1-2*02"]}))
+    assert main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype))) == GENOTYPE_FAILED
+    last = capsys.readouterr().err.strip().splitlines()[-1]
+    assert last.startswith(f"{GENOTYPE_NOTE}: ConfigurationError:") and "gene names (IGHV1-2)" in last
+
+
 @pytest.mark.parametrize("raised", [TypeError("unhashable type: 'set'"),
                                     AttributeError("'tuple' object has no attribute 'items'"), KeyError("v")])
 def test_a_genotype_of_the_wrong_type_is_a_genotype_failure(checkpoint, inputs, reference, tmp_path, capsys,
