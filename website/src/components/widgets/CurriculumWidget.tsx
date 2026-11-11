@@ -1,29 +1,38 @@
 import { useState } from "react";
 
 /**
- * The GenAIRR training curriculum, knob by knob. Values mirror `Curriculum().params(p)` in
- * `alignair/train/gym/curriculum/base.py` (linear ramps over the curriculum position p), plus the
- * per-locus SHM rule from `trainer._cap_for`: a TCR locus is always capped to zero.
+ * The GenAIRR training curriculum, knob by knob. Values mirror `Curriculum(indel_form="weighted").params(p)` in
+ * `alignair/train/gym/curriculum/base.py` (linear ramps over the curriculum position p, with Python's
+ * round-half-to-even for the integer ranges), plus the per-locus SHM rule from
+ * `alignair.train.gym.streams.mutation_cap_for`: a TCR locus is always capped to zero. Orientation is not a
+ * curriculum knob: the batch adapter draws one of 4 orientations per read, uniformly, at every position.
  */
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
+const roundHalfEven = (x: number) => {
+  const r = Math.round(x);
+  return Math.abs(x % 1) === 0.5 && r % 2 !== 0 ? r - 1 : r;
+};
+const SEQUENCING_ERROR_SCALE = 0.757;
 
 export function CurriculumWidget() {
   const [p, setP] = useState(0.3);
   const [tcr, setTcr] = useState(false);
 
   const shm = tcr ? 0 : lerp(0.005, 0.15, p);
+  const indelShare = lerp(0.05, 0.25, p);
+  const seqError = lerp(0, 0.02, p) * SEQUENCING_ERROR_SCALE;
   const knobs = [
     {
       label: "Somatic hypermutation (S5F)",
-      value: tcr ? "0 — T-cells lack AID" : `≤ ${(shm * 100).toFixed(1)}%`,
+      value: tcr ? "0 — T-cells lack AID" : `${(shm * 100).toFixed(1)}% per base`,
       frac: tcr ? 0 : shm / 0.15,
       muted: tcr,
     },
-    { label: "Indels per read", value: `0 – ${Math.round(lerp(0, 5, p))}`, frac: p, muted: false },
-    { label: "Sequencing error", value: `≤ ${(lerp(0, 0.02, p) * 100).toFixed(1)}%`, frac: p, muted: false },
-    { label: "Ambiguous (N) bases", value: `0 – ${Math.round(lerp(0, 5, p))}`, frac: p, muted: false },
-    { label: "End-loss (read shortening)", value: `0 – ${Math.round(lerp(0, 40, p))} nt`, frac: p, muted: false },
-    { label: "Non-forward orientation", value: `≤ ${Math.round(lerp(0, 0.5, p) * 100)}% of reads`, frac: p, muted: false },
+    { label: "Reads with polymerase indels", value: `${Math.round(indelShare * 100)}% of reads, 1–3 each`, frac: indelShare / 0.25, muted: false },
+    { label: "Sequencing error", value: `${(seqError * 100).toFixed(2)}% per base`, frac: p, muted: false },
+    { label: "Ambiguous (N) bases", value: `0 – ${roundHalfEven(lerp(0, 5, p))}`, frac: p, muted: false },
+    { label: "End-loss (read shortening)", value: `0 – ${roundHalfEven(lerp(0, 40, p))} nt per end`, frac: p, muted: false },
+    { label: "Non-forward orientation (fixed)", value: "75% of reads, at every position", frac: 0.75, muted: true },
   ];
 
   const stage = p < 0.25 ? "early — mostly clean" : p < 0.7 ? "mid — realistic noise" : "late — heavily degraded";
@@ -106,8 +115,9 @@ export function CurriculumWidget() {
       </div>
 
       <p id="curriculum-note" style={{ margin: "16px 0 0", paddingTop: "12px", borderTop: "1px dashed #eae9f1", fontFamily: "IBM Plex Mono, monospace", fontSize: "11px", lineHeight: 1.6, color: "#6f6d85" }}>
-        Ramps mirror <code>Curriculum().params(p)</code>. Every batch also mixes amplicon shapes (V-anchored, J-anchored,
-        both-ends fragments) and a heavy-SHM stream — switch to a TCR locus to see SHM drop to zero.
+        Ramps mirror <code>Curriculum(indel_form=&quot;weighted&quot;).params(p)</code>. The training mix also
+        interleaves amplicon shapes (V-anchored, J-anchored, both-ends fragments), a heavy-SHM stream and library
+        flanks — switch to a TCR locus to see SHM drop to zero.
       </p>
     </div>
   );

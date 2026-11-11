@@ -47,20 +47,24 @@ export function RevcompWidget() {
       </div>
       <div aria-live="polite" style={{ marginTop: "18px", display: "grid", gap: "10px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
+          <span style={{ width: "130px", color: "#6f6d85" }}>sequence</span>
+          <span style={{ fontWeight: 600, color: rc ? "#8a5600" : "#0f6b4e" }}>{rc ? "TGAGGAGACGGT…" : "CAGGTGCAGCTG…"}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
           <span style={{ width: "130px", color: "#6f6d85" }}>rev_comp</span>
           <span style={{ fontWeight: 600, color: rc ? "#8a5600" : "#0f6b4e" }}>{rc ? "T" : "F"}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
           <span style={{ width: "130px", color: "#6f6d85" }}>v_sequence_start/end</span>
-          <span style={{ fontWeight: 600, color: "#574fd6", transition: "color 0.15s" }}>{rc ? "235–312" : "1–78"}</span>
+          <span style={{ fontWeight: 600, color: "#574fd6" }}>1–296</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px" }}>
           <span style={{ width: "130px", color: "#6f6d85" }}>j_sequence_start/end</span>
-          <span style={{ fontWeight: 600, color: "#2b62ad", transition: "color 0.15s" }}>{rc ? "1–99" : "214–312"}</span>
+          <span style={{ fontWeight: 600, color: "#2b62ad" }}>313–360</span>
         </div>
       </div>
       <p style={{ margin: "16px 0 0", paddingTop: "14px", borderTop: "1px dashed #eae9f1", fontFamily: "IBM Plex Mono, monospace", fontSize: "12px", lineHeight: 1.6, color: "#6f6d85" }}>
-        {rc ? "sequence = original query · coordinates apply to RC(sequence)" : "sequence = query as aligned · coordinates apply directly"}
+        {rc ? "sequence = original query · coordinates apply to RC(sequence), so they stay the same" : "sequence = query as aligned · coordinates apply directly"}
       </p>
     </div>
   );

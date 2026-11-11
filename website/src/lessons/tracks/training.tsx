@@ -28,9 +28,9 @@ const trainModel: Lesson = {
           </p>
           <Callout kind="note" title="How the model learns: GenAIRR simulation curriculum">
             AlignAIR does not train on a static dataset. Instead, it streams simulated reads on-the-fly from the{" "}
-            <strong>GenAIRR simulator</strong>, which synthesizes realistic V(D)J rearrangements and then corrupts them
-            along a <strong>curriculum</strong> that ramps from clean, full-length reads to heavily degraded ones. The
-            next lesson takes that curriculum apart knob by knob.
+            <strong>GenAIRR simulator</strong>, which synthesizes V(D)J rearrangements and then corrupts them along a{" "}
+            <strong>curriculum</strong> that ramps from clean, full-length reads to heavily degraded ones. The next
+            lesson takes that curriculum apart knob by knob.
           </Callout>
         </>
       ),
@@ -43,19 +43,19 @@ const trainModel: Lesson = {
           <p>A preset picks steps, batch size and validation interval:</p>
           <CodeBlock
             lang="text"
-            code={`quick     300 steps      smoke test / CI only\ndesktop   50,000 steps   a single workstation GPU\nfull      300,000 steps  a production, paper-grade run`}
+            code={`quick     300 steps,     batch 16,  validate every 100     smoke test / CI only\ndesktop   50,000 steps,  batch 64,  validate every 2,000   a single workstation GPU\nfull      300,000 steps, batch 128, validate every 5,000   a production run`}
           />
+          {/* PENDING-V4-NUMBERS: AlignAIR 4 training step times (CPU and CUDA) await a re-timing. */}
           <p>
-            <strong>Estimating wall-clock:</strong> multiply the preset's step count by the measured seconds-per-step for
-            your hardware — see <em>Speed &amp; throughput</em> in the reference for a reproducible measured example. Both
-            GenAIRR generation and neural optimisation contribute to each step; on the measured workstation, CUDA was
-            about 9.6x faster than CPU for the <code>desktop</code> batch. Hardware and reference size still matter, so
-            treat the published figure as a planning baseline rather than a promise. <code>--plan</code> reports the
-            resolved reference, model size and schedule without training — but it does <em>not</em> estimate time or
-            memory.
+            <strong>Estimating wall-clock:</strong> multiply the preset&apos;s step count by the measured seconds-per-step
+            for your hardware. Both GenAIRR generation and neural optimisation contribute to each step, and hardware and
+            reference size matter. AlignAIR 4 step timings are pending a re-timing (results pending, see{" "}
+            <em>Speed &amp; throughput</em> in the reference), so time a short run on your own machine.{" "}
+            <code>--plan</code> reports the resolved reference, model size and schedule without training — but it does{" "}
+            <em>not</em> estimate time or memory.
           </p>
           <Callout kind="warning" title="quick is not a scientific model">
-            The <code>quick</code> preset (and <code>alignair demo</code>) train for a few hundred steps only to prove
+            The <code>quick</code> preset (and <code>alignair demo</code>, which trains 5 steps by default) only proves
             the pipeline runs. Their calls are not accurate. Use <code>desktop</code> or <code>full</code> for a model
             you will make calls with.
           </Callout>
@@ -68,16 +68,23 @@ const trainModel: Lesson = {
       body: () => (
         <>
           <p>
-            You get a self-contained bundle: <code>model.alignair</code> (weights + embedded reference),{" "}
-            <code>model_card.md</code>, <code>reference_manifest.json</code> (allele counts, anchor coverage,
-            fingerprints), and <code>validation_report.json</code> (per-task metrics on a held-out stream).
+            The run directory holds the resumable checkpoints (<code>model.alignair</code>,{" "}
+            <code>model.step&lt;N&gt;.alignair</code> and, when validation ran, <code>model.best.alignair</code>). They
+            carry pickle sections, so they are for resuming, not sharing. <code>alignair train</code> then exports the
+            best (or last) checkpoint into a self-contained, pickle-free <code>bundle/</code>:{" "}
+            <code>model.alignair</code> (weights + embedded reference), <code>model_card.md</code>,{" "}
+            <code>reference_manifest.json</code> (allele counts, anchor coverage, fingerprints), and{" "}
+            <code>validation_report.json</code> (per-task metrics on a fixed held-out stream).
           </p>
           <p>
-            The headline metrics are <code>v/d/j_allele_top1</code> (top call inside the truth set) and{" "}
-            <code>*_seg_mae</code> (coordinate error in nucleotides).
+            The headline metrics are <code>v/d/j_allele_top1</code> (the top call is inside the truth set),{" "}
+            <code>scan_v/d/j_top1</code> (the same for the bank scan&apos;s top allele, the score that picks the best
+            checkpoint) and <code>*_seg_mae</code> (segment start/end error in nucleotides).
           </p>
           <Callout kind="note" title="Why D accuracy is structurally lower">
-            You will notice that <code>d_allele_top1</code> accuracy is always significantly lower than V or J. Biologically, D segments are extremely short (often 10–20 bp) and undergo extensive nucleolytic chewing (terminal deletions) during junction assembly, meaning they carry high inherent ambiguity that even perfect alignment tools cannot fully resolve.
+            Expect <code>d_allele_top1</code> to sit below V and J. D segments are short and lose bases to nucleolytic
+            trimming at both ends during junction assembly, so many reads carry too little D germline to tell its
+            alleles apart — an ambiguity no alignment tool can fully resolve.
           </Callout>
         </>
       ),
@@ -86,22 +93,25 @@ const trainModel: Lesson = {
       kind: "mcq",
       prompt: () => (
         <p>
-          Your custom run finishes with <code>v_allele_top1 = 0.58</code> on the held-out stream. What is the most
-          likely first thing to check?
+          Your custom run finishes with a <code>v_allele_top1</code> far below what a <code>desktop</code> run on a
+          built-in reference of the same locus reaches. What is the most likely first thing to check?
         </p>
       ),
       options: [
-        "Nothing — 0.58 is a great V accuracy",
+        "Nothing — custom references always validate low",
         "Anchor coverage and step count: a low V top-1 points to too few steps or a reference with poor anchor coverage",
         "The output TSV column order",
       ],
       answer: 1,
       explanation: () => (
-        <p>
-          V top-1-in-set should be well above 0.9 for a trained <code>desktop</code>/<code>full</code> model. A value that
-          low usually means undertraining or a reference the builder could not anchor well — check the reference build
-          warnings and consider the <code>full</code> preset.
-        </p>
+        <>
+          {/* PENDING-V4-NUMBERS: AlignAIR 4 reference values for V top-1 after desktop/full training. */}
+          <p>
+            A V top-1 far below a comparable built-in run usually means undertraining or a reference the builder could
+            not anchor well — check the reference build warnings and consider the <code>full</code> preset. (AlignAIR 4
+            reference values for a trained model are pending.)
+          </p>
+        </>
       ),
     },
     {
@@ -146,8 +156,9 @@ const simulation: Lesson = {
             reads, at unlimited volume.
           </p>
           <p>
-            Read length and every corruption come from the simulation itself, not from post-hoc cropping, so a read's
-            coordinates always stay consistent with the sequence you actually see.
+            Read length and every corruption come from the simulation itself, and the library flanks added around a
+            read move its coordinates with it, so a read&apos;s coordinates always stay consistent with the sequence
+            you actually see.
           </p>
         </>
       ),
@@ -165,31 +176,34 @@ const simulation: Lesson = {
           <p>
             The locus toggle is the part people miss. <strong>T-cells lack AID</strong>, the enzyme behind somatic
             hypermutation, so TCR receptors do not hypermutate. AlignAIR sets the SHM rate to <strong>zero</strong> for a
-            TCR locus — not "low", zero — and GenAIRR will in fact refuse a mutation request on TCR reference data.
+            TCR locus — not &ldquo;low&rdquo;, zero — and GenAIRR will in fact refuse a mutation request on TCR
+            reference data.
           </p>
         </>
       ),
     },
     {
       kind: "explain",
-      title: "Every batch spans read shapes",
+      title: "The mix spans read shapes",
       body: () => (
         <>
           <p>
-            A second axis runs alongside the corruption ramp: each batch mixes <strong>amplicon shapes</strong>, so the
-            model never sees only one kind of read.
+            A second axis runs alongside the corruption ramp: the training mix interleaves several{" "}
+            <strong>read shapes</strong>, so the model never sees only one kind of read.
           </p>
           <ul className="list-disc pl-6 space-y-1.5 my-4">
-            <li><strong>Full-length</strong> reads across the corruption ramp (rehearsal + noise).</li>
-            <li><strong>V / framework-anchored</strong> amplicons — keep the 5' end, trim the 3'.</li>
-            <li><strong>J-anchored</strong> amplicons — keep the 3'/J end, trim the 5'.</li>
-            <li><strong>Both-ends fragments</strong>, bounded so a read is never trimmed to nothing.</li>
-            <li>A <strong>heavily-mutated full-length</strong> stream — the hardest V regime (IG only).</li>
+            <li><strong>Full-length</strong> reads at three curriculum positions (0.3, 0.6 and 0.9), three quarters of them drawn under GenAIRR&apos;s productive-only selection.</li>
+            <li><strong>V-anchored</strong> amplicons — keep the 5' end, lose 150–350 nt of the 3'.</li>
+            <li><strong>J-anchored</strong> amplicons — keep the 3'/J end, lose 150–350 nt of the 5'.</li>
+            <li><strong>Both-ends fragments</strong>, losing 70–175 nt at each end.</li>
+            <li>A <strong>heavily-mutated full-length</strong> stream (SHM rate 0.25) — the hardest V regime (IG only).</li>
           </ul>
           <p>
-            This is why the pretrained models handle fragments and arbitrary orientation rather than treating them as
-            out-of-distribution: those reads were in <em>every</em> batch. V calling still weakens on the shortest
-            fragments - there is only so much V gene in a 3'-anchored read - but D, J, and orientation hold up.
+            On top of every shape, <strong>library flanks</strong> (a leader or a masked primer before V, constant
+            region after J) are added to part of the reads, and each read is put in one of four orientations (forward,
+            reverse complement, complement, reverse) at random. Fragments, flanked reads and every orientation are part
+            of training rather than out-of-distribution surprises — though a short 3'-anchored fragment still holds
+            little V sequence, so its V call has less to go on.
           </p>
         </>
       ),
@@ -232,20 +246,23 @@ const trustModel: Lesson = {
       body: () => (
         <>
           <p>
-            Every bundle ships a report scored on a fixed held-out stream. It is per-task, not one number:
+            Every bundle ships a report scored on a fixed held-out stream. It is per-task, not one number (values
+            omitted here):
           </p>
           <CodeBlock
-            lang="json"
-            code={`{\n  "v_allele_top1": 0.96,   "d_allele_top1": 0.71,   "j_allele_top1": 0.98,\n  "v_seg_mae": 1.4,        "d_seg_mae": 3.2,        "j_seg_mae": 1.1,\n  "orientation_acc": 1.0,  "productive_acc": 0.97,\n  "mutation_mae": 0.004,   "indel_mae": 0.12\n}`}
+            lang="text"
+            code={`v_allele_top1   d_allele_top1   j_allele_top1\nscan_v_top1     scan_d_top1     scan_j_top1\nv_seg_mae       d_seg_mae       j_seg_mae\nparse_v_start_exact ... parse_j_end_exact\nanchor_v_exact  anchor_j_exact  d_presence_acc  orientation_acc\nmutation_mae    indel_mae       shm_brier\ncoord_v_top1 ...                bank_v_size ...`}
           />
           <ul className="list-disc pl-6 space-y-1.5 my-4">
-            <li><code>*_allele_top1</code> — the top call is inside the truth equivalence set. The headline accuracy. Higher is better.</li>
-            <li><code>*_seg_mae</code> — segment start/end error in nucleotides. Lower is better.</li>
-            <li><code>orientation_acc</code>, <code>productive_acc</code> — head accuracy; <code>chain_type_acc</code> appears for multi-locus models.</li>
+            <li><code>*_allele_top1</code> — the top call is inside the truth set. The headline accuracy. Higher is better.</li>
+            <li><code>scan_*_top1</code> — the same for the bank scan&apos;s top allele. Their mean picks the best checkpoint.</li>
+            <li><code>*_seg_mae</code> and <code>parse_*_exact</code> — segment boundary error in nucleotides (lower is better) and the share of boundaries placed exactly.</li>
+            <li><code>anchor_v_exact</code>, <code>anchor_j_exact</code> — the V Cys and J Trp/Phe codons found exactly; the junction and productivity are derived from them.</li>
+            <li><code>d_presence_acc</code>, <code>orientation_acc</code> — accuracy of the D presence and orientation heads.</li>
             <li><code>mutation_mae</code>, <code>indel_mae</code> — error of the SHM-rate and indel-count estimates.</li>
           </ul>
           <p>
-            Best-checkpoint selection uses the mean of <code>v/d/j_allele_top1</code>, so that trio is what training
+            Best-checkpoint selection uses the mean of <code>scan_v/d/j_top1</code>, so that trio is what training
             optimises toward.
           </p>
         </>
@@ -256,12 +273,17 @@ const trustModel: Lesson = {
       title: "Rough acceptance criteria",
       body: () => (
         <>
+          {/* PENDING-V4-NUMBERS: AlignAIR 4 acceptance values (V/J/D top-1, segmentation MAE, orientation accuracy). */}
+          <Callout kind="note" title="Results pending for AlignAIR 4">
+            Reference values for a trained AlignAIR 4 model are pending a fresh evaluation. Until they are published,
+            judge a custom run against a run on a built-in reference of the same locus with the same preset.
+          </Callout>
           <p>Guidelines, not guarantees — the right bar depends on your locus and reference:</p>
           <ul className="list-disc pl-6 space-y-1.5 my-4">
-            <li><strong>V and J top-1</strong>: well above 0.9 for a <code>desktop</code>/<code>full</code> run. Much lower means undertraining or a reference with poor anchor coverage.</li>
-            <li><strong>D top-1</strong>: expected lower — judge it against the pretrained model for the same locus, not an absolute bar.</li>
-            <li><strong>Segmentation MAE</strong>: single-digit nucleotides.</li>
-            <li><strong>Orientation accuracy</strong>: near 1.0.</li>
+            <li><strong>V and J top-1</strong>: much lower than the comparison run means undertraining or a reference with poor anchor coverage.</li>
+            <li><strong>D top-1</strong>: expected lower than V and J — judge it against the comparison run, not an absolute bar.</li>
+            <li><strong>Anchors</strong>: low <code>anchor_*_exact</code> means junctions will be missing or misplaced.</li>
+            <li><strong>Orientation accuracy</strong>: a read put in the wrong orientation is wrong everywhere downstream, so look at it before the others.</li>
           </ul>
           <Callout kind="note" title="Check anchor coverage before blaming the model">
             <code>reference_manifest.json</code> reports, per gene, how many alleles the builder could anchor. A low
@@ -297,19 +319,19 @@ const trustModel: Lesson = {
       kind: "mcq",
       prompt: () => (
         <p>
-          Your custom reference trains to <code>v_allele_top1 = 0.94</code>, but most reads come back with an empty{" "}
+          Your custom reference trains to a high <code>v_allele_top1</code>, but most reads come back with an empty{" "}
           <code>junction</code>. Where do you look first?
         </p>
       ),
       options: [
-        "Train longer — 0.94 means the model is still underfit",
+        "Train longer — the model must still be underfit",
         "Anchor coverage in reference_manifest.json: without the conserved V/J anchors the junction cannot be placed, however well the model calls alleles",
         "The --columns preset — it is dropping the junction column",
       ],
       answer: 1,
       explanation: () => (
         <p>
-          Allele calling and junction extraction are different jobs. A 0.94 V top-1 says the model learned the catalog
+          Allele calling and junction extraction are different jobs. A high V top-1 says the model learned the catalog
           fine; an empty junction means the reference could not be anchored, so there is no Cys/Trp-Phe to measure the
           CDR3 between. That is honest absence, and the fix is the reference, not more steps.
         </p>
