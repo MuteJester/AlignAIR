@@ -218,21 +218,36 @@ def _sha256_file(path: str) -> str:
 
 def _write_run_metadata(out: str, model_path: str, args, device: str, counts: dict, *,
                         loci=None, fail_reasons: dict | None = None, partial_reasons: dict | None = None,
-                        genotype_pass: dict | None = None) -> None:
-    from ..model_file import container, read_metadata
+                        genotype_pass: dict | None = None, bound_reference=None, genotype_bank=None) -> None:
+    """The run's provenance sidecar. ``reference_fasta_sha256`` / ``allele_order_sha256`` fingerprint the reference
+    the calls were made from: ``bound_reference`` (the ``--reference`` FASTA as annotated and bound) when one was
+    given, else the model's embedded one; ``reference`` names the source and keeps the embedded fingerprints, and
+    ``genotype`` the ``--genotype`` file and its bank's allele order."""
+    from ..model_file import container, read_metadata, serialize
     md = read_metadata(model_path) if container.is_alignair_file(model_path) else {}
     ref = md.get("reference", {})
+    given = args.reference is not None and bound_reference is not None
     prov = {
         "model_spec": args.model, "model_path": os.path.abspath(model_path),
         "model_id": md.get("model_id"), "model_version": md.get("model_version"),
         "artifact_sha256": _sha256_file(model_path),
-        "reference_fasta_sha256": ref.get("reference_fasta_sha256"),
-        "allele_order_sha256": ref.get("allele_order_sha256"),
+        "reference_fasta_sha256": (serialize.reference_fasta_sha256(bound_reference) if given
+                                   else ref.get("reference_fasta_sha256")),
+        "allele_order_sha256": (serialize.allele_order_sha256(bound_reference) if given
+                                else ref.get("allele_order_sha256")),
+        "reference": {"source": "--reference" if given else "embedded",
+                      "path": args.reference if given else None,
+                      "file_sha256": _sha256_file(args.reference) if given else None,
+                      "embedded_reference_fasta_sha256": ref.get("reference_fasta_sha256"),
+                      "embedded_allele_order_sha256": ref.get("allele_order_sha256")},
+        "genotype": ({"path": args.genotype, "file_sha256": _sha256_file(args.genotype),
+                      "allele_order_sha256": serialize.allele_order_sha256(genotype_bank)}
+                     if args.genotype and genotype_bank is not None else None),
         "alignair_version": md.get("created_by_alignair"),
-        "loci": list(loci) if loci else [],  # the model's exact locus mapping
+        "loci": list(loci) if loci else [],  # the bound reference's locus mapping
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
                     "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size, "threads": args.threads,
-                    "device": device},
+                    "device": device, "reference": args.reference, "genotype": args.genotype},
         "counts": {  # full record accounting
             "input_records": counts["input"], "accepted_records": counts["accepted"],
             "rejected_records": counts["rejected"], "cropped_records": counts["cropped"],
@@ -312,6 +327,7 @@ def run(args) -> int:
         if not report.complete() or report.noncanonical:
             print(f"warning: --reference {args.reference}: {report.summary()}", file=sys.stderr)
     reference = aligner.reference
+    bank = None
 
     # locus: don't silently default to IGH when the model declares its locus
     loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
@@ -324,7 +340,8 @@ def run(args) -> int:
         from ..genotype.files import load_genotype
         try:                    # an allele the bound reference lacks is refused, not dropped
             genotype, _unknown = load_genotype(args.genotype, reference=reference, drop_unknown=False)
-            aligner = aligner.bound_to(genotype_bank(reference, genotype))      # the genotype is the bank: bound once
+            bank = genotype_bank(reference, genotype)
+            aligner = aligner.bound_to(bank)                                    # the genotype is the bank: bound once
         except ValueError as e:
             return fail(e, context={"stage": "genotype_validation"})
 
@@ -390,7 +407,7 @@ def run(args) -> int:
     if not args.no_run_metadata:
         _write_run_metadata(args.out, model_path, args, device, counts, loci=loci,
                             fail_reasons=fail_reasons, partial_reasons=partial_reasons,
-                            genotype_pass=genotype_record)
+                            genotype_pass=genotype_record, bound_reference=reference, genotype_bank=bank)
     if counts["accepted"] == 0:
         return report_error(InputError(f"no valid reads in {args.input} (wrote {counts['rejected']} to rejects)",
                                        context={"path": args.input, "rejected_count": counts["rejected"]}))
