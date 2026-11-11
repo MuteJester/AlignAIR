@@ -165,9 +165,11 @@ model_path = export_bundle(
         <code> alignair train</code> calls it on the best (or last) checkpoint, into <code>&lt;out&gt;/bundle/</code>.
       </p>
       <p>
-        <code>Aligner.save_pretrained</code> and <code>push_to_hub</code> refuse a file with pickle sections, so publish
-        the exported <code>model.alignair</code>. <code>alignair convert</code> converts lab chip model files only
-        (<code>lab-chip-v1</code>, <code>lab-chipw64-v1</code>), not a training checkpoint. The
+        The command line does the same: <code>alignair export CHECKPOINT OUT_DIR [--model-id ID --model-version VER]
+        [--no-validate]</code>; <code>export_bundle</code> takes <code>model_id</code> and <code>model_version</code>{" "}
+        too, recorded in the card. <code>Aligner.save_pretrained</code> and <code>push_to_hub</code> refuse a file with
+        pickle sections, so publish the exported <code>model.alignair</code>. <code>alignair convert</code> converts lab
+        chip model files only (<code>lab-chip-v1</code>, <code>lab-chipw64-v1</code>), not a training checkpoint. The
         <DocLink to="publishing"> publishing runbook</DocLink> continues from the bundle.
       </p>
       <H2 id="predictions">Predict from a trained model</H2>

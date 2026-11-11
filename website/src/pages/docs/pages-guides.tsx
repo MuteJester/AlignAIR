@@ -209,23 +209,28 @@ const training: DocPage = {
 
       <h2>Sharing a trained model</h2>
       <p>
-        Share the bundle, never a checkpoint. <code>Aligner.save_pretrained(directory)</code> copies a pickle-free model
-        file, and <code>Aligner.push_to_hub(repo_id)</code> uploads it (<code>model.alignair</code> only; needs{" "}
-        <code>huggingface_hub</code> and a write token); both refuse a checkpoint, an aligner made by{" "}
-        <code>bound_to</code> (it is not a file), and anything else with pickle sections. Training from Python with{" "}
-        <code>run_training</code> writes the checkpoints but no bundle; export one with{" "}
-        <code>alignair.train.build.export_bundle</code>, which <code>alignair train</code> calls at the end:
+        Share the bundle, never a checkpoint. Training from Python with <code>run_training</code> writes the
+        checkpoints but no bundle; <code>alignair export</code> writes one from any checkpoint, with the model id and
+        version in its card:
       </p>
-      <CodeBlock lang="python" code={`from alignair.genairr import resolve_dataconfigs
-from alignair.train.build import export_bundle
-
-export_bundle("runs/igh/model.alignair", resolve_dataconfigs(["HUMAN_IGH_OGRDB"]), "runs/igh/bundle")
-# -> runs/igh/bundle/{model.alignair, model_card.md, reference_manifest.json, validation_report.json}`} />
+      <CodeBlock code={`alignair export runs/igh/model.alignair runs/igh/release \\\n  --model-id alignair4-igh-human --model-version 1.0.0 --description "Human IGH"\n# -> runs/igh/release/{model.alignair, model_card.md, reference_manifest.json, validation_report.json}`} />
       <p>
-        <code>export_bundle</code> refuses an existing directory (<code>FileExistsError</code>) unless{" "}
-        <code>overwrite=True</code>; <code>validate=False</code> skips the validation report. There is no{" "}
-        <code>alignair export</code> command, and <code>alignair convert</code> converts only lab chip model files (
-        <code>lab-chip-v1</code>, <code>lab-chipw64-v1</code>), not training checkpoints.
+        It refuses an existing directory unless <code>--overwrite</code>; <code>--no-validate</code> skips the
+        validation report (the card then marks its metrics as pending). A built-in dataconfig is recovered by its name;
+        a custom one is read from the checkpoint's own pickled section, so export only checkpoints you trust. In Python
+        it is <code>alignair.train.build.export_bundle(checkpoint, dataconfigs, out_dir, model_id=..., model_version=...)</code>,
+        which <code>alignair train</code> calls at the end. The card names the model, its reference and version, allele
+        counts, training steps, intended use, and the genotype and reference-swap usage.
+      </p>
+      <p>
+        <code>Aligner.save_pretrained(directory)</code> copies a pickle-free model file, and{" "}
+        <code>Aligner.push_to_hub(repo_id)</code> uploads it, with the <code>model_card.md</code> and{" "}
+        <code>reference_manifest.json</code> beside it, to a Hugging Face repo of its own (needs{" "}
+        <code>huggingface_hub</code> and a write token). Both refuse a checkpoint, with a hint naming{" "}
+        <code>alignair export</code>, and an aligner made by <code>bound_to</code> (it is not a file). Models published
+        for everyone go into the shared catalog instead: see <DocLink to="publishing">Publishing models</DocLink>.{" "}
+        <code>alignair convert</code> converts only lab chip model files (<code>lab-chip-v1</code>,{" "}
+        <code>lab-chipw64-v1</code>), not training checkpoints.
       </p>
 
       <h2>Interpreting validation_report.json</h2>

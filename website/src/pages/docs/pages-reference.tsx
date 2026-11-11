@@ -70,7 +70,7 @@ const modelContract: DocPage = {
         head={["Case", "Error"]}
         rows={[
           [<>A reference without one of the model's segments, e.g. an IGK, IGL, TRA or TRG reference (no D) on an IGH model</>,
-           <><code>ALIGNAIR_CONFIG_INVALID</code>: the bound reference has no D alleles for the chip's genes</>],
+           <><code>ALIGNAIR_CONFIG_INVALID</code>: the bound reference has no D alleles for the chip's genes. Hint: this model calls V, D and J: give the reference all of them (alignair reference export writes the model's own), or use a model of the reference's locus.</>],
           [<>On a model of several loci, an allele that belongs to none of them (by its sequence, else its name)</>,
            <><code>ALIGNAIR_INPUT_INVALID</code>: the reference's allele IGHV1-2*02 belongs to none of the model's loci (IGK, IGL). Hint: name it after its locus, or bind it to a model of that locus.</>],
           [<>A genotype naming an allele the bound reference lacks (CLI)</>,
@@ -79,25 +79,32 @@ const modelContract: DocPage = {
            <><code>ALIGNAIR_INPUT_INVALID</code>: the genotype names alleles the reference does not hold: IGHV1-2*99</>],
           [<>A genotype that leaves a segment with no allele</>,
            <><code>ALIGNAIR_INPUT_INVALID</code>: the genotype leaves gene V with no allele</>],
-          [<>An AlignAIR 3 model (a <code>.pt</code>, or a <code>conv-v1</code> <code>.alignair</code>)</>,
+          [<>A genotype file that is not YAML or JSON keyed by <code>V</code>, <code>D</code>, <code>J</code> (a FASTA, a broken file, a list, a segment given one string)</>,
+           <><code>ALIGNAIR_CONFIG_INVALID</code>: donor.fasta is not a YAML or JSON genotype: it does not parse (line 1): ... Hint: the format, and that a FASTA goes to --reference.</>],
+          [<>A genotype keyed by gene names</>,
+           <><code>ALIGNAIR_CONFIG_INVALID</code>: donor.yaml is keyed by gene names (IGHV3-23); its keys are segments (V, D, J), each listing allele names</>],
+          [<>An AlignAIR 3 model (a <code>.pt</code>, or a <code>conv-v1</code> <code>.alignair</code>, also through <code>alignair convert</code>)</>,
            <><code>ALIGNAIR_MODEL_INVALID</code>: this is an AlignAIR 3 model (architecture 'conv-v1'); AlignAIR 4 reads chip models only - use alignair&lt;4 to run it</>],
         ]}
       />
       <Callout kind="warning" title="Genotype keys are segments, not genes">
-        A genotype keyed by gene names (<code>IGHV3-23: [...]</code>) is refused as naming alleles the reference does not
-        hold, although it does hold them. Key it by <code>V</code>, <code>D</code> and <code>J</code>.
+        A genotype keyed by gene names (<code>IGHV3-23: [...]</code>) is refused: key it by <code>V</code>, <code>D</code>{" "}
+        and <code>J</code>, each listing allele names.
       </Callout>
 
-      <h2>Not checked</h2>
+      <h2>Allowed, with a warning or unchecked</h2>
       <ul>
         <li>
-          <strong>Species.</strong> A reference of another species with the model's segments binds. How well a model
-          calls another species' alleles has not been measured; train a model for that species.
+          <strong>Species.</strong> Not checked: a reference of another species with the model's segments binds. How
+          well a model calls another species' alleles has not been measured; train a model for that species.
         </li>
         <li>
-          <strong>Locus, on a single-locus model.</strong> Every bound allele is placed in the model's one locus. A TRB
-          reference (it has D) binds to an IGH model, and its records still say <code>locus</code> IGH. Bind only
-          references of the model's locus; for a new locus, train a model.
+          <strong>Locus, on a single-locus model.</strong> A reference wholly of another locus that has the model's
+          segments (a TRB reference on an IGH model) binds and keeps its own locus, so its records say{" "}
+          <code>locus</code> TRB, and binding warns once (<code>LocusMismatchWarning</code>; on the command line{" "}
+          <code>warning: the bound reference is TRB, but the model was trained on IGH: ...</code>). How well the model
+          calls another locus has not been measured; for a new locus, train a model. A reference that mixes the model's
+          locus with others keeps the model's locus, without a warning.
         </li>
       </ul>
 
@@ -189,7 +196,7 @@ const troubleshooting: DocPage = {
       <ul>
         <li><strong>No module named GenAIRR.</strong> Install the CLI extra; GenAIRR is a core dependency on PyPI.</li>
         <li><strong>CUDA not used.</strong> <code>alignair doctor</code> showing <code>cuda_available False</code> means a CPU torch build; reinstall a CUDA wheel matching your driver.</li>
-        <li><strong>Apple Silicon (MPS) acceleration on macOS:</strong> the Python API's default <code>device="auto"</code> selects MPS when available; on the command line pass <code>--device auto</code> (or <code>mps</code>), since <code>alignair predict</code> without <code>--device</code> picks CUDA or the CPU. Run <code>alignair doctor</code> and verify <code>mps_available True</code>. If it is false, verify your PyTorch installation.</li>
+        <li><strong>Apple Silicon (MPS) acceleration on macOS:</strong> AlignAIR selects MPS automatically when it is available (and CUDA is not), on the command line and in Python. Run <code>alignair doctor</code> and verify <code>mps_available True</code>. If it is false, verify your PyTorch installation; <code>--device cpu</code> forces the CPU.</li>
       </ul>
 
       <h2>Prediction</h2>
@@ -198,8 +205,9 @@ const troubleshooting: DocPage = {
         <li><strong>"this is an AlignAIR 3 model".</strong> AlignAIR 4 runs chip models only; a <code>.pt</code> or a <code>conv-v1</code> <code>.alignair</code> (including the hub catalog's current <code>alignair-igh-human@1.0.0</code>) runs with <code>pip install 'alignair&lt;4'</code>.</li>
         <li><strong>no sequence column.</strong> For CSV/TSV whose sequence column is not named <code>sequence</code>, <code>seq</code>, <code>nucleotide</code> or <code>read</code>, pass <code>--sequence-column</code> (and <code>--id-column</code>).</li>
         <li><strong>"the bound reference has no D alleles for the chip's genes".</strong> The <code>--reference</code> FASTA lacks a segment the model calls (a light-chain or TRA/TRG reference on an IGH model, or D omitted). Give V, D and J, or use a model of that locus.</li>
-        <li><strong>"the genotype names alleles the reference does not hold".</strong> Check the genotype's keys are <code>V</code>, <code>D</code>, <code>J</code> (not gene names) and its names are the bound reference's (<code>alignair reference export model.alignair --fasta ref.fasta</code> lists them).</li>
-        <li><strong><code>--genotype</code> with a FASTA fails with an internal error.</strong> <code>--genotype</code> reads YAML or JSON only; pass a FASTA of alleles with <code>--reference</code>.</li>
+        <li><strong>"the genotype names alleles the reference does not hold".</strong> Its names must be the bound reference's (<code>alignair reference export model.alignair --fasta ref.fasta</code> lists them).</li>
+        <li><strong>"is not a YAML or JSON genotype" / "is keyed by gene names".</strong> <code>--genotype</code> reads YAML or JSON keyed by <code>V</code>, <code>D</code>, <code>J</code>; pass a FASTA of alleles with <code>--reference</code>.</li>
+        <li><strong>"warning: the bound reference is TRB, but the model was trained on IGH".</strong> The <code>--reference</code> is of another locus than the model's; its records say its own locus, but use a model of that locus for results you rely on.</li>
         <li><strong>Job fails on assembly failure or partial rate gates:</strong> For sequencing runs with high rates of non-target/contaminant sequences, prediction may abort because failures exceed the threshold. Run with <code>--permissive</code> to bypass, or adjust limits with <code>--max-assembly-failures &lt;fraction&gt;</code> and <code>--max-partial-assemblies &lt;fraction&gt;</code>.</li>
       </ul>
       <Callout kind="note" title="Reverse-complement reads">

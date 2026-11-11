@@ -19,7 +19,7 @@ const airrFields: DocPage = {
         head={["Field(s)", "How it is derived"]}
         rows={[
           [<><code>sequence_id</code>, <code>sequence</code>, <code>rev_comp</code></>, "See orientation, below."],
-          [<code>locus</code>, <>The model's locus; a multi-locus model keeps each read to one locus and the record carries its V call's locus. <code>--locus</code> labels records the model cannot attribute.</>],
+          [<code>locus</code>, <>The bound reference's locus: the model's, or that of a reference wholly of another locus bound to a one-locus model (which warns). A multi-locus model keeps each read to one locus and the record carries its V call's locus. <code>--locus</code> labels records the model cannot attribute.</>],
           [<>V/D/J <code>_call</code></>, <>The top allele per gene from the scan of the bound reference's alleles, refined against the germline. <code>v_call</code> then lists the V alleles that match the read's V bases as well as the call (IgBLAST's convention for equally scoring alleles), comma-separated.</>],
           [<>V/D/J <code>_call_set</code></>, "Candidate set: the alleles whose likelihood is at least half the best allele's, ordered by score and capped at 3. Never empty when there is a call - the best allele always qualifies. AlignAIR extension."],
           [<><code>*_sequence_start/end</code>, <code>*_germline_start/end</code></>, "1-based AIRR coordinates in the coordinate frame described under orientation."],

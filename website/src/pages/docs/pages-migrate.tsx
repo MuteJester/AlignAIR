@@ -52,9 +52,9 @@ const migrating: DocPage = {
       />
       <Callout kind="warning" title="What a reference swap cannot do">
         A bound reference must hold the model's segments (a D-less reference is refused by an IGH model), and it should
-        be of the model's locus and species: a single-locus model does not refuse another locus's reference that has
-        its segments, but its records keep the model's locus, and how well it calls another locus or species has not
-        been measured. A new locus or species is the one case that differs in kind from editing a BLAST database - plan
+        be of the model's locus and species: a single-locus model binds another locus's reference that has its segments,
+        labels its records with that locus and warns that it was trained on another, but how well it calls another
+        locus or species has not been measured. A new locus or species is the one case that differs in kind from editing a BLAST database - plan
         an <DocLink to="training">alignair train</DocLink> run. The{" "}
         <DocLink to="model-contract">model contract</DocLink> lists what a swap accepts and refuses.
       </Callout>
@@ -116,7 +116,7 @@ const migrating: DocPage = {
         IgBLAST is CPU-only and multithreaded. AlignAIR runs on either:
       </p>
       <ul>
-        <li><strong>GPU</strong> is the fast path: <code>alignair predict</code> uses CUDA when it is available; Apple Silicon MPS takes <code>--device auto</code> or <code>mps</code>.</li>
+        <li><strong>GPU</strong> (CUDA, or Apple Silicon MPS) is selected automatically when available and is the fast path.</li>
         <li><strong>CPU</strong> runs scale with <code>--threads N</code> (N single-threaded worker processes).</li>
         <li><strong>CPU-only</strong> works with no change; install the CPU build of PyTorch first to avoid pulling CUDA (see <DocLink to="troubleshooting">Troubleshooting</DocLink>).</li>
       </ul>

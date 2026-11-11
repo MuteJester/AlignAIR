@@ -26,8 +26,7 @@ const firstPrediction: Lesson = {
           <CodeBlock code={`pip install "AlignAIR[cli]"\nalignair doctor`} />
           <p>
             <code>alignair doctor</code> reports the resolved device (<code>device_auto</code>) — <code>auto</code> picks
-            CUDA, then Apple MPS, then CPU. <code>alignair predict</code> without <code>--device</code> uses CUDA when it
-            is available, else the CPU.
+            CUDA, then Apple MPS, then CPU, as <code>alignair predict</code> does without <code>--device</code>.
           </p>
         </>
       ),

@@ -21,16 +21,16 @@ const gettingStarted: DocPage = {
       <h2>1. Install</h2>
       <CodeBlock code={`pip install "AlignAIR[cli]"            # core + CLI (+ huggingface_hub, to load models from Hugging Face)`} />
       <p>
-        PyTorch is a dependency; the device backend depends on how torch is installed. Without <code>--device</code>,{" "}
-        <code>alignair predict</code> uses CUDA when it is available, else the CPU; <code>--device auto</code> (the
-        Python API's default) picks CUDA, then Apple MPS, then CPU.
+        PyTorch is a dependency; the device backend depends on how torch is installed. AlignAIR auto-detects it: without{" "}
+        <code>--device</code> (or with <code>--device auto</code>, the Python API's default), it picks CUDA, then Apple
+        MPS, then CPU.
       </p>
       <DocTable
         head={["Platform", "torch install", "AlignAIR", "Backend"]}
         rows={[
           ["Linux / Windows, NVIDIA GPU", <>default <code>pip</code> wheel (CUDA)</>, <code>pip install "AlignAIR[cli]"</code>, "CUDA"],
           ["Linux / Windows, CPU only", <>install CPU torch first (see below)</>, <code>pip install "AlignAIR[cli]"</code>, "CPU"],
-          ["macOS, Apple Silicon", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, <>MPS (<code>--device auto</code> or <code>mps</code>)</>],
+          ["macOS, Apple Silicon", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, "MPS (auto)"],
           ["macOS, Intel", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, "CPU"],
           ["Docker (CPU)", "included in the image", <code>docker pull alignair/alignair:latest</code>, "CPU"],
         ]}

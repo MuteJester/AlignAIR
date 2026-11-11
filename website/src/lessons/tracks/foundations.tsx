@@ -182,8 +182,8 @@ const fixedReference: Lesson = {
         <p>
           The reference travels inside the file and is fingerprinted (allele order and FASTA SHA-256); loading
           verifies it, so the weights and the default allele order cannot drift apart. A reference you bind yourself
-          with <code>--reference</code> is your choice, and the run's <code>.run.json</code> records only the model's
-          embedded reference - keep the FASTA you bound with your results.
+          with <code>--reference</code> is recorded too: the run's <code>.run.json</code> fingerprints the reference the calls
+          came from, beside the embedded one.
         </p>
       ),
     },

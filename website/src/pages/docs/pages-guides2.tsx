@@ -19,6 +19,7 @@ const cli: DocPage = {
           [<code>models</code>, "list / download / verify / manage catalog models in the cache (alias model)"],
           [<code>reference</code>, "list built-in GenAIRR references, or export a model's reference"],
           [<code>export-reference</code>, "export the germline FASTA (or, from a training checkpoint, the dataconfig) from a model file"],
+          [<code>export</code>, "export a training checkpoint as a pickle-free bundle: model, card, reference manifest, validation report"],
           [<code>convert</code>, "convert a lab chip model file (lab-chip-v1, lab-chipw64-v1) into a safe, pickle-free chip-v1 .alignair"],
           [<code>validate-airr</code>, "structural check of a rearrangement TSV (columns, coordinate/CIGAR bounds, productivity invariants)"],
           [<code>compare</code>, "agreement (concordance) report between two AIRR TSVs"],
@@ -41,7 +42,7 @@ const cli: DocPage = {
         <li><code>--metadata FILE</code> join a per-read side table by id; <code>--keep-columns a,b,c</code> selects columns.</li>
         <li><code>--columns full|core|minimal|airr</code> output field set, or a comma-separated field list. <code>core</code> is a compact 27-field row (still assembled); <code>minimal</code> is calls + <code>productive</code> only and is the one preset that skips the AIRR assembly.</li>
         <li><code>--chunk-size N</code> stream in chunks (bounded memory; default 20000). <code>--batch-size N</code> reads per batch (default 256 on a GPU, 64 on the CPU, 16 per worker with <code>--threads</code>). <code>--threads N</code> on the CPU runs N single-threaded worker processes.</li>
-        <li><code>--device cpu|cuda|mps|auto</code>. Without it, CUDA when available, else the CPU; <code>auto</code> picks CUDA, then MPS, then CPU.</li>
+        <li><code>--device cpu|cuda|mps|auto</code> (default <code>auto</code>: CUDA, then MPS, then CPU; an unavailable device falls back to the CPU).</li>
         <li><code>--rejects-out FILE</code> write dropped/invalid input records. <code>--no-run-metadata</code> skips the <code>&lt;out&gt;.run.json</code> sidecar; <code>--quiet</code> the update notice.</li>
       </ul>
 
@@ -67,6 +68,14 @@ const cli: DocPage = {
       <h2>alignair train</h2>
       <CodeBlock code={`alignair train --dataconfig HUMAN_IGH_OGRDB --out runs/my_igh --preset desktop`} />
       <p>See <DocLink to="training">Training a custom model</DocLink> for the full guide.</p>
+
+      <h2>alignair export</h2>
+      <CodeBlock code={`alignair export runs/my_igh/model.alignair runs/my_igh/release \\\n  --model-id alignair4-igh-human --model-version 1.0.0`} />
+      <ul className="list-disc pl-6 space-y-1.5 my-4">
+        <li><code>CHECKPOINT</code> a resumable training checkpoint; <code>OUT_DIR</code> the bundle directory (refused if it exists, unless <code>--overwrite</code>).</li>
+        <li><code>--model-id</code>, <code>--model-version</code>, <code>--description</code> recorded in the model file's card, so the catalog's <code>publish_local</code> accepts the file as it is.</li>
+        <li><code>--validate</code> / <code>--no-validate</code> (default on): score the model on a fixed held-out stream and write <code>validation_report.json</code>.</li>
+      </ul>
 
       <h2>Donor genotype: predict --infer-genotype</h2>
       <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model alignair4-igh-human --infer-genotype\n# -> out.tsv, out.tsv.genotype.json (AIRR GenotypeSet), out.tsv.run.json (with a genotype_pass record)`} />
@@ -120,7 +129,7 @@ const cli: DocPage = {
 
       <h2>alignair reference &amp; export-reference</h2>
       <p>List built-in dataconfigs or dump reference sequences from a model:</p>
-      <CodeBlock code={`alignair reference list --species Human\n\n# 'reference export' takes a model FILE, not a catalog id - resolve the id to a path first:\nalignair models get alignair4-igh-human\nMODEL="$(alignair models path alignair4-igh-human)"\nalignair reference export "$MODEL" --fasta ref.fasta\n\n# export-reference is the same command, standalone:\nalignair export-reference "$MODEL" --fasta ref.fasta`} />
+      <CodeBlock code={`alignair reference list --species Human --chain IGH   # --chain: a chain type, locus or whole token (TCR, TRB, light)\n\n# 'reference export' takes a model FILE, not a catalog id - resolve the id to a path first:\nalignair models get alignair4-igh-human\nMODEL="$(alignair models path alignair4-igh-human)"\nalignair reference export "$MODEL" --fasta ref.fasta\n\n# export-reference is the same command, standalone:\nalignair export-reference "$MODEL" --fasta ref.fasta`} />
       <p>
         The exported FASTA is the starting point for <code>--reference</code>: add novel alleles to it and bind it at
         predict time. <code>--dataconfig</code> exports the pickled GenAIRR DataConfig, which only a training checkpoint

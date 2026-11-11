@@ -183,16 +183,21 @@ result = aligner.predict(reads, genotype={"V": ["IGHVF1-G3*02", "IGHVF6-G21*07"]
 What a swap refuses, with its error:
 
 - A reference without one of the model's segments, e.g. an IGK, IGL, TRA or TRG reference (no D) on an IGH model:
-  `[ALIGNAIR_CONFIG_INVALID] the bound reference has no D alleles for the chip's genes`.
+  `[ALIGNAIR_CONFIG_INVALID] the bound reference has no D alleles for the chip's genes`, with the hint that the model
+  calls V, D and J (`alignair reference export` writes the model's own).
 - On a model of several loci, an allele that belongs to none of them (by its sequence, else its name):
   `[ALIGNAIR_INPUT_INVALID] the reference's allele IGHV1-2*02 belongs to none of the model's loci (IGK, IGL)`.
 - A genotype naming an allele the bound reference does not hold:
   `[ALIGNAIR_GENOTYPE_UNKNOWN_ALLELE] unknown alleles in genotype for v: ['IGHV1-2*99'] (not in the reference)`. Add
   its sequence with `--reference`.
+- A genotype file that is not YAML or JSON keyed by `V`, `D`, `J` (a FASTA, a broken file, a list), or one keyed by
+  gene names: `[ALIGNAIR_CONFIG_INVALID] donor.yaml is keyed by gene names (IGHV3-23); its keys are segments (V, D,
+  J), each listing allele names`, with the format in the hint.
 
-What a swap does not check: the species, and, on a single-locus model, the locus of a reference that has the model's
-segments. A TRB reference binds to an IGH model, and its records still say `IGH`. How well a model calls the alleles of
-another species or locus has not been measured. For those, **train a model**:
+Another locus binds with a warning: on a single-locus model, a reference wholly of another locus that has the model's
+segments (a TRB reference on an IGH model) keeps its own locus, so its records say `TRB`, and the run warns
+`the bound reference is TRB, but the model was trained on IGH`. Nothing checks the species. How well a model calls the
+alleles of another species or locus has not been measured. For those, **train a model**:
 
 ```bash
 # train for any of GenAIRR's built-in references (human, mouse, rat, rabbit, dog, ...: alignair reference list)
@@ -216,19 +221,19 @@ training with `--plan`.
   a `reference_manifest.json`, and a `validation_report.json`. This is the file to share and to predict with:
   `alignair predict ... --model runs/.../bundle/model.alignair`.
 
-`Aligner.save_pretrained(directory)` copies a pickle-free model file, and `Aligner.push_to_hub(repo_id)` uploads it
-(`model.alignair` only) to a Hugging Face repo (needs `huggingface_hub` and a write token); both refuse a checkpoint.
-After training from Python (`run_training`), export the bundle yourself:
+To export a checkpoint yourself (after training from Python with `run_training`, or to set the card's id and
+version), use `alignair export`:
 
-```python
-from alignair.genairr import resolve_dataconfigs
-from alignair.train.build import export_bundle
-
-export_bundle("runs/igh/model.alignair", resolve_dataconfigs(["HUMAN_IGH_OGRDB"]), "runs/igh/bundle")
+```bash
+alignair export runs/igh/model.alignair runs/igh/release --model-id alignair4-igh-human --model-version 1.0.0
 ```
 
-There is no `alignair export` command. `alignair convert` converts only lab chip model files (`lab-chip-v1`,
-`lab-chipw64-v1`), not training checkpoints.
+It writes the same four files (`--no-validate` skips the validation report), with the id and version in the model
+file's card. In Python it is `alignair.train.build.export_bundle`. `Aligner.save_pretrained(directory)` copies a
+pickle-free model file; both it and `push_to_hub` refuse a checkpoint, with a hint naming `alignair export`.
+`alignair convert` converts only lab chip model files (`lab-chip-v1`, `lab-chipw64-v1`), not training checkpoints.
+Publishing into the shared catalog (the model, its card and its manifest together) is on the
+[publishing page](https://mutejester.github.io/AlignAIR/#/docs/publishing).
 
 ## Donor genotype inference
 
@@ -265,8 +270,9 @@ thread count and the device can still move the last bits of the floats and, rare
 2,000), a call between two near-tied alleles. The default batch size depends on the device and on `--threads`, so
 pass `--batch-size`, `--chunk-size` and `--threads` to reproduce a run exactly.
 
-Every run also writes a **`<output>.run.json` provenance sidecar** (model + fingerprint, reference,
-command, device, and record counts). Validate any TSV explicitly:
+Every run also writes a **`<output>.run.json` provenance sidecar**: the model and its fingerprint, the fingerprints of
+the reference the calls came from (the `--reference` FASTA's when one was bound, with the embedded one's beside them),
+the `--genotype` file and its bank, the command, the device, and record counts. Validate any TSV explicitly:
 
 ```bash
 alignair validate-airr out.tsv      # structural check: columns, coordinate/CIGAR bounds, productivity
@@ -289,6 +295,7 @@ alignair validate-airr out.tsv      # structural check: columns, coordinate/CIGA
 | `alignair benchmark` | evaluate a model on simulated GenAIRR reads, per stratum |
 | `alignair validate-airr` | structural check of a rearrangement TSV (columns, coordinate/CIGAR bounds, productivity); not the official AIRR-C schema validator |
 | `alignair doctor` | check the environment (Python, PyTorch+CUDA, GenAIRR) |
+| `alignair export` | export a training checkpoint as a pickle-free bundle (model, card, manifest, validation report) |
 | `alignair convert` | convert a lab chip model file (`lab-chip-v1`, `lab-chipw64-v1`) into a pickle-free chip-v1 `.alignair` |
 
 Run `alignair <command> --help` for options.

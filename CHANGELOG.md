@@ -39,6 +39,20 @@ contract: AlignAIR 3 model files do not run on it.
 - Model loading takes no dataconfigs or `trust_pickle`: `alignair predict` loses `--dataconfig` and `--trust-pickle`,
   `alignair benchmark` loses `--trust-pickle`.
 - A model file written for sharing records neither the host nor the user it was written by.
+- **A reference of another locus** (every locus-showing allele name of one other locus, e.g. TRB on an IGH model) binds
+  with one `LocusMismatchWarning` ("the bound reference is TRB, but the model was trained on IGH") and keeps its own
+  locus, so the records' `locus` comes from the alleles called.
+- **`<out>.run.json`** records `--reference` and `--genotype` (paths and SHA-256), the fingerprints of the reference the
+  calls came from (the bound one, with the embedded one's beside them) and the genotype bank's allele order.
+- **Genotype files** that are not YAML/JSON keyed by V, D, J (a FASTA, a broken file, a list, a segment given one
+  string) or that are keyed by gene names are refused with a ConfigurationError whose hint gives the format, instead
+  of an internal error or a misleading "alleles the reference does not hold".
+- `alignair reference list --chain` matches a chain type, a locus or a whole token of either or of the name (`IGH`
+  no longer lists light chains).
+- `alignair predict`, `demo` and `benchmark` without `--device` resolve `auto` (CUDA, then Apple MPS, then CPU), as the
+  Python API does.
+- The missing-segment refusal has a hint; `alignair convert` names an AlignAIR 3 model file as one; the refusal to
+  share a checkpoint names `alignair export`.
 - Training reads get library flanks by default (a 5' leader, a primer masked to N, a 3' constant region), in
   `alignair train`, `run_training` and `train_model`.
 
@@ -53,6 +67,14 @@ contract: AlignAIR 3 model files do not run on it.
   passes over the input infer the donor's V genotype by TIgGER's frequency rule, re-call the reads it settles, and
   write it as an AIRR GenotypeSet.
 - `alignair predict --threads N`: on the CPU, N single-threaded worker processes.
+- `alignair export CHECKPOINT OUT_DIR [--model-id --model-version --description --no-validate --overwrite]`: a training
+  checkpoint becomes a pickle-free bundle (model, model card, reference manifest, validation report) whose card the
+  catalog accepts as it is. The model card names the model, its reference and version (e.g. OGRDB V8), allele counts,
+  training steps, intended use and the genotype and reference-swap usage.
+- Publishing to the shared catalog: `alignair.registry.publish_bundle` lays a bundle out beside its card and manifest
+  (`<id>/<version>.alignair`, `.model_card.md`, `.reference_manifest.json`, recorded with their SHA-256 and checked by
+  the validator), and `upload_version` sends one version's files and `registry.json` in one commit. `push_to_hub`
+  uploads the card and manifest beside a model file with it.
 - Training: `--data-workers` generates curriculum records in worker processes with batches identical to a serial
   run; an init seed separates the initial weights from the data seed; opt-in novel-allele training banks
   (`TrainingConfig.novel_alleles`); `train_args` record the recipe.
