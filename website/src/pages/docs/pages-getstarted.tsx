@@ -19,17 +19,18 @@ const gettingStarted: DocPage = {
         need the lessons or the training guide to get there.
       </p>
       <h2>1. Install</h2>
-      <CodeBlock code={`pip install "AlignAIR[cli]"            # core + CLI (+ parasail + AIRR validation)`} />
+      <CodeBlock code={`pip install "AlignAIR[cli]"            # core + CLI (+ huggingface_hub, to load models from Hugging Face)`} />
       <p>
-        PyTorch is a dependency; the device backend depends on how torch is installed. AlignAIR auto-detects it at run
-        time (<code>--device auto</code> picks CUDA, then Apple MPS, then CPU).
+        PyTorch is a dependency; the device backend depends on how torch is installed. Without <code>--device</code>,{" "}
+        <code>alignair predict</code> uses CUDA when it is available, else the CPU; <code>--device auto</code> (the
+        Python API's default) picks CUDA, then Apple MPS, then CPU.
       </p>
       <DocTable
         head={["Platform", "torch install", "AlignAIR", "Backend"]}
         rows={[
           ["Linux / Windows, NVIDIA GPU", <>default <code>pip</code> wheel (CUDA)</>, <code>pip install "AlignAIR[cli]"</code>, "CUDA"],
           ["Linux / Windows, CPU only", <>install CPU torch first (see below)</>, <code>pip install "AlignAIR[cli]"</code>, "CPU"],
-          ["macOS, Apple Silicon", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, "MPS (auto)"],
+          ["macOS, Apple Silicon", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, <>MPS (<code>--device auto</code> or <code>mps</code>)</>],
           ["macOS, Intel", <>default <code>pip</code> wheel</>, <code>pip install "AlignAIR[cli]"</code>, "CPU"],
           ["Docker (CPU)", "included in the image", <code>docker pull alignair/alignair:latest</code>, "CPU"],
         ]}
@@ -42,29 +43,40 @@ const gettingStarted: DocPage = {
         image is mirrored at <code>ghcr.io/mutejester/alignair</code> if Docker Hub's anonymous pull limit is a problem.
       </p>
       <p>Verify the install on any platform:</p>
-      <CodeBlock code={`alignair doctor        # Python, PyTorch + CUDA/MPS, GenAIRR, parasail\nalignair demo          # offline end-to-end trial (no download)`} />
+      <CodeBlock code={`alignair doctor        # Python, PyTorch + CUDA/MPS, GenAIRR, cache and config dirs\nalignair demo          # offline end-to-end trial (no download)`} />
 
       <h3>Offline install and model caching</h3>
-      <CodeBlock code={`alignair models get alignair-igh-human           # cache the model\nalignair predict --input reads.fasta --out out.tsv --model alignair-igh-human --offline`} />
+      {/* PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's catalog id, not yet decided. */}
+      <CodeBlock code={`alignair models get <v4-igh-model>           # cache the model\nalignair predict --input reads.fasta --out out.tsv --model <v4-igh-model> --offline`} />
       <p>
-        <code>--offline</code> never touches the network (set <code>ALIGNAIR_NO_NETWORK=1</code> to also disable the
-        passive update check). Models cache in the per-OS user cache directory; <code>alignair doctor</code> prints the
-        exact <code>cache_dir</code>, and <code>ALIGNAIR_CACHE_DIR</code> overrides it.
+        <code>--offline</code> never touches the network; <code>ALIGNAIR_NO_NETWORK=1</code> turns off the passive
+        update check on its own. Catalog models cache in the per-OS user cache directory; <code>alignair doctor</code>{" "}
+        prints the exact <code>cache_dir</code>, and <code>ALIGNAIR_CACHE_DIR</code> overrides it. A model pulled
+        straight from a Hugging Face repo lives in the Hugging Face cache instead.
       </p>
 
       <h2>2. See it work in one command</h2>
       <CodeBlock code={`alignair demo`} />
       <p>
-        Trains a tiny demo model (not production quality), aligns simulated reads, validates the AIRR output, and runs
-        the donor-genotype path - proving the full pipeline with no model download.
+        Trains a tiny demo model (not production quality), aligns simulated reads, and aligns them again under a donor
+        genotype - the full train, load, predict path with no model download. It writes <code>demo.tsv</code> and{" "}
+        <code>demo_donor.tsv</code>.
       </p>
 
       <h2>3. Get a model</h2>
       <p>
-        <code>alignair predict</code> needs a model: a <code>.alignair</code> file, a catalog id, or a Hugging Face repo
-        id. Use a pretrained model (no login, downloaded on first use):
+        <code>alignair predict</code> needs a model: a <code>.alignair</code> file, a catalog id (<code>id</code> or{" "}
+        <code>id@version</code>), or a Hugging Face repo (<code>hf://org/repo</code>). A remote model is downloaded on
+        first use and cached; a public one needs no login. AlignAIR 4 pretrained models come one per locus: IGH first,
+        then IGK, IGL, TRA, TRB, TRD and TRG.
       </p>
-      <CodeBlock code={`alignair models list\nalignair predict --input reads.fasta --out out.tsv --model alignair-igh-human`} />
+      <Callout kind="note" title="Model ids are placeholders">
+        <code>{"<v4-igh-model>"}</code> on these pages stands for an AlignAIR 4 human IGH model; its id is not published
+        yet, and any AlignAIR 4 <code>.alignair</code> path works in its place. The hub catalog's current entries (
+        <code>alignair-igh-human@1.0.0</code> and the others) are AlignAIR 3 models, which AlignAIR 4 refuses with{" "}
+        <em>use alignair&lt;4 to run it</em>.
+      </Callout>
+      <CodeBlock code={`alignair models list                   # the catalog, fetched live from the hub\nalignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>\n\n# a Hugging Face repo, pinned to a branch, tag or commit (--hf-token or $HF_TOKEN for a private one)\nalignair predict --input reads.fasta --out out.tsv --model hf://<org>/<repo> --revision <commit>\n\nalignair info model.alignair           # a model file's card: reference, alleles, training, sections`} />
       <p>Or train your own for any reference or species:</p>
       <CodeBlock code={`alignair train --dataconfig HUMAN_IGH_OGRDB --out runs/my_igh --preset desktop\n# or your own germline FASTAs\nalignair train --v-fasta v.fa --d-fasta d.fa --j-fasta j.fa --chain-type BCR_HEAVY \\\n  --out runs/custom --preset desktop`} />
       <p>
@@ -72,43 +84,58 @@ const gettingStarted: DocPage = {
       </p>
 
       <h2>4. Align reads</h2>
-      <p>Input may be FASTA, FASTQ, CSV/TSV, or TXT (optionally <code>.gz</code>, or <code>-</code> for stdin):</p>
+      <p>Input may be FASTA, FASTQ, CSV/TSV, or TXT (one read per line; optionally <code>.gz</code>, or <code>-</code> for stdin):</p>
       <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model runs/my_igh/bundle/model.alignair`} />
       <p>
-        <strong>Tabular Data (CSV/TSV):</strong> If your input is a table, you must tell the reader which columns hold the sequences and read IDs:
+        <strong>Tabular Data (CSV/TSV):</strong> a table's sequence column is found by name (<code>sequence</code>,{" "}
+        <code>seq</code>, <code>nucleotide</code> or <code>read</code>) and its id column likewise (<code>sequence_id</code>,{" "}
+        <code>id</code> or <code>name</code>). Name other columns explicitly:
       </p>
-      <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model alignair-igh-human \\\n  --sequence-column sequence --id-column sequence_id`} />
+      <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model <v4-igh-model> \\\n  --sequence-column nt_seq --id-column read_name`} />
       <p>
         The output is an AIRR rearrangement TSV with the V/D/J calls, coordinates, junction, productivity, and a per-gene
-        candidate-set column (<code>*_call_set</code>). See <DocLink to="airr-fields">AIRR output fields</DocLink>.
+        candidate-set column (<code>*_call_set</code>). When a read cannot tell V alleles apart, <code>v_call</code> lists
+        the call and then the alleles that match the read as well. See <DocLink to="airr-fields">AIRR output fields</DocLink>.
       </p>
 
       <h2>5. Constrain to a donor genotype</h2>
       <p>
-        Supply a genotype as YAML or JSON to restrict calls to a subset of the model's reference, with no retraining. The file maps gene families/genes to allowed alleles:
+        Supply a genotype as YAML or JSON to restrict calls to a subset of the model's reference, with no retraining.
+        Its keys are the segments <code>V</code>, <code>D</code> and <code>J</code>; each lists allele names of the
+        model's reference (here OGRDB names, as in a model trained on <code>HUMAN_IGH_OGRDB</code>). A segment you leave
+        out keeps all its alleles:
       </p>
       <CodeBlock
         lang="yaml"
-        code={`# donor.yaml\nIGHV3-23:\n  - IGHV3-23*01\n  - IGHV3-23*04\nIGHV1-2:\n  - IGHV1-2*02`}
+        code={`# donor.yaml\nV:\n  - IGHVF1-G3*02\n  - IGHVF6-G21*07\n  - IGHVF6-G21*12\nJ:\n  - IGHJ4*02\n  - IGHJ6*02`}
       />
       <p>Pass the file path to <code>--genotype</code>:</p>
       <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model runs/my_igh/bundle/model.alignair --genotype donor.yaml`} />
+      <p>
+        A name the reference does not hold is refused (<code>ALIGNAIR_GENOTYPE_UNKNOWN_ALLELE</code>). A read whose V
+        gene is not in the genotype gets no V call, and its row is tagged <code>partial</code> (reason{" "}
+        <code>no_v</code>). Or let the reads decide: <code>--infer-genotype</code> infers the donor's V genotype from the
+        file's own calls and re-calls the reads it settles (see the <DocLink to="cli">command-line reference</DocLink>).
+      </p>
       <Callout kind="note">
-        Alleles the model was not trained on are not callable. A genotype can only narrow the callable set; adding
-        alleles requires training a new model. See the <DocLink to="model-contract">model contract</DocLink>.
+        A genotype only narrows the callable set. To call alleles the model's reference lacks - novel alleles, new genes -
+        bind a FASTA that holds them with <code>--reference</code>, no retraining needed; the genotype can then name
+        them. See the <DocLink to="model-contract">model contract</DocLink> for what a reference swap accepts and refuses.
       </Callout>
 
       <h2>Common predict options</h2>
       <DocTable
         head={["Flag", "Meaning"]}
         rows={[
-          [<code>--genotype FILE</code>, "YAML/JSON genotype for this run (a subset of the model's reference)"],
-          [<code>--genotype-method M</code>, <><code>mask</code> (default) / <code>softmax</code> / <code>renormalize</code> / <code>redistribute</code></>],
+          [<code>--genotype FILE</code>, "YAML/JSON genotype for this run (a subset of the bound reference)"],
+          [<code>--reference FASTA</code>, "germline alleles (V, D, J) to call from instead of the embedded reference, novel alleles included"],
+          [<code>--infer-genotype</code>, "infer the donor's V genotype from the reads (two passes over the file) and re-call the reads it settles"],
           [<code>--metadata FILE</code>, "per-read metadata (e.g. 10x annotations) preserved into output"],
           [<code>--keep-columns LIST</code>, "comma-separated metadata columns to carry through"],
           [<code>--chunk-size N</code>, "reads per streaming chunk (bounded memory; default 20000)"],
           [<code>--columns SPEC</code>, <>a preset (<code>full</code>/<code>core</code>/<code>minimal</code>/<code>airr</code>) or a field list</>],
           [<code>--rejects-out FILE</code>, "write dropped/invalid input records here"],
+          [<code>--threads N</code>, "on the CPU, N single-threaded worker processes"],
           [<code>--device cuda|cpu|mps</code>, "force a device (auto if unset)"],
         ]}
       />
@@ -149,8 +176,8 @@ const concepts: DocPage = {
         rows={[
           [<strong>Locus</strong>, <>A receptor chain's genomic region: <code>IGH</code>, <code>IGK</code>, <code>IGL</code>, <code>TRB</code>, <code>TRA</code>, ... Heavy and beta chains have a D segment; light chains do not.</>],
           [<strong>Gene / allele</strong>, <>A germline segment (<code>IGHV1-2</code>) and its sequence variant (<code>IGHV1-2*02</code>). A read is called to the allele level when possible.</>],
-          [<strong>Family</strong>, <>A group of related genes (<code>IGHV1</code>). When a read cannot pin down the allele, the answer degrades toward the family.</>],
-          [<strong>Reference / germline catalog</strong>, "The set of known alleles a model was trained on. In AlignAIR it is embedded in the model file."],
+          [<strong>Family</strong>, <>A group of related genes (<code>IGHV1</code>).</>],
+          [<strong>Reference / germline catalog</strong>, "The set of alleles a model calls from. A model file embeds the reference it was trained on; another can be bound at predict time."],
           [<strong>Junction / CDR3</strong>, "The hypervariable region spanning the V-(D)-J join; the main determinant of antigen specificity."],
           [<strong>SHM</strong>, "Somatic hypermutation - point mutations B-cells accumulate; heavy SHM makes V alleles harder to call."],
           [<strong>Productive</strong>, "Whether the rearrangement yields a functional receptor (in-frame, no stop codon)."],
@@ -161,16 +188,18 @@ const concepts: DocPage = {
       <h2>What AlignAIR gives you</h2>
       <p>For every read, in one pass:</p>
       <ul>
-        <li>V / D / J allele calls, plus a ranked candidate set (<code>*_call_set</code>) that widens when the read is genuinely ambiguous.</li>
+        <li>V / D / J allele calls, plus a candidate set (<code>*_call_set</code>) that widens when the read is genuinely ambiguous; <code>v_call</code> lists the V alleles a read ties with its call.</li>
         <li>Segment coordinates in the read and germline, and per-segment CIGAR / identity.</li>
         <li>Junction / CDR3, <code>productive</code>, mutation rate, and orientation.</li>
       </ul>
 
-      <h2>Fixed-reference classifier</h2>
+      <h2>The reference is an input</h2>
       <p>
-        An AlignAIR model can call exactly the alleles in its embedded catalog. You can subset that catalog to a donor's
-        genotype at inference, but adding new alleles or a new species means training a model. This is the{" "}
-        <DocLink to="model-contract">model contract</DocLink> - worth reading once.
+        An AlignAIR model scores the alleles of the reference it is bound to; the alleles are an input, not weights. By
+        default that is the reference embedded in the model file. At predict time you can narrow it to a donor's
+        genotype, or bind another reference with novel alleles or new genes of the model's segments, without retraining.
+        A reference missing one of the model's segments is refused, and a new locus or species means training a model.
+        This is the <DocLink to="model-contract">model contract</DocLink> - worth reading once.
       </p>
     </>
   ),
