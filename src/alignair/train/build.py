@@ -218,7 +218,8 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optio
         if validate:
             with open(os.path.join(tmp, "validation_report.json"), "w") as f:
                 json.dump(metrics, f, indent=2)
-        _write_card(os.path.join(tmp, "model_card.md"), training, manifest, metrics)
+        _write_card(os.path.join(tmp, "model_card.md"), training, manifest, metrics, dcs=dcs, model_id=model_id,
+                    model_version=model_version)
 
         # commit: move any existing bundle aside (overwrite=True), swap in the new one, restore on failure
         backup = None
@@ -274,12 +275,35 @@ def checkpoint_dataconfigs(checkpoint_path: str) -> tuple[list, list[str]]:
     return dcs, notes
 
 
-def _write_card(path: str, training: dict, manifest: dict, report: dict) -> None:
+def _reference_line(dc) -> str:
+    """``HUMAN_IGH_OGRDB (OGRDB V8, updated 2025-02-01; Human BCR_HEAVY)``: a dataconfig's name and its metadata's
+    reference set, date, species and chain type, those it has."""
+    from ..genairr import name_of
+    md = getattr(dc, "metadata", None)
+    value = lambda x: str(getattr(x, "value", x)) if x is not None else None
+    source = getattr(md, "reference_set", None)
+    updated = getattr(md, "last_updated", None)
+    what = " ".join(v for v in (value(getattr(md, "species", None)), value(getattr(md, "chain_type", None))) if v)
+    version = (f"{source}" + (f", updated {updated}" if updated else "")) if source else None
+    detail = "; ".join(v for v in (version, what or None) if v)
+    name = name_of(dc) or "custom reference"
+    return f"{name} ({detail})" if detail else name
+
+
+def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=(), model_id=None,
+                model_version=None) -> None:
+    """The bundle's ``model_card.md``: the model, its reference by name and version, allele counts, training, intended
+    use, usage (genotype and reference swap), the validation metrics (a ``PENDING-V4-NUMBERS`` marker without them) and
+    where the licence and citation are."""
     loci = ", ".join(l["locus"] for l in manifest.get("loci", [])) or "n/a"
-    lines = ["# AlignAIR model card", "",
-             f"- loci: {loci}",
-             "- alleles: " + ", ".join(f"{G}={d['n']}" for G, d in manifest["genes"].items()),
-             f"- training steps: {training.get('steps')}"]
+    title = " ".join(v for v in (model_id, model_version) if v)
+    lines = ["# AlignAIR model card", ""]
+    if title:
+        lines.append(f"- model: {title}")
+    lines += [f"- loci: {loci}"]
+    lines += [f"- reference: {_reference_line(dc)}" for dc in dcs]
+    lines += ["- alleles: " + ", ".join(f"{G}={d['n']}" for G, d in manifest["genes"].items()),
+              f"- training steps: {training.get('steps')}"]
     # The SHM cap actually applied to each locus (TCR -> 0). Without this the card misstates the
     # training distribution: a TRA run otherwise reads as an uncapped curriculum with heavy_shm=0.25.
     caps = (training.get("train_args") or {}).get("effective_mutation_caps")
@@ -288,12 +312,29 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict) -> None
         lines.append(f"- effective SHM cap per locus: {rendered}")
     if training.get("heavy_shm") is not None:
         lines.append(f"- heavy-SHM stream (requested): {training['heavy_shm']}")
-    lines.append("")
-    if report:
-        lines += ["## Validation (fixed held-out stream)", ""]
-        lines += [f"- {k}: {v}" for k, v in sorted(report.items())]
-    lines += ["", "The embedded reference is the default callable set. The model reads its alleles from the bound "
+    model = model_id or "model.alignair"
+    lines += ["", "## Intended use", "",
+              f"Aligning single-end {loci} reads (full-length or fragments, any orientation) to AIRR rearrangements. "
+              "The embedded reference is the default callable set. The model reads its alleles from the bound "
               "reference, so other alleles of the same genes (a donor's genotype, novel alleles) are called by "
-              "binding another reference (alignair predict --reference) without retraining."]
+              "binding another reference (alignair predict --reference) without retraining. Not paired-read "
+              "assembly; another locus or species needs a model trained for it.", "",
+              "## Usage", "", "```bash",
+              f"alignair predict --input reads.fasta --out out.tsv --model {model}",
+              "# restrict calls to a donor's genotype (YAML/JSON keyed by V, D, J)",
+              f"alignair predict --input reads.fasta --out out.tsv --model {model} --genotype donor.yaml",
+              "# infer the donor's V genotype from the reads (two passes over the file)",
+              f"alignair predict --input reads.fasta --out out.tsv --model {model} --infer-genotype",
+              "# call from another reference of these genes, novel alleles included, without retraining",
+              f"alignair predict --input reads.fasta --out out.tsv --model {model} --reference germline.fasta",
+              "```", "", "## Validation", ""]
+    if report:
+        lines += ["Fixed held-out stream:", ""] + [f"- {k}: {v}" for k, v in sorted(report.items())]
+    else:
+        lines += ["<!-- PENDING-V4-NUMBERS -->",
+                  "Validation metrics are pending: this bundle was exported without validation."]
+    lines += ["", "## License and citation", "",
+              "GPL-3.0-or-later: see LICENSE, and cite AlignAIR as CITATION.cff gives, in the AlignAIR repository "
+              "(https://github.com/MuteJester/AlignAIR)."]
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")
