@@ -1387,11 +1387,13 @@ which runs the same checkpoint and product code.
 
 `diagnostics.replay.replay(model, reference_set, sequences, ids, *, device, batch_size,
 substitutions=Substitutions())` runs AlignAIR's predict pipeline one stage at a time and returns `StageOutputs`: the
-raw forward outputs (logits included, concatenated over batches), the cleaned and calibrated `Predictions`, the
-forward-frame reads, the corrected `Segments`, the allele calls, the germline alignments, the light records, the
-AIRR rows, the wall time per stage (`STAGES`), each allele head's allele names (`allele_names`) and the per-read
-allowed-allele masks the selector applied (`allowed`: a multi-locus model's locus masks, None for a one-locus
-model). It is the product's own pipeline (`alignair.predict.pipeline.PIPELINE`, run by `run_stages`), with the
+raw forward outputs (logits included, concatenated over batches), the cleaned `Predictions`, the forward-frame
+reads, the corrected `Segments`, the allele calls, the germline alignments, the light records, the AIRR rows, the
+wall time per stage (`STAGES`: `input_policy`, `forward`, `clean`, `canonicalize`, `segments`, `alleles`,
+`germline`, `better_v`, `v_presence`, `ties`, `records`, `airr`), each allele head's allele names (`allele_names`),
+and per read whether it holds no V (`no_v`), its V call with the alleles tied to it (`v_ties`) and its typed result
+(`results`). A genotype is the bank the model is bound to, so a genotype run is replayed by binding its bank first.
+It is the product's own pipeline (`alignair.predict.pipeline.PIPELINE`, run by `run_stages`), with the
 `PredictConfig` that `alignair.api.predict_sequences` builds (`PredictConfig.for_model`, `predict_config`), run with
 two hooks: `Trace`, which keeps every stage's output and seconds, and a substitution hook. A teacher-forced
 orientation goes in through `run_model`'s `orientation`.
@@ -1405,13 +1407,10 @@ read.
 - `decoder="soft"`: `correct_segments` receives the soft-argmax expectations instead of the argmax of the position
   logits that the product reports (`alignair.predict.decode`, the same decoder as the head metrics' `argmax`, with
   ends on `0..n`). The classifier reads the expectations either way. The default is `"argmax"`: a pure replay.
-- `spans` (gene -> starts and ends, in the model's forward frame, 0-based and end-exclusive):
-  - With `segment_spans` (the default), they replace the corrected `Segments`. `low_quality` keeps
-    `correct_segments`' meaning (a V or J of zero length). A given span is never re-ordered against the model's
-    span of another gene.
-  - With `classifier_spans`, they go into each gene's classifier (`model.branches[g].classify` on the read
-    re-embedded in the forward pass's frame, with the trunk's features of that read when the model has a trunk) in
-    place of the expectations. The new probabilities then go through the calibration, the masks and the selector.
+- `spans` (gene -> starts and ends, in the model's forward frame, 0-based and end-exclusive) replace the corrected
+  `Segments`. The chip reads the whole read for its calls, so its allele scores stay its own. `low_quality` keeps
+  `correct_segments`' meaning (a V or J of zero length). A given span is never re-ordered against the model's span
+  of another gene.
 - `calls` (`GeneCall`s) replace the selector's calls before the germline alignment.
 - `germline` (`GermlineAlignment`s on the read's call) replace the matcher's alignments. The matcher runs only for
   reads that still have a gene left to it.
@@ -1420,8 +1419,6 @@ Bad values are a ValueError: a list of the wrong length, a gene the model lacks,
 empty span or one outside its read, a call to an allele the model cannot call, or an alignment on another allele
 than the call. Tests pin each substitution against the product:
 - forcing the model's own orientation gives the product's rows and forward outputs;
-- the classifier seam fed the model's own spans gives the product bit for bit, on the small models and on the
-  released checkpoint;
 - the argmax decoder equals `heads.decode_boundaries`' argmax.
 
 The replay is proven equal to the product: `tests/alignair_assay/diagnostics/test_replay.py` requires its AIRR
@@ -1484,15 +1481,12 @@ saw only its window. An end-exclusive edge at the window's last position, 576 (a
 cropped reverse-complemented read whose segment runs to the canonical end), cannot be decoded by either decoder but
 is still scored, so it is always at least one base off; it is rare and left in.
 
-**Alleles.** Alleles are ranked by the calibrated probabilities the selector sees, over the read's `allowed` alleles,
-with ties going to the lower index. They apply to the same segments as the boundaries.
+**Alleles.** Alleles are ranked by the allele scores the selector sees (`predictions.allele`), over the bank's
+alleles, with ties going to the lower index. They apply to the same segments as the boundaries.
 
 - `head.{g}.allele_top{1,3,5}`: the top k meet the scored truth set.
 - `head.{g}.allele_top1_generative` (informational): the top-1 is in the generative set.
-- `head.{g}.n_above_threshold` (informational): the number of allowed alleles at probability >= 0.5.
-- `head.d.short_d_prob_ok`: P(Short-D) >= 0.5 exactly when the D is absent or shorter than `MIN_OBSERVED["d"]`. It
-  applies only to a model whose D head has a `Short-D` output. The released IGH model has none: its 33 D outputs are
-  the 33 reference D alleles.
+- `head.{g}.n_above_threshold` (informational): the number of alleles scoring >= 0.5.
 - `head.d_presence.correct` and `head.d_presence.callable_gated` apply only to a model with a D presence head
   (`d_presence_logits`; the product gates the D call on its argmax).
   - The truth's class (`heads.d_class`) is absent without an observed D, short below `MIN_OBSERVED["d"]` observed
@@ -1511,8 +1505,7 @@ with ties going to the lower index. They apply to the same segments as the bound
   target. It applies only when `cases` are given.
 - `head.indel_count_abs_err`: against the inserted plus deleted bases of the truth's observed V, D and J CIGARs
   (GenAIRR's indels are single bases). It applies when every gene's truth was built.
-- `head.productive.correct`: the head's probability >= 0.5 matches the truth, where the truth defines it. A model with
-  anchor heads has no productive head and is not scored here; its derived productivity is scored on the AIRR row
+- The chip has no productivity head: its productivity is derived from its anchors and scored on the AIRR row
   (`productive.correct`).
 - `head.orientation.correct`: the orientation logits' argmax is the truth orientation (0 or 1).
 - `head.cropped` (informational): 1.0 for a read longer than the window. Its sum counts the crops.
@@ -1522,12 +1515,6 @@ with ties going to the lower index. They apply to the same segments as the bound
 `decode_boundaries(outputs, gene, decoder)` and `allele_ranking(outputs, gene)` expose the decoders and the ranking.
 The tests check them against the product: the soft decoder gives `correct_segments`' coordinates wherever its repair
 does nothing, and the ranking's first allele is the selector's top-1 call.
-
-`calibration_table(outputs, truths, gene, bins=10)` measures the reliability of the top-1 calibrated probability
-against the top-1 being in the scored set, over the cases the allele metrics apply to. It has equal-width bins,
-closed on the right, as in AlignAIR's `calibrate.ece`. Each bin gives `lo`, `hi`, `n`, the mean `confidence` and the
-`accuracy`, None when empty. The table also gives `n`, the overall `confidence` and `accuracy`, and the expected
-calibration error `ece`.
 
 ### Truth-substitution ablations
 
@@ -1541,14 +1528,13 @@ exactly as a tool's are.
 |---|---|
 | `baseline` | nothing: the product pipeline |
 | `true_orientation` | the truth orientation, teacher-forced and used to canonicalize the read |
-| `true_spans` | the truth read spans of the observed segments, as the segments and as the classifier's input |
+| `true_spans` | the truth read spans of the observed segments, as the segments |
 | `true_calls` | the truth primary allele as each observed segment's call |
 | `true_germline` | the truth germline alignment of each observed segment (allele, read and germline coordinates, CIGAR) in place of the matcher |
 
 The single swaps (`SINGLE_SWAPS`) each change one thing on the baseline:
 - `soft_decoder`: segments from the soft-argmax expectations (the decoder the product used before it decoded by
-  argmax); the classifier is unchanged.
-- `true_classifier_spans`: truth spans into the classifier only; the segments stay the model's.
+  argmax); the allele scores are unchanged.
 
 `DEFAULT_VARIANTS` is both lists.
 
@@ -1628,8 +1614,8 @@ baseline error. Two consequences:
     little; the clone key changes with the calls as for any model.
   - What still differs from the oracle after `true_germline` is then the anchor heads' error, plus the reads with a
     V or J frameshift, which the truth calls unproductive and the anchor rule cannot see.
-  - The assembly's non-productive gate reads the derived productivity, and `soft_decoder` and
-    `true_classifier_spans` leave the anchors as they are.
+  - The assembly's non-productive gate reads the derived productivity, and `soft_decoder` leaves the anchors as
+    they are.
 
 ### Speed profile
 
@@ -1676,14 +1662,13 @@ For each suite, it:
 1. loads the suite's cases and truth (`scoring.pipeline.load_truth`, against `scoring.pipeline.truth_reference`)
    and takes all cases, or `max_cases` evenly spaced (`select_cases`: positions `floor(i * N / n)`, the speed
    protocol's rule, `core.cases.evenly_spaced`);
-2. replays the product pipeline once and scores the heads (`head_scores`, with the cases' records) and the
-   calibration of each gene (`calibration_table`);
+2. replays the product pipeline once and scores the heads (`head_scores`, with the cases' records);
 3. runs the variants on the same reads with that replay as the baseline (`run_variants`, with the donors'
    genotypes for a suite with `donors.json`, as `all` scores it) and compares them over `compared_metrics`: the
    suite's primary metrics, then `CONTRIBUTION_METRICS`, leaving out informational ones and those no variant scored.
 
 `variants` run in `DEFAULT_VARIANTS` order; the baseline is added to any other (`variant_set`), and none runs the
-heads, the calibration and the profile only. The profile (`profile_model`) runs last, after every accuracy replay,
+heads and the profile only. The profile (`profile_model`) runs last, after every accuracy replay,
 on up to `PROFILE_READS` (1000) of the diagnosed reads, evenly spaced.
 
 `DiagnosticsResult` holds the `model_key`, the per-suite results (`suites`), the `profile`, the one-page summary as
@@ -1694,7 +1679,7 @@ its `cases`, `clusters` and the `heads` and `baseline` families, each with its `
 (`stats.compare`; a is the baseline, b this model) and `changes` (`stats.read_changes`, the same way round); and
 its `summary`, `report.diagnostics.against_summary`). `scalars()` flattens the summary for a training dashboard:
 `{"S1/baseline/junction.nt_exact": 0.77, "S1/delta/segmentation/junction.nt_exact": 0.21,
-"S1/heads/head.j.end_exact.soft": 0.003, "S1/calibration/v.ece": 0.05, "speed/reads_per_second": 1103.4, ...}`,
+"S1/heads/head.j.end_exact.soft": 0.003, "speed/reads_per_second": 1103.4, ...}`,
 and with a comparison `"S1/against/<metric>.delta"` (this model − the baseline) for every compared metric and
 `.fixed` (the baseline wrong, this model right) and `.broken` for every 0/1 one
 (`report.diagnostics.diagnostics_scalars`; a missing value is left out).
@@ -1713,7 +1698,7 @@ A suite's result holds `suite`, its cache `key`, `reads` (`built`, `diagnosed`, 
 (`cluster_counts`: the clusters of two or more diagnosed reads, the `CLUSTER_KEYS` their ids cluster by, and how
 many `clusters` and `cases`; a cluster of one read is compared as a read on its own, so S11 with only its `:fwd`
 reads diagnosed is not cluster-aware), `heads` and each variant's `scores` (per metric: `mean`, `n`,
-`n_applicable`, `coverage`), `calibration` (per gene), `metrics` (the compared family), `variants` (`scores`,
+`n_applicable`, `coverage`), `metrics` (the compared family), `variants` (`scores`,
 `fallbacks`, per-stage `seconds`, `substituted`), `contributions` (`stage_contributions`), `swaps`
 (`swap_effects`), the `seconds` it took, `replay_verified` and `replay_changes` and, in the result only, `reused`.
 
