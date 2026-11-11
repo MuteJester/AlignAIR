@@ -19,34 +19,39 @@ const airrFields: DocPage = {
         head={["Field(s)", "How it is derived"]}
         rows={[
           [<><code>sequence_id</code>, <code>sequence</code>, <code>rev_comp</code></>, "See orientation, below."],
-          [<code>locus</code>, "Inferred from the model / reference; a multi-locus model attributes each read to one locus."],
-          [<>V/D/J <code>_call</code></>, "Top call per gene from the classifier heads (over the embedded reference)."],
-          [<>V/D/J <code>_call_set</code></>, "Candidate set: the alleles the model scores as more-likely-present-than-not (p >= 0.5), ordered by probability and capped at 3. Never empty - it falls back to the top-1 call. AlignAIR extension."],
+          [<code>locus</code>, <>The model's locus; a multi-locus model keeps each read to one locus and the record carries its V call's locus. <code>--locus</code> labels records the model cannot attribute.</>],
+          [<>V/D/J <code>_call</code></>, <>The top allele per gene from the scan of the bound reference's alleles, refined against the germline. <code>v_call</code> then lists the V alleles that match the read's V bases as well as the call (IgBLAST's convention for equally scoring alleles), comma-separated.</>],
+          [<>V/D/J <code>_call_set</code></>, "Candidate set: the alleles whose likelihood is at least half the best allele's, ordered by score and capped at 3. Never empty when there is a call - the best allele always qualifies. AlignAIR extension."],
           [<><code>*_sequence_start/end</code>, <code>*_germline_start/end</code></>, "1-based AIRR coordinates in the coordinate frame described under orientation."],
           [<>V/D/J <code>_cigar</code></>, "CIGAR from the germline reader; a lighter --columns preset falls back to a coordinate-derived CIGAR."],
-          [<code>mutation_rate</code>, "Neural estimate of the read's SHM load (AlignAIR extension)."],
+          [<code>mutation_rate</code>, "The model's estimate of the read's SHM load, from its mutation reader over the V, D and J bases (AlignAIR extension)."],
         ]}
       />
 
       <Callout kind="warning" title="What *_call_set does and does not mean">
-        It is the model's <strong>candidate set</strong>: every allele whose calibrated probability clears 0.5, sorted by
-        probability and <strong>capped at three</strong>, with the top-1 call kept when nothing clears the threshold. Read
-        it accordingly:
+        It is the model's <strong>candidate set</strong>: every allele whose likelihood is at least half the best
+        allele's, sorted by score and <strong>capped at three</strong>; the best allele is always in it. Read it
+        accordingly:
         <ul className="list-disc pl-6 space-y-1 my-2">
           <li>It is <strong>not</strong> a proof that the read cannot distinguish those alleles - it is what the model believed.</li>
           <li>Because of the cap it is <strong>not exhaustive</strong>: a genuinely ambiguous read may have more plausible alleles than the three reported.</li>
-          <li>A single-member set is not automatically a confident call - it can also mean nothing cleared the threshold and the top-1 was kept.</li>
+          <li>A single-member set is not automatically a confident call - it means no other allele came within half the best's likelihood.</li>
           <li>Members need not share a gene or family, so <strong>do not</strong> collapse a set to "family-level" unless every member actually shares that family.</li>
         </ul>
         Keep the set as reported, and let a donor <code>--genotype</code> narrow it when you know the donor's alleles.
       </Callout>
 
       <h2>Junction and regions</h2>
-      <p>Derived from the assembled alignment; blank on partial records.</p>
+      <p>
+        The junction comes from the conserved V and J codons the model finds in the read: it is set when the read has a
+        V call and both codons lie inside it, partial records included (a <code>no_v</code> record has none). The region,
+        np and identity fields come from the assembled alignment, which a partial record does not complete; do not rely
+        on them there.
+      </p>
       <DocTable
         head={["Field(s)", "How it is derived"]}
         rows={[
-          [<><code>junction</code>, <code>junction_aa</code>, <code>junction_length</code>, <code>junction_aa_length</code></>, "CDR3 including the conserved codons; re-derived in read coordinates through the CIGAR when the read has a V/J indel; blank when anchors cannot be placed."],
+          [<><code>junction</code>, <code>junction_aa</code>, <code>junction_length</code>, <code>junction_aa_length</code></>, "From the first base of the V Cys codon to the last base of the J Trp/Phe codon, in read coordinates (the CDR3 plus the two conserved codons, as AIRR defines it); blank when the read does not contain both codons."],
           [<><code>np1</code>, <code>np2</code>, <code>np1_length</code>, <code>np2_length</code></>, "Non-templated nucleotides V to D and D to J (V to J when the locus has no D)."],
           [<><code>fwr1</code>, <code>cdr1</code>, <code>fwr2</code>, <code>cdr2</code>, <code>fwr3</code>, <code>cdr3</code>, <code>fwr4</code> (and suffixes <code>*_aa</code>, <code>*_start</code>, <code>*_end</code>)</>, "Framework/CDR sequences sliced from the IMGT-gapped alignment, their amino acid translations, and their 1-based start and end alignment coordinates."],
           [<><code>sequence_alignment</code>, <code>germline_alignment</code>, <code>sequence_alignment_aa</code>, <code>germline_alignment_aa</code></>, "Full IMGT-gapped query and germline alignments (both nucleotide and translated amino acids), reconstructed from coordinates and the embedded reference."],
@@ -56,18 +61,18 @@ const airrFields: DocPage = {
       />
       <Callout kind="note">
         The gapped alignment fields are produced by AlignAIR's own IMGT-gap reconstruction and do not require an external
-        aligner. Installing <code>parasail</code> (bundled in <code>[cli]</code>) or selecting the WFA reader changes how
-        coordinates and CIGARs are found, not whether these fields are emitted.
+        aligner. The germline-CIGAR kernel is compiled (<code>alignair doctor</code> reports <code>derive_backend</code>),
+        with a pure-Python fallback that gives the same fields.
       </Callout>
 
       <h2>Quality fields</h2>
       <DocTable
         head={["Field", "How it is derived"]}
         rows={[
-          [<code>productive</code>, <>AIRR productivity, <strong>derived</strong> from <code>vj_in_frame</code> and <code>stop_codon</code>. Blank means unknown, not <code>F</code>.</>],
-          [<code>productive_prediction</code>, "The neural productivity head's advisory output (AlignAIR extension). A hint, not a determination."],
+          [<code>productive</code>, <>AIRR productivity, <strong>derived</strong> from <code>vj_in_frame</code> and <code>stop_codon</code> (in frame, no stop). Blank means unknown (no junction), not <code>F</code>.</>],
+          [<code>productive_prediction</code>, <>The same derived call as <code>productive</code> (AlignAIR extension, kept for compatibility); AlignAIR 4 has no productivity head.</>],
           [<code>vj_in_frame</code>, "Junction length is a multiple of 3."],
-          [<code>stop_codon</code>, "A stop codon appears in the V-to-J coding frame."],
+          [<code>stop_codon</code>, "A stop codon lies in the junction's reading frame anywhere from the read's V start to its J end."],
         ]}
       />
 
@@ -96,11 +101,11 @@ const airrFields: DocPage = {
         head={["Field", "Meaning"]}
         rows={[
           [<code>airr_assembly_status</code>, <><code>complete</code> / <code>partial</code> (valid calls, a product such as the junction could not be assembled) / <code>failed</code> (an exception; light fields still emitted).</>],
-          [<code>airr_assembly_reason</code>, <>Reason on a partial record: <code>nonproductive_indel</code>, <code>missing_calls_or_coordinates</code>, <code>collapsed_segment</code>, <code>incomplete_alignment</code>.</>],
+          [<code>airr_assembly_reason</code>, <>Reason on a partial record: <code>no_v</code> (no V call - e.g. a read whose V gene is outside a <code>--genotype</code>), <code>nonproductive_indel</code>, <code>missing_calls_or_coordinates</code>, <code>collapsed_segment</code>, <code>incomplete_alignment</code>.</>],
           [<code>airr_assembly_error</code>, "Stores the exception class or traceback when airr_assembly_status is failed."],
           [<code>segmentation_low_quality</code>, "The V/J segmentation collapsed; coordinates unreliable, assembly partial."],
-          [<code>length_cropped</code>, "The input exceeded the model's sequence length window (default: 576 nt) and was cropped before orientation."],
-          [<><code>orientation</code>, <code>input_sequence</code></>, "The detected transform and the original post-crop read."],
+          [<code>length_cropped</code>, "The input exceeded the model's read window (575 nt for a 576-position model) and was cropped before orientation."],
+          [<><code>orientation</code>, <code>input_sequence</code></>, <>The detected transform (<code>forward</code>, <code>reverse_complement</code>, <code>complement</code>, <code>reverse</code>) and the original post-crop read, written when it differs from <code>sequence</code> (complement- and reverse-only reads).</>],
         ]}
       />
       <h3>A recommended minimum filter</h3>
