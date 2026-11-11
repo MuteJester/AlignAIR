@@ -15,9 +15,9 @@ export default function Home() {
   };
 
   const features = [
-    { num: '01', title: 'End-to-end neural model', body: 'One network detects orientation, localizes V/D/J, and calls alleles from a shared representation — no multi-stage heuristic pipeline.' },
-    { num: '02', title: 'Self-contained models', body: 'Each model embeds a fingerprinted germline reference and loads without executing any pickle. Pretrained IGH, IGK+IGL and TRB are a command away.' },
-    { num: '03', title: 'Donor-genotype constraint', body: 'Restrict calls to a subset of the model’s reference at inference — no retraining required.' },
+    { num: '01', title: 'End-to-end neural model', body: 'One network detects orientation, localizes V/D/J, finds the junction anchors and scores every allele of the bound reference, then refines against the germline — no multi-stage heuristic search.' },
+    { num: '02', title: 'Self-contained models', body: 'Each model embeds a fingerprinted germline reference and loads without executing any pickle. AlignAIR 4 pretrained models come one per locus, IGH first.' },
+    { num: '03', title: 'Reference without retraining', body: 'Restrict calls to a donor’s genotype, infer it from the reads, or bind a germline reference with novel alleles — at inference, no retraining.' },
     { num: '04', title: 'Standard AIRR output', body: 'Schema-valid AIRR rearrangement TSV with honest quality flags, ready for Scirpy, Change-O, Immcantation and nf-core/airrflow.' },
   ];
 
@@ -180,8 +180,8 @@ export default function Home() {
         <div role="group" aria-label="Choose your receptor locus" style={{ marginTop: "32px", display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "10px" }}>
           {[
             { id: "igh", label: "Human IGH (Heavy)" },
-            { id: "igkl", label: "Human IGK + IGL (Light)" },
-            { id: "tcrb", label: "Human TRB (TCR Beta)" },
+            { id: "igkl", label: "Human IGK / IGL (Light)" },
+            { id: "tcrb", label: "Human TCR" },
             { id: "other", label: "Another reference / species" },
           ].map((opt) => (
             <button
@@ -213,45 +213,43 @@ export default function Home() {
           {alignType === "igh" && (
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#574fd6", padding: "4px 10px", borderRadius: "6px" }}>Pretrained</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model ID: <strong>alignair-igh-human</strong></span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Source: <strong>OGRDB (V198/D33/J7)</strong></span>
+                {/* PENDING-V4-MODEL-ID: the AlignAIR 4 IGH model's id and source are not published yet. */}
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#574fd6", padding: "4px 10px", borderRadius: "6px" }}>Pretrained (first)</span>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model ID: <strong>{"<v4-igh-model>"}</strong> (not published yet)</span>
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
-                Aligns human immunoglobulin heavy chains. Supports somatic hypermutations (SHM) and full-length V(D)J assembly. Limitations: junctions can jitter ~1-2 nt on heavy SHM; D-allele calls carry inherent biological ambiguity.
+                Aligns human immunoglobulin heavy chains: somatic hypermutation, fragments, any orientation. Bind a donor genotype or novel alleles at predict time. Limitations: D-allele calls carry inherent biological ambiguity.
               </p>
               <pre tabIndex={0} aria-label="Human IGH prediction command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model {"<v4-igh-model>"}
               </pre>
             </div>
           )}
           {alignType === "igkl" && (
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#574fd6", padding: "4px 10px", borderRadius: "6px" }}>Pretrained</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model ID: <strong>alignair-igkl-human</strong></span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Source: <strong>OGRDB (V349/J18)</strong></span>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#6f6d85", padding: "4px 10px", borderRadius: "6px" }}>Planned</span>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>One model per locus: IGK, then IGL</span>
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
-                Multi-locus model for human IGK (Kappa) and IGL (Lambda) light chains. Automatically attributes reads to the correct locus. Limitations: no D segment is present (empty by design).
+                AlignAIR 4 publishes one pretrained model per locus; IGK and IGL follow IGH. The hub's <strong>alignair-igkl-human@1.0.0</strong> is an AlignAIR 3 model (it runs with <code>alignair&lt;4</code>). Until the AlignAIR 4 models are out, train one from a built-in light-chain reference.
               </p>
-              <pre tabIndex={0} aria-label="Human IGK and IGL prediction command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-igkl-human
+              <pre tabIndex={0} aria-label="Human IGK training command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair train --dataconfig HUMAN_IGK_OGRDB --out runs/igk --preset desktop
               </pre>
             </div>
           )}
           {alignType === "tcrb" && (
             <div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#574fd6", padding: "4px 10px", borderRadius: "6px" }}>Pretrained</span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Model ID: <strong>alignair-tcrb-human</strong></span>
-                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Source: <strong>IMGT (V98/D3/J16)</strong></span>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "#fff", background: "#6f6d85", padding: "4px 10px", borderRadius: "6px" }}>Planned</span>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>One model per locus: TRA, TRB, TRD, TRG</span>
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
-                Aligns human T-cell receptor beta chains. Trained with somatic hypermutation set to zero, since T cells do not hypermutate. Scope: this checkpoint covers the TRB locus only. Alpha, gamma and delta are not in the pretrained registry — they are not excluded by the architecture, so you can train a model for them from a TRA/TRG/TRD reference with <strong>alignair train</strong>.
+                The TCR loci follow the IG loci, one model each. TCR models train with somatic hypermutation set to zero, since T cells do not hypermutate. The hub's <strong>alignair-tcrb-human@1.0.0</strong> is an AlignAIR 3 model (it runs with <code>alignair&lt;4</code>). Until then, train one from a built-in TCR reference.
               </p>
-              <pre tabIndex={0} aria-label="Human TRB prediction command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
-                <span style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv --model alignair-tcrb-human
+              <pre tabIndex={0} aria-label="Human TRB training command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
+                <span style={{ color: "#9d9bb0" }}>$</span> alignair train --dataconfig HUMAN_TCRB_IMGT --out runs/trb --preset desktop
               </pre>
             </div>
           )}
@@ -262,7 +260,7 @@ export default function Home() {
                 <span style={{ fontSize: "13px", fontWeight: 500, color: "#56546a" }}>Any Locus or Species</span>
               </div>
               <p style={{ margin: 0, fontSize: "14.5px", color: "#56546a", lineHeight: 1.6 }}>
-                There is no pretrained model for other loci (like TCR Alpha/Gamma/Delta or IG Heavy/Light chains of non-human species). You must train a custom model using a built-in GenAIRR DataConfig or your own germline FASTA files.
+                There is no pretrained model for non-human species. Train a custom model using a built-in GenAIRR DataConfig or your own germline FASTA files. For novel alleles of a locus a model already covers, bind them with <strong>--reference</strong> instead - no retraining.
               </p>
               <pre tabIndex={0} aria-label="Custom reference training command" style={{ marginTop: "16px", padding: "14px 16px", background: "#16151f", borderRadius: "10px", fontFamily: "'IBM Plex Mono', monospace", fontSize: "13px", color: "#e6e5f0", overflowX: "auto" }}>
                 <span style={{ color: "#9d9bb0" }}>$</span> alignair train --v-fasta v.fasta --d-fasta d.fasta --j-fasta j.fasta --chain-type BCR_HEAVY --out runs/my_ref
