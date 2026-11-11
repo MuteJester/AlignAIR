@@ -5,7 +5,7 @@ const models: DocPage = {
   slug: "models",
   title: "Pretrained models",
   section: "Using AlignAIR",
-  lead: "The public model hub, how --model resolves, and what each model is.",
+  lead: "The public model hub, how --model resolves, and what an AlignAIR 4 model is.",
   body: () => (
     <>
       <p>
@@ -13,141 +13,89 @@ const models: DocPage = {
         <a href="https://huggingface.co/AlignAIR/AlignAIR-pretrained" target="_blank" rel="noreferrer" className="text-brand-600 underline">
           AlignAIR/AlignAIR-pretrained
         </a>
-        . You never download them by hand - pass a model id to <code>--model</code> and the CLI fetches, verifies, and
-        caches it on first use. No login required.
+        . You never download them by hand - pass a model id or a Hugging Face repo to <code>--model</code> and AlignAIR
+        fetches and caches it on first use. A public model needs no login.
       </p>
 
-      <h2>Authoritative model catalog</h2>
+      <h2>AlignAIR 4 models: one per locus</h2>
+      {/* PENDING-V4-MODEL-ID: the v4 catalog ids / hub repos are not decided; fill this table when they are. */}
       <p>
-        The CLI catalog is the live, authoritative list of available models. New models or loci can be added to the hub and discovered instantly without requiring a new AlignAIR package release.
+        AlignAIR 4 pretrained models come one per locus, published in this order: IGH first, then IGK, IGL, TRA, TRB,
+        TRD and TRG. Their ids and hub repos are not published yet; on these pages <code>{"<v4-igh-model>"}</code> is a
+        placeholder for the IGH model, and any AlignAIR 4 <code>.alignair</code> path works in its place.
       </p>
-      <ul className="list-disc pl-6 space-y-1 my-3">
-        <li>Run <code>alignair models list</code> to view the currently available live catalog and check which models are cached locally.</li>
-        <li>Run <code>alignair models update</code> to update already installed model checkpoints to their latest version.</li>
-        <li>For production pipelines, always pin an exact version (e.g. <code>alignair-igh-human@1.0.0</code>) to guarantee reproducibility.</li>
-      </ul>
-
-      <h2>Pretrained model registry</h2>
-      <div style={{ margin: "20px 0", overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", lineHeight: "1.6" }}>
-          <thead>
-            <tr style={{ background: "#f7f6fb", borderBottom: "2px solid #eae9f1" }}>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Model ID</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Locus Coverage</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>GenAIRR DataConfig</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Upstream Alleles</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Version</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Model created (UTC)</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Alleles (V/D/J)</th>
-              <th style={{ textAlign: "left", padding: "10px 12px", fontWeight: 600 }}>Allele-order fingerprint prefix*</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-              <td style={{ padding: "10px 12px" }}><code>alignair-igh-human</code></td>
-              <td style={{ padding: "10px 12px" }}>Human IGH (Heavy)</td>
-              <td style={{ padding: "10px 12px" }}><code>HUMAN_IGH_OGRDB</code></td>
-              <td style={{ padding: "10px 12px" }}><a href="https://ogrdb.airr-community.org/" target="_blank" rel="noreferrer" className="text-brand-600 underline">OGRDB</a></td>
-              <td style={{ padding: "10px 12px" }}>1.0.0</td>
-              <td style={{ padding: "10px 12px" }}>2026-07-13</td>
-              <td style={{ padding: "10px 12px" }}>198 / 33 / 7</td>
-              <td style={{ padding: "10px 12px" }}><code title="d615b59babba6902cb876ed415809df8e565682511dc9ab6032d2fc294dd582a"><span aria-hidden="true">d615b59babba…</span><span className="sr-only">allele-order SHA-256: d615b59babba6902cb876ed415809df8e565682511dc9ab6032d2fc294dd582a</span></code></td>
-            </tr>
-            <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-              <td style={{ padding: "10px 12px" }}><code>alignair-igkl-human</code></td>
-              <td style={{ padding: "10px 12px" }}>Human IGK + IGL (Light)</td>
-              <td style={{ padding: "10px 12px" }}><code>HUMAN_IGK_OGRDB</code> + <code>HUMAN_IGL_OGRDB</code></td>
-              <td style={{ padding: "10px 12px" }}><a href="https://ogrdb.airr-community.org/" target="_blank" rel="noreferrer" className="text-brand-600 underline">OGRDB</a></td>
-              <td style={{ padding: "10px 12px" }}>1.0.0</td>
-              <td style={{ padding: "10px 12px" }}>2026-07-13</td>
-              <td style={{ padding: "10px 12px" }}>349 / 0 / 18</td>
-              <td style={{ padding: "10px 12px" }}><code title="d32cd6fe79114117a504def1321ee831d60c95ef585e1127358d6be36a826463"><span aria-hidden="true">d32cd6fe7911…</span><span className="sr-only">allele-order SHA-256: d32cd6fe79114117a504def1321ee831d60c95ef585e1127358d6be36a826463</span></code></td>
-            </tr>
-            <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-              <td style={{ padding: "10px 12px" }}><code>alignair-tcrb-human</code></td>
-              <td style={{ padding: "10px 12px" }}>Human TRB (TCR Beta)</td>
-              <td style={{ padding: "10px 12px" }}><code>HUMAN_TCRB_IMGT</code></td>
-              <td style={{ padding: "10px 12px" }}><a href="https://www.imgt.org/" target="_blank" rel="noreferrer" className="text-brand-600 underline">IMGT</a></td>
-              <td style={{ padding: "10px 12px" }}>1.0.0</td>
-              <td style={{ padding: "10px 12px" }}>2026-07-13</td>
-              <td style={{ padding: "10px 12px" }}>98 / 3 / 16</td>
-              <td style={{ padding: "10px 12px" }}><code title="657d771a8952784d913936d5eef1020ac0395528266790cae23ec928b935c359"><span aria-hidden="true">657d771a8952…</span><span className="sr-only">allele-order SHA-256: 657d771a8952784d913936d5eef1020ac0395528266790cae23ec928b935c359</span></code></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p style={{ fontSize: "12px", color: "#6f6d85", marginTop: "-10px" }}>
-        * Note: The allele-order fingerprint (<code>allele_order_sha256</code>) is the SHA-256 hash of the list of ordered alleles embedded in the model card to prevent reference drift; it is not the hash of the model checkpoint file or reference FASTA. The full value is available to screen readers, and on hover as a tooltip.
-      </p>
-
-      <Callout kind="note" title="TCR Pretrained Coverage Limitation">
-        Pretrained TCR support is strictly limited to <strong>human TRB (TCR Beta)</strong>. Other TCR loci (like TRA, TRG, TRD) or non-human species are not supported by the pretrained models, but can be fully trained as custom models using appropriate germline reference FASTAs.
+      <Callout kind="warning" title="The catalog's current entries are AlignAIR 3 models">
+        The hub catalog currently lists <code>alignair-igh-human</code>, <code>alignair-igkl-human</code> and{" "}
+        <code>alignair-tcrb-human</code>, all at version 1.0.0 and all AlignAIR 3 models (architecture{" "}
+        <code>conv-v1</code>). AlignAIR 4 refuses them: <em>this is an AlignAIR 3 model (architecture 'conv-v1');
+        AlignAIR 4 reads chip models only - use alignair&lt;4 to run it</em>.
       </Callout>
 
-      <h2>Using a model</h2>
-      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human\n# pin an exact version for reproducibility\nalignair predict --input reads.fasta --out out.tsv --model alignair-igh-human@1.0.0`} />
+      <h2>The live catalog</h2>
       <p>
-        On first use the model is downloaded, its SHA-256 is checked against the catalog, and it is cached locally.{" "}
-        <code>--model</code> also accepts a local <code>.alignair</code> path or an <code>org/name</code> Hugging Face
-        repo id.
+        The catalog is fetched live from the hub, so new models can be added without a new AlignAIR release.
+      </p>
+      <ul className="list-disc pl-6 space-y-1 my-3">
+        <li>Run <code>alignair models list</code> to view the catalog and see which models are cached locally.</li>
+        <li>Run <code>alignair models update</code> to update installed models to their latest version.</li>
+        <li>For production pipelines, pin an exact version (<code>id@version</code>) or a Hugging Face revision to guarantee reproducibility.</li>
+      </ul>
+
+      <h2>Using a model</h2>
+      <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>\n# pin an exact catalog version for reproducibility\nalignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>@<version>\n# or a Hugging Face repo, pinned to a branch, tag or commit\nalignair predict --input reads.fasta --out out.tsv --model hf://<org>/<repo> --revision <commit>`} />
+      <CodeBlock lang="python" code={`from alignair import Aligner
+
+aligner = Aligner.from_pretrained("hf://<org>/<repo>", revision="<commit>", device="auto")
+aligner.predict(["CAGGTGCAGCTG..."]).write_airr("out.tsv")`} />
+      <p>
+        A catalog model is downloaded on first use, its SHA-256 checked against the catalog, and cached locally. A
+        Hugging Face repo (<code>hf://org/repo</code> or <code>org/repo</code>) is pulled with{" "}
+        <code>huggingface_hub</code> (in the <code>[cli]</code> and <code>[hub]</code> extras) into the Hugging Face cache;
+        <code> --hf-token</code> (or <code>$HF_TOKEN</code>) opens a private repo, and the default file is{" "}
+        <code>model.alignair</code>. <code>--model</code> also accepts a local <code>.alignair</code> path.
       </p>
 
       <h2>Model cards &amp; scientific limitations</h2>
-      <p>All three models share this configuration:</p>
+      <p>An AlignAIR 4 model file:</p>
       <ul>
-        <li>Convolutional encoder with per-gene segmentation + classification heads, plus orientation, mutation-rate, indel, and productivity heads.</li>
-        <li>Maximum input length 576 nt (longer reads are cropped and flagged <code>length_cropped</code>).</li>
-        <li>Intended input: single-end reads, full-length or fragments, any orientation. Not paired-read assembly, not BAM/CRAM.</li>
-        <li>Fixed-reference classifier; constrain with <code>--genotype</code>, add alleles by training.</li>
-        <li>Post-hoc temperature-scaling calibration (below). Minimum AlignAIR 2.0.0; <code>.alignair</code> v1 (pickle-free).</li>
-        <li>License GPL-3.0-or-later. Citation: Konstantinovsky et al., Nucleic Acids Research 2025, gkaf651.</li>
+        <li>holds the <code>chip-v1</code> network: an orientation correction, a dilated convolutional trunk, a region parser, V/J anchor heads, a mutation reader, and per-segment scans of the bound reference's alleles;</li>
+        <li>reads at most 575 nt (a 576-position window less one reserved slot); longer reads are cropped and flagged <code>length_cropped</code>;</li>
+        <li>takes single-end reads, full-length or fragments, in any orientation - not paired-read assembly, not BAM/CRAM;</li>
+        <li>embeds its training reference as the default bank; restrict it with <code>--genotype</code>, or bind another with <code>--reference</code> (see the <DocLink to="model-contract">model contract</DocLink>);</li>
+        <li>is <code>.alignair</code> format v1 and loads without unpickling anything;</li>
+        <li>is licensed GPL-3.0-or-later. Citation: Konstantinovsky et al., Nucleic Acids Research 2025, gkaf651.</li>
       </ul>
-      <h3>Per-model specifications &amp; limitations</h3>
-      <DocTable
-        head={["Model", "Reference Specs", "Known Scientific Limitations"]}
-        rows={[
-          [<code>alignair-igh-human</code>, "GenAIRR OGRDB, V198 / D33 / J7", "On full-length heavy-SHM V, accuracy is comparable to IgBLAST rather than higher; junctions can jitter ~1-2 nt. D-allele calling is inherently ambiguous due to chew-off deletions."],
-          [<code>alignair-igkl-human</code>, "GenAIRR OGRDB, V349 / J18 (no D)", <>Multi-locus (IGK + IGL). <code>d_call</code> and <code>np2</code> empty by design; each read attributed to one locus. Designed for light chain alignment.</>],
-          [<code>alignair-tcrb-human</code>, "GenAIRR IMGT, V98 / D3 / J16", <>SHM set to zero (TCR does not hypermutate). Short TRB D often yields a multi-member <code>d_call_set</code> or a blank <code>d_call</code>. Limited to TRB locus; other TCR chains are not supported by this checkpoint.</>],
-        ]}
-      />
       <p>
-        Training simulation for all: GenAIRR-native, curriculum-ramped (SHM, indels, sequencing error, ambiguous bases,
-        one-sided and both-ends fragmentation, orientation augmentation). Exact fingerprints and calibration temperatures
-        are in <code>alignair models info &lt;id&gt;</code>.
+        <code>alignair info model.alignair</code> prints a file's card (format, creating version, allele counts,
+        parameters, training steps, reference, sections); <code>alignair models info &lt;id&gt;</code> does the same for a
+        catalog id. A bundle from <code>alignair train</code> also has a <code>model_card.md</code> and a{" "}
+        <code>reference_manifest.json</code> beside the model file.
       </p>
       <Callout kind="note" title="Held-out validation metrics">
-        Per-model held-out accuracy is not yet published in the registry (<code>metrics</code> is null). Evaluate a model
-        yourself with <code>alignair benchmark --model &lt;id&gt; --n 200 --out benchmark.json</code> (see{" "}
-        <DocLink to="benchmarks">Benchmarks</DocLink>).
+        {/* PENDING-V4-NUMBERS: per-model held-out accuracy for the v4 models. */}
+        Per-model accuracy for the AlignAIR 4 models is pending their release and a fresh head-to-head. Evaluate a model
+        yourself with <code>alignair benchmark --model &lt;model&gt; --n 200 --format json --out benchmark.json</code>{" "}
+        (see <DocLink to="benchmarks">Benchmarks</DocLink>).
       </Callout>
 
-      <h2>Confidence calibration</h2>
-      <p>
-        Each pretrained model carries post-hoc temperature scaling on the allele heads: a per-gene temperature fitted on
-        held-out data, embedded in the model card and hash-verified. It is applied automatically; there is no flag.
-        Temperature scaling is monotonic, so it never reorders the alleles and never changes which one is called - it
-        rescales the reported probability so it better matches observed accuracy. It <em>can</em> change{" "}
-        <code>*_call_set</code> membership, though: the set rule is an absolute <code>p &gt;= 0.5</code> cut rather than
-        a rank cut, and rescaling moves probabilities across that line. Held-out calibration quality metrics are not yet
-        published; the <code>*_set_confidence</code> column stays blank until that step.
-      </p>
-
       <h2>Managing the cache</h2>
-      <CodeBlock code={`alignair models get alignair-tcrb-human      # pre-download (id or id@version)\nalignair models info alignair-igh-human      # model card (calibration, fingerprints)\nalignair models path alignair-igh-human      # cached file path\nalignair models verify                       # re-hash installed models\nalignair models update                       # update to the latest version\nalignair models prune                        # remove old cached versions`} />
+      <CodeBlock code={`alignair models get <v4-igh-model>      # pre-download (id or id@version)\nalignair models info <v4-igh-model>     # model card (allele counts, fingerprints)\nalignair models path <v4-igh-model>     # cached file path\nalignair models verify                  # re-hash installed models\nalignair models update                  # update to the latest version\nalignair models prune                   # remove old cached versions`} />
 
       <h2>Offline and private registries</h2>
       <ul>
-        <li><code>--offline</code> uses only what is already cached (<code>ALIGNAIR_NO_NETWORK=1</code> also disables the update check).</li>
+        <li><code>--offline</code> uses only what is already cached; <code>ALIGNAIR_NO_NETWORK=1</code> turns off the passive update check.</li>
         <li>Point at another registry with <code>--registry</code>, <code>$ALIGNAIR_REGISTRY</code>, or a config file - a Hugging Face repo, an <code>https://</code> mirror, or a local <code>file://</code> directory. This is how a lab hosts private models.</li>
       </ul>
 
       <h2>What a model file contains</h2>
       <p>
-        Each <code>.alignair</code> is self-contained and safe to load: weights plus the germline reference (sequences +
-        anchors), fingerprinted so it cannot drift from the weights, and it loads without executing any pickle. Every
-        prediction run also writes a <code>&lt;out&gt;.run.json</code> provenance sidecar. Publishing to the hub is a
-        maintainer-only, token-gated step (see <DocLink to="publishing">Publishing models</DocLink>).
+        Each <code>.alignair</code> is self-contained and safe to load: weights plus the germline reference (sequences,
+        IMGT gaps and anchors), fingerprinted so it cannot drift from the weights, and it loads without executing any
+        pickle. A training checkpoint also holds pickled sections for resuming (<code>dataconfig/0</code>,{" "}
+        <code>train_state</code>); loading never decodes them, but share the pickle-free bundle instead (see{" "}
+        <DocLink to="training">Training</DocLink>). Every prediction run also writes a <code>&lt;out&gt;.run.json</code>{" "}
+        provenance sidecar. Publishing to the hub is a maintainer-only, token-gated step (see{" "}
+        <DocLink to="publishing">Publishing models</DocLink>).
       </p>
     </>
   ),
@@ -161,9 +109,10 @@ const training: DocPage = {
   body: () => (
     <>
       <p>
-        Train when you need a reference AlignAIR does not already ship: a different species, a custom germline set, or a
-        locus none of the pretrained models cover. Training produces a new fixed-reference model whose embedded reference
-        is the exact callable set. The output is a self-contained, pickle-free bundle.
+        Train when you need a locus or species no available model covers. For novel alleles or a curated germline set of
+        a locus a model already covers, bind it at predict time with <code>--reference</code> instead (see the{" "}
+        <DocLink to="model-contract">model contract</DocLink>). Training produces a model whose embedded reference is its
+        default bank, and exports a self-contained, pickle-free bundle.
       </p>
 
       <h2>Two ways to specify the reference</h2>
@@ -186,7 +135,7 @@ const training: DocPage = {
       <h3>Reference FASTA rules</h3>
       <ul>
         <li>Each file is a standard germline FASTA (allele name in the header, nucleotide sequence).</li>
-        <li>V and J conserved anchors are discovered during the build; alleles whose anchor cannot be placed still get calls but have no junction (honest absence).</li>
+        <li>GenAIRR's cartridge builder annotates the V and J conserved anchors; <code>--plan</code> prints its reference-build warnings (e.g. alleles it could not annotate). IMGT-gapped V sequences give it the most to work with.</li>
         <li>Unusable (malformed / duplicate) alleles are rejected and counted, recorded in <code>reference_manifest.json</code> with per-gene <code>anchored</code> coverage. Check anchor coverage before committing to a reference.</li>
       </ul>
 
@@ -210,26 +159,34 @@ const training: DocPage = {
       <p>
         <code>--plan</code> validates the reference and configuration and prints the plan without training (resolved
         loci, per-gene allele counts, whether the locus has D, max input length, model parameter count, and the step /
-        batch schedule). It does not estimate wall time or memory.
+        batch schedule). It does not estimate wall time or memory. Training refuses up front, before any step, when{" "}
+        <code>--out</code> already holds a <code>bundle/</code> and <code>--overwrite</code> is not given.
       </p>
 
       <h2>How training data is simulated</h2>
       <p>
         AlignAIR trains on GenAIRR-simulated reads with known ground truth (no post-hoc cropping - read length and every
-        corruption come from the simulation). A curriculum ramps difficulty, drawing somatic hypermutation (S5F, ~0.5 to
-        15%; set to zero for TCR), indels (0 to ~5), sequencing error (0 to ~2%), ambiguous bases, and read orientation
-        (up to ~50% non-forward). An amplicon mix spans full-length, V/framework-anchored, J-anchored, and both-ends
-        fragments, plus a heavily-mutated full-length stream.
+        corruption come from the simulation). A curriculum ramps difficulty with its progress: somatic hypermutation
+        (S5F, a rate from 0.5% to 15%; none for TCR loci), polymerase indels (on 5% of reads rising to 25%, one to three
+        each), sequencing error (up to about 1.5%), up to five ambiguous bases, and up to 40 nt lost from each end. Each
+        read is presented in one of four orientations (forward, reverse complement, complement, reverse), drawn
+        uniformly. The default mix draws from three curriculum stages, three amplicon shapes (V-anchored, J-anchored and
+        both-ends fragments) and a heavily mutated stream (rate 0.25). By default each read also gets library flanks
+        around its V(D)J - a 5' leader, a masked primer, a 3' constant region - so the model does not learn that V
+        starts at the read's first base.
       </p>
 
       <h2>What training writes</h2>
       <DocTable
         head={["File", "Contents"]}
         rows={[
-          [<code>model.alignair</code>, "The pickle-free model: weights + embedded, fingerprinted reference."],
-          [<code>model_card.md</code>, "Loci, per-gene allele counts, training steps, and the validation summary."],
-          [<code>reference_manifest.json</code>, "Allele counts and anchor coverage, reference fingerprints, source hashes, tool versions."],
-          [<code>validation_report.json</code>, "Per-task metrics on a fixed held-out stream (below)."],
+          [<code>runs/igh/model.alignair</code>, "The last resumable checkpoint: weights, reference, and pickled training sections (dataconfig/0, train_state). For resuming, not for sharing."],
+          [<code>runs/igh/model.step&lt;N&gt;.alignair</code>, "Periodic resumable checkpoints."],
+          [<code>runs/igh/model.best.alignair</code>, "The checkpoint with the best validation score, when validation ran; the bundle is exported from it."],
+          [<code>runs/igh/bundle/model.alignair</code>, "The pickle-free model to share and predict with: weights + embedded, fingerprinted reference."],
+          [<code>bundle/model_card.md</code>, "Loci, per-gene allele counts, training steps, the SHM cap applied per locus, and the validation summary."],
+          [<code>bundle/reference_manifest.json</code>, "Allele names and anchor coverage, reference fingerprints, source hashes, tool versions."],
+          [<code>bundle/validation_report.json</code>, "Per-task metrics on a fixed held-out stream (below)."],
         ]}
       />
       <p>
@@ -238,23 +195,50 @@ const training: DocPage = {
         <code>--model runs/igh/bundle/model.alignair</code>.
       </p>
 
+      <h2>Sharing a trained model</h2>
+      <p>
+        Share the bundle, never a checkpoint. <code>Aligner.save_pretrained(directory)</code> copies a pickle-free model
+        file, and <code>Aligner.push_to_hub(repo_id)</code> uploads it (<code>model.alignair</code> only; needs{" "}
+        <code>huggingface_hub</code> and a write token); both refuse a checkpoint, an aligner made by{" "}
+        <code>bound_to</code> (it is not a file), and anything else with pickle sections. Training from Python with{" "}
+        <code>run_training</code> writes the checkpoints but no bundle; export one with{" "}
+        <code>alignair.train.build.export_bundle</code>, which <code>alignair train</code> calls at the end:
+      </p>
+      <CodeBlock lang="python" code={`from alignair.genairr import resolve_dataconfigs
+from alignair.train.build import export_bundle
+
+export_bundle("runs/igh/model.alignair", resolve_dataconfigs(["HUMAN_IGH_OGRDB"]), "runs/igh/bundle")
+# -> runs/igh/bundle/{model.alignair, model_card.md, reference_manifest.json, validation_report.json}`} />
+      <p>
+        <code>export_bundle</code> refuses an existing directory (<code>FileExistsError</code>) unless{" "}
+        <code>overwrite=True</code>; <code>validate=False</code> skips the validation report. There is no{" "}
+        <code>alignair export</code> command, and <code>alignair convert</code> converts only lab chip model files (
+        <code>lab-chip-v1</code>, <code>lab-chipw64-v1</code>), not training checkpoints.
+      </p>
+
       <h2>Interpreting validation_report.json</h2>
       <DocTable
         head={["Metric", "Meaning", "Direction"]}
         rows={[
-          [<code>v/d/j_allele_top1</code>, "Top call is inside the truth equivalence set (headline accuracy).", "Higher (0-1)"],
+          [<code>v/d/j_allele_top1</code>, "The top-scoring allele is in the read's truth allele set (headline accuracy).", "Higher (0-1)"],
+          [<code>scan_v/d/j_top1</code>, "The same, from the bank scan's log-posterior; the best-checkpoint score is the mean of these.", "Higher (0-1)"],
           [<code>v/d/j_seg_mae</code>, "Mean absolute error of the segment start and end, in nucleotides.", "Lower"],
+          [<code>parse_v/d/j_start/end_exact</code>, "The parser's boundary is exactly the true one.", "Higher (0-1)"],
+          [<code>anchor_v/j_exact</code>, "The anchor head finds the conserved codon's exact start.", "Higher (0-1)"],
+          [<code>coord_v/d/j_top1</code>, "The mutation reader's top germline column for a base is the true one.", "Higher (0-1)"],
+          [<code>bank_v/d/j_size</code>, "Mean number of bank alleles a read is scored over (the batch's bank).", "Informational"],
           [<code>orientation_acc</code>, "Orientation-head accuracy.", "Higher"],
-          [<code>chain_type_acc</code>, "Locus classification accuracy (multi-locus).", "Higher"],
+          [<code>d_presence_acc</code>, "Whether a read has a D, called correctly.", "Higher"],
           [<code>mutation_mae</code>, "Error of the SHM-rate estimate.", "Lower"],
           [<code>indel_mae</code>, "Error of the indel-count estimate.", "Lower"],
-          [<code>productive_acc</code>, "Productivity-head accuracy.", "Higher"],
+          [<code>shm_brier</code>, "Brier score of the reader's per-base mutation state.", "Lower"],
         ]}
       />
       <p>
-        The best-checkpoint score is the mean of <code>v/d/j_allele_top1</code>. Guidance: V and J top-1-in-set should be
-        well above 0.9 on this stream for a <code>desktop</code>/<code>full</code> run; D is expected lower (especially
-        short-D loci); segmentation MAE should be single-digit nucleotides; orientation near 1.0.
+        The best checkpoint is the one with the highest mean of <code>scan_v/d/j_top1</code> on the validation batches.
+        {/* PENDING-V4-NUMBERS: target values for a desktop/full v4 run. */} Target values for a{" "}
+        <code>desktop</code> or <code>full</code> AlignAIR 4 run are pending (results pending); compare against a
+        reference run of the same preset meanwhile. D is expected lower than V and J, especially on short-D loci.
       </p>
       <Callout kind="note" title="Necessary, not sufficient">
         The held-out stream scores the model on the same GenAIRR simulation family it trained on. It is a strong signal,
