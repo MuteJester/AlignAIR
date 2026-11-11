@@ -5,307 +5,165 @@ const composition: DocPage = {
   slug: "model-composition",
   title: "Model composition API",
   section: "Design",
-  lead: "Construct nucleotide and protein-class AlignAIR models through one configurable model and component interface.",
+  lead: "How the AlignAIR model is assembled from an embedding, an orientation head and the chip core, and how to register a variant.",
   body: () => (
     <>
       <p>
-        <code>alignair.core.AlignAIR</code> owns model assembly and forward execution for both alphabets.
-        Its configuration selects score semantics, boundary slots, and optional heads. The tokenizer and
-        reference determine the vocabulary and label counts; the model does not infer them from the input.
+        <code>alignair.core.AlignAIR</code> owns model assembly and the forward pass. Its configuration&apos;s
+        <code> architecture</code> name selects a registered <code>ModelComponents</code>; <code>chip-v1</code> is the
+        only built-in architecture. The tokenizer fixes the vocabulary and the bound reference fixes the allele
+        counts; the model does not infer either from its input. The design and its units are described on the
+        <DocLink to="design"> design page</DocLink>.
       </p>
-      <p>
-        Shared neural-network components live in <code>alignair.neural</code>, including prediction
-        heads and learned uncertainty weights. This package serves both nucleotide and protein models.
-        The historical <code>alignair.nn</code> facade has been removed; import these components
-        directly from <code>alignair.neural</code>.
-      </p>
-      <H2 id="package-ownership">Package ownership and import migration</H2>
-      <DocTable head={["Responsibility", "Canonical package"]} rows={[
-        ["Nucleotide and protein model assembly", "alignair.core"],
-        ["Reusable neural heads and uncertainty weights", "alignair.neural"],
-        ["Alignment objectives and supervision", "alignair.tasks"],
-        ["Calibrated protein prediction and bundles", "alignair.predict.protein"],
-        ["Applicability models, data sources, profiles and studies", "alignair.applicability"],
-        ["Protein-product applicability assessment", "alignair.applicability.assessment"],
-        ["Convergence training and checkpoint selection", "alignair.train.convergence"],
-        ["Gene/family coverage studies", "alignair.evaluate.coverage"],
+      <H2 id="package-ownership">Package ownership</H2>
+      <DocTable head={["Responsibility", "Package"]} rows={[
+        ["Model assembly, configuration, component registry, reference-bound setup", "alignair.core"],
+        ["The chip's units: trunk, parser, anchor heads, SHM reader, bank compiler, bank scans, orientation, objective", "alignair.network"],
+        ["Deterministic refinement at inference: one locus per read, boundaries, D local alignment, V re-score", "alignair.refine"],
+        ["The training-task protocol and support-weighted metrics", "alignair.tasks"],
+        ["Training adapters, chip targets and inputs, tokenizer", "alignair.data"],
+        ["Training engine, runner, checkpoints and record streams", "alignair.train"],
+        ["Prediction pipeline and AIRR assembly", "alignair.predict"],
       ]} />
-      <p>
-        The former <code>aa.product</code>, <code>aa.guard</code>, <code>aa.convergence</code> and
-        <code> aa.phase3</code> paths have moved to the corresponding packages above. The
-        <code> aa</code>, <code>nn</code> and <code>core.losses</code> import facades are removed.
-        Public <code>alignair.predict_aa</code> and <code>alignair.load_aa_model</code> entry points retain
-        their names. Stored bundle and equivalence-map schema identifiers retain their historical
-        values, so these package moves do not rename serialized formats or classification columns.
-      </p>
       <H2 id="construction">Construct a model</H2>
-      <p>
-        This example uses small label vocabularies to illustrate construction. For training, supply counts
-        from the actual nucleotide reference or protein equivalence maps and encode inputs with the matching tokenizer.
-        The <DocLink to="model-setup">model setup API</DocLink> derives those counts and binds them to
-        an ordered reference before allocating model parameters.
-      </p>
-      <CodeBlock lang="python" code={`from alignair.core import AlignAIR, build_model_config
+      <CodeBlock lang="python" code={`import GenAIRR as ga
+from alignair.core import AlignAIR, AlignAIRConfig
+from alignair.reference import ReferenceSet
 
-nt_config = build_model_config(3, 2, max_seq_length=192)
-nt_model = AlignAIR(nt_config)
-
-protein_config = build_model_config(
-    3, 2, input_space="protein", label_space="protein_classes",
-)
-protein_model = AlignAIR(protein_config)`} />
+reference = ReferenceSet.from_dataconfigs(ga.HUMAN_IGH_OGRDB)
+config = AlignAIRConfig.from_reference(reference)   # counts and has_d from the reference
+model = AlignAIR(config)
+model.bind_reference(reference)                      # the bank: required before a forward pass`} />
       <p>
-        Both models accept a dictionary containing <code>tokenized_sequence</code>: an integer tensor of
-        shape <code>(batch, max_seq_length)</code> with padding ID zero. The protein preset uses right padding,
-        categorical scores, and separate start/end masks. It disables orientation correction, auxiliary
-        predictions, and edit-state predictions and rejects empty rows. Both profiles use the same
-        <code> AlignAIR</code> class. Its constructor uses the supplied configuration without replacing
-        head choices.
+        The <DocLink to="model-setup">model setup API</DocLink> does the same through <code>prepare_model</code>, with
+        binding checks before parameters are allocated. The model accepts a dictionary containing
+        <code> tokenized_sequence</code>: an integer tensor of shape <code>(batch, max_seq_length)</code>, right-padded
+        with token 0. Each model owns a deep copy of its construction configuration, so editing the caller&apos;s
+        configuration afterwards changes nothing. Treat structural settings as construction inputs: use
+        <code> dataclasses.replace</code> and build a new model to change widths or the architecture.
       </p>
-      <p>
-        Each model owns a deep copy of its construction configuration, including nested calibration
-        values. Reusing or editing the caller’s configuration cannot change an existing model or a
-        sibling experiment. Loaded-model configuration accessors refer to the model’s own configuration.
-        Treat structural settings as construction inputs: use <code>dataclasses.replace</code> and build
-        a new model when changing dimensions, score semantics, boundary modes, or architecture.
-        <code> model.cfg</code> remains mutable for existing runtime calibration APIs; editing it does
-        not rebuild layers or validate an architecture change.
-      </p>
-      <H2 id="migration">Migrate former protein model imports</H2>
-      <p>
-        The <code>aa.model</code> and <code>aa.config</code> facades have been removed. Select
-        the protein input and label spaces explicitly when preparing a configuration.
-      </p>
-      <DocTable head={["Former import", "Replacement"]} rows={[
-        ["aa.model.AAAlignAIR", "alignair.core.AlignAIR with an explicit protein-class configuration"],
-        ["aa.model.AAGeneBranch", "alignair.core.gene_branch.GeneBranch with that configuration"],
-        ["aa.model.boundary_masks", "alignair.core.boundaries.boundary_masks"],
-        ["aa.config.aa_igh_config", "alignair.core.build_model_config with input_space='protein' and label_space='protein_classes'"],
+      <H2 id="choices">Configuration</H2>
+      <DocTable head={["Setting", "Default", "Behavior"]} rows={[
+        [<code>architecture</code>, <code>"chip-v1"</code>, "The registered components to build; stored in the model file."],
+        [<code>embed_dim</code>, "32", "Width of the learned token-plus-position embedding."],
+        [<code>trunk_channels</code>, "64", "The chip trunk's channels per position; chip-v1 is trained at 64."],
+        [<code>max_seq_length</code>, "576", "The model window. Position embeddings and every per-position output are this wide."],
+        [<code>use_orientation</code>, "True", "Builds the 4-class orientation head and corrects each read in the model."],
+        [<code>bank_orientation</code>, "True", "At inference, orients a read by the bound reference: the transform under which most of its 12-mers are germline 12-mers; the orientation head decides when none wins. Requires use_orientation."],
+        [<code>anchor_heads</code>, "True", "The V Cys and J Trp/Phe anchor heads; the junction, frame and productivity are derived from them."],
+        [<code>d_presence_head</code>, "has_d", "The 3-state D presence head (absent, too short to call, callable). Requires a D."],
+        [<code>reject_empty_sequences</code>, "False", "Rejects all-padding rows with an InputError."],
+      ]} />
+      <H2 id="forward">Forward computation</H2>
+      <DocTable head={["Stage", "Computation"]} rows={[
+        ["Embedding", <>Learned token and absolute-position embeddings, <code>(batch, window, embed_dim)</code>.</>],
+        ["Orientation", <>The head predicts one of 4 transforms (forward, reverse complement, complement, reverse) from
+          the initial embedding. With a supplied <code>orientation</code> input (training batches) that transform is
+          used; otherwise the argmax, replaced by the bank&apos;s k-mer vote where the vote wins. The tokens are
+          transformed and embedded again.</>],
+        ["Core (the chip)", <>A dilated convolutional trunk gives every base its features once; the parser reads the
+          region path and boundaries; the anchor heads find the V and J codons inside their regions; the SHM reader
+          gives each base its mutation and insertion probability and its germline columns; per gene, the bank scan
+          scores every allele row of the bound reference that the batch&apos;s genotype allows.</>],
+        ["Refinement", <>The V end and J start are refined from the anchors along the bank&apos;s germlines. At
+          inference only, each read of a multi-locus bank is restricted to one locus, the junction is aligned to the D
+          rows, the D edges are refined on the called D, and the top V rows are re-scored by a banded gapped
+          alignment.</>],
       ]} />
       <p>
-        Product loading retains normalization of historical protein head metadata at the artifact
-        boundary. Existing supported state dictionaries, classification columns and decoder outputs
-        remain compatible with the shared class.
+        Each gene returns start and end logits of shape <code>(batch, window)</code>, their expectations
+        <code> {"{gene}_start"}</code> and <code>{"{gene}_end"}</code> of shape <code>(batch, 1)</code>, the allele
+        log posterior <code>{"{gene}_log_posterior"}</code> and <code>{"{gene}_allele"}</code>, each allele&apos;s
+        likelihood relative to the best (1 for the best, 0 outside the bank), with one column per allele of the bound
+        reference. The model also returns <code>orientation_logits</code> and <code>orientation</code>, the anchor
+        logits (<code>v_anchor_logits</code>, <code>j_anchor_logits</code>), <code>d_presence_logits</code>,
+        <code> mutation_rate</code>, <code>indel_count</code> and the read masks. A batch from the training adapter
+        also gets the <code>chip_*</code> tensors the objective reads; a prediction batch does not.
       </p>
-      <H2 id="choices">Configuration and output semantics</H2>
-      <DocTable head={["Setting", "Behavior"]} rows={[
-        [<code>classification_mode="multilabel"</code>, <><code>{"{gene}_allele"}</code> contains independent sigmoid probabilities.</>],
-        [<code>classification_mode="categorical"</code>, <><code>{"{gene}_class_logits"}</code> contains raw logits; apply softmax for class probabilities.</>],
-        [<code>boundary_mode="residue"</code>, "Preserves the released nucleotide decoder: both boundary masks select residue positions."],
-        [<code>boundary_mode="half_open"</code>, "End slot k is valid when residue k-1 exists. Encoded reads must be shorter than the model window to leave room for the terminal slot."],
-        [<code>use_orientation</code>, "Enables nucleotide orientation detection and correction. Leave it disabled for proteins."],
-        [<code>use_meta_heads</code>, "Enables the auxiliary tower and its mutation, indel, productivity, and optional locus predictions."],
-        [<code>state_head</code>, "Enables per-position edit-state logits independently of auxiliary heads."],
-        [<code>reject_empty_sequences</code>, "Rejects all-padding rows with a structured input error."],
-        [<code>short_d_penalty</code>, "Legacy multilabel objective for a final Short-D sentinel. Reference-bound constructors derive it from labels; real D alleles must not be treated as this sentinel."],
+      <H2 id="gradient-paths">How the units train together</H2>
+      <DocTable head={["Path", "Behavior"]} rows={[
+        ["Orientation", "Trained by its own cross entropy. The transform is a hard choice (teacher-forced while training), so the other losses do not reach the orientation head."],
+        ["Anchors and parser", "The log of the parser's region marginal is added to each anchor head's position logits, so the anchor and parse losses train each other."],
+        ["Scans and parser", <>Each gene&apos;s scan weights bases by the parser&apos;s soft region; its gradient reaches the
+          parser through a valve at <code>ROUTE_VALVE</code> (0.1) of its full value.</>],
+        ["Teacher forcing", <>While training, each read uses the true regions and columns in place of the
+          parser&apos;s and the reader&apos;s with probability <code>P_TEACHER</code> (0.5).</>],
+        ["D presence", "Reads detached evidence (how much of the read the parser puts in D, how concentrated the D posterior is), so it does not reshape that evidence."],
       ]} />
       <p>
-        Each active gene also returns start/end logits of shape <code>(batch, window)</code> and decoded
-        expectations of shape <code>(batch, 1)</code>. <code>config.classification_key(gene)</code> returns
-        the appropriate classification key. Construction choices are serialized with the configuration.
-      </p>
-      <CodeBlock lang="python" code={`from dataclasses import replace
-
-# A categorical model can also expose auxiliary predictions.
-config = replace(protein_config, use_meta_heads=True)
-model = AlignAIR(config)`} />
-      <H2 id="forward">Forward computation and shared features</H2>
-      <DocTable head={["Stage", "Computation and output"]} rows={[
-        ["Embedding", <>Learned token and absolute-position embeddings are added to produce
-          <code> (batch, window, embed_dim)</code>. This embedding is shared by gene branches; there is
-          no shared convolutional encoder before them.</>],
-        ["Orientation, when enabled", "Predicts a transform from the initial embedding, transforms the tokens, then embeds them again. Training uses supplied orientation labels; otherwise the model uses a detached argmax."],
-        ["Per-gene segmentation", "An independent convolutional tower produces a global feature vector. Two linear heads produce window-sized start/end logits. Masked softmax expectations decode the two boundaries."],
-        ["Soft crop", "The decoded boundaries produce a smooth interval mask with a default ramp width of 3 positions. The mask multiplies the shared embedding; it does not extract or resize a sequence."],
-        ["Per-gene classification", "A second independent tower consumes the masked embedding. A SiLU hidden layer and final linear head produce categorical logits or sigmoid multilabel scores."],
-        ["Optional predictions", "The auxiliary tower and edit-state branch consume the canonical embedding independently of the per-gene crops."],
-      ]} />
-      <p>
-        The default segmentation towers downsample the window by 32; V/J classification towers
-        downsample by 128, and the D classification tower by 32. Flattening and a linear projection
-        produce each tower’s global vector. Window length therefore affects projection sizes and
-        checkpoint shapes. Boundary masks constrain decoded positions and supervised boundary losses;
-        they do not zero padding embeddings throughout the convolutional towers. The default embedding
-        includes a learned padding-token vector and learned position vectors at padded positions.
-      </p>
-      <H2 id="gradient-paths">How the objectives interact</H2>
-      <DocTable head={["Objective", "Gradient path in the default architecture"]} rows={[
-        ["Classification", "Updates the classifier, embedding, and segmentation through the differentiable crop. Classification and segmentation are coupled even when their loss values are reported separately."],
-        ["Segmentation", "Updates boundary heads, the segmentation tower, and embedding. It has no path through the classification tower or class head."],
-        ["Orientation", "Has its own supervised objective. The hard transform decision blocks classification and boundary losses from training the orientation head."],
-        ["Auxiliary and state tasks", "Update their own branches and the shared embedding. They do not use the per-gene classification crops."],
-      ]} />
-      <p>
-        The crop enforces an end of at least start plus one. When this constraint replaces the predicted
-        end, classification has no crop gradient to that end estimate; the boundary objective can still
-        train it. Record inverted-span frequency alongside boundary error when investigating classification.
-        The categorical objective adds mean boundary loss to mean class loss. The hierarchical objective
-        uses uncertainty weights and additional span terms. Their numerical loss scales are not directly
-        comparable. See the <DocLink to="training-tasks">task contracts</DocLink> before changing weights.
-      </p>
-      <CodeBlock lang="python" code={`from alignair.xray.dynamics import gradient_conflict
-
-# parts contains graph-bearing tensors from tasks.loss(outputs, targets, weights).
-# Call before backward, with gradients enabled.
-report = gradient_conflict(
-    {name: parts[name] for name in ("segmentation", "classification")},
-    list(model.embedding.parameters()),
-)
-print(report["grad_norm"], report["cosine"])`} />
-      <p>
-        This existing probe uses autograd without accumulating parameter gradients. A negative cosine
-        describes opposing task gradients on this batch; it does not by itself demonstrate an accuracy
-        problem. Use a separate loaded probe model in evaluation mode with gradients enabled, and
-        repeat over representative batches. Evaluation mode alone does not disable autograd.
+        The loss terms and their normalisation are listed on the <DocLink to="training-tasks">training task
+        API</DocLink> page.
       </p>
       <H2 id="components">Replace components</H2>
       <p>
-        <code>ModelComponents</code> supplies factories for embeddings, gene branches, the auxiliary tower
-        and heads, orientation, and edit states. Register an architecture under a new versioned name when
-        changing its construction. This example removes learned position embeddings for an ablation:
+        <code>ModelComponents</code> holds four factories, each called with the configuration: <code>core</code> and
+        <code> objective</code> (required), and <code>embedding</code> and <code>orientation_head</code> (defaulting to
+        the token-plus-position embedding and the orientation head). The model calls
+        <code> core(emb, mask, end_mask, *, tokens, batch)</code> with the corrected embedding, the read and end masks,
+        the corrected tokens and the raw input batch, and adds the returned dictionary to its outputs. A core that reads
+        the reference defines <code>bind_reference(reference)</code>. <code>objective(config)</code> returns the
+        architecture&apos;s <code>TrainingTasks</code>. This example keeps the chip and removes the position
+        embeddings:
       </p>
-      <CodeBlock lang="python" code={`from torch import nn
-from alignair.core import ModelComponents, register_architecture
+      <CodeBlock lang="python" code={`from dataclasses import replace
+from torch import nn
+from alignair.core import prepare_model, register_architecture
+from alignair.core.components import architecture_components
 
-def token_embedding(config):
-    return nn.Embedding(config.vocab_size, config.embed_dim)
+class TokenOnlyEmbedding(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.tokens = nn.Embedding(config.vocab_size, config.embed_dim)
+
+    def forward(self, tokens):
+        return self.tokens(tokens)
 
 register_architecture(
-    "token-only-v1",
-    replace(ModelComponents(), embedding=token_embedding),
+    "chip-token-only-v1",
+    replace(architecture_components("chip-v1"), embedding=TokenOnlyEmbedding),
 )
-model = AlignAIR(replace(protein_config, architecture="token-only-v1"))`} />
+model = prepare_model(reference, architecture="chip-token-only-v1").build_model()`} />
       <p>
-        This preserves the default trainable padding-token behavior while removing position embeddings.
-        Adding <code>padding_idx=0</code> would change a second factor. Treat padding masking as a
-        separate experiment. Classification width scaling is also a parameter-budget heuristic;
-        increasing width does not establish feature rank or accuracy.
+        Construction checks that each factory returns a PyTorch module and raises <code>ConfigurationError</code>
+        with the component name otherwise; it does not run a dummy forward, so test output shapes and gradient paths
+        on representative inputs. Registration refuses to overwrite a name (&ldquo;architecture &apos;chip-v1&apos;
+        is already registered&rdquo;); use a new versioned name when changing an architecture&apos;s meaning.
       </p>
       <p>
-        Embedding factories emit <code>(batch, window, embed_dim)</code>. A gene-branch factory receives
-        a <code>GeneSpec</code> and configuration; the branch implements <code>segment</code>,{" "}
-        <code>classify</code>, and <code>component_modules</code>. The shared <code>GeneBranch</code> provides
-        these methods and a <code>classification_features</code> method for its penultimate representation.
-        Its constructor accepts <code>segmentation_tower</code> and <code>classification_tower</code> modules
-        so a branch factory can replace feature extraction while retaining boundary and classification heads.
-        The segmentation tower emits <code>config.block_out</code> features; the classification tower emits
-        the width returned by <code>config.cls_spec(spec)[0]</code>. Both consume embeddings with shape
-        <code>(batch, window, embed_dim)</code>. Factories must construct fresh modules for each model.
+        Model files record the architecture name and never import or execute factory code. A process that loads a
+        custom architecture must register it first, or name the modules that register it in the
+        <code> ALIGNAIR_ARCHITECTURE_MODULES</code> environment variable (comma-separated), which a subprocess inherits.
+        An unknown name raises <code>ConfigurationError</code> (&ldquo;unknown model architecture&rdquo;).
       </p>
+      <H2 id="inspection">Inspect components</H2>
+      <CodeBlock lang="python" code={`points = model.component_modules()   # {"embedding", "orientation_head", "core"}
+trunk = points["core"].trunk
+parser = points["core"].parser`} />
       <p>
-        Assembly checks that enabled factories return PyTorch modules, gene branches provide the
-        three required methods, and auxiliary heads form a mapping with valid registration names.
-        Replacement segmentation and classification towers must also be PyTorch modules. Malformed
-        results raise <code>ConfigurationError</code> at construction with component context. Disabled
-        capabilities do not call their factories. Construction does not execute a dummy forward;
-        test output dimensions and gradient paths on representative inputs for each new architecture.
-      </p>
-      <p>
-        These factories replace stages within the current segmentation-then-classification flow.
-        A shared encoder across genes or a joint boundary decoder needs an explicit change to model
-        assembly and its contracts. Keep that extension in the shared model interface, with a new
-        architecture identity and appropriate tests for both input alphabets.
-      </p>
-      <p>
-        Checkpoints record the architecture name. Register the same factories in a loading process before
-        loading that architecture. Unknown names fail with <code>ConfigurationError</code>; model files never
-        import or execute factory code. Registration refuses to overwrite an existing name. Use a new name
-        when changing the architecture’s meaning.
-      </p>
-      <H2 id="inspection">Inspect layers and choose training objectives</H2>
-      <CodeBlock lang="python" code={`points = model.component_modules()
-classification_head = points["v.cls_head"]
-segmentation_tower = points["v.seg_tower"]`} />
-      <p>
-        Inspection points reference the actual registered modules and add no parameter copies. Optional
-        components are omitted when disabled. ModelXRay and the assay profiler consume these points;
-        custom branches can extend their own inspection dictionary. Names are aliases, but their
-        values must belong to the constructed model. Invalid mappings, names, or foreign modules
-        raise <code>ConfigurationError</code> with branch and field context.
-      </p>
-      <p>
-        Use the <DocLink to="training-tasks">training task API</DocLink> to select matching losses and
-        metrics from the configured score semantics and enabled heads. Multilabel hierarchical and
-        categorical objectives retain their distinct target and reduction contracts. Existing inference
-        pipelines also retain their nucleotide AIRR and protein-class output contracts; model composition
-        does not make those pipelines interchangeable. See the <DocLink to="python-api">Python API</DocLink>
-        for end-to-end prediction.
+        Inspection points are the registered modules themselves and add no parameter copies; the orientation head is
+        omitted when <code>use_orientation</code> is off. The chip core&apos;s units are attributes of
+        <code> model.core</code>: <code>trunk</code>, <code>parser</code>, <code>anchors</code>, <code>reader</code>,
+        <code> scans</code>, <code>d_presence</code> and the bound <code>bank</code>.
       </p>
       <H2 id="architecture-development">Develop and verify an architecture variant</H2>
       <p>
-        Keep alphabet and label policies in the shared configuration. Register stateless factories
-        under a new architecture name, then use <DocLink to="model-setup">reference-bound setup</DocLink>
-        and the <DocLink to="training-workflow">training workflow</DocLink>. For manual optimization,
-        <code>build_training_engine</code> checks complete model/task parameter ownership and scheduler
-        binding. A direct <code>TrainingEngine</code> remains a lower-level interface whose caller owns
-        optimizer construction.
-      </p>
-      <p>
-        Verify a representative variant for both nucleotide and protein inputs: forward shapes and
-        score semantics, backward paths through replaced stages, independent configurations and
-        parameters between model instances, safe save/reload with the factories registered, feature
-        inspection without state changes, and checkpoint continuation. The repository’s executable
-        example replaces the convolutional towers with projected mean features and exercises this
-        full workflow. It is a contract fixture, not an accuracy recommendation.
+        Register stateless factories under a new architecture name, then use
+        <DocLink to="model-setup"> reference-bound setup</DocLink> and the
+        <DocLink to="training-workflow"> training workflow</DocLink>. For manual optimization,
+        <code> build_training_engine</code> checks that the optimizer owns every trainable parameter and that a
+        scheduler is bound to it. These tests cover the component contract, registration from outside the package and
+        the chip&apos;s registration:
       </p>
       <CodeBlock lang="bash" code={`python -m pytest \\
-  tests/alignair/core/models/test_component_contracts.py \\
-  tests/alignair/train/test_architecture_workflow.py`} />
+  tests/alignair/core/test_core_hook.py \\
+  tests/alignair/core/test_architecture_modules.py \\
+  tests/alignair/network/test_registration.py`} />
       <p>
-        Start architecture comparisons with fresh training and a fixed held-out cohort. Resume checks
-        configuration and ordered label identity, but source and augmentation streams are reseeded;
-        continuation is not exact replay of the next uninterrupted batch. A warm start matches tensor
-        names and shapes, including class heads when their widths match. It does not align class labels
-        or establish compatibility between different architectures. See the
-        <DocLink to="training-workflow">training request contracts</DocLink> when selecting initialization.
-      </p>
-      <p>
-        Establish an unchanged-architecture baseline under the corrected Short-D label contract before
-        comparing new layers. Keep that loss setting, input/label policies, source distribution, seeds,
-        held-out cohort and update budget matched between baseline and candidate. An older checkpoint
-        trained with another objective can remain a historical comparison, but gains against it do not
-        isolate an architecture effect.
-      </p>
-      <H2 id="boundary-experiment">Compare predicted and known boundaries</H2>
-      <p>
-        Before replacing the feature towers, measure how classification changes when the same trained
-        classifier receives known boundaries. Freeze the checkpoint, label schema, cohort, and score
-        semantics. Select rows with reliable supervision for both boundaries of the tested gene. Inputs
-        and targets must already use the same canonical orientation and padded model coordinates.
-        Both conditions below hold orientation fixed, isolating the crop from orientation errors.
-      </p>
-      <CodeBlock lang="python" code={`import torch
-from alignair.core import evaluation_mode
-
-# canonical_inputs and targets describe a fully annotated V cohort batch.
-tokens = canonical_inputs["tokenized_sequence"]
-inputs = {
-    **canonical_inputs,
-    "orientation": torch.zeros(len(tokens), device=tokens.device, dtype=torch.long),
-}
-with evaluation_mode(model):
-    predicted = model(inputs)
-    embeddings = model.embedding(tokens)
-    predicted_scores = predicted[model.cfg.classification_key("v")]
-    known_scores = model.branches["v"].classify(
-        embeddings,
-        targets["v_start"].to(embeddings).reshape(-1, 1),
-        targets["v_end"].to(embeddings).reshape(-1, 1),
-    )`} />
-      <p>
-        This recipe uses the default embedding and gene-branch contracts. Adapt it explicitly for an
-        architecture with a different canonicalization path. Neither condition updates the weights;
-        use the configured multilabel or categorical metrics on the paired scores. Report class accuracy
-        and true-label or compatible-set probability changes, stratified by boundary error, read length,
-        and crop severity. Keep read IDs and supervised counts identical between conditions.
-      </p>
-      <p>
-        A consistent gain with known boundaries supports investigating localization and crop design.
-        A small gap supports investigating the classifier or labels, but does not rule out localization
-        problems. Known-boundary scores are a counterfactual diagnostic, not an accuracy upper bound:
-        the classifier was trained using predicted crops. Training a detached-crop variant would answer
-        a different question about gradient coupling and needs a separate registered architecture,
-        matched training runs, and held-out evaluation. Do not use known boundaries in production predictions.
+        Start architecture comparisons from fresh training, with the reference, record stream, seeds and update budget
+        matched between baseline and candidate. Resume checks the configuration and ordered label identity; record
+        streams restart from seed blocks of their own, so continuation is not an exact replay of an uninterrupted run.
+        A warm start (<code>init_from</code>) copies tensors whose names and shapes match and leaves the rest at their
+        initialization; it does not establish compatibility between architectures.
       </p>
     </>
   ),

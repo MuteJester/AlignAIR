@@ -5,173 +5,96 @@ const trainingWorkflow: DocPage = {
   slug: "training-workflow",
   title: "Training workflow API",
   section: "Training",
-  lead: "Build, train, validate, checkpoint, and reload nucleotide and protein models through one public workflow.",
+  lead: "Build, train, validate, checkpoint, resume and reload a model through one public Python workflow.",
   body: () => (
     <>
       <CodeBlock lang="python" code={`from alignair import TrainingConfig, run_training
 
 request = TrainingConfig.from_genairr(
-    "HUMAN_IGH_OGRDB",
-    input_space="protein", label_space="protein_classes",
+    "HUMAN_IGH_OGRDB", preset="quick",
     steps=10, batch_size=16, val_every=5, seed=7, device="cpu",
-    model_options={"embed_dim": 8, "filters": 8, "block_out": 32},
 )
-run = run_training(request, output_dir="runs/protein_classes")
-predictor = run.best_aligner(device="cpu")
-outputs = predictor.predict_raw(["EVQLVESGGGLVQPGGSLRLSCAAS"])
-print(outputs["v_class_logits"].shape)
-print(predictor.label_schema["genes"]["v"][0])  # alleles represented by class 0`} />
+run = run_training(request, output_dir="runs/igh")
+aligner = run.best_aligner(device="cpu")
+raw = aligner.predict_raw(["CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCC"])
+print(raw["v_allele"].shape)                  # (1, number of V alleles)
+print(aligner.label_schema["genes"]["v"][0])  # the allele of column 0`} />
       <p>
-        <code>TrainingConfig</code>, <code>TrainingRun</code>, and <code>run_training</code> are
-        owned by <code>alignair.train</code> and exported from the package root. Each supported
-        configuration uses the same model class, runner, task interface, optimizer engine, validation
-        loop, and checkpoint format. The input and label choices select existing source preparation
-        and batch adapters. The short run above exercises the workflow; it does not establish model accuracy.
+        <code>TrainingConfig</code>, <code>TrainingRun</code> and <code>run_training</code> are owned by
+        <code> alignair.train</code> and exported from the package root. A run resolves the dataconfigs to an ordered
+        reference, prepares and builds the model, streams curriculum records, trains, validates and writes
+        checkpoints. The short run above exercises the workflow; it does not make a usable model. With
+        <code> data_workers</code> above 0, worker processes are spawned: call <code>run_training</code> under an
+        <code> if __name__ == &quot;__main__&quot;:</code> guard.
       </p>
-      <H2 id="spaces">Choose input and label spaces</H2>
-      <DocTable head={["input_space", "label_space", "Training targets"]} rows={[
-        ["nucleotide", "alleles", "Nucleotide positions and source allele sets, with orientation and configured auxiliary tasks."],
-        ["protein", "alleles", "Projected residue positions and source nucleotide allele sets; synonymous alleles retain separate labels."],
-        ["protein", "protein_classes", "Half-open residue boundaries and V/J protein-equivalence classes; optional D retains source allele labels."],
-      ]} />
+      <H2 id="spaces">Input and label spaces</H2>
       <p>
-        Defaults remain nucleotide inputs and allele labels. Input windows default to 576 nucleotide
-        positions or 192 protein positions. Protein-class batches reserve a terminal boundary slot,
-        so a 192-position window accepts at most 191 observed residues. The protein-class preset
-        uses the existing translated-reference and conserved-anchor policies; sources must provide
-        usable V/J translations. For additional input/label combinations or custom reference views,
-        use <DocLink to="model-setup">model setup</DocLink> with explicit adapters and the
-        <DocLink to="training-engine">training engine</DocLink>.
+        AlignAIR trains on nucleotide reads with allele labels: <code>input_space=&quot;nucleotide&quot;</code> and
+        <code> label_space=&quot;alleles&quot;</code> are the only values, and any other raises
+        <code> ConfigurationError</code> (&ldquo;AlignAIR trains on nucleotide reads with allele labels&rdquo;). The
+        input window defaults to 576 positions. For a custom model, use <DocLink to="model-setup">model setup</DocLink>
+        with the <DocLink to="training-engine">training engine</DocLink>.
       </p>
       <H2 id="request">Configure a run</H2>
-      <DocTable head={["Request", "Contract"]} rows={[
-        ["dataconfigs / from_genairr", "One or more built-in GenAIRR names or DataConfig objects. The ordered reference derives label and locus counts."],
-        ["input_space / label_space", "Explicit model semantics, serialized with the model configuration."],
-        ["max_seq_length / has_d", "Optional window and D-head selection. None uses the input/reference defaults; omitting D retains the source reference."],
-        ["model_options", "Known model settings, including registered architecture and dimensions. Copied on construction; reference counts and input/label choices cannot be overridden here."],
-        ["steps / batch_size / lr / grad_clip", "Update budget, batch size, learning rate and clipping. Invalid requests fail before allocating the model or creating output directories."],
-        ["val_every", "Zero disables periodic validation. A positive interval selects the best checkpoint using the shared task metrics on fixed held-out batches."],
-        ["seed", "A uint32 seed for model initialization, process RNGs and source construction. Fixed-seed CPU runs are reproducible under the same environment."],
-        ["resume_path", "An existing checkpoint. Restore model, task weights, optimizer and process RNG state; configuration and label identity must agree."],
-        ["init_from / trust_pickle", "An explicit weights-only warm start with a fresh optimizer/scheduler. Mutually exclusive with resume_path. Historical Python checkpoint loading requires trust_pickle=True for a file you trust."],
-        ["augmentation", "None, ProteinSubstitutionPolicy or ProteinCropPolicy. Protein-class training only; validation and diagnostic probes remain unaugmented."],
-        ["schedule", "None uses constant lr. CosineSchedule(total_steps, min_lr) advances after successful updates; resume retains the saved scheduler phase and decayed rate."],
-        ["study", "Optional TrainingStudy with absolute checkpoint steps and an external evaluation callback. Retained checkpoints and validation results are returned on TrainingRun."],
+      <DocTable head={["Request", "Default", "Contract"]} rows={[
+        ["dataconfigs / from_genairr", "required", "One or more built-in GenAIRR names or DataConfig objects; the ordered reference derives the allele and locus counts."],
+        ["max_seq_length / has_d", "None / None", "Optional window and D-head selection; None uses 576 and the reference's D."],
+        ["model_options", "{}", "Model configuration fields such as architecture, embed_dim or trunk_channels. Copied on construction; reference counts and input/label choices cannot be overridden here."],
+        ["steps / batch_size / lr / grad_clip", "100,000 / 64 / 3e-4 / None", "Update budget, batch size, learning rate and gradient clipping. Invalid values raise ConfigurationError (or its subclass TrainingConfigError, from the preflight) before the model is allocated."],
+        ["val_every", "0", "0 disables validation. A positive interval validates on 4 fixed held-out batches drawn from validation seed blocks and keeps the best checkpoint."],
+        ["seed / init_seed", "0 / None", "A uint32 seed for the process RNGs, the record streams and, when init_seed is None, the initial weights. An init_seed draws the initial weights from its own seed and leaves the batches unchanged."],
+        ["device", "\"auto\"", "CUDA, then MPS, then CPU."],
+        ["short_boost", "1", "Repeats of the three amplicon profiles in the curriculum mix."],
+        ["flanks", "FlankPolicy()", "Library flanks around the curriculum's reads; None trains on the bare simulated reads."],
+        ["novel_alleles", "None", "A NovelAlleles draws part of the reads from synthetic novel V alleles; the model and saved reference stay the dataconfigs'."],
+        ["data_workers", "0", "Generate batches in this many worker processes (at most one per curriculum stream: 28 for the default mix). The batches are those of data_workers=0."],
+        ["resume_path", "None", "Continue a checkpoint: weights, optimizer, scheduler and process RNG state; the configuration and label schema must agree."],
+        ["init_from", "None", "A weights-only warm start from another .alignair model, with fresh optimizer and scheduler. Mutually exclusive with resume_path."],
+        ["schedule", "None", "None keeps lr constant. CosineSchedule(total_steps, min_lr=1e-5) steps after each successful update."],
+        ["study", "None", "A TrainingStudy with absolute checkpoint steps and an optional evaluation callback."],
       ]} />
       <p>
-        <code>preset="quick"</code>, <code>"desktop"</code>, or <code>"full"</code> selects
-        the established step, batch and validation defaults. Explicit fields override the preset.
-        Use <code>request.with_(...)</code> to construct a changed request. Model options select
-        <DocLink to="model-composition">registered components</DocLink>; custom architectures
-        must be registered before constructing or reloading their models.
+        <code>preset=</code> selects step, batch and validation defaults; explicit fields override it. Use
+        <code> request.with_(...)</code> to construct a changed request. Model options select
+        <DocLink to="model-composition"> registered components</DocLink>; a custom architecture must be registered
+        before its model is built or reloaded.
       </p>
+      <DocTable head={["Preset", "steps", "batch_size", "val_every"]} rows={[
+        [<code>quick</code>, "300", "16", "100"],
+        [<code>desktop</code>, "50,000", "64", "2,000"],
+        [<code>full</code>, "300,000", "128", "5,000"],
+      ]} />
       <p>
-        Warm-start weights from a <code>.alignair</code> source are decoded without constructing its
-        model, so source factories are unnecessary and initialization RNG state is preserved.
-        Transfer still matches names and shapes, including equal-width class heads; it does not map
-        labels between references. Fresh architecture comparisons should start with fresh training
-        unless this partial transfer is intentional. Removing the unused source construction changes
-        RNG consumption relative to earlier warm-start runs, so those old training trajectories are
-        not an exact baseline for the corrected path.
-      </p>
-      <p>
-        Reference-bound multilabel training derives <code>short_d_penalty</code> from D-label identity.
-        The legacy penalty is valid only with a final <code>Short-D</code> sentinel; it is disabled for
-        real-allele panels such as HUMAN_IGH_OGRDB, whose last D label is an actual germline allele.
-        Raw count-only configurations keep the historical default for CSV vocabularies that include
-        that sentinel. Historical artifacts without the setting retain their old value and remain
-        loadable for inference. Resume into the corrected objective is rejected before restoration;
-        use a weights-only warm start or fresh training. Legacy checkpoints missing their configuration
-        cannot establish compatibility with the corrected loss and are also refused for continuation.
-      </p>
-      <p>
-        The allele presets use their existing nucleotide/protein adapters. Protein-class training uses
-        <code>ProteinSampleBuilder</code> with <code>require_productive=False</code> and
-        <code>allow_stops=True</code>. Unusable translations, unknown V/J classes, unavailable
-        boundaries, and overlength class samples are skipped; invalid D supervision is masked.
-        A prolonged run of rejected class samples raises a training-data error. Presets reject head
-        combinations for which their adapters do not supply targets, including protein edit-state
-        targets and protein-class auxiliary heads. Custom targets belong in an explicit batch adapter.
-      </p>
-      <H2 id="augmentation">Configure training augmentation</H2>
-      <CodeBlock lang="python" code={`from alignair.data.augmentation import ProteinSubstitutionPolicy
-
-augmented = request.with_(
-    augmentation=ProteinSubstitutionPolicy(
-        probability=0.5, min_rate=0.02, max_rate=0.10,
-    ),
-    grad_clip=1.0,
-)
-run = run_training(augmented, output_dir="runs/protein_substitutions")`} />
-      <p>
-        This policy replaces the former strategic protein-class runner. Each accepted training
-        read has the configured probability of augmentation. A substitution rate is sampled
-        uniformly from the configured rate bounds; each canonical residue is then selected at that
-        rate and assigned a random canonical residue. A replacement may equal the original residue.
-        Unknown and stop residues retain their positions. Class labels, boundary targets and D
-        validity masks remain unchanged. The policy currently requires protein-class targets;
-        unsupported profiles fail during preflight.
-      </p>
-      <p>
-        The versioned policy and its parameters are saved in training provenance. Validation and
-        diagnostic probe streams use the original samples. Resume requires the same augmentation
-        policy, including whether it is enabled. The local augmentation generator and source are
-        deterministically reseeded with seed plus the checkpoint step; continuation does not replay
-        the exact next batch of an uninterrupted run. To change policy while reusing weights, set
-        <code>init_from</code> for a warm start with a fresh optimizer.
-      </p>
-      <H2 id="partial-training">Train on partial protein reads</H2>
-      <CodeBlock lang="python" code={`from alignair.data.augmentation import ProteinCropPolicy
-from alignair.train import CosineSchedule, TrainingStudy
-
-partial = request.with_(
-    steps=20, lr=1e-4, grad_clip=1.0,
-    augmentation=ProteinCropPolicy(
-        crop_probability=0.4, substitution_probability=0.4, il_probability=0.15,
-    ),
-    schedule=CosineSchedule(total_steps=40, min_lr=1e-5),
-    study=TrainingStudy(
-        checkpoint_dir="runs/partial/selected", checkpoint_steps=(5, 10, 20),
-    ),
-)
-partial_run = run_training(partial, output_dir="runs/partial")
-print(partial_run.checkpoints)  # actual step -> retained .alignair checkpoint`} />
-      <p>
-        Crops shift and clip gene boundaries into the observed window. V/J class supervision uses
-        conservative germline-fragment compatibility from aligned reference codons; unavailable
-        evidence masks class supervision while retaining known boundaries. D retains its source
-        allele label only when fully observed and otherwise remains masked. Full-read rehearsal,
-        substitutions and I/L ambiguity use the established crop policy. Crop augmentation uses
-        a local generator seeded from <code>[seed, completed_step]</code>; it preserves the former
-        partial-training runner&apos;s sample and RNG semantics.
-      </p>
-      <p>
-        Set the cosine horizon to cover the intended scheduler updates, including later continuation.
-        Resume checks the schedule, initial learning rate, augmentation and label identity before
-        loading destination state. It restores optimizer moments and scheduler phase together.
-        Changing a policy requires an explicit warm start. Historical full crop checkpoints can
-        continue only with explicit pickle trust, a usable model configuration, the current sample
-        policy and a saved cosine scheduler. They lack the ordered label schema added by the shared
-        workflow, so retain the original source panel and class ordering when importing them.
-        Weights-only snapshots use <code>init_from</code> and start a new optimizer/scheduler.
+        A warm start reads the source&apos;s weights from its pickle-free sections without constructing its model and
+        copies every tensor whose name and shape match; the rest keep their initialization. The chip&apos;s weights do
+        not depend on its reference, so a source of the same widths transfers whole even when its reference differs.
+        A source that is not an <code>.alignair</code> file is refused, and an AlignAIR 3 <code>.pt</code> is named as
+        such.
       </p>
       <H2 id="study">Retain and evaluate study checkpoints</H2>
+      <CodeBlock lang="python" code={`from alignair.train import CosineSchedule, TrainingStudy
+
+studied = request.with_(
+    steps=20, grad_clip=1.0,
+    schedule=CosineSchedule(total_steps=40, min_lr=1e-5),
+    study=TrainingStudy(checkpoint_dir="runs/study/selected", checkpoint_steps=(5, 10, 20)),
+)
+study_run = run_training(studied, output_dir="runs/study")
+print(study_run.checkpoints)   # actual step -> retained .alignair checkpoint`} />
       <p>
-        A <code>TrainingStudy</code> saves requested absolute steps as
-        <code> checkpoint-&lt;step&gt;.alignair</code>, separately from rotating model checkpoints.
-        <code>TrainingRun.checkpoints</code> contains only files written during that invocation;
-        finite sources cannot cause stale files to be reported as newly trained candidates.
-        Each checkpoint records its actual step, reference/label identity, seed, policies and source
-        checkpoint hash, alongside optimizer, scheduler and process RNG state.
+        A <code>TrainingStudy</code> saves the requested absolute steps as <code>checkpoint-&lt;step&gt;.alignair</code>
+        in <code>checkpoint_dir</code>, separately from the rotating checkpoints. <code>TrainingRun.checkpoints</code>
+        lists only files written during that invocation. Each records its actual step, label identity, seed, policies
+        and, for a continued run, the source checkpoint&apos;s SHA-256, alongside optimizer, scheduler and process RNG
+        state.
       </p>
       <p>
-        For external evaluation, supply <code>validation_every</code> and an
-        <code>evaluate(model, step)</code> callback returning a metric mapping. The callback runs
-        in evaluation mode with the previous model mode restored even on failure.
-        <code>TrainingRun.validations</code> retains those mappings. An optional
-        <code>plateau_window</code> reports a non-improving <code>objective</code>; it does not stop
-        training or select a model. The convergence study uses this shared lifecycle and continues
-        to apply its frozen cohort and selection rules separately.
+        For external evaluation, supply <code>validation_every</code> and an <code>evaluate(model, step)</code> callback
+        returning a metric mapping. It runs in evaluation mode, with the previous mode restored even on failure, and
+        <code> TrainingRun.validations</code> keeps the mappings. An optional <code>plateau_window</code> prints a notice
+        when the mapping&apos;s <code>objective</code> has not improved over that many evaluations; it does not stop
+        training or select a model. Set the cosine horizon to cover every scheduler update, including later
+        continuation.
       </p>
       <H2 id="observe">Observe successful updates</H2>
       <CodeBlock lang="python" code={`def observe(iteration):
@@ -179,68 +102,38 @@ print(partial_run.checkpoints)  # actual step -> retained .alignair checkpoint`}
 
 run = run_training(request, output_dir="runs/observed", on_iteration=observe)`} />
       <p>
-        The callback receives a <code>TrainingIteration</code> after each successful optimizer update,
-        before logging, validation and checkpoint work. It includes detached loss/gradient results
-        and source records. No history is accumulated unless the callback chooses to collect it.
-        Callback failures propagate. Use shared model
-        <DocLink to="model-inference">component observation</DocLink> and the lower-level engine
-        when a custom experiment needs direct model access during training.
+        The callback receives a <code>TrainingIteration</code> after each successful optimizer update, before logging,
+        validation and checkpoint work, with the detached loss and gradient results and the source records. No history
+        is accumulated unless the callback collects it; callback failures propagate. With <code>data_workers</code> above
+        0 on an accelerator, batches are assembled ahead from the CPU random state, so a callback that draws from the
+        CPU random generators raises <code>TrainingError</code>; use <code>data_workers=0</code> for such a callback.
       </p>
       <H2 id="reload">Checkpoint, resume, and reload</H2>
+      <DocTable head={["File in the output directory", "Written"]} rows={[
+        [<code>model.step&lt;N&gt;.alignair</code>, "Every 2,000 steps and at the last completed step; the newest 3 are kept."],
+        [<code>model.alignair</code>, "A copy of the newest numbered checkpoint: TrainingRun.model_path."],
+        [<code>model.best.alignair</code>, "When validation ran: the checkpoint with the highest selection score (the mean scan_{gene}_top1). TrainingRun.best_model_path, else None."],
+      ]} />
       <CodeBlock lang="python" code={`continued = run_training(
     request.with_(steps=20, resume_path=run.model_path),
     output_dir="runs/continued",
 )
-loaded = continued.best_aligner(device="cpu")
-raw = loaded.predict_raw(["EVQLVESGGGLVQPGGSLRLSCAAS"])
-labels = loaded.label_schema["genes"]["v"]`} />
+aligner = continued.best_aligner(device="cpu")   # the best, else the last, checkpoint`} />
       <p>
-        <code>TrainingRun.model_path</code> is the final checkpoint;
-        <code>best_model_path</code> is present when validation selected a best model.
-        <code>steps</code> records the actual completed step. Checkpoints retain the safe model
-        configuration, weights and source reference, plus trusted Python training state for resume,
-        including the scheduler when configured.
-        Inference reload uses the safe model/reference sections. Resume restores the process RNGs
-        and starts the source under the existing seed-plus-step policy; it does not restore a simulator cursor.
+        <code>TrainingRun.steps</code> records the actual completed step. Checkpoints hold the configuration, weights,
+        the reference and the label schema, plus trusted pickle sections (<code>dataconfig/0</code> and
+        <code> train_state</code>) for resume. <code>resume_path</code> resolves to the newest numbered checkpoint
+        beside it, else to the file itself. Resume checks the configuration, the exact label schema and the schedule before loading anything,
+        restores weights, optimizer moments (the learning rate is reset to the requested one unless a schedule is
+        set), scheduler phase and process RNG state, then trains to the absolute <code>steps</code>; a target not
+        beyond the checkpoint step raises <code>ValueError</code>. Record streams restart from seed blocks of their own,
+        so continuation does not replay the next batch of an uninterrupted run. To change the model or loss settings
+        while keeping weights, use <code>init_from</code>.
       </p>
       <p>
-        The saved <code>label_schema</code> records input space, label space and ordered output
-        columns. Allele labels retain source order; protein-class V/J columns store explicit allele
-        member lists. Loading validates schema shape and source membership. Resume also checks the
-        exact schema, preventing the same-sized heads from being continued with different label IDs.
-      </p>
-      <H2 id="lineage-partition">Split record collections by parent lineage</H2>
-      <CodeBlock lang="python" code={`from alignair.data.partitioning import partition_by_parent_lineage
-
-records = [
-    {"id": "parent", "lineage_key": "family-1"},
-    {"id": "crop", "lineage_key": "crop-1", "parent_lineage": "family-1"},
-    {"id": "other", "lineage_key": "family-2"},
-    {"id": "third", "lineage_key": "family-3"},
-]
-train, development, assignment_sha256 = partition_by_parent_lineage(
-    records, seed=42, dev_frac=0.2,
-)`} />
-      <p>
-        This shared utility accepts nucleotide, protein or identity-only record collections. Every
-        record needs a unique nonempty text <code>id</code> and a nonempty
-        <code> parent_lineage</code> or fallback <code>lineage_key</code>. A null or empty parent
-        field uses the fallback. Supplied parent identities keep related records together; callers
-        establish those relationships. Sequence contents are preserved and do not affect assignment.
-      </p>
-      <p>
-        Groups are ordered by SHA-256 of <code>seed:key</code>. The first
-        <code> round(group_count * dev_frac)</code> groups go to development, using Python’s
-        ties-to-even rounding. The fraction counts families; within-family input order and record
-        objects are retained. The digest covers the sorted record-ID-to-partition mapping. Persist
-        separate content and reference identities when freezing a study.
-      </p>
-      <p>
-        Seed must be an integer, including negative integers. The development fraction must be a
-        finite number in [0, 1]. Booleans are rejected. Empty input and endpoint fractions are supported;
-        study preparation enforces nonempty partitions when required. Invalid options raise
-        <code> ConfigurationError</code> before consuming input. Malformed or duplicate record
-        identities raise <code>DataContractError</code> with stage, record position and field context.
+        The saved <code>label_schema</code> records the input space, label space and each gene&apos;s ordered allele
+        names. Loading validates it against the embedded reference; resume compares it exactly, so heads of the same
+        size cannot be continued with different alleles.
       </p>
       <H2 id="rng-state">Capture and restore process RNG state</H2>
       <CodeBlock lang="python" code={`from alignair.train.random_state import capture_rng_state, restore_rng_state
@@ -249,42 +142,40 @@ state = capture_rng_state(include_cuda=False)
 # Restore the saved generators when continuing CPU training.
 restore_rng_state(state, include_cuda=False, require_process_state=True)`} />
       <p>
-        The shared state dictionary contains Python, NumPy and PyTorch CPU generators. By default,
-        capture also includes all CUDA generators when CUDA is available, and restore applies any
-        supplied CUDA state on an available GPU host. Set <code>include_cuda=False</code> on both
-        operations to exclude CUDA capture, restoration and rollback even on a host with a GPU.
+        The state dictionary holds the Python, NumPy and PyTorch CPU generators, and by default every CUDA generator
+        when CUDA is available. Set <code>include_cuda=False</code> on both calls to exclude CUDA. Restore accepts
+        sparse dictionaries and <code>None</code> by default; <code>require_process_state=True</code> requires non-null
+        Python, NumPy and PyTorch CPU states before anything is applied. Invalid state raises
+        <code> TrainingError</code> and rolls the process generators back to their values before the call. Local
+        <code> random.Random</code> and NumPy <code>Generator</code> instances have their own state.
+      </p>
+      <H2 id="export">Export a distributable model</H2>
+      <CodeBlock lang="python" code={`import GenAIRR as ga
+from alignair.train.build import export_bundle
+
+model_path = export_bundle(
+    run.best_model_path or run.model_path, [ga.HUMAN_IGH_OGRDB], "runs/igh/bundle",
+)`} />
+      <p>
+        <code>run_training</code> writes training checkpoints only. <code>alignair.train.build.export_bundle</code>
+        writes a pickle-free bundle from a checkpoint: <code>model.alignair</code> with no pickle sections,
+        <code> model_card.md</code>, <code>reference_manifest.json</code> and, unless <code>validate=False</code>,
+        <code> validation_report.json</code> (the task metrics on a fixed held-out stream). The training provenance is
+        read from the checkpoint. It refuses an existing bundle directory unless <code>overwrite=True</code>.
+        <code> alignair train</code> calls it on the best (or last) checkpoint, into <code>&lt;out&gt;/bundle/</code>.
       </p>
       <p>
-        Restore accepts sparse dictionaries and <code>None</code> by default, leaving omitted or null
-        fields untouched. Set <code>require_process_state=True</code> to require non-null Python,
-        NumPy and PyTorch CPU states before anything is applied; CUDA remains independently optional.
-        Invalid state raises <code>TrainingError</code>. A malformed supplied generator state triggers
-        rollback of the process generators to their values immediately before restoration.
-        This does not undo earlier model, optimizer or source changes. Local <code>random.Random</code>
-        and NumPy generator instances have separate state and must be checkpointed by their owners.
+        <code>Aligner.save_pretrained</code> and <code>push_to_hub</code> refuse a file with pickle sections, so publish
+        the exported <code>model.alignair</code>. <code>alignair convert</code> converts lab chip model files only
+        (<code>lab-chip-v1</code>, <code>lab-chipw64-v1</code>), not a training checkpoint. The
+        <DocLink to="publishing"> publishing runbook</DocLink> continues from the bundle.
       </p>
-      <H2 id="predictions">Use the appropriate prediction interface</H2>
+      <H2 id="predictions">Predict from a trained model</H2>
       <p>
-        <code>Aligner.predict_raw</code> returns NumPy arrays for all model heads through the same
-        interface for either input space. Keys preserve score semantics: allele probabilities versus
-        categorical logits, plus model-frame boundaries and enabled auxiliary outputs. Tokenization
-        follows the saved input space. Protein raw input is strict about alphabet and length;
-        nucleotide raw input uses the shared nucleotide preparation policy.
-      </p>
-      <p>
-        Nucleotide allele models with residue-boundary heads additionally support
-        <code> Aligner.predict</code> and AIRR result assembly. Other input/head profiles use raw
-        outputs or their task-specific result processing.
-        Raw outputs do not include product calibration, conformal sets or applicability decisions.
-        The calibrated protein product loader remains a separate artifact contract; a new training
-        checkpoint does not acquire those calibration assets automatically.
-      </p>
-      <p>
-        <code>alignair.train.build.export_bundle</code> validates the selected input/label profile
-        and writes an inference artifact without Python training sections. It preserves the label
-        schema and raw predictions. Conversion of a self-contained checkpoint preserves that schema
-        as well. The existing CLI training command remains the nucleotide bundle workflow; select
-        protein training through the Python request above.
+        <code>Aligner.predict</code> returns AIRR records; <code>Aligner.predict_raw</code> returns the model&apos;s raw
+        output arrays (allele scores relative to each read&apos;s best allele, model-frame positions) from the same
+        forward pass, without AIRR assembly. <code>label_schema</code> names each allele column. Both are described in
+        the <DocLink to="python-api">Python API</DocLink>.
       </p>
     </>
   ),

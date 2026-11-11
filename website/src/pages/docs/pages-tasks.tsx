@@ -5,66 +5,50 @@ const trainingTasks: DocPage = {
   slug: "training-tasks",
   title: "Training task API",
   section: "Design",
-  lead: "Use one loss, metric, and validation contract for nucleotide and protein-class alignment models.",
+  lead: "The chip's training objective, its metrics with support counts, and the task contract a trainer consumes.",
   body: () => (
     <>
       <p>
-        <code>alignair.tasks.build_tasks(config)</code> selects alignment objectives from the model’s
-        classification semantics and enabled heads. It does not select an objective by alphabet or prepare
-        training examples. The <DocLink to="training-batches">batch adapters</DocLink> prepare examples
-        with the reference, labels, and coordinates required by those objectives.
-        Model construction is described in the <DocLink to="model-composition">composition API</DocLink>.
+        <code>alignair.tasks.build_tasks(config)</code> returns the configured architecture&apos;s own objective, the
+        <code> objective</code> factory of its <DocLink to="model-composition">registered components</DocLink>. For
+        <code> chip-v1</code> this is <code>alignair.network.objective.ChipObjective</code>, which supervises the whole
+        gene set; passing <code>genes=</code> raises <code>ConfigurationError</code> (&ldquo;an architecture&apos;s own
+        objective supervises its whole gene set&rdquo;). The <DocLink to="training-batches">batch adapter</DocLink>
+        prepares the targets the objective reads.
       </p>
       <H2 id="step">Configure a training step</H2>
-      <CodeBlock lang="python" code={`from itertools import chain
-import torch
+      <CodeBlock lang="python" code={`import torch
 from alignair.tasks import build_tasks
 from alignair.train import TrainingEngine
 
 tasks = build_tasks(model.cfg)
-weights = tasks.make_weights().to(device)
-optimizer = torch.optim.AdamW(
-    chain(model.parameters(), weights.parameters()), lr=3e-4,
-)
+optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+engine = TrainingEngine(model, optimizer, tasks=tasks, grad_clip=1.0)
 
-engine = TrainingEngine(
-    model, optimizer, tasks=tasks, weights=weights, grad_clip=1.0,
-)
-# inputs and targets come from the matching data adapter.
+# inputs and targets come from NucleotideBatchAdapter.
 total, parts, gradient_norm = engine.step((inputs, targets), step=1)`} />
       <p>
-        Create task weights once and include them in the optimizer. Only enabled weighted tasks receive
-        uncertainty parameters. A standard protein-class model has no uncertainty weights for its gene
-        objective; enabling auxiliary or edit-state heads adds the corresponding weights. Changing the task
-        set changes optimizer state requirements, so use a compatible checkpoint or start fresh training.
-        Older checkpoints can also contain unused uncertainty weights that the shared task contract no
-        longer allocates; their training state needs migration or fresh training. Inference weights are unaffected.
+        The objective has no learned parameters: each loss term is divided by its chance level, so every term starts
+        near 1, and the terms are summed with fixed weights (<code>LOSS_WEIGHTS</code>, all 1). The optimizer
+        therefore holds the model&apos;s parameters only.
       </p>
-      <H2 id="objectives">Objective and target contracts</H2>
-      <DocTable head={["Objective", "Targets and reduction"]} rows={[
-        ["Multilabel hierarchical", <>Uses <code>{"{gene}_allele"}</code> multi-hot targets, Gaussian boundary
-          objectives, learned uncertainty weights, span regularizers, and the existing short-D penalty.</>],
-        ["Categorical", <>Uses integer <code>{"{gene}_class"}</code> labels or binary
-          <code>{" {gene}_compatible"}</code> sets. A compatible-set loss is the negative log probability
-          assigned to that set. Boundary terms are averaged, class terms are averaged, and the two means are added.</>],
-        ["Auxiliary heads", "Mutation and indel regression, productivity classification, and optional locus classification use the same implementations for either score family."],
-        ["Edit states", <>Uses per-position labels with <code>-100</code> for ignored positions. A batch
-          with no state labels contributes zero state loss and zero state-weight gradient.</>],
+      <H2 id="objectives">Loss terms</H2>
+      <DocTable head={["Term (parts key)", "Targets", "Loss and normalisation"]} rows={[
+        [<code>orientation</code>, <code>orientation</code>, "Cross entropy over the 4 orientations, / log 4."],
+        [<code>parse</code>, <><code>region</code>, <code>region_allowed</code></>, "The parser's negative log probability of the region paths the read cannot tell apart from the true one, / ((the true path's region changes + 1) x log(read length))."],
+        [<><code>v_anchor</code>, <code>j_anchor</code></>, <><code>v_anchor</code>, <code>j_anchor</code> and their <code>_supervise</code> masks</>, "Cross entropy over the read's positions and the \"not in read\" slot, / log(window + 1)."],
+        [<code>shm</code>, <><code>state_labels</code>, <code>region</code></>, "Unweighted cross entropy over germline / substitution / insertion on V, D and J bases (deletion-tagged bases left out), / log 3."],
+        [<code>coord</code>, <code>{"coord_{gene}"}</code>, "Cross entropy over each gene's frame columns on the bases its alignment maps, / log(width), averaged over the genes."],
+        [<code>{"scan_{gene}"}</code>, <code>{"{gene}_allele"}</code>, "Minus the log posterior mass on the true allele set over the bank rows the batch allows, / log(alleles allowed)."],
+        [<code>d_presence</code>, <><code>d_presence</code>, <code>d_presence_supervise</code></>, "Cross entropy over absent / too short / callable, / log 3."],
       ]} />
       <p>
-        <code>{"{gene}_supervise"}</code> and <code>{"{gene}_valid"}</code> are binary row masks; when both
-        exist, their intersection selects supervised rows. Categorical label <code>-1</code> excludes class
-        supervision while allowing known boundary targets. The binary row mask <code>{"{gene}_class_supervise"}</code>
-        also excludes classification independently of boundaries, including when compatible sets are supplied.
-        An empty compatible set is permitted on an
-        excluded row and rejected on a supervised row. Excluded categorical rows are removed before
-        cross-entropy and logarithms, keeping empty sets from producing non-finite losses.
-      </p>
-      <p>
-        Enabled auxiliary regression and productivity heads require their target fields. Orientation,
-        locus, and state objectives run when their labels are supplied. Missing required fields and invalid
-        masks raise <code>TrainingDataError</code> with field context. Missing uncertainty weights raise
-        <code>ConfigurationError</code>.
+        <code>{"{gene}_supervise"}</code> is a binary row mask (all rows when absent); any other value raises
+        <code> TrainingDataError</code> (&ldquo;v_supervise must be a binary row mask of shape (B,)&rdquo;). A row
+        contributes a scan term only when it is supervised, its bank allows at least 2 alleles and a true allele is
+        among them. Anchor and D presence terms skip rows whose <code>_supervise</code> mask is false, such as reads
+        whose alignment cannot be mapped. A term with no supervised rows contributes zero. The terms present depend on
+        the configuration: no anchor terms without <code>anchor_heads</code>, no D terms without a D.
       </p>
       <H2 id="metrics">Metrics and validation</H2>
       <CodeBlock lang="python" code={`from alignair.tasks import MetricAccumulator
@@ -79,48 +63,37 @@ for outputs, targets in evaluated_batches:
 metrics = accumulator.means()
 selection_score = tasks.selection_score(metrics)`} />
       <p>
-        A report carries metric totals and their supervised counts. Accumulation weights by those counts:
-        one correct call out of two in one batch and one out of one in another gives <code>2/3</code>,
-        rather than the mean of the two batch accuracies. Gene metrics count supervised rows; edit-state
-        metrics count labeled positions. Genes with no supervision are omitted. A state recall with no
-        examples has zero support and a NaN value, preserving the distinction from measured zero recall.
+        A <code>MetricReport</code> carries metric totals and their supervised counts, and accumulation weights by
+        those counts: one correct call out of two in one batch and one out of one in another gives <code>2/3</code>,
+        not the mean of the two batch accuracies. Genes with no supervised rows are omitted; a metric with zero support
+        is NaN. <code>tasks.metrics(outputs, targets)</code> returns just the means.
       </p>
+      <DocTable head={["Metric", "Meaning"]} rows={[
+        [<code>{"{gene}_allele_top1"}</code>, <>The top <code>{"{gene}_allele"}</code> score is in the read&apos;s true allele set.</>],
+        [<code>{"{gene}_seg_mae"}</code>, "Mean absolute error of the decoded start and end, in positions."],
+        [<code>{"parse_{gene}_{start,end}_exact"}</code>, "The parser's decoded boundary equals the true one."],
+        [<code>{"scan_{gene}_top1"}</code>, <>The argmax of <code>{"{gene}_log_posterior"}</code> is in the true allele set.</>],
+        [<code>{"bank_{gene}_size"}</code>, "Mean number of alleles the batch's bank allows."],
+        [<code>{"coord_{gene}_top1"}</code>, "The reader's top frame column is the true one, over mapped bases."],
+        [<><code>anchor_v_exact</code>, <code>anchor_j_exact</code></>, "The decoded anchor position (or \"not in read\") is the true one."],
+        [<code>shm_brier</code>, "Brier score of the per-base edit-state probabilities."],
+        [<code>d_presence_acc</code>, "Accuracy of the 3-state D presence call."],
+        [<code>orientation_acc</code>, "Accuracy of the orientation head."],
+        [<><code>mutation_mae</code>, <code>indel_mae</code></>, "Absolute error of the mutation-rate and indel-count estimates."],
+      ]} />
       <p>
-        Multilabel metrics retain <code>{"{gene}_allele_top1"}</code> and <code>{"{gene}_seg_mae"}</code>.
-        Categorical metrics retain <code>{"{gene}_class_acc"}</code> and separate boundary MAEs, respecting
-        compatible sets and validity masks. <code>tasks.metrics(outputs, targets)</code> returns just the
-        means. The default selection score averages available per-gene classification accuracies; a
-        missing or non-finite score is not converted to zero.
+        <code>selection_score</code> is the mean of the available <code>{"scan_{gene}_top1"}</code> values; it is
+        NaN when none is present or any is non-finite, never converted to zero. The trainer keeps the checkpoint with
+        the highest score as its best model.
       </p>
       <H2 id="extension">Extend task behavior</H2>
       <p>
-        Trainers consume the <code>TrainingTasks</code> protocol: <code>loss</code>, <code>make_weights</code>,{" "}
-        <code>metrics</code>, <code>metric_report</code>, and <code>selection_score</code>. Supply a task object
-        through the explicit <code>tasks=</code> argument to customize behavior. The loss returns a scalar
-        tensor and a dictionary of named tensor components. Metric reports supply totals and counts for
-        correct aggregation. Keep a custom task implementation with the experiment source when resuming;
-        Python task callbacks are not serialized into model files.
-      </p>
-      <p>
-        The <DocLink to="training-engine">shared training engine</DocLink> works with either target contract. Existing gym and research runners
-        retain their data preparation and study schedules. The historical <code>core.losses</code>
-        facade has been removed. Import objective functions and <code>make_loss_weights</code> from
-        <code> alignair.tasks.losses</code>, and Gaussian targets from <code>alignair.tasks.functional</code>.
-      </p>
-      <H2 id="migration">Migrate former protein loss imports</H2>
-      <p>
-        The <code>aa.loss</code> facade has been removed. Training code should use
-        <code>build_tasks(config).loss(...)</code> to select the configured gene set and validate its
-        targets. Code calling the lower-level functions directly can use these replacements.
-      </p>
-      <DocTable head={["Former import", "Replacement"]} rows={[
-        ["alignair.aa.loss.aa_loss", "alignair.tasks.losses.categorical_loss"],
-        ["alignair.aa.loss.masked_soft_gaussian", "alignair.tasks.losses.masked_soft_gaussian"],
-      ]} />
-      <p>
-        <code>categorical_loss</code> retains its <code>(outputs, targets, genes=("v", "j"))</code>
-        signature and scalar-total/component-dictionary return contract. Select D explicitly in
-        that function&apos;s gene tuple when needed; the task interface derives it from configuration.
+        Trainers consume the <code>TrainingTasks</code> protocol: <code>loss(outputs, targets)</code> returning a scalar
+        tensor and a dictionary of named tensor parts, <code>metrics</code>, <code>metric_report</code> and
+        <code> selection_score</code>. Supply a task object through the <code>tasks=</code> argument of the
+        <DocLink to="training-engine">training engine</DocLink>, or make it a new architecture&apos;s
+        <code> objective</code> factory. Task code is not serialized into model files, so keep a custom implementation
+        with the experiment source when resuming.
       </p>
     </>
   ),

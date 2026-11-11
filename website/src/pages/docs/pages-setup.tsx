@@ -5,14 +5,14 @@ const modelSetup: DocPage = {
   slug: "model-setup",
   title: "Model setup API",
   section: "Design",
-  lead: "Bind an ordered reference to explicit input and label policies before allocating an AlignAIR model.",
+  lead: "Bind an ordered nucleotide reference to a model configuration before allocating an AlignAIR model.",
   body: () => (
     <>
       <p>
-        <code>alignair.core.prepare_model</code> returns a <code>ModelSetup</code> containing the
-        reference, configuration, selected input and label spaces, and an optional protein reference
-        view. It derives label counts and locus count from that reference. Model parameters are
-        allocated only when you call <code>build_model()</code>.
+        <code>alignair.core.prepare_model</code> returns a <code>ModelSetup</code> holding the reference, the
+        configuration and the input and label spaces. It derives the allele counts, the D head and the locus count
+        from that reference. No parameters are allocated until <code>build_model()</code>, which builds the model and
+        binds the setup&apos;s reference to it.
       </p>
       <H2 id="prepare">Prepare and build</H2>
       <CodeBlock lang="python" code={`import GenAIRR as ga
@@ -21,248 +21,167 @@ from alignair.reference import ReferenceSet
 from alignair.tasks import build_tasks
 
 reference = ReferenceSet.from_dataconfigs(ga.HUMAN_IGH_OGRDB)
-setup = prepare_model(
-    reference,
-    input_space="protein",
-    label_space="protein_classes",
-    max_seq_length=192,
-    architecture="conv-v1",
-)
-print(setup.label_counts)  # V/J protein-class counts; D remains an allele count
+setup = prepare_model(reference)
+print(setup.label_counts)          # {'v': 198, 'd': 33, 'j': 7}
+print(setup.config.architecture)   # chip-v1
 
 # Run training-request preflight against setup.config and setup.reference here.
-model = setup.build_model()
-tasks = build_tasks(setup.config)
-weights = tasks.make_weights()`} />
+model = setup.build_model()        # allocated and bound to setup.reference
+tasks = build_tasks(setup.config)  # the chip's objective (ChipObjective)`} />
       <p>
-        All choices build the same <code>AlignAIR</code> class. Registered architectures select its
-        components through the <DocLink to="model-composition">model composition API</DocLink>.
-        The factory accepts a <code>ReferenceSet</code> or <code>ProteinReference</code>. Resolving a
-        simulator name or reading reference files belongs to the provider; preparation from an existing
-        reference does not require GenAIRR.
+        Every setup builds the same <code>AlignAIR</code> class; the configuration&apos;s architecture name selects its
+        components through the <DocLink to="model-composition">model composition API</DocLink>. The factory accepts a
+        <code> ReferenceSet</code>. Resolving a simulator name or reading reference files belongs to the provider;
+        preparation from an existing reference does not require GenAIRR.
       </p>
-      <H2 id="policies">Input and label policies</H2>
-      <DocTable head={["Input / labels", "Established defaults", "Batch preparation"]} rows={[
-        ["nucleotide / alleles", "6-token vocabulary, orientation correction, multilabel scores, residue boundary masks, auxiliary heads; window 576.",
-          <><code>NucleotideBatchAdapter</code>.</>],
-        ["protein / alleles", "23-token vocabulary, orientation disabled, multilabel scores, historical residue boundary masks and auxiliary heads; window 192.",
-          <><code>ProteinAlleleBatchAdapter</code>.</>],
-        ["protein / protein_classes", "23-token vocabulary, orientation disabled, categorical scores, half-open boundaries, auxiliary heads disabled, empty reads rejected; window 192.",
-          <>A <code>ProteinSampleBuilder</code> followed by <code>CategoricalBatchAdapter</code>.</>],
-        ["nucleotide / protein_classes", "6-token vocabulary, orientation correction, categorical scores, half-open boundaries, auxiliary heads disabled, empty reads rejected; window 576.",
-          "Requires a custom source adapter with nucleotide-coordinate boundaries and reference protein-class labels."],
+      <H2 id="policies">Input and label spaces</H2>
+      <DocTable head={["Input / labels", "Defaults", "Batch preparation"]} rows={[
+        ["nucleotide / alleles", "6-token vocabulary (pad, A, T, G, C, N), in-model orientation with the bank's k-mer vote, the chip core, anchor heads, and a D presence head when the reference has D; window 576.",
+          <><code>NucleotideBatchAdapter</code>, see the <DocLink to="training-batches">batch API</DocLink>.</>],
       ]} />
       <p>
-        Input space controls the vocabulary and default orientation policy; label space controls the
-        default output-head semantics and label counts. Boundary positions always use the input’s
-        coordinate unit. The existing protein-allele defaults remain unchanged. Selecting a different
-        boundary or head policy is explicit, through configuration options. See the
-        <DocLink to="training-batches"> batch API</DocLink> and
-        <DocLink to="training-tasks"> task API</DocLink> for the corresponding target requirements.
-        Model construction alone does not supply an adapter for every combination.
+        AlignAIR reads nucleotide sequences and labels them with the reference&apos;s alleles; this is the only
+        combination. Any other <code>input_space</code> raises <code>ConfigurationError</code> (&ldquo;input_space must
+        be nucleotide: AlignAIR reads nucleotide sequences&rdquo;), and any other <code>label_space</code> raises
+        &ldquo;label_space must be alleles&rdquo;. The two fields remain on the configuration and in the saved label
+        schema.
       </p>
-      <H2 id="labels">Preserve label identity</H2>
+      <H2 id="labels">Labels and the bound reference</H2>
       <p>
-        Allele labels retain the source order and indices. Protein-class V/J labels come from the
-        shared <DocLink to="reference-labels">protein reference view</DocLink>; D retains source
-        allele labels. <code>has_d=False</code> omits the D head without deleting or reordering the
-        source reference. Enabling D requires a D-bearing source with a nonempty vocabulary.
-        Locus count comes from the reference’s ordered locus schema, defaulting to one when absent.
+        Allele labels keep the reference&apos;s order and indices. <code>has_d=False</code> omits the D head without
+        deleting or reordering the source reference; <code>has_d=True</code> on a reference without D raises
+        <code> ConfigurationError</code> (&ldquo;requested D head is unavailable in the source reference&rdquo;). With
+        the default <code>has_d=None</code> the reference decides. The locus count comes from the reference&apos;s
+        ordered locus schema, and is at least one.
       </p>
-      <CodeBlock lang="python" code={`from alignair.reference import build_protein_reference
-
-# Explicit reference policy for a light-chain source with conserved J anchor F.
-light_reference = ReferenceSet.from_dataconfigs(ga.HUMAN_IGK_OGRDB)
-protein_reference = build_protein_reference(light_reference, anchor_residues={"J": "F"})
-setup = prepare_model(
-    protein_reference, input_space="protein", label_space="protein_classes",
-)
-assert setup.reference is protein_reference.source
-assert setup.protein_reference is protein_reference`} />
       <p>
-        A supplied protein view preserves its anchor and hash-scope policy. Class maps must be valid,
-        refer to source alleles, and agree with that view’s translated equivalence classes. A prebuilt
-        view keeps its class IDs; validation compares allele groups without imposing the factory’s
-        default numbering. Preparation
-        checks ordered names, sequences, and allele indices through <code>ReferenceSet.validate()</code>.
-        Binding checks run again before model allocation. Keep reference and label maps stable after
-        fitting; changing label identity requires a corresponding model and training setup.
+        The reference is an input, not part of the weights: the chip compiles the bound reference into a bank (one row
+        per allele) and scores every row. <code>build_model()</code> binds the setup&apos;s reference; a model can be
+        bound to another reference with the same genes later, with <code>model.bind_reference(reference)</code>, and
+        its configuration&apos;s allele counts then follow the bound reference. A model whose reference has not been
+        bound refuses to run (&ldquo;bank_orientation reads a reference: bind one with model.bind_reference&rdquo;).
+        For prediction against a donor genotype or novel alleles, use <code>Aligner.bound_to</code> or the
+        <code> reference=</code> argument described in the <DocLink to="python-api">Python API</DocLink>.
       </p>
-      <H2 id="options">Configure components and heads</H2>
+      <H2 id="options">Configure components</H2>
       <CodeBlock lang="python" code={`setup = prepare_model(
-    reference, input_space="protein", label_space="protein_classes",
-    embed_dim=16, filters=64, block_out=256,
-    use_meta_heads=True,  # supply the corresponding auxiliary targets in your adapter
+    reference,
+    embed_dim=16,         # token/position embedding width (default 32)
+    trunk_channels=32,    # the chip's trunk width (default 64, the trained width)
 )`} />
       <p>
-        Known <code>AlignAIRConfig</code> options select registered architectures, dimensions, and
-        optional heads. Unknown options and attempts to override reference-derived label or locus
-        counts raise <code>ConfigurationError</code>. Vocabulary must match the selected input;
-        nucleotide orientation correction is unavailable for protein input. Invalid reference ordering
-        raises <code>DataContractError</code>. Component-specific shape constraints still apply during
-        model construction.
+        Keyword options set <code>AlignAIRConfig</code> fields: <code>architecture</code>, <code>embed_dim</code>,
+        <code> trunk_channels</code>, <code>max_seq_length</code>, <code>use_orientation</code>,
+        <code> bank_orientation</code>, <code>anchor_heads</code>, <code>d_presence_head</code> and
+        <code> reject_empty_sequences</code>. Unknown options raise <code>ConfigurationError</code> (&ldquo;invalid model
+        configuration options&rdquo;); attempts to override the reference-derived counts raise &ldquo;reference label
+        and locus counts cannot be overridden&rdquo;. The configuration checks its own combinations:
+        <code> d_presence_head=True</code> without a D, or <code>bank_orientation=True</code> without
+        <code> use_orientation</code>, raises <code>ConfigurationError</code>. A reference whose allele order, sequences
+        and index disagree raises <code>DataContractError</code>.
       </p>
       <H2 id="binding">Validate a reference binding</H2>
       <CodeBlock lang="python" code={`from alignair.core import validate_reference_binding
 
-# Allele heads can be checked against the ordered reference without a label schema.
-validate_reference_binding(reference, config)
+validate_reference_binding(reference, setup.config)
 
-# Protein-class heads require the saved class order or an explicit protein reference view.
-validate_reference_binding(reference, class_config, label_schema=saved_schema)
-validate_reference_binding(
-    setup.reference, setup.config, protein_reference=setup.protein_reference,
-)`} />
+# With a saved label schema, the allele order must match it too.
+schema = setup.label_schema()
+validate_reference_binding(reference, setup.config, label_schema=schema)`} />
       <p>
-        This preflight checks every enabled head’s label count, D availability, zero labels for an
-        omitted D head, locus count, input vocabulary, orientation policy, and sequence-window size.
-        It also checks the reference’s names, sequence counts, and index ordering. A model may omit
-        a D head even when its source reference contains D alleles. Preparation, main-format saving,
-        and main-format loading share these checks.
+        This preflight checks, without allocating parameters, that the configuration&apos;s D selection agrees with the
+        reference, that each head&apos;s allele count equals the reference&apos;s (&ldquo;model head size disagrees
+        with its reference labels&rdquo;, with the gene and both counts in the context), that a disabled D head has zero
+        labels, the locus count, the sequence window and the nucleotide vocabulary. It also checks the
+        reference&apos;s names, sequences and index ordering. Preparation, saving and loading share these checks.
       </p>
       <p>
-        Protein-class V/J labels come from an ordered <code>label_schema</code> or a validated
-        <code> ProteinReference</code>; D labels remain source alleles. If both are supplied, their
-        ordered class memberships must agree. Loading a saved schema preserves its class IDs without
-        translating the nucleotide reference again. Missing class metadata is rejected even when
-        class widths happen to equal allele counts. AA product bundles continue to use their own
-        embedded class maps and calibration bindings.
-      </p>
-      <p>
-        Invalid prepared or caller-supplied bindings raise <code>ConfigurationError</code>, or
-        <code> DataContractError</code> for an inconsistent reference. Invalid bindings embedded in
-        a main-format artifact raise <code>ModelIntegrityError</code> with the original cause,
-        <code> model_binding</code> stage, source path, and relevant gene or field. Stored reference
-        hashes are verified for safe and explicitly trusted legacy containers. Validation precedes
-        model allocation on load and destination writes on save.
-      </p>
-      <p>
-        Older allele artifacts without a label schema remain supported when their dimensions match.
-        This establishes dimensional compatibility; historical label identity still depends on the
-        supplied or embedded reference and any stored integrity hashes. The validator does not invent
-        missing provenance or class ordering.
+        <code>ModelSetup.label_schema()</code> returns the portable column identity saved with a model:
+        <code> {"{'schema_version': 1, 'input_space', 'label_space', 'genes': {gene: allele names}}"}</code>. A schema
+        whose genes, lengths or allele order disagree with the reference raises <code>ConfigurationError</code>
+        (&ldquo;allele label order disagrees with the source reference&rdquo;). Invalid bindings stored in a model file
+        raise <code>ModelIntegrityError</code> at load, with the <code>model_binding</code> stage, the path and the
+        original cause; the stored <code>allele_order_sha256</code> and <code>reference_fasta_sha256</code> are
+        verified first.
       </p>
       <H2 id="restore">Restore decoded model weights</H2>
       <CodeBlock lang="python" code={`from alignair.core import AlignAIR
 
-# config and state_dict have already been decoded and their artifact bindings checked.
-model = AlignAIR.from_state_dict(
-    config, state_dict, device="cpu", source="models/candidate.alignair",
-)`} />
+# config and state_dict have already been decoded and their bindings checked.
+model = AlignAIR.from_state_dict(config, state_dict, device="cpu", source="models/candidate.alignair")
+model.bind_reference(reference)    # from_state_dict does not bind a reference`} />
       <p>
-        <code>AlignAIR.from_state_dict</code> constructs the configured architecture on CPU, loads
-        its state with strict key and shape checks, then moves the model to the
-        requested device and selects evaluation mode. Parameters retain gradients for fine-tuning.
-        Construction uses the registered components described by
-        <code> config.architecture</code>; the factory does not infer an architecture from weight keys.
+        <code>AlignAIR.from_state_dict</code> constructs the configured architecture on CPU, loads its state with
+        strict key and shape checks, then moves the model to the requested device and selects evaluation mode.
+        Parameters keep their gradients for fine-tuning. Construction uses the components registered for
+        <code> config.architecture</code>; the factory does not infer an architecture from weight keys. The bank is not
+        part of the weights (its buffers are not saved), so bind a reference before running the model.
       </p>
       <p>
-        Missing or unexpected keys, incompatible shapes, and parameter entries PyTorch cannot load raise
-        <code> ModelIntegrityError</code> with a <code>model_restoration</code> stage, architecture,
-        and diagnostic source path. The original PyTorch error remains the exception cause.
-        Architecture registration and device-placement errors retain their original error types.
-      </p>
-      <p>
-        Artifact loaders use this factory after decoding and their format-specific preflight.
-        The safe main format has its embedded reference hashes and optional label schema verified
-        before allocating model parameters. Protein product loading retains integrity, class-map, head-count, and
-        calibration binding checks, including historical configuration normalization. Legacy pickle
-        decoding still requires explicit trust. For normal inference, use the
-        <DocLink to="model-inference"> public loading APIs</DocLink>; this factory accepts decoded
-        state only and does not establish reference or calibration identity by itself.
+        Missing or unexpected keys and incompatible shapes raise <code>ModelIntegrityError</code> (&ldquo;cannot
+        restore model weights&rdquo;) with a <code>model_restoration</code> stage, the architecture and the diagnostic
+        source path; the PyTorch error remains the exception&apos;s cause. An unregistered architecture raises
+        <code> ConfigurationError</code> (&ldquo;unknown model architecture&rdquo;). For normal inference, use the
+        <DocLink to="model-inference"> public loading APIs</DocLink>; this factory accepts decoded state only.
       </p>
       <H2 id="prepared-restoration">Restore through a prepared binding</H2>
       <CodeBlock lang="python" code={`from alignair.core import setup_from_schema
 
 # Bind the saved column order before constructing a restored model.
 restored_setup = setup_from_schema(reference, config, saved_schema)
-model = restored_setup.restore_model(
-    state_dict, device="cpu", source="models/candidate.alignair",
-)
-
-# Reuse a protein view when its translation, anchors and hash scope are explicit.
-restored_setup = setup_from_schema(protein_reference, config, saved_schema)`} />
+model = restored_setup.restore_model(state_dict, device="cpu", source="models/candidate.alignair")`} />
       <p>
-        <code>ModelSetup.restore_model</code> revalidates the prepared reference and label binding
-        before allocation, then delegates strict weight loading and evaluation-mode device placement
-        to <code>AlignAIR.from_state_dict</code>. It returns a fresh model. Binding failures carry a
-        <code> model_binding</code> stage; weight failures retain the shared restoration diagnostics.
-        The method accepts decoded state and does not read the diagnostic source path.
+        <code>setup_from_schema</code> checks the saved schema against the reference and configuration and returns a
+        <code> ModelSetup</code>. <code>ModelSetup.restore_model</code> revalidates the binding (failures carry the
+        <code> model_binding</code> stage), restores a fresh model through <code>AlignAIR.from_state_dict</code> and
+        binds the setup&apos;s reference. It accepts decoded state and does not read the source path.
       </p>
-      <p>
-        <code>setup_from_schema</code> accepts a source <code>ReferenceSet</code> or an explicit
-        <code> ProteinReference</code>. For protein classes, it installs the saved class IDs on a
-        validated view. An existing view retains its translated germlines, anchor choices, and hash
-        scope; its original class maps remain unchanged. Allele models use the source reference directly.
-      </p>
-      <p>
-        Convergence studies use prepared restoration for incumbents and freshly loaded candidates.
-        Their configured alphabet, label space, D head and sequence window must match the declared
-        study before provider or cohort construction. Checkpoints with label schemas retain their saved
-        order. Historical schema-less incumbents retain the study’s existing declared reference and
-        translation policy; this compatibility path does not establish missing historical label provenance.
-      </p>
-      <H2 id="checkpoint-data">Read checkpoint data without constructing a model</H2>
+      <H2 id="checkpoint-data">Read model files without constructing a model</H2>
       <CodeBlock lang="python" code={`from alignair.model_file import read_model_state
 
-data = read_model_state("candidate.alignair")
-print(data.config.architecture, data.model_state.keys())
+data = read_model_state("model.alignair")
+print(data.config.architecture, len(data.model_state))
 reference = data.reference
-metadata = data.metadata`} />
+schema = data.metadata["model"]["label_schema"]`} />
       <p>
-        <code>read_model_state</code> returns <code>ModelStateData</code>: CPU tensors, configuration,
-        metadata and a verified reference/label binding. It supports inference-only containers and
-        does not read optimizer or RNG sections. Safe reference JSON is the default; an older reference
-        stored as Python pickle requires <code>trust_pickle=True</code>. Architecture factories are
-        unnecessary for decoding, and reading does not consume model-initialization randomness.
-        Strict architecture-specific key and shape checks occur when restoring a model.
+        <code>read_model_state</code> returns <code>ModelStateData</code> (<code>metadata</code>, <code>config</code>,
+        <code> model_state</code>, <code>reference</code>): CPU tensors from the safetensors section, the reference from
+        the pickle-free <code>reference_json</code> section, and a verified reference and label binding. It decodes no
+        training state, needs no architecture factory and consumes no random state; key and shape checks happen at
+        restoration. A file without <code>reference_json</code> was written before AlignAIR 4 and raises
+        <code> ModelError</code>.
       </p>
       <CodeBlock lang="python" code={`from alignair.model_file import read_training_state
 
-data = read_training_state("resume.alignair", device="cpu")
-print(data.step, data.config, data.model_state.keys())
+data = read_training_state("runs/igh/model.alignair", device="cpu")
+print(data.step, data.config.architecture)
 optimizer_state = data.optimizer_state
 scheduler_state = data.scheduler_state`} />
       <p>
-        <code>read_training_state</code> returns <code>TrainingStateData</code> with decoded model
-        tensors, reference, configuration, metadata, task weights, optimizer, scheduler and process
-        RNG state. It verifies section checksums and reference/label bindings without constructing
-        <code> AlignAIR</code>. Model tensors retain their stored dtype and are mapped to the requested
-        device; the other state fields retain their serialized values. Reading does not apply the
-        recorded RNG state or consume model-initialization randomness.
+        <code>read_training_state</code> returns <code>TrainingStateData</code> with the decoded model tensors (mapped
+        to <code>device</code>), reference, configuration, metadata, optimizer, scheduler and process RNG state, the
+        completed step and the run&apos;s <code>train_args</code>. It verifies section checksums and the reference and
+        label binding without constructing <code>AlignAIR</code>, and does not apply the recorded RNG state. It decodes
+        the trusted pickle <code>train_state</code> section, so open only checkpoints you trust; an inference model
+        file raises <code>ModelError</code> (&ldquo;no train_state section; this model file cannot resume
+        training&rdquo;).
       </p>
       <p>
-        Architecture-specific key and shape validation occurs when restoring the decoded tensors.
         Use <code>ModelSetup.restore_model</code> for a fresh reference-bound model, or
-        <code>restore_model_state(existing_model, data.model_state, source=...)</code> to apply them
-        strictly to an existing instance. In-place restoration retains module modes and parameter
-        objects, including optimizer bindings; it follows PyTorch copying semantics rather than
-        providing rollback after a failed load.
+        <code> restore_model_state(existing_model, data.model_state, source=...)</code> to load the tensors strictly into
+        an existing instance. In-place restoration keeps module modes and parameter objects, including optimizer
+        bindings; it follows PyTorch copying semantics rather than rolling back a failed load.
+        <code> load_training_state(path, device=...)</code> returns a <code>TrainingState</code> whose model is
+        already restored, bound to the checkpoint&apos;s reference and in evaluation mode.
       </p>
+      <H2 id="counts">Count-only construction</H2>
       <p>
-        The existing <code>load_training_state(path, device=...)</code> API still returns a
-        <code> TrainingState</code> containing a restored evaluation model. The training checkpoint
-        reader uses the data-only path, and resume applies strict weights before optimizer, scheduler
-        and RNG continuation. Both model-file training-state APIs are trusted resume flows that
-        decode pickle sections. Historical raw <code>.pt</code> loading retains its explicit
-        <code> trust_pickle</code> requirement.
-      </p>
-      <H2 id="counts">Count-only construction and existing callers</H2>
-      <p>
-        When only validated counts are available, <code>build_model_config(v_label_count,
-        j_label_count, d_label_count=0, ...)</code> selects the same defaults and returns an
-        <code> AlignAIRConfig</code>. It cannot verify class identity or source ordering. For protein
-        classes, select <code>input_space="protein"</code> and <code>label_space="protein_classes"</code>.
-        The former <code>aa_igh_config</code> factory has been removed. Protein setup helpers,
-        public nucleotide training entries, and the reference training plan use the shared setup path.
-      </p>
-      <p>
-        Configuration serialization and weight keys are preserved.
-        Protein setup and product loading use the shared <code>AlignAIR</code> model.
-        <code>ModelSetup</code> is a preparation object, not an inference bundle or a resume checkpoint.
-        Protein class maps must accompany their weights through the existing label-aware export path.
-        The selected <DocLink to="training-engine">training engine</DocLink> and runner continue to own
-        optimizer state, source streams, checkpoint timing, and resume behavior.
+        When only validated counts are available, <code>build_model_config(v_label_count, j_label_count,
+        d_label_count=0, *, has_d=False, num_chain_types=1, max_seq_length=None, ...)</code> selects the same defaults
+        and returns an <code>AlignAIRConfig</code>. It cannot verify allele identity or source ordering, so prefer
+        <code> prepare_model</code> when a reference is available. <code>ModelSetup</code> is a preparation object, not
+        an inference bundle or a resume checkpoint. The <DocLink to="training-engine">training engine</DocLink> and
+        runner own optimizer state, record streams, checkpoint timing and resume.
       </p>
     </>
   ),

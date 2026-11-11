@@ -118,13 +118,14 @@ const citationSupport: DocPage = {
       </p>
       <ul>
         <li><strong>AlignAIR version</strong> - <code>alignair --version</code> (for example, <code>alignair 3.0.0</code>).</li>
-        <li><strong>Model and version</strong> - the id you passed, pinned: e.g. <code>alignair-igh-human@1.0.0</code>, or the path to your <code>.alignair</code> file.</li>
-        <li><strong>Environment</strong> - the full output of <code>alignair doctor</code> (Python, PyTorch + CUDA/MPS, GenAIRR, parasail, and the cache directory).</li>
+        {/* PENDING-V4-MODEL-ID: replace <v4-igh-model> with the published AlignAIR 4 model id. */}
+        <li><strong>Model and version</strong> - the id you passed, pinned: e.g. <code>&lt;v4-igh-model&gt;@&lt;version&gt;</code>, a Hugging Face repo and its revision, or the path to your <code>.alignair</code> file.</li>
+        <li><strong>Environment</strong> - the full output of <code>alignair doctor</code> (Python, PyTorch with its CUDA/MPS devices, GenAIRR and the optional packages, and the cache and config directories).</li>
         <li><strong>The exact command</strong> you ran, verbatim.</li>
         <li><strong>A minimal reproducer</strong> - the smallest input that triggers it (a handful of reads is ideal), plus what you expected versus what happened.</li>
       </ul>
       <CodeBlock
-        code={`alignair --version        # AlignAIR version\nalignair doctor           # environment: Python, torch + device, GenAIRR, parasail, cache dir`}
+        code={`alignair --version        # AlignAIR version\nalignair doctor           # environment: Python, torch + device, GenAIRR, optional packages, cache dir`}
       />
       <Callout kind="note" title="A tiny reproducer beats a big one">
         A three-read FASTA that reproduces the problem is worth more than a whole run. If the input is sensitive, a
