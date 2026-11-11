@@ -20,7 +20,7 @@ class AlignAIRConfig:
     has_d: bool = True
     num_chain_types: int = 1       # the loci of the reference's locus schema
     max_seq_length: int = 576
-    vocab_size: int = 6            # PAD, A, C, G, T, N
+    vocab_size: int = 6            # tokens P=0, A=1, T=2, G=3, C=4, N=5 (data.tokenizer.TOKEN_DICT; P pads)
     embed_dim: int = 32
     # in-model orientation (reverse-complement detect/correct/re-embed)
     use_orientation: bool = True

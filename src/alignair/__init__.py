@@ -3,7 +3,7 @@
 The stable object API (recommended):
 
     from alignair import Aligner
-    aligner = Aligner.from_pretrained("alignair-igh-v1", device="auto")  # path / catalog id / id@rev
+    aligner = Aligner.from_pretrained("alignair4-igh-human", device="auto")  # catalog id (PENDING-V4-PUBLISH) / path / id@version
     result = aligner.predict(["CAGGTGCAGCTG..."])
     result.write_airr("predictions.tsv")
 

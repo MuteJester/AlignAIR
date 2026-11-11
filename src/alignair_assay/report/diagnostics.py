@@ -563,7 +563,7 @@ def _suite_heads(suite: dict) -> list[str]:
         if any(name in heads for name in names):
             rows.append([g.upper(), *(format_cell(name, heads.get(name)) for name in names)])
     if rows:
-        lines += ["Alleles (ranked by calibrated probability):", "", *markdown_table(
+        lines += ["Alleles (ranked by score):", "", *markdown_table(
             ["Gene", "Top-1 in set", "Top-3 in set", "Top-5 in set", "Top-1 generative (informational)",
              "Alleles at p ≥ 0.5 (informational)"], rows), ""]
     rows = [[name, format_cell(name, heads[name])] for name in _META_METRICS if name in heads]

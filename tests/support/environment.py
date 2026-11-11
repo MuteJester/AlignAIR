@@ -53,10 +53,8 @@ def isolated_test_environment(request, monkeypatch, tmp_path):
         ("HUGGINGFACE_HUB_CACHE", "hf-hub"),
     ):
         monkeypatch.setenv(name, str(tmp_path / directory))
-    for name in ("ALIGNAIR_REGISTRY", "ALIGNAIR_OFFLINE", "ALIGNAIR_UPDATE_GOLDENS"):
-        # Updating snapshots is a deliberate authoring operation, never inherited by CI.
-        if name != "ALIGNAIR_UPDATE_GOLDENS" or not request.config.getoption("--update-goldens"):
-            monkeypatch.delenv(name, raising=False)
+    for name in ("ALIGNAIR_REGISTRY", "ALIGNAIR_OFFLINE"):
+        monkeypatch.delenv(name, raising=False)
     for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN", "ALIGNAIR_NO_NETWORK"):
         monkeypatch.delenv(name, raising=False)
     hub_constants = sys.modules.get("huggingface_hub.constants")

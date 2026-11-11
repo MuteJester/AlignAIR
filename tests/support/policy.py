@@ -1,7 +1,6 @@
 """Explicit execution profiles, reproducible ordering, and required claim evidence."""
 import json
 import random
-import os
 
 import pytest
 
@@ -30,7 +29,6 @@ def pytest_addoption(parser):
     group.addoption("--claim-report", help="Write required-claim outcomes as JSON")
     group.addoption("--test-order", choices=("collected", "shuffle", "reverse"), default="collected")
     group.addoption("--order-seed", type=int, default=0, help="Seed used for shuffled test ordering")
-    group.addoption("--update-goldens", action="store_true", help="Allow explicit snapshot refresh outside CI")
 
 
 def _matches(nodeid, target):
@@ -40,19 +38,6 @@ def _matches(nodeid, target):
 def pytest_configure(config):
     if config.getoption("--enforce-claims") and config.getoption("numprocesses", 0):
         raise pytest.UsageError("Required claim validation must run serially; omit -n")
-    if config.getoption("--update-goldens"):
-        if os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"):
-            raise pytest.UsageError("Snapshot updates are forbidden in CI")
-        previous = os.environ.get("ALIGNAIR_UPDATE_GOLDENS")
-        os.environ["ALIGNAIR_UPDATE_GOLDENS"] = "1"
-        def restore():
-            if previous is None:
-                os.environ.pop("ALIGNAIR_UPDATE_GOLDENS", None)
-            else:
-                os.environ["ALIGNAIR_UPDATE_GOLDENS"] = previous
-        config.add_cleanup(restore)
-    elif os.environ.get("ALIGNAIR_UPDATE_GOLDENS") == "1":
-        raise pytest.UsageError("Use --update-goldens for an explicit snapshot refresh")
 
 
 @pytest.hookimpl(tryfirst=True)

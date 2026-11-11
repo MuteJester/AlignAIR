@@ -301,8 +301,7 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
     stream k % n, so a component ends with its last complete period); stream s draws the seed block
     ``seed_block(seed, purpose, start_step, j, i, s)``. The ``purpose`` is ``"training"``, ``"validation"`` or
     ``"probe"`` (a held-out stream of its own), and a training stream that starts at ``start_step`` (a resumed run) draws blocks
-    of its own. Panel j gets the class ID of its distinct normalized locus. Multiple panels always use the amplicon
-    mixture.
+    of its own. Multiple panels always use the amplicon mixture.
     """
     if not isinstance(policy, CurriculumStreamPolicy):
         raise ConfigurationError('supply a CurriculumStreamPolicy')

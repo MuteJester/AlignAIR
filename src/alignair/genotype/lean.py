@@ -8,9 +8,9 @@ open (every allele allowed). A row then moves when its call is outside the genot
 allele; a row whose read matches no allowed allele as well as its call keeps it. The CLI re-calls the moved rows with
 the genotype as the ``--genotype`` constraint, so their rows stay consistent.
 
-On the assay's real arm (four donors, RACE and multiplex) this rule took the share of V calls the donor's genotype
-does not support from 2.17% to 0.70% (RACE) and 9.48% to 7.94% (multiplex); the same rule on IgBLAST's own tie lists
-(about IgBLAST + TIgGER) gave 0.82% and 8.02%.
+The assay's real arm (donors sequenced by RACE and by multiplex) measures how far the rule lowers the share of V calls
+the donor's genotype does not support, beside the same rule on IgBLAST's own tie lists (about IgBLAST + TIgGER); the
+AlignAIR 4 figures are pending (PENDING-V4-NUMBERS).
 """
 from __future__ import annotations
 
