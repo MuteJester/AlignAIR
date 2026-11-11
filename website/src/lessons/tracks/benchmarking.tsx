@@ -20,36 +20,48 @@ const benchmarking: Lesson = {
             Shipped in the CLI, it generates fresh ground-truth reads per stratum and scores one model against that
             truth. Use it to sanity-check any model, including one you just trained:
           </p>
-          <CodeBlock code={`alignair benchmark --model alignair-igh-human --n 200 --seed 0 --out benchmark.json`} />
+          <CodeBlock code={`alignair benchmark --model <v4-igh-model> --n 200 --seed 0 --format json --out benchmark.json`} />
           <p>
-            <strong>Tier 2 — the head-to-head vs IgBLAST.</strong> Paired bootstrap confidence intervals, Bonferroni
-            correction, per-stratum diagnostics and full provenance. This lives in the <code>alignair_benchmark</code>{" "}
-            package, which ships in the AlignAIR <strong>source repository</strong>, not the installed PyPI wheel — so
-            you get it from a git clone:
+            (<code>{"<v4-igh-model>"}</code> is a placeholder for the AlignAIR 4 IGH model, whose id is not published
+            yet; a <code>.alignair</code> path works in its place.)
           </p>
-          <CodeBlock code={`git clone https://github.com/MuteJester/AlignAIR\n# then install the benchmark package from the repo per its README`} />
+          <p>
+            <strong>Tier 2 — the head-to-head vs IgBLAST.</strong> Paired comparisons with confidence intervals and
+            Holm-corrected verdicts, per-suite diagnostics and full provenance, on GenAIRR-simulated suites scored
+            against observable truth and on real donors. This lives in the <code>alignair_assay</code> package, which
+            ships in the AlignAIR <strong>source repository</strong>, not the installed PyPI wheel — so you get it from a
+            git clone:
+          </p>
+          <CodeBlock code={`git clone https://github.com/MuteJester/AlignAIR\n# then run alignair_assay from the repo per src/alignair_assay/README.md`} />
           <Callout kind="note" title="Why is benchmarking separate?">
-            Keeping <code>alignair_benchmark</code> out of the main PyPI distribution minimizes the production installation footprint. It avoids bringing in heavy statistical analysis and plotting libraries (like SciPy or Matplotlib) that are only required during evaluation.
+            <code>alignair_assay</code> is a development instrument: it drives IgBLAST and AlignAIR, freezes the simulator
+            it builds suites with, and carries statistics only evaluation needs. Keeping it out of the wheel keeps the
+            production install small.
           </Callout>
           <Callout kind="note" title="Score both tools on the same germline">
-            A fair comparison must give IgBLAST the exact germline the model uses. Export it from the model, then run
-            IgBLAST with <code>-outfmt 19</code>:
-            <CodeBlock code={`alignair reference export alignair-igh-human --fasta germline.fasta`} />
+            A fair comparison must give IgBLAST the exact germline the model uses. Export it from the model file, then
+            run IgBLAST with <code>-outfmt 19</code>:
+            <CodeBlock code={`alignair reference export "$(alignair models path <v4-igh-model>)" --fasta germline.fasta`} />
           </Callout>
         </>
       ),
     },
     {
       kind: "explain",
-      title: "The 24 metrics",
+      title: "What the head-to-head scores",
       body: () => (
         <>
-          <p>Per gene (V, D, J): allele top-1-in-set, call-set F1, and MAE of in-read and germline start/end. Global:</p>
+          <p>
+            Per gene (V, D, J): whether the top-1 allele is in the read's observable truth set (<code>v.top1_in_set</code>),
+            and whether each boundary lies inside its truth interval (<code>*_exact</code>, with the distance in{" "}
+            <code>*_err</code>). Global:
+          </p>
           <ul className="list-disc pl-6 space-y-1.5 my-4">
-            <li>exact junction nucleotide / amino-acid match,</li>
-            <li>productivity and orientation accuracy,</li>
-            <li>required-field presence and parseable-AIRR rate.</li>
+            <li>exact junction nucleotide / amino-acid match (<code>junction.nt_exact</code>, <code>junction.aa_exact</code>) and the clone key (<code>clone_key.exact</code>),</li>
+            <li>orientation (<code>orientation.correct</code>),</li>
+            <li>AIRR validity (<code>airr.valid</code>).</li>
           </ul>
+          <p>The full metric catalogue is in the assay's README.</p>
           <p>
             Coverage matters: a tool that emits fewer junctions is scored on the junctions it does emit, so read
             junction accuracy alongside required-field presence.
@@ -64,7 +76,7 @@ const benchmarking: Lesson = {
         <>
           <p>
             The self-check writes a JSON report <strong>keyed by stratum</strong>, not one flat score — because accuracy
-            depends on read quality. Each stratum carries its own metrics (illustrative values):
+            depends on read quality. Each stratum carries its own metrics (illustrative values, not results):
           </p>
           <CodeBlock
             lang="json"
@@ -77,11 +89,11 @@ const benchmarking: Lesson = {
           <Callout kind="note" title="Tier 1 and Tier 2 use different metric names">
             The self-check reports <code>v_call_acc</code> (top-1 accuracy), <code>junction_nt_exact</code>,{" "}
             <code>junction_len_mae</code>, <code>*_sequence_start/end_mae</code> and <code>productive_acc</code>. The
-            head-to-head package reports the richer set named above (<code>call_top1_in_set</code>,{" "}
-            <code>call_set_f1</code>, <code>ss/se/gs/ge_mae</code>, <code>junction_aa_exact</code>,{" "}
-            <code>parseable_airr_rate</code>) and adds a confidence interval plus a Bonferroni-corrected significance
-            flag to each. Read those, not just the point estimate: a higher number that is not flagged significant is not
-            yet a real difference.
+            head-to-head package reports the richer set named above (<code>v.top1_in_set</code>, the boundary{" "}
+            <code>*_exact</code> / <code>*_err</code>, <code>junction.aa_exact</code>, <code>clone_key.exact</code>,{" "}
+            <code>airr.valid</code>) and, comparing two tools, adds a confidence interval plus a Holm-corrected verdict to
+            each. Read those, not just the point estimate: a higher number without a verdict is not yet a real
+            difference.
           </Callout>
         </>
       ),
@@ -99,9 +111,9 @@ const benchmarking: Lesson = {
             where methods separate.
           </p>
           <p>
-            And a visible gap is not automatically a result. Each metric carries a Bonferroni-corrected confidence
-            interval, and a difference whose interval still spans zero is not yet real - you read the point estimate{" "}
-            <em>and</em> its interval together.
+            And a visible gap is not automatically a result. Each paired difference carries a simultaneous confidence
+            interval and a Holm-corrected verdict, and a difference whose interval still spans zero is not yet real -
+            you read the point estimate <em>and</em> its interval together.
           </p>
           <Callout kind="note" title="Record comparison provenance">
             Record the exact model, tool versions, germline reference, input cases, and commands for each comparison.

@@ -21,7 +21,7 @@ const downstream: Lesson = {
             from your metadata, joined at predict time:
           </p>
           <CodeBlock
-            code={`alignair predict --input contigs.fasta --out out.tsv --model alignair-igh-human \\
+            code={`alignair predict --input contigs.fasta --out out.tsv --model <v4-igh-model> \\
   --metadata filtered_contig_annotations.csv --keep-columns barcode,umis,c_gene`}
           />
           <Callout kind="note" title="Isotype calling limitation">
@@ -126,7 +126,7 @@ const validate: Lesson = {
                 </tr>
                 <tr style={{ borderBottom: "1px solid #f0eff5" }}>
                   <td style={{ padding: "11px 14px" }}><code>core</code></td>
-                  <td style={{ padding: "11px 14px" }}>Calls, call sets, coordinates, junction (27 fields). Still assembled — it asks for the junction.</td>
+                  <td style={{ padding: "11px 14px" }}>Calls, coordinates, CIGARs, junction (27 fields). Still assembled — it asks for the junction.</td>
                   <td style={{ padding: "11px 14px" }}>Clonotype / repertoire summaries: a much smaller file, same derived biology.</td>
                 </tr>
                 <tr style={{ borderBottom: "1px solid #f0eff5" }}>
@@ -147,7 +147,7 @@ const validate: Lesson = {
               </tbody>
             </table>
           </div>
-          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model alignair-igh-human --columns core`} />
+          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model <v4-igh-model> --columns core`} />
           <p>
             You can also pass an explicit comma-separated field list instead of a preset name.
           </p>

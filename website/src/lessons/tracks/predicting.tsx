@@ -25,8 +25,9 @@ const firstPrediction: Lesson = {
           <p>Install the CLI, then verify PyTorch, GenAIRR and the device are all wired up:</p>
           <CodeBlock code={`pip install "AlignAIR[cli]"\nalignair doctor`} />
           <p>
-            <code>alignair doctor</code> reports the resolved device — <code>auto</code> picks CUDA, then Apple MPS,
-            then CPU.
+            <code>alignair doctor</code> reports the resolved device (<code>device_auto</code>) — <code>auto</code> picks
+            CUDA, then Apple MPS, then CPU. <code>alignair predict</code> without <code>--device</code> uses CUDA when it
+            is available, else the CPU.
           </p>
         </>
       ),
@@ -37,20 +38,22 @@ const firstPrediction: Lesson = {
       body: () => (
         <>
           <p>
-            Pass a model <strong>id</strong>; it downloads, hash-verifies and caches on first use (no login). Replay a
-            real captured run to see exactly what it prints:
+            Pass a model <strong>id</strong>, a Hugging Face repo or a <code>.alignair</code> path; a remote model
+            downloads and caches on first use (no login for a public one). <code>{"<v4-igh-model>"}</code> stands for the
+            AlignAIR 4 IGH model, whose id is not published yet. Replay a real captured run to see exactly what it
+            prints:
           </p>
           <CliWidget />
           <p>
-            Worth noticing in that output: <strong>68 of the 400 reads assembled only partially</strong>, on reads with
-            no quality problem beyond ordinary hypermutation. That is not a failure, and the CLI does not treat it as
-            one — those rows still carry their V/D/J calls, they just could not have a junction derived. It is the
-            honest-absence contract in action, and you will meet it again when you filter output.
+            Worth noticing in that output (recorded with AlignAIR 3): some reads assembled only partially, on reads
+            with no quality problem beyond ordinary hypermutation. That is not a failure, and the CLI does not treat it
+            as one — those rows still carry their V/D/J calls; a product such as the junction could not be derived. It
+            is the honest-absence contract in action, and you will meet it again when you filter output.
           </p>
           <p>
-            <code>--input</code> accepts FASTA, FASTQ, CSV/TSV or TXT (optionally <code>.gz</code>, or <code>-</code> for stdin). For a <strong>table</strong>, tell it which columns to read — otherwise it cannot find your sequences:
+            <code>--input</code> accepts FASTA, FASTQ, CSV/TSV or TXT (optionally <code>.gz</code>, or <code>-</code> for stdin). A <strong>table</strong>'s sequence column is found by name (<code>sequence</code>, <code>seq</code>, <code>nucleotide</code>, <code>read</code>); name any other column explicitly:
           </p>
-          <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model alignair-igh-human \\\n  --sequence-column seq --id-column read_id`} />
+          <CodeBlock code={`alignair predict --input reads.csv --out out.tsv --model <v4-igh-model> \\\n  --sequence-column nt --id-column read_id`} />
           <p>
             No reads handy? <code>alignair demo</code> runs the whole pipeline offline on simulated data (the demo model is not accurate — it only proves the pipeline works).
           </p>
@@ -103,7 +106,7 @@ const firstPrediction: Lesson = {
       answer: 1,
       explanation: () => (
         <p>
-          <code>productive</code> is a derived fact (in-frame and no stop codon). On a partial record it can be underivable, and AlignAIR leaves it blank — unknown, not <code>F</code>. The neural head’s advisory guess is kept separately in <code>productive_prediction</code>.
+          <code>productive</code> is a derived fact (in-frame and no stop codon). Without a junction it is underivable, and AlignAIR leaves it blank — unknown, not <code>F</code>.
         </p>
       ),
     },
@@ -124,10 +127,10 @@ const modelsReferences: Lesson = {
       body: () => (
         <>
           <p>
-            Every AlignAIR model has a <strong>fixed reference</strong> baked in: the exact list of germline V/D/J alleles it was trained to recognise. That catalog is embedded in the <code>.alignair</code> file and fingerprinted, so it can never drift from the weights.
+            Every AlignAIR model carries the germline reference it was trained on: the V/D/J alleles, with their IMGT gaps and conserved anchors. That reference is embedded in the <code>.alignair</code> file and fingerprinted, so it can never drift from the weights, and it is the model's default set of callable alleles.
           </p>
           <p>
-            The V/D/J classification heads have one output slot per allele in that catalog — so the reference literally <em>is</em> the set of alleles the model can call. Almost everything else about a model follows from this one fact.
+            The network scores the alleles of whichever reference it is bound to, so you can bind another at predict time: a donor's subset with <code>--genotype</code>, or a FASTA with novel alleles with <code>--reference</code>. Almost everything else about a model follows from this one fact.
           </p>
         </>
       ),
@@ -148,8 +151,8 @@ const modelsReferences: Lesson = {
           <p>
             Alternatively, when training on custom references, you can pass your own sequences with <code>--v-fasta</code>, <code>--d-fasta</code>, and <code>--j-fasta</code>. AlignAIR automatically builds a compatible training reference and discovers the required V/J anchors where possible. Learn more at the <a href="https://mutejester.github.io/GenAIRR/" target="_blank" rel="noreferrer" className="text-brand-600 underline">official GenAIRR documentation</a>.
           </p>
-          <Callout kind="note" title="Why anchors matter">
-            A dataconfig or custom FASTA provides the necessary anchors to locate the conserved residues. A plain YAML/JSON genotype does <strong>not</strong> carry anchors — which is exactly why a genotype can only <em>subset</em> an existing reference, while a brand-new reference needs a dataconfig or anchored FASTAs.
+          <Callout kind="note" title="Why anchors and gaps matter">
+            Each V and J allele needs its conserved anchor, and each V its IMGT-gapped form. A dataconfig carries them. A FASTA bound with <code>--reference</code> gets them from the model's own alleles (the same sequence, or a close same-length variant) or from its own IMGT gaps; the run names any allele left without an anchor. A YAML/JSON genotype carries only names, which is why it can only <em>subset</em> the bound reference.
           </Callout>
         </>
       ),
@@ -161,13 +164,13 @@ const modelsReferences: Lesson = {
         <>
           <p>At predict time, <code>--model</code> accepts three kinds of thing:</p>
           <ul className="list-disc pl-6 space-y-1.5 my-4">
-            <li>a <strong>catalog id</strong> like <code>alignair-igh-human</code> — downloaded, hash-verified and cached on first use (no login);</li>
+            <li>a <strong>catalog id</strong> (<code>{"<v4-igh-model>"}</code> here; the AlignAIR 4 ids are not published yet) — downloaded, hash-verified and cached on first use (no login). Pin an exact build with <code>id@version</code>;</li>
             <li>a local <strong><code>.alignair</code> file</strong>, e.g. <code>runs/igh/bundle/model.alignair</code>;</li>
-            <li>an <strong><code>org/name</code> Hugging Face repo id</strong>. Pin an exact build with <code>id@version</code>.</li>
+            <li>a <strong>Hugging Face repo</strong>, <code>hf://org/repo</code> or <code>org/repo</code>; pin it with <code>--revision</code>.</li>
           </ul>
           <CodeBlock code="alignair models list        # the live catalog + install status" />
           <p>
-            Pick a model whose reference covers your locus and species. If none does, you train one — see the Reference pages.
+            Pick a model of your locus and species; AlignAIR 4 models come one per locus. If none fits, you train one — see the Reference pages.
           </p>
         </>
       ),
@@ -180,14 +183,14 @@ const modelsReferences: Lesson = {
         </p>
       ),
       options: [
-        "Use the closest human model — it adapts at inference",
-        "Train a new model from your own anchored germline FASTAs, producing a new fixed reference",
+        "Bind the species’ germline FASTA to the closest human model with --reference and trust the calls",
+        "Train a new model from your own germline FASTAs (or a dataconfig, if GenAIRR has one)",
         "Add the species’ alleles with a --genotype file at predict time",
       ],
       answer: 1,
       explanation: () => (
         <p>
-          A model can only call alleles in its embedded reference, and a genotype can only <em>subset</em> that reference. A new species is a new allele universe, so you train a model — from a dataconfig if one exists, otherwise your own anchored FASTAs.
+          A genotype can only <em>subset</em> the bound reference. <code>--reference</code> would bind another species' alleles - nothing checks the species - but how well a model calls a species it never trained on has not been measured. Train a model for the new species: from a dataconfig if one exists, otherwise from your own germline FASTAs.
         </p>
       ),
     },
@@ -222,45 +225,22 @@ const genotype: Lesson = {
       body: () => (
         <>
           <p>
-            Supply the genotype as YAML or JSON. Calls are hard-restricted to that donor’s alleles. The file must map gene names to a list of allowed alleles:
+            Supply the genotype as YAML or JSON. Calls are hard-restricted to that donor’s alleles. The file maps each segment - <code>V</code>, <code>D</code>, <code>J</code> - to a list of allowed alleles, by their names in the model's reference (OGRDB names here). A file keyed by gene names is refused:
           </p>
           <CodeBlock
             lang="yaml"
-            code={`# donor.yaml\nIGHV3-23:\n  - IGHV3-23*01\n  - IGHV3-23*04\nIGHV1-2:\n  - IGHV1-2*02`}
+            code={`# donor.yaml\nV:\n  - IGHVF1-G3*02\n  - IGHVF6-G21*07\n  - IGHVF6-G21*12\nJ:\n  - IGHJ4*02\n  - IGHJ6*02`}
           />
           <p>Pass the file path to <code>--genotype</code>:</p>
-          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model alignair-igh-human --genotype donor.yaml`} />
-          <p>Choose how the constraint is applied with <code>--genotype-method</code>:</p>
-          <div style={{ margin: "20px 0", overflowX: "auto", border: "1px solid #eae9f1", borderRadius: "12px" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13.5px" }}>
-              <thead>
-                <tr style={{ background: "#f7f6fb", borderBottom: "1px solid #eae9f1" }}>
-                  <th style={{ textAlign: "left", padding: "11px 14px", fontWeight: 600 }}>Method</th>
-                  <th style={{ textAlign: "left", padding: "11px 14px", fontWeight: 600 }}>Effect</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-                  <td style={{ padding: "11px 14px" }}><code>mask</code> (default)</td>
-                  <td style={{ padding: "11px 14px" }}>Zero out non-donor alleles, then take the top surviving call. The safest, most literal option.</td>
-                </tr>
-                <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-                  <td style={{ padding: "11px 14px" }}><code>softmax</code></td>
-                  <td style={{ padding: "11px 14px" }}>Re-run the softmax over only the donor’s alleles.</td>
-                </tr>
-                <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-                  <td style={{ padding: "11px 14px" }}><code>renormalize</code></td>
-                  <td style={{ padding: "11px 14px" }}>Rescale the surviving probabilities so they sum to 1.</td>
-                </tr>
-                <tr style={{ borderBottom: "1px solid #f0eff5" }}>
-                  <td style={{ padding: "11px 14px" }}><code>redistribute</code></td>
-                  <td style={{ padding: "11px 14px" }}>Spread the masked probability mass back across the donor set.</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <CodeBlock code={`alignair predict --input reads.fasta --out out.tsv \\\n  --model <v4-igh-model> --genotype donor.yaml`} />
           <p>
-            Partial genotypes are fine — constrain just the V, or only some genes, and leave the rest unconstrained.
+            The genotype becomes the bank: the model scores only its alleles. A read whose V gene is not in it gets no V
+            call, and its row is tagged <code>partial</code> (reason <code>no_v</code>).
+          </p>
+          <p>
+            Partial genotypes are fine — constrain just the V, and leave D and J unconstrained. No genotype at hand?{" "}
+            <code>--infer-genotype</code> infers the donor's V genotype from the file's own reads (TIgGER's frequency rule,
+            two passes over the file) and re-calls the reads it settles.
           </p>
         </>
       ),
@@ -283,10 +263,10 @@ const genotype: Lesson = {
       body: () => (
         <>
           <p>
-            This is the rule that matters: a genotype is always a <strong>subset</strong> of the trained reference. An allele the model was never trained on is <strong>not</strong> callable, and supplying one in a genotype fails immediately with a clear error — it is never silently dropped or mis-indexed.
+            This is the rule that matters: a genotype is always a <strong>subset</strong> of the bound reference. Naming an allele the reference does not hold fails immediately with a clear error — it is never silently dropped or mis-indexed.
           </p>
-          <Callout kind="warning" title="To add alleles, train">
-            Adding a novel allele, a new locus, or a new species changes the allele universe, so it requires <strong>training a new model</strong> with a new, versioned reference — not a genotype.
+          <Callout kind="warning" title="To add alleles, bind a reference">
+            A novel allele goes into a FASTA you bind with <code>--reference</code> (start from <code>alignair reference export</code>); the genotype can then name it, with no retraining. A new locus or species is the case that needs <strong>training a new model</strong>.
           </Callout>
         </>
       ),
@@ -344,12 +324,12 @@ const interpreting: Lesson = {
           </p>
           <CodeBlock lang="text" code={`v_call        IGHV3-23*01\nv_call_set    IGHV3-23*01,IGHV3-23*04`} />
           <p>
-            Read it for exactly what it is: every allele the model scored at <code>p &gt;= 0.5</code>, ranked, and{" "}
-            <strong>capped at three</strong>, falling back to the top-1 call when nothing clears the bar. So a
-            multi-member set means the model did not settle on one allele — do not report that read at allele
-            resolution. But it is <em>not</em> an exhaustive list of the alleles the read is compatible with (the cap
-            can truncate it), and a one-member set is not automatically confident (it may just be the fallback). A donor{" "}
-            <code>--genotype</code> is what actually narrows these.
+            Read it for exactly what it is: every allele whose likelihood is at least half the best allele's, ranked,
+            and <strong>capped at three</strong>; the best allele is always in it. So a multi-member set means the model
+            did not settle on one allele — do not report that read at allele resolution. But it is <em>not</em> an
+            exhaustive list of the alleles the read is compatible with (the cap can truncate it). Separately,{" "}
+            <code>v_call</code> itself lists, after the call, the V alleles that match the read as well as it does
+            (IgBLAST's convention). A donor <code>--genotype</code> is what actually narrows these.
           </p>
         </>
       ),
@@ -376,7 +356,7 @@ const interpreting: Lesson = {
             <li><code>failed</code> — an exception; only the light fields are emitted.</li>
           </ul>
           <p>
-            And remember: a blank <code>productive</code> means <strong>unknown</strong>, not <code>False</code>. Productivity is <em>derived</em> from <code>vj_in_frame</code> and <code>stop_codon</code>; on a partial record it can be underivable. The neural head’s advisory guess lives separately in <code>productive_prediction</code>.
+            And remember: a blank <code>productive</code> means <strong>unknown</strong>, not <code>False</code>. Productivity is <em>derived</em> from <code>vj_in_frame</code> and <code>stop_codon</code>; without a junction it is underivable. <code>productive_prediction</code> repeats the same derived call.
           </p>
         </>
       ),

@@ -41,16 +41,18 @@ const whatIsVdj: Lesson = {
       body: () => (
         <>
           <p>
-            Classical tools do this in stages (seed, extend, re-align). AlignAIR is a single end-to-end multi-task neural network. It uses a shared residual convolutional backbone to extract features, feeding multiple specialized output prediction heads:
+            Classical tools do this in stages (seed, extend, re-align). AlignAIR is a single end-to-end neural network. A shared dilated-convolution trunk gives every base of the read its features once, and specialized units read them:
           </p>
           <ul className="list-disc pl-6 space-y-1.5 my-4">
-            <li><strong>Orientation head</strong>: predicts read orientation (forward / reverse-complement / complement / reversed) to re-align in a single pass.</li>
-            <li><strong>Classification heads</strong>: output soft probability distributions over the alleles in the reference catalog.</li>
-            <li><strong>Regression heads</strong>: predict boundary coordinates for V, D, and J segments.</li>
-            <li><strong>Meta heads</strong>: predict mutation load, indels, and productivity.</li>
+            <li><strong>Orientation</strong>: detects the read's orientation (forward / reverse-complement / complement / reversed) and turns it forward, in the same pass.</li>
+            <li><strong>Parser</strong>: reads the read's path through V, D and J - the segment boundaries.</li>
+            <li><strong>Anchor heads</strong>: find the conserved V Cys and J Trp/Phe codons that frame the junction.</li>
+            <li><strong>Bank scans</strong>: score every allele of the bound germline reference against the read's bases.</li>
+            <li><strong>Mutation reader</strong>: estimates each base's mutation and the read's mutation load.</li>
           </ul>
           <p>
-            The output is written directly to a standard, schema-valid AIRR rearrangement TSV.
+            Deterministic steps then refine the calls and boundaries against the germline, derive the junction and
+            productivity, and write a standard, schema-valid AIRR rearrangement TSV.
           </p>
         </>
       ),
@@ -88,8 +90,8 @@ const whatIsVdj: Lesson = {
       answer: 0,
       explanation: () => (
         <p>
-          Orientation is one of the heads of the same network, so reverse-complement and arbitrarily-oriented reads are
-          handled in the same forward pass. This is one of the areas where AlignAIR is strongest.
+          Orientation is read by the same network, so reverse-complement and arbitrarily-oriented reads are handled in
+          the same forward pass.
         </p>
       ),
     },
@@ -100,23 +102,23 @@ const fixedReference: Lesson = {
   id: "foundations/fixed-reference",
   slug: "fixed-reference",
   track: "foundations",
-  title: "The fixed-reference contract",
-  summary: "What a model can and cannot call, and why donor genotypes are a subset.",
+  title: "The reference contract",
+  summary: "Where a model's callable alleles come from, and what a donor genotype or another reference changes.",
   minutes: 6,
   steps: [
     {
       kind: "explain",
-      title: "A model IS its reference",
+      title: "The reference is an input",
       body: () => (
         <>
           <p>
-            The V/D/J classification heads have a fixed number of outputs, tied in order to the germline allele catalog
-            the model was trained on. That catalog is <strong>embedded inside the model file</strong> (and
-            fingerprinted, so it cannot drift from the weights). It is exactly the set of alleles the model can call.
+            The network scores the alleles of the germline reference it is <strong>bound</strong> to; the alleles are an
+            input, not weights. By default that is the reference the model was trained on, which is{" "}
+            <strong>embedded inside the model file</strong> (and fingerprinted, so it cannot drift from the weights).
           </p>
           <Callout kind="note" title="One property explains everything">
-            Understand that a model is a <strong>fixed-reference classifier</strong> and the rest of its behaviour
-            follows: what it can call, how donor genotypes work, and when you must train.
+            Understand that a model scores whichever reference it is bound to, and the rest of its behaviour follows:
+            what it can call, how donor genotypes and novel alleles work, and when you must train.
           </Callout>
         </>
       ),
@@ -131,11 +133,12 @@ const fixedReference: Lesson = {
             retraining. Calls are hard-restricted to that donor's alleles:
           </p>
           <pre tabIndex={0} aria-label="AIRR output example" style={{ margin: "20px 0", padding: "16px", background: "#16151f", borderRadius: "12px", fontFamily: "IBM Plex Mono, monospace", fontSize: "13px", lineHeight: "1.85", color: "#e6e5f0", overflowX: "auto" }}>
-            <code>{`alignair predict --input reads.fasta --out out.tsv \\\n  --model alignair-igh-human --genotype donor.yaml`}</code>
+            <code>{`alignair predict --input reads.fasta --out out.tsv \\\n  --model <v4-igh-model> --genotype donor.yaml`}</code>
           </pre>
           <p>
-            But you can only <em>narrow</em> the callable set this way. Adding an allele the model never learned, a new
-            species, or a new locus changes the allele universe, so it requires <strong>training a new model</strong>.
+            A genotype only <em>narrows</em> the callable set. To add alleles the model never saw, bind a FASTA that holds
+            them with <code>--reference</code> - still no retraining. A new locus or species is a different matter: train
+            a model for it.
           </p>
         </>
       ),
@@ -150,15 +153,16 @@ const fixedReference: Lesson = {
       ),
       options: [
         "It is silently ignored and the read is called as the nearest known allele",
-        "AlignAIR fails immediately with a clear error — novel alleles are never mis-indexed",
+        "AlignAIR refuses the genotype with a clear error: the allele's sequence belongs in --reference",
         "The model calls it correctly because genotypes add alleles",
       ],
       answer: 1,
       explanation: () => (
         <p>
-          A genotype can only <em>subset</em> the trained reference. A novel allele is rejected up front with a clear
-          error rather than being silently dropped or mislabelled. To call it, you would train a new model whose
-          reference includes it.
+          A genotype names alleles of the bound reference, so an unknown name is refused up front (
+          <code>ALIGNAIR_GENOTYPE_UNKNOWN_ALLELE</code>, hint: give their sequences in <code>--reference</code>) rather
+          than silently dropped. Bind a FASTA that holds the novel allele with <code>--reference</code> - no retraining -
+          and the genotype can then name it.
         </p>
       ),
     },
@@ -175,8 +179,10 @@ const fixedReference: Lesson = {
       answer: 1,
       explanation: () => (
         <p>
-          The reference travels inside the file and is fingerprinted; loading verifies it. A caller-supplied reference
-          whose ordered allele identity does not match is rejected, so output columns can never be silently mislabelled.
+          The reference travels inside the file and is fingerprinted (allele order and FASTA SHA-256); loading
+          verifies it, so the weights and the default allele order cannot drift apart. A reference you bind yourself
+          with <code>--reference</code> is your choice, and the run's <code>.run.json</code> records only the model's
+          embedded reference - keep the FASTA you bound with your results.
         </p>
       ),
     },

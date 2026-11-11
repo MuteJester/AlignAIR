@@ -103,17 +103,17 @@ export function GenotypeWidget() {
           <span aria-hidden="true" style={{ fontFamily: "IBM Plex Mono, monospace", fontWeight: 700, color: "#c0344a" }}>✕</span>
           <div>
             <p style={{ margin: 0, fontFamily: "IBM Plex Mono, monospace", fontSize: "12.5px", fontWeight: 600, color: "#a12b3f" }}>
-              IGHV7-81*99 — rejected
+              IGHV7-81*99 — rejected by --genotype
             </p>
             <p style={{ margin: "4px 0 0", fontSize: "13px", lineHeight: 1.6, color: "#7a2230" }}>
-              Not in the model’s embedded reference. A genotype can only subset what the model already knows — to call a novel allele you must train a new model.
+              Not in the bound reference. A genotype can only name alleles the bound reference holds — bind a FASTA that holds the novel allele’s sequence with --reference, and the genotype can then name it, with no retraining.
             </p>
           </div>
         </div>
       )}
       <p style={{ margin: "14px 0 0", paddingTop: "12px", borderTop: "1px dashed #eae9f1", fontSize: "13.5px", lineHeight: 1.65, color: "#6f6d85" }}>
         {mode === "full"
-          ? "The full embedded reference — every allele the model was trained to call."
+          ? "The full embedded reference — the model's default set of callable alleles."
           : "A donor genotype hard-restricts calls to this donor’s alleles. Impossible calls vanish and ambiguous sets shrink — with no retraining."}
       </p>
     </div>

@@ -1,12 +1,13 @@
 import { useState } from "react";
 
-// The output line below is captured verbatim from a real run of this exact command against the
-// pretrained alignair-igh-human model, on 400 GenAIRR-simulated human IGH reads (clean and
-// moderate-SHM full-length). It matches the CLI's real format string in cli/predict.py: one line,
-// no progress spinner, no timing, no device banner. Do not embellish it - if the CLI's output
-// changes, re-capture rather than hand-edit.
+// The output line below is captured verbatim from a real run against AlignAIR 3's pretrained
+// alignair-igh-human@1.0.0 model, on 400 GenAIRR-simulated human IGH reads (clean and moderate-SHM
+// full-length). Its format is the CLI's real format string in cli/predict.py: one line, no progress
+// spinner, no timing, no device banner. Do not embellish it - re-capture rather than hand-edit.
+// PENDING-V4-NUMBERS: re-capture with the AlignAIR 4 IGH model (the partial count will differ).
+// PENDING-V4-MODEL-ID: <v4-igh-model> stands for the AlignAIR 4 IGH model's id, not yet decided.
 
-const COMMAND = "alignair predict --input reads.fasta --out out.tsv --model alignair-igh-human";
+const COMMAND = "alignair predict --input reads.fasta --out out.tsv --model <v4-igh-model>";
 const OUTPUT = "aligned 400 reads (0 dropped) -> out.tsv; 0 failed / 68 partial AIRR assemblies tagged";
 
 const MONO = "IBM Plex Mono, monospace";
@@ -75,7 +76,7 @@ export function CliWidget() {
         >
           <div style={{ whiteSpace: "nowrap" }}>
             <span aria-hidden="true" style={{ color: "#9d9bb0" }}>$</span> alignair predict --input reads.fasta --out out.tsv{" "}
-            <span style={{ color: "#b7f3d8" }}>--model alignair-igh-human</span>
+            <span style={{ color: "#b7f3d8" }}>--model {"<v4-igh-model>"}</span>
           </div>
           <div aria-live="polite" style={{ marginTop: ran ? "6px" : 0, whiteSpace: "nowrap", color: "#a9a7ba" }}>
             {ran && <span style={{ display: "inline-block", animation: "aa-rise 0.3s ease-out both" }}>{OUTPUT}</span>}
@@ -115,10 +116,12 @@ export function CliWidget() {
       </div>
 
       <p style={{ margin: "10px 2px 0", fontFamily: MONO, fontSize: "10.5px", lineHeight: 1.65, color: "#6b6980" }}>
-        Captured from a real run of <code style={{ color: "#4238c4" }}>{COMMAND}</code> on 400 simulated human IGH reads
-        (clean and moderate-SHM, full-length). That single line is the whole of it: the CLI reports no timing, no device
-        banner and no progress bar, so what you see here is what you get. Measured throughput lives on the{" "}
-        <em>Speed and throughput</em> page, where the hardware it was measured on is stated.
+        Captured from a real run with AlignAIR 3's <code style={{ color: "#4238c4" }}>alignair-igh-human@1.0.0</code> on 400
+        simulated human IGH reads (clean and moderate-SHM, full-length); the AlignAIR 4 re-capture of{" "}
+        <code style={{ color: "#4238c4" }}>{COMMAND}</code> is pending (results pending), and{" "}
+        <code style={{ color: "#4238c4" }}>{"<v4-igh-model>"}</code> is a placeholder for its model id. That
+        single line is the whole of it: the CLI reports no timing, no device banner and no progress bar, so what you see
+        here is what you get.
       </p>
     </div>
   );
