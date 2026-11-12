@@ -4,6 +4,16 @@ The runner needs an unpacked IgBLAST release (``bin/igblastn``, ``bin/makeblastd
 ``optional_file/human_gl.aux`` and ``internal_data/``, found through ``IGDATA``). ``prepare`` builds the full
 germline database once per run directory, in ``layout.work_dir("igblast")``; a run restricted to some alleles
 builds its own database in its log directory.
+
+Every locus runs the same way:
+- **J reading frames.** A database holds its own auxiliary file, ``germline.aux``: the J reading frames and CDR3
+  ends written from the reference's J anchors (``reference.igblast_auxiliary_lines``), the anchors the truth uses.
+  The release's ``human_gl.aux`` names IMGT alleles only, so an OGRDB IGK or IGL J (``IGKJ5-CLVV*01``) has no frame
+  there and IgBLAST reports no junction; on HUMAN_IGH_OGRDB the two files give the same frames and CDR3 ends.
+- **Receptor type.** ``-ig_seqtype`` is ``Ig`` or ``TCR`` by the reference's alleles (``reference.receptor_type``).
+- **D database.** A reference without D (IGK, IGL, TRA, TRG) gets a one-sequence placeholder D database,
+  ``placeholder_d.fasta``, because ``igblastn`` needs one; it searches no D on a VJ chain, and the placeholder is
+  not an allele (the database's allele counts have no ``d``).
 """
 from __future__ import annotations
 
@@ -24,12 +34,18 @@ from alignair_assay.runners.base import (
     fasta_ids,
     timed_command,
 )
-from alignair_assay.runners.reference import write_segment_fastas
+from alignair_assay.runners.reference import igblast_auxiliary_lines, receptor_type, write_segment_fastas
 
 _SEGMENTS = ("v", "d", "j")
-# Files of a database directory: the segment FASTAs and the BLAST database files, then the makeblastdb logs.
-_DATABASE_FILES = ("germline_*.fasta", "V.*", "D.*", "J.*")
+# Files of a database directory: the segment FASTAs, the placeholder D, the auxiliary file and the BLAST database
+# files, then the makeblastdb logs.
+_DATABASE_FILES = ("germline_*.fasta", "placeholder_d.fasta", "germline.aux", "V.*", "D.*", "J.*")
 _DATABASE_LOGS = "makeblastdb_*"
+AUXILIARY_FILE = "germline.aux"
+PLACEHOLDER_D = "placeholder_d.fasta"
+# The placeholder D database's one sequence (a reference without D): igblastn needs a D database even for a VJ chain.
+# It is synthetic, no germline D's.
+_PLACEHOLDER_D_SEQUENCE = ">no_d_segment\nACGTACGTACGTACGT\n"
 
 
 class IgBlastRunner:
@@ -65,7 +81,8 @@ class IgBlastRunner:
 
     @property
     def auxiliary_data(self) -> Path:
-        """The human auxiliary file (J reading frames and CDR3 ends)."""
+        """The release's human auxiliary file (J reading frames and CDR3 ends). It is part of the release's
+        fingerprint; the search uses the database's own ``germline.aux`` instead (module docstring)."""
         return self.igblast_dir / "optional_file" / "human_gl.aux"
 
     def version(self) -> str:
@@ -105,22 +122,30 @@ class IgBlastRunner:
                        "auxiliary_data": sha256_file(self.auxiliary_data)},
         }
         directory = layout.work_dir(self.name)
+        seqtype = receptor_type(reference)
         database = _database_record(directory, self.build_database(reference, directory))
-        self._reference, self._database, self._setup = reference, database, setup
-        return {**setup, "database": database}
+        self._reference, self._database, self._setup = reference, database, {**setup, "ig_seqtype": seqtype}
+        return {**self._setup, "database": database}
 
     def build_database(self, reference: Reference, directory: Path,
                        alleles: Iterable[str] | None = None) -> list[list[str]]:
         """Write ``germline_{v,d,j}.fasta`` from ``reference`` (restricted to ``alleles`` when given) into
-        ``directory`` and build the BLAST databases ``directory/V``, ``D`` and ``J`` with ``makeblastdb
-        -parse_seqids -dbtype nucl``. Files of an earlier database there are removed first. Returns the
-        commands run; a failed ``makeblastdb`` raises RuntimeError naming its log."""
+        ``directory`` (``placeholder_d.fasta`` in place of D for a reference without D) and its ``germline.aux``,
+        and build the BLAST databases ``directory/V``, ``D`` and ``J`` with ``makeblastdb -parse_seqids -dbtype
+        nucl``. Files of an earlier database there are removed first. Returns the commands run; a failed
+        ``makeblastdb`` raises RuntimeError naming its log."""
         directory = Path(directory)
         for pattern in (*_DATABASE_FILES, _DATABASE_LOGS):
             for path in directory.glob(pattern):
                 path.unlink()
+        fastas = write_segment_fastas(reference, directory, alleles)
+        if "d" not in reference.alleles:
+            fastas["d"] = directory / PLACEHOLDER_D
+            fastas["d"].write_text(_PLACEHOLDER_D_SEQUENCE)
+        lines = igblast_auxiliary_lines(reference, alleles)
+        (directory / AUXILIARY_FILE).write_text("".join(f"{line}\n" for line in lines))
         commands = []
-        for g, fasta in write_segment_fastas(reference, directory, alleles).items():
+        for g, fasta in ((g, fastas[g]) for g in _SEGMENTS if g in fastas):
             argv = [str(self.makeblastdb), "-parse_seqids", "-dbtype", "nucl", "-in", str(fasta),
                     "-out", str(directory / g.upper())]
             log = directory / f"makeblastdb_{g.upper()}.log"
@@ -135,14 +160,15 @@ class IgBlastRunner:
         """Annotate ``fasta`` into the AIRR TSV ``out_tsv`` with::
 
             IGDATA=<dir> <dir>/bin/igblastn -germline_db_V <db>/V -germline_db_D <db>/D -germline_db_J <db>/J
-                -auxiliary_data <dir>/optional_file/human_gl.aux -organism human -ig_seqtype Ig
+                -auxiliary_data <db>/germline.aux -organism human -ig_seqtype <Ig|TCR>
                 -num_threads <threads> -outfmt 19 -query <fasta> -out <tsv>
 
         ``<db>`` is the database ``prepare`` built, or, when ``alleles`` is given, one built from those alleles
         in ``log_dir/db`` (its ``makeblastdb`` commands come first in ``commands``). The log is
         ``log_dir/igblastn.log``. The provenance is ``prepare``'s: the release, version and binary digests, and
-        the ``database`` searched (directory, allele counts per gene letter, SHA-256 of every database file and
-        segment FASTA, and the ``makeblastdb`` commands that built it); plus ``threads``, ``cpus`` and, for a
+        the ``database`` searched (directory, allele counts per gene letter, SHA-256 of every database file,
+        segment FASTA and auxiliary file, and the ``makeblastdb`` commands that built it), the ``ig_seqtype``;
+        plus ``threads``, ``cpus`` and, for a
         failed run, the ``error`` line of its log. A restricted database that cannot be built (an allele not in
         the reference, a gene letter left without alleles, a failed ``makeblastdb``) is a failed run
         (``base.failed_run``), not an exception. RuntimeError before ``prepare``.
@@ -165,8 +191,9 @@ class IgBlastRunner:
         directory = Path(database["directory"])
         argv = [str(self.igblastn),
                 "-germline_db_V", str(directory / "V"), "-germline_db_D", str(directory / "D"),
-                "-germline_db_J", str(directory / "J"), "-auxiliary_data", str(self.auxiliary_data),
-                "-organism", "human", "-ig_seqtype", "Ig", "-num_threads", str(self.threads), "-outfmt", "19",
+                "-germline_db_J", str(directory / "J"), "-auxiliary_data", str(directory / AUXILIARY_FILE),
+                "-organism", "human", "-ig_seqtype", self._setup["ig_seqtype"], "-num_threads", str(self.threads),
+                "-outfmt", "19",
                 "-query", str(fasta), "-out", str(out_tsv)]
         returncode, wall, rss = timed_command(argv, log_path=log, env=self._env(), cpus=self.cpus)
         commands.append(["env", f"IGDATA={self.igblast_dir}", *argv])

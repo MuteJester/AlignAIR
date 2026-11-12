@@ -432,7 +432,7 @@ def test_igblast_on_toy_suite(run_layout, reference):
     assert result.commands == [[
         "env", f"IGDATA={release}", str(release / "bin" / "igblastn"),
         "-germline_db_V", str(db / "V"), "-germline_db_D", str(db / "D"), "-germline_db_J", str(db / "J"),
-        "-auxiliary_data", str(release / "optional_file" / "human_gl.aux"),
+        "-auxiliary_data", str(db / "germline.aux"),
         "-organism", "human", "-ig_seqtype", "Ig", "-num_threads", "2", "-outfmt", "19",
         "-query", str(run_layout.reads("S0")), "-out", str(out)]]
     prov = result.provenance
@@ -442,7 +442,8 @@ def test_igblast_on_toy_suite(run_layout, reference):
                               "auxiliary_data": sha256_file(release / "optional_file" / "human_gl.aux")}
     assert (prov["threads"], prov["cpus"]) == (2, None)
     files = prov["database"]["files"]
-    assert {"germline_v.fasta", "V.nsq", "D.nsq", "J.nsq"} <= set(files)
+    assert {"germline_v.fasta", "germline.aux", "V.nsq", "D.nsq", "J.nsq"} <= set(files)
+    assert prov["ig_seqtype"] == "Ig" and "placeholder_d.fasta" not in files
     assert files["germline_v.fasta"] == sha256_file(db / "germline_v.fasta")
     assert prov["database"]["alleles"] == {"v": 198, "d": 33, "j": 7}
     assert [c[-1] for c in prov["database"]["commands"]] == [str(db / x) for x in "VDJ"]

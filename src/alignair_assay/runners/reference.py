@@ -15,6 +15,38 @@ from alignair_assay.core.provenance import sha256_file
 from alignair_assay.core.reference import Reference
 
 _SEGMENTS = ("v", "d", "j")
+# IgBLAST's chain type of a J allele, by the locus its name starts with (its auxiliary file's third column).
+_J_CHAIN_TYPES = {"IGHJ": "JH", "IGKJ": "JK", "IGLJ": "JL", "TRAJ": "JA", "TRBJ": "JB", "TRDJ": "JD", "TRGJ": "JG"}
+
+
+def igblast_auxiliary_lines(reference: Reference, alleles: Iterable[str] | None = None) -> list[str]:
+    """IgBLAST's auxiliary-file lines (J reading frames and CDR3 ends) for the reference's J alleles, in name order
+    and restricted to ``alleles`` when given, from the reference's own J anchors (the Trp/Phe codon start the truth
+    uses): ``name``, the first coding frame start (``anchor % 3``), the chain type (``JH``, ``JK``, ``JL``, ``JA``,
+    ``JB``, ``JD``, ``JG`` by the name's locus), the CDR3 stop (``anchor - 1``) and the bases past the last full
+    codon, tab-separated and 0-based like the release's ``human_gl.aux``. A J allele without an anchor is left out
+    (IgBLAST then reports no junction for it, as the truth defines none); one of no known locus raises ValueError."""
+    lines = []
+    for name in _selected(reference, alleles):
+        if reference.gene_letter(name) != "j" or name not in reference.anchors:
+            continue
+        chain = _J_CHAIN_TYPES.get(name[:4])
+        if chain is None:
+            raise ValueError(f"J allele {name} is of no locus IgBLAST knows ({', '.join(_J_CHAIN_TYPES)})")
+        anchor = reference.anchors[name]
+        frame = anchor % 3
+        lines.append(f"{name}\t{frame}\t{chain}\t{anchor - 1}\t{(len(reference.seq(name)) - frame) % 3}")
+    return lines
+
+
+def receptor_type(reference: Reference) -> str:
+    """``"Ig"`` for a reference of immunoglobulin alleles, ``"TCR"`` for one of T-cell receptor alleles (IgBLAST's
+    ``-ig_seqtype``), by the allele names; ValueError for a reference holding both."""
+    kinds = {"TCR" if name.startswith("TR") else "Ig" for table in reference.alleles.values() for name in table}
+    if len(kinds) > 1:
+        raise ValueError("the reference holds both immunoglobulin and T-cell receptor alleles: IgBLAST searches one "
+                         "receptor type per run")
+    return kinds.pop() if kinds else "Ig"
 
 
 def write_reference_fasta(reference: Reference, path, alleles: Iterable[str] | None = None) -> None:
