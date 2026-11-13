@@ -193,3 +193,44 @@ def test_settling_leaves_a_degenerate_placement_as_placed(read, start, end, ciga
     anchor: no nearby start repairs such a placement, so none is searched and the matcher's stands."""
     from alignair.predict.heuristic_matcher import settle_start
     assert settle_start(read, _V, start, end, 0.0, cigar) == (start, cigar)
+
+
+_FLIP = {"A": "C", "C": "A", "G": "T", "T": "G"}
+
+
+def _unlike(seq):
+    """Bases each unlike ``seq``'s (an N region that matches no germline base)."""
+    return "".join(_FLIP[b] for b in seq)
+
+
+def test_a_v_end_the_model_stopped_short_of_a_deletion_is_extended_past_it():
+    """The whole V with germline base 281 deleted, then N bases: the model's V segment stops at read 279, two bases
+    short of the deletion. The read bases after it follow the germline past the deletion, so the end moves to the
+    germline's last base (read 286, germline 287), the deletion inside the alignment."""
+    read = _deleted(_V, 281) + _unlike(_V[:10])
+    a = _v_alignment(read, 0, 279, indel_count=0.6)
+    assert (a.seq_start, a.seq_end, a.germ_start, a.germ_end) == (0, 286, 0, len(_V))
+    assert _columns(read, a) == (0, 0, 1)
+
+
+def test_a_v_end_followed_by_bases_unlike_the_germline_stays():
+    read = _V[:270] + _unlike(_V[270:290])
+    a = _v_alignment(read, 0, 270, indel_count=0.2)
+    assert (a.seq_end, a.germ_end, a.cigar) == (270, 270, "270M")
+
+
+def test_a_v_end_past_its_last_germline_base_is_trimmed_back():
+    """The model's V segment runs three bases into an N region unlike the germline: the end comes back to the V's
+    last base."""
+    read = _V[:280] + _unlike(_V[280:290])
+    a = _v_alignment(read, 0, 283, indel_count=0.2)
+    assert (a.seq_end, a.germ_end, a.cigar) == (280, 280, "280M")
+
+
+def test_a_v_end_is_not_moved_past_its_limit():
+    """The read position the V may reach (the next segment's start) bounds an extension."""
+    from alignair.predict.heuristic_matcher import derive_alignment, settle_end
+    read = _deleted(_V, 281) + _unlike(_V[:10])
+    cigar = derive_alignment(read[:279], _V[:279], 0.6).cigar
+    seq_end, germ_end = settle_end(read, _V, 0, 279, 0, 279, cigar, 282)
+    assert seq_end <= 282

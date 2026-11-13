@@ -17,18 +17,37 @@ def _germline_seq(gene_ref, allele: str) -> str:
     return gene_ref.sequences[idx].upper() if idx is not None else ""
 
 
-def _heuristic_alignment(seq, s, e, allele, germ, indel, matcher, derive, *, settle: bool = False
+def _heuristic_alignment(seq, s, e, allele, germ, indel, matcher, derive, *, limit: int | None = None
                          ) -> GermlineAlignment:
-    """The matcher's placement of ``seq[s:e]`` on ``germ`` and its CIGAR; with ``settle`` (V), the germline start is
-    then re-placed where the alignment fits best (``heuristic_matcher.settle_start``)."""
-    from .heuristic_matcher import settle_start
+    """The matcher's placement of ``seq[s:e]`` on ``germ`` and its CIGAR. With a ``limit`` (V: the read position the
+    next segment starts at), the germline start is then re-placed where the alignment fits best
+    (``heuristic_matcher.settle_start``), and the end moved where it does (``heuristic_matcher.settle_end``), the read
+    end no further than ``limit``."""
+    from .heuristic_matcher import settle_end, settle_start
     gm = matcher.match_one(seq, s, e, allele, indel)        # robust anchored localization (coords)
-    read = seq[gm.seq_start:gm.seq_end]
-    ref_start = gm.ref_start
-    cigar = derive(read, germ[ref_start:gm.ref_end], indel).cigar
-    if settle:
-        ref_start, cigar = settle_start(read.upper(), germ, ref_start, gm.ref_end, indel, cigar)
-    return GermlineAlignment(allele, gm.seq_start, gm.seq_end, ref_start, gm.ref_end, cigar)
+    seq_end, ref_start, ref_end = gm.seq_end, gm.ref_start, gm.ref_end
+    cigar = derive(seq[gm.seq_start:seq_end], germ[ref_start:ref_end], indel).cigar
+    if limit is not None:
+        upper = seq.upper()
+        ref_start, cigar = settle_start(upper[gm.seq_start:seq_end], germ, ref_start, ref_end, indel, cigar)
+        end = settle_end(upper, germ, gm.seq_start, seq_end, ref_start, ref_end, cigar, limit)
+        if end != (seq_end, ref_end):
+            seq_end, ref_end = end
+            cigar = derive(upper[gm.seq_start:seq_end], germ[ref_start:ref_end], indel).cigar
+    return GermlineAlignment(allele, gm.seq_start, seq_end, ref_start, ref_end, cigar)
+
+
+def v_end_limits(segments, lengths) -> list[int]:
+    """Per read, the read position a V alignment may reach: the start of the nearest later segment of the read's
+    other genes (``segments``, any genes but V), else the read's length (``lengths``)."""
+    others = [g for g in segments.start if g != "v"]
+    v_start = segments.start.get("v")
+    out = []
+    for i, length in enumerate(lengths):
+        s = int(v_start[i]) if v_start is not None else 0
+        later = [int(segments.start[g][i]) for g in others if int(segments.start[g][i]) > s]
+        out.append(min(later, default=int(length)))
+    return out
 
 
 def _gapless(seq, s, e, aln: GermlineAlignment, germ) -> GermlineAlignment:
@@ -53,11 +72,12 @@ def _gapless(seq, s, e, aln: GermlineAlignment, germ) -> GermlineAlignment:
     return GermlineAlignment(aln.allele, s + lo, s + hi, lo + offset, hi + offset, f"{hi - lo}M")
 
 
-def align_germline(sequences, segments, calls, reference, *, indel_counts=None) -> dict:
+def align_germline(sequences, segments, calls, reference, *, indel_counts=None, v_limits=None) -> dict:
     """Returns {gene: list[GermlineAlignment | None]} (None when a read has no call for the gene).
 
     ``indel_counts`` (per-read, e.g. the model's predicted indel count) bounds the heuristic reader's
-    search window and CIGAR band; defaults to 0 per read when absent.
+    search window and CIGAR band; defaults to 0 per read when absent. ``v_limits`` (per read) bounds where a V end may
+    move to; defaults to ``v_end_limits`` of ``segments``.
     """
     from .heuristic_matcher import HeuristicGermlineMatcher, derive_alignment as derive
     genes = list(segments.start)
@@ -66,6 +86,8 @@ def align_germline(sequences, segments, calls, reference, *, indel_counts=None) 
         gref = reference.gene(gene.upper())
         germlines.update({n: s.upper() for n, s in zip(gref.names, gref.sequences)})
     matcher = HeuristicGermlineMatcher(germlines)
+    if v_limits is None and "v" in segments.start:
+        v_limits = v_end_limits(segments, [len(seq) for seq in sequences])
 
     out: dict[str, list] = {}
     for gene in genes:
@@ -84,7 +106,8 @@ def align_germline(sequences, segments, calls, reference, *, indel_counts=None) 
                 results.append(GermlineAlignment(allele, s, s, 0, 0, ""))
                 continue
             ind = float(indel_counts[i]) if indel_counts is not None else 0.0
-            aln = _heuristic_alignment(seq, s, e, allele, germ, ind, matcher, derive, settle=gene == "v")
+            aln = _heuristic_alignment(seq, s, e, allele, germ, ind, matcher, derive,
+                                       limit=v_limits[i] if gene == "v" else None)
             results.append(_gapless(seq, s, e, aln, germ) if gene == "d" else aln)
         out[gene] = results
     return out
@@ -120,7 +143,9 @@ def realign_v(sequences, segments, alignments, alleles, reference, *, indel_coun
     picked = Segments({"v": segments.start["v"][redo]}, {"v": segments.end["v"][redo]})
     calls = {"v": [GeneCall((alleles[i],), (float("nan"),)) for i in redo]}
     counts = None if indel_counts is None else [indel_counts[i] for i in redo]
-    new = align_germline([sequences[i] for i in redo], picked, calls, reference, indel_counts=counts)["v"]
+    limits = v_end_limits(segments, [len(seq) for seq in sequences])
+    new = align_germline([sequences[i] for i in redo], picked, calls, reference, indel_counts=counts,
+                         v_limits=[limits[i] for i in redo])["v"]
     gene = reference.gene("V")
     out = list(alignments)
     for i, aln in zip(redo, new):
