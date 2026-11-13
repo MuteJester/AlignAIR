@@ -9,6 +9,9 @@ the model already knows. For each read segment it:
   2. **derives the start** from the known segment length, then refines it within a window whose width
      is the predicted indel count, at least ``_INDEL_REACH``, at most the length difference.
 
+For V, once the CIGAR is derived, :func:`settle_start` re-places a start the length derivation got wrong (a deletion
+in the segment's first bases leaves it past the germline's first base) where the alignment scores best.
+
 It is ``O(search_span · k)`` per segment — no dynamic programming — and returns germline coordinates
 (no CIGAR; substitutions/indels are recovered downstream from the coordinates + the model's heads).
 
@@ -126,6 +129,86 @@ def derive_alignment(read_window: str, germline_window: str, indel_count=0) -> A
     m, n = len(read_window), len(germline_window)
     indels = max(0, int(round(_scalar(indel_count))))
     return AlignResult(0.0, _derive_cigar(read_window, germline_window, indels), 0, m, 0, n)
+
+
+_SETTLE_REACH = 6      # germline bases the start may move either way when settle_start re-places it
+_SETTLE_MAX_REACH = 12  # the most it may move (a CIGAR opening with a longer gap widens the reach up to this),
+#                        and the most a segment's length may differ from its window's for a search at all
+_SETTLE_CHECK = 8      # read bases at the start of an alignment that, holding a gap or a mismatch, open the search
+_SETTLE_MIN_LENGTH = 15  # shortest segment searched (the matcher's anchor length): a shorter one has no placement
+
+
+def _cigar_ops(cigar: str) -> list[tuple[int, str]]:
+    import re
+    return [(int(n), op) for n, op in re.findall(r"(\d+)([MID])", cigar)]
+
+
+def _alignment_score(read: str, germ: str, cigar: str) -> int:
+    """Matches minus mismatches minus 2 per gap column of ``read`` against ``germ`` (the window the CIGAR spans).
+    Read bases before the first germline-aligned one (a leading insertion) cost 1 each, as a mismatch: moving a start
+    past mutated first bases gains nothing, while a start a deletion pushed past the germline's first base gains 2 per
+    base by moving back (its leading bases then match). Germline bases before the first aligned read base (a leading
+    deletion) cost 2 each, so a window that starts too early never gains."""
+    score, r, g, leading = 0, 0, 0, True
+    for n, op in _cigar_ops(cigar):
+        if op == "M":
+            same = sum(a == b for a, b in zip(read[r:r + n], germ[g:g + n]))
+            score += same - (n - same)
+            r, g, leading = r + n, g + n, False
+        elif op == "I":
+            score -= n if leading else 2 * n
+            r += n
+        else:
+            score -= 2 * n
+            g += n
+    return score
+
+
+def _start_is_doubtful(read: str, germ: str, cigar: str) -> bool:
+    """Whether the alignment's first ``_SETTLE_CHECK`` read bases hold a gap or a mismatch (else its start stands)."""
+    r, g = 0, 0
+    for n, op in _cigar_ops(cigar):
+        if op != "M":
+            return True
+        take = min(n, _SETTLE_CHECK - r)
+        if any(a != b for a, b in zip(read[r:r + take], germ[g:g + take])):
+            return True
+        r, g = r + take, g + take
+        if r >= _SETTLE_CHECK:
+            return False
+    return False
+
+
+def settle_start(read: str, germ: str, ref_start: int, ref_end: int, indel_count, cigar: str) -> tuple[int, str]:
+    """``(germline start, CIGAR)`` for a located read segment ``read`` whose alignment to ``germ[ref_start:ref_end]``
+    is ``cigar``: the start within ``_SETTLE_REACH`` bases either way (more when the CIGAR opens with a longer gap)
+    whose re-derived alignment scores best (``_alignment_score``), keeping ``ref_start`` unless another scores
+    strictly better (nearer starts are tried first, the earlier on a tie). A segment whose length differs from its
+    window's by more than ``_SETTLE_MAX_REACH``, or shorter than ``_SETTLE_MIN_LENGTH``, is a placement no nearby
+    start repairs, and is returned as it is.
+
+    The matcher derives the start from the end anchor and the segment's length, so a deletion in the segment's first
+    bases leaves the start past the germline's first base by the deleted length, and the CIGAR then opens with read
+    bases on no germline (``2I14M1D...``). Reads whose alignment opens clean (``_SETTLE_CHECK`` bases with no gap or
+    mismatch) are returned as they are, without a search."""
+    if (ref_end <= 0 or len(read) < _SETTLE_MIN_LENGTH or abs(len(read) - (ref_end - ref_start)) > _SETTLE_MAX_REACH
+            or not _start_is_doubtful(read, germ[ref_start:ref_end], cigar)):
+        return ref_start, cigar
+    ops = _cigar_ops(cigar)
+    lead = ops[0][0] if ops and ops[0][1] != "M" else 0
+    reach = min(max(_SETTLE_REACH, lead + 2), _SETTLE_MAX_REACH)
+    best_score = _alignment_score(read, germ[ref_start:ref_end], cigar)
+    best = (ref_start, cigar)
+    for distance in range(1, reach + 1):
+        for start in (ref_start - distance, ref_start + distance):
+            if start < 0 or start >= ref_end:
+                continue
+            window = germ[start:ref_end]
+            candidate = derive_alignment(read, window, indel_count).cigar
+            score = _alignment_score(read, window, candidate)
+            if score > best_score:
+                best_score, best = score, (start, candidate)
+    return best
 
 
 @dataclass(frozen=True)

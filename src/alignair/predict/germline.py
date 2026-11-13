@@ -17,10 +17,18 @@ def _germline_seq(gene_ref, allele: str) -> str:
     return gene_ref.sequences[idx].upper() if idx is not None else ""
 
 
-def _heuristic_alignment(seq, s, e, allele, germ, indel, matcher, derive) -> GermlineAlignment:
+def _heuristic_alignment(seq, s, e, allele, germ, indel, matcher, derive, *, settle: bool = False
+                         ) -> GermlineAlignment:
+    """The matcher's placement of ``seq[s:e]`` on ``germ`` and its CIGAR; with ``settle`` (V), the germline start is
+    then re-placed where the alignment fits best (``heuristic_matcher.settle_start``)."""
+    from .heuristic_matcher import settle_start
     gm = matcher.match_one(seq, s, e, allele, indel)        # robust anchored localization (coords)
-    cigar = derive(seq[gm.seq_start:gm.seq_end], germ[gm.ref_start:gm.ref_end], indel).cigar
-    return GermlineAlignment(allele, gm.seq_start, gm.seq_end, gm.ref_start, gm.ref_end, cigar)
+    read = seq[gm.seq_start:gm.seq_end]
+    ref_start = gm.ref_start
+    cigar = derive(read, germ[ref_start:gm.ref_end], indel).cigar
+    if settle:
+        ref_start, cigar = settle_start(read.upper(), germ, ref_start, gm.ref_end, indel, cigar)
+    return GermlineAlignment(allele, gm.seq_start, gm.seq_end, ref_start, gm.ref_end, cigar)
 
 
 def _gapless(seq, s, e, aln: GermlineAlignment, germ) -> GermlineAlignment:
@@ -76,7 +84,7 @@ def align_germline(sequences, segments, calls, reference, *, indel_counts=None) 
                 results.append(GermlineAlignment(allele, s, s, 0, 0, ""))
                 continue
             ind = float(indel_counts[i]) if indel_counts is not None else 0.0
-            aln = _heuristic_alignment(seq, s, e, allele, germ, ind, matcher, derive)
+            aln = _heuristic_alignment(seq, s, e, allele, germ, ind, matcher, derive, settle=gene == "v")
             results.append(_gapless(seq, s, e, aln, germ) if gene == "d" else aln)
         out[gene] = results
     return out
