@@ -457,6 +457,13 @@ def test_a_policy_without_novel_alleles_keeps_the_manifest_fields_of_before():
                                           "indel_fraction", "indel_form", "selected_fraction"}
 
 
+def test_a_policy_with_inverted_ds_records_their_share_in_the_manifest():
+    from alignair_lab.records import policy_fields
+    fields = policy_fields(dataclasses.replace(POLICY, inverted_d=0.05))
+    assert fields["inverted_d"] == 0.05
+    assert set(fields) - {"inverted_d"} == set(policy_fields(POLICY))
+
+
 def test_a_novel_cache_written_in_segments_is_the_serial_stream(tmp_path):
     from alignair.reference.variants import NOVEL_FIELD
     from alignair.train.gym.novel import NovelAlleles

@@ -74,7 +74,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
           schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
           indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION, flanks=None,
-          novel_alleles=None):
+          novel_alleles=None, inverted_d=0.):
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
 
     ``indel_form`` and ``indel_fraction`` select the curriculum's polymerase-indel counts
@@ -88,6 +88,9 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
 
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks around every curriculum stream's reads
     (``CurriculumStreamPolicy.flanks``): training and validation; ``train_args["flanks"]`` records it.
+
+    ``inverted_d`` inverts the D of that share of every curriculum stream's records
+    (``CurriculumStreamPolicy.inverted_d``); a run with inverted Ds records it as ``train_args["inverted_d"]``.
 
     ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
     GenAIRR provider of every curriculum stream of the run: training and validation. With
@@ -138,7 +141,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                                               mode='auto',
                                               indel_fraction=indel_fraction, indel_form=indel_form,
                                               selected_fraction=selected_fraction, flanks=flanks,
-                                              novel_alleles=novel_alleles)
+                                              novel_alleles=novel_alleles, inverted_d=inverted_d)
     if novel_alleles is not None:        # before any record is drawn: an eligible V, one species, GenAIRR's consent
         _check_novel_alleles(dataconfigs, reference_set, novel_alleles)
     # A reference GenAIRR cannot draw productive records from (an incompletely annotated custom reference) trains
@@ -209,6 +212,8 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                    "genairr_source_sha256": _recorded_genairr_source()}
     if novel_alleles is not None:
         _train_args["novel_alleles"] = novel_alleles.to_dict()
+    if requested_policy.inverted_d:
+        _train_args["inverted_d"] = requested_policy.inverted_d
     _dcs = dataconfigs
     source_checkpoint = resume_from or init_from
     if source_checkpoint:

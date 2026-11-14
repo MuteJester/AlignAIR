@@ -127,12 +127,14 @@ def dataconfig_names(dataconfigs) -> list[str]:
 def policy_fields(policy: CurriculumStreamPolicy) -> dict:
     """Every field of a stream policy that shapes its providers' records, encoded as the manifest stores it
     (``encode_parameters``): all but ``flanks``, which ``training_records`` draws after the provider, so a cache of the
-    provider's records serves a flanked run too. ``novel_alleles`` is left out when None (as every cache written
-    before it was), else its ``to_dict``."""
+    provider's records serves a flanked run too. ``novel_alleles`` is left out when None and ``inverted_d`` when 0
+    (as every cache written before them was), else ``novel_alleles``' ``to_dict`` and the share of inverted Ds."""
     fields = {field.name: getattr(policy, field.name) for field in dataclasses.fields(policy)
-              if field.name not in ("flanks", "novel_alleles")}
+              if field.name not in ("flanks", "novel_alleles", "inverted_d")}
     if policy.novel_alleles is not None:
         fields["novel_alleles"] = policy.novel_alleles.to_dict()
+    if policy.inverted_d:
+        fields["inverted_d"] = policy.inverted_d
     return encode_parameters(fields)
 
 

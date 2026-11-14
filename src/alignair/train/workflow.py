@@ -90,5 +90,5 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
           schedule=config.schedule, study=config.study,
           init_from=config.init_from,
           data_workers=config.data_workers, record_source=record_source, flanks=config.flanks,
-          novel_alleles=config.novel_alleles)
+          novel_alleles=config.novel_alleles, inverted_d=config.inverted_d)
     return TrainingRun(path, outcome.best_model_path, outcome.steps, outcome.checkpoints, outcome.validations)

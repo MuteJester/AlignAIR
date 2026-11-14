@@ -69,6 +69,12 @@ def _probability(value, field):
     return float(value)
 
 
+def inverted_d_share(value) -> float:
+    """``value`` as the share of records with an inverted D (``CurriculumStreamPolicy.inverted_d``): a finite number in
+    [0, 1], else a ConfigurationError for the field ``inverted_d``."""
+    return _probability(value, 'inverted_d')
+
+
 def mutation_cap_for(dataconfig, mutation_cap):
     """TCR references retain a zero mutation cap; other references use the requested cap."""
     return 0.0 if is_tcr(dataconfig) else mutation_cap
@@ -140,7 +146,9 @@ class CurriculumStreamPolicy:
     are. ``flanks`` (a ``data.flanks.FlankPolicy``) puts library flanks around every stream's records, drawn from the
     stream's own seed block after its provider (``training_records``); None leaves the simulated reads bare.
     ``novel_alleles`` (a ``train.gym.novel.NovelAlleles``) makes every stream draw part of its reads from synthetic
-    novel V alleles (``train.gym.novel``); None, the default, draws them from the reference's alleles alone."""
+    novel V alleles (``train.gym.novel``); None, the default, draws them from the reference's alleles alone.
+    ``inverted_d`` (0 to 1) is the share of every stream's records whose D GenAIRR inverts (``invert_d``); 0, the
+    default, inverts none and leaves the streams' parameters as they were."""
     progresses: tuple[float, ...] = (.3, .6, .9)
     heavy_shm: float = .25
     short_boost: int = 1
@@ -151,6 +159,7 @@ class CurriculumStreamPolicy:
     selected_fraction: float = SELECTED_FRACTION
     flanks: FlankPolicy | None = None
     novel_alleles: NovelAlleles | None = None
+    inverted_d: float = 0.
 
     def __post_init__(self):
         if self.mode not in ('auto', 'amplicon'):
@@ -175,6 +184,7 @@ class CurriculumStreamPolicy:
             raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
         if self.novel_alleles is not None and not isinstance(self.novel_alleles, NovelAlleles):
             raise ConfigurationError('novel_alleles must be a NovelAlleles or None', context={'field': 'novel_alleles'})
+        object.__setattr__(self, 'inverted_d', inverted_d_share(self.inverted_d))
 
     @property
     def selection_pattern(self) -> tuple[bool, ...]:
@@ -207,6 +217,9 @@ class CurriculumStreamPolicy:
         if self.novel_alleles is not None:
             for parameters, _ in components:
                 parameters['novel_alleles'] = self.novel_alleles.to_dict()
+        if self.inverted_d:
+            for parameters, _ in components:
+                parameters['invert_d_prob'] = self.inverted_d
         return components
 
     def parameters_for(self, dataconfig, *, force_mixture=False) -> list[dict]:
