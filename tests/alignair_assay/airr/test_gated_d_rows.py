@@ -35,8 +35,8 @@ def test_a_file_mixing_rows_with_and_without_d_fields_has_one_header_and_empty_d
     from alignair.predict.airr import build_airr
     from alignair.predict.results import light_record
     from alignair.reference.reference_set import ReferenceSet
-    from alignair.train.gym import Curriculum
-    from alignair.train.gym.streams import stream_records
+    from alignair.train.records import Curriculum
+    from alignair.train.records.streams import stream_records
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     found = [r for r in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, dict(Curriculum().params(0.3)), 5), 20)
              if all(r.get(f"{g}_cigar") for g in "vdj")][:3]

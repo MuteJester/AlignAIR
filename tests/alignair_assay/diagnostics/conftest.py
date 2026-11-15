@@ -130,7 +130,7 @@ def toy_reads_fasta(tmp_path_factory):
     """Three GenAIRR heavy-chain reads, ``r0`` to ``r2``."""
     import itertools
     import GenAIRR.data as gd
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     component = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)[1]
     reads = [record["sequence"] for record in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, component, 21), 3)]
     path = tmp_path_factory.mktemp("golden_reads") / "reads.fasta"

@@ -37,8 +37,8 @@ from alignair import TrainingConfig
 from alignair.data.flanks import FlankPolicy
 from alignair.errors import ConfigurationError
 from alignair.train import CosineSchedule
-from alignair.train.gym.novel import NovelAlleles
-from alignair.train.gym.streams import CurriculumStreamPolicy
+from alignair.train.records.novel import NovelAlleles
+from alignair.train.records.streams import CurriculumStreamPolicy
 from alignair.train.trainer import RECIPE
 
 DATACONFIGS = ("HUMAN_IGH_OGRDB",)

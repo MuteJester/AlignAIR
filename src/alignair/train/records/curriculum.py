@@ -2,7 +2,7 @@
 import math
 from numbers import Real
 
-from ....errors import ConfigurationError
+from ...errors import ConfigurationError
 
 # How a curriculum draws its polymerase-indel count per read:
 # - "uniform", the historical form and the default: a uniform count in [0, round(5p)]. The benchmark and evaluation
@@ -83,7 +83,7 @@ class Curriculum:
             # Minor observation-stage end loss (primer/read-end nibble) — the CORRUPTION axis, kept
             # small so the bulk of the molecule survives. Read LENGTH / short-read amplicons are a
             # separate, orthogonal axis modelled by GenAIRR end-loss profiles in the training mix
-            # (V-anchored / J-anchored / fragment); see train.gym.streams.CurriculumStreamPolicy.
+            # (V-anchored / J-anchored / fragment); see train.records.streams.CurriculumStreamPolicy.
             "end_loss_5": (0, int(round(_lerp(0, 40, p)))),
             "end_loss_3": (0, int(round(_lerp(0, 40, p)))),
             "indel_count": self.indel_count(p),

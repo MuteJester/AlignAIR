@@ -11,8 +11,9 @@ from ..core.setup import ModelSetup
 from ..core.runtime import restore_model_state
 from ..genairr.identity import recorded_genairr_source
 from ..tasks import TrainingTasks, build_tasks
-from .gym.curriculum.base import INDEL_FRACTION
-from .gym.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
+from .records.curriculum import INDEL_FRACTION
+from ..genairr.catalog import dataconfig_name
+from .records.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, effective_mutation_caps,
                           selection_supported, training_records)
 from .setup import build_training_engine
 from .loop import training_iterations
@@ -40,7 +41,7 @@ class TrainingOutcome:
 def _check_novel_alleles(dataconfigs, reference_set, spec) -> None:
     """ConfigurationError unless every dataconfig has an eligible V (``novel_support``) and every locus of the reference
     is of one and the same species (one species per model); prints what each epoch draws."""
-    from .gym.novel import novel_support
+    from .records.novel import novel_support
     species = {info.species for info in reference_set.loci}
     if len(species) != 1 or None in species:
         raise ConfigurationError(f"novel alleles train a model of one species; the reference's loci are of "
@@ -63,12 +64,12 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
 
     ``indel_form`` and ``indel_fraction`` select the curriculum's polymerase-indel counts
-    (``gym.streams.CurriculumStreamPolicy``): ``"weighted"``, whose weight of reads with an indel is
+    (``records.streams.CurriculumStreamPolicy``): ``"weighted"``, whose weight of reads with an indel is
     ``indel_fraction`` ``(low, high)`` at progress 0 and 1, or the historical ``"uniform"`` form of the 1.0.0
     recipe. ``selected_fraction`` of each full-length component's records are drawn under GenAIRR's
     ``productive_only()``. The run records them in ``train_args`` with its ``recipe`` (``RECIPE``) and each
     component's selected share. When GenAIRR cannot draw productive records from one of ``dataconfigs``
-    (``gym.streams.selection_supported``), the run draws no selected records, says so, and lists those references
+    (``records.streams.selection_supported``), the run draws no selected records, says so, and lists those references
     in ``train_args["selection_unavailable"]``.
 
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks around every curriculum stream's reads
@@ -77,7 +78,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
     ``inverted_d`` inverts the D of that share of every curriculum stream's records
     (``CurriculumStreamPolicy.inverted_d``); a run with inverted Ds records it as ``train_args["inverted_d"]``.
 
-    ``record_source`` (``gym.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
+    ``record_source`` (``records.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
     GenAIRR provider of every curriculum stream of the run: training and validation. With
     ``data_workers`` > 0 it runs in the worker processes, so it must be picklable (a module-level function or a
     picklable object). None generates the records with GenAIRR.
@@ -221,7 +222,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
     workers = None
     if data_workers:                               # the same batches, generated in worker processes
         from .assembly import TrainingStream, parallel_training_data
-        from .gym.streams import stream_records
+        from .records.streams import stream_records
         workers = parallel_training_data(
             TrainingStream(tuple(dataconfigs), source_policy, seed,
                            prepare_training_data(setup, device='cpu'), start_step=start),

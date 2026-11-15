@@ -68,6 +68,22 @@ def name_of(dataconfig) -> str | None:
     return None if checksum is None else _builtin_by_checksum().get(checksum())
 
 
+def dataconfig_name(dataconfig) -> str:
+    """A name for ``dataconfig`` in records and messages: its built-in name, else its own name, else its chain type. A
+    failure to look up the built-ins (a provider that cannot load) never stops a stream from being named."""
+    try:
+        builtin = name_of(dataconfig)
+        if builtin is not None:
+            return builtin
+    except Exception:  # noqa: BLE001 - naming must not prevent a source from being built
+        pass
+    name = getattr(dataconfig, 'name', None)
+    if name and str(name).strip().lower() not in ('none', 'unnamed'):
+        return str(name)
+    chain_type = getattr(getattr(dataconfig, 'metadata', None), 'chain_type', 'unknown')
+    return str(getattr(chain_type, 'value', chain_type))
+
+
 def locus_of(dataconfig) -> str:
     """The AIRR locus code of ``dataconfig``'s chain type (``IGH``, ``TRB``, ...)."""
     return _locus_of(dataconfig.metadata.chain_type)

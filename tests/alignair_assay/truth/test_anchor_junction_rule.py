@@ -25,7 +25,7 @@ FLAGS = ("vj_in_frame", "stop_codon", "productive")
 def records():
     """``(component, stream, record)`` for every drawn record."""
     import GenAIRR.data as gd
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     drawn = []
     for component, streams in enumerate(CurriculumStreamPolicy().substreams_for(gd.HUMAN_IGH_OGRDB)):
         for name, parameters in streams:

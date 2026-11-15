@@ -22,7 +22,7 @@ def test_a_reference_alone_prepares_the_chip():
 
 
 def test_a_light_chain_reference_prepares_a_chip_without_d_and_predicts():
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB)
     setup = prepare_model(reference, trunk_channels=8)
     assert setup.config.architecture == "chip-v1"

@@ -5,7 +5,7 @@ import os
 import pytest
 
 from alignair.errors import TrainingError
-from alignair.train.gym.workers import WorkerGroup
+from alignair.train.processes import WorkerGroup
 
 pytestmark = pytest.mark.component
 

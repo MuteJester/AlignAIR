@@ -3,8 +3,8 @@
 import pytest
 import GenAIRR.data as gd
 
-from alignair.train.gym.experiment import build_experiment
-from alignair.train.gym.curriculum import Curriculum
+from alignair.genairr.experiment import build_experiment
+from alignair.train.records.curriculum import Curriculum
 
 pytestmark = pytest.mark.integration
 

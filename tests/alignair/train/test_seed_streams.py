@@ -7,7 +7,7 @@ from itertools import islice
 
 import pytest
 
-from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
+from alignair.train.records.streams import CurriculumStreamPolicy, training_records
 
 pytestmark = pytest.mark.integration
 

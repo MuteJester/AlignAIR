@@ -106,7 +106,7 @@ def test_an_anchor_model_row_takes_its_junction_from_the_anchors(golden):
     junction and flags are unknown, assembled without error."""
     import GenAIRR.data as gd
     from alignair.api import predict_sequences
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     model, reference = golden
     components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
     records = [r for r in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, components[1], 31), 12)
@@ -146,7 +146,7 @@ def test_a_reverse_complemented_read_takes_its_junction_from_anchors_in_the_forw
     import GenAIRR.data as gd
     from alignair.api import predict_sequences
     from alignair.io.airr import _build_row
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     model, reference = golden
     complement = str.maketrans("ACGTN", "TGCAN")
     components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
@@ -174,7 +174,7 @@ def test_an_anchor_models_light_records_carry_the_derived_productivity(golden):
     call (there is none)."""
     import GenAIRR.data as gd
     from alignair.api import predict_sequences
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     model, reference = golden
     components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
     records = [r for r in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, components[1], 32), 8)

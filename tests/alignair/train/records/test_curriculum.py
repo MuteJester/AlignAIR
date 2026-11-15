@@ -2,8 +2,8 @@ import math
 
 import pytest
 from alignair.errors import ConfigurationError
-from alignair.train.gym.curriculum import Curriculum
-from alignair.train.gym.curriculum.base import INDEL_COUNT_WEIGHTS, INDEL_FRACTION
+from alignair.train.records.curriculum import Curriculum
+from alignair.train.records.curriculum import INDEL_COUNT_WEIGHTS, INDEL_FRACTION
 
 pytestmark = pytest.mark.component
 
@@ -75,7 +75,7 @@ def test_indel_form_is_uniform_or_weighted(value):
 
 
 def test_sequencing_errors_stay_at_the_level_the_chip_trained_on():
-    from alignair.train.gym.curriculum.base import SEQUENCING_ERROR_SCALE
+    from alignair.train.records.curriculum import SEQUENCING_ERROR_SCALE
     assert SEQUENCING_ERROR_SCALE == 0.757
     assert Curriculum().params(1.0)["seq_error_rate"] == pytest.approx(0.02 * 0.757)
     assert Curriculum().params(0.5)["seq_error_rate"] == pytest.approx(0.01 * 0.757)

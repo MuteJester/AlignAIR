@@ -16,7 +16,7 @@ def default_strata() -> dict:
     """Named GenAIRR generation params: clean, moderate corruption, heavy-SHM, and a J-anchored short
     amplicon. (The head-to-head against IgBLAST is the development assay's, ``alignair_assay``.) The strata are
     pinned to the curriculum's historical uniform indel form, so they keep generating the same data."""
-    from ..train.gym import Curriculum
+    from ..train.records import Curriculum
     cur = Curriculum(indel_form="uniform")
     return {
         "clean": dict(cur.params(0.1)),
@@ -27,8 +27,8 @@ def default_strata() -> dict:
 
 
 def generate_labeled(dataconfig, params: dict, n: int, seed: int) -> list[dict]:
-    """``n`` labelled records (truth calls + coords + junction) from the GenAIRR gym stream."""
-    from ..train.gym import build_experiment
+    """``n`` labelled records (truth calls + coords + junction) from the GenAIRR experiment the training records use."""
+    from ..genairr.experiment import build_experiment
     p = dict(params)
     p.setdefault("invert_d_prob", 0.0)
     exp = build_experiment(dataconfig, p, allow_curatable=True)

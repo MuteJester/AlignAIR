@@ -25,9 +25,9 @@ def register(sub) -> None:
 
 
 def _simulate_reads(dataconfig, n: int, seed: int = 7) -> list:
-    """A handful of simulated reads for the demo (moderate SHM), via the training gym."""
-    from ..train.gym import Curriculum, build_experiment
-    from ..train.gym.experiment import GENAIRR_INVERT_D_PROB
+    """A handful of simulated reads for the demo (moderate SHM), simulated as the training records are."""
+    from ..genairr.experiment import GENAIRR_INVERT_D_PROB, build_experiment
+    from ..train.records import Curriculum
     exp = build_experiment(dataconfig, {**Curriculum().params(0.3), "invert_d_prob": GENAIRR_INVERT_D_PROB},
                            allow_curatable=True)
     return [str(r["sequence"]).upper()

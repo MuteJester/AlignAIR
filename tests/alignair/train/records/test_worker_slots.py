@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from alignair.train.gym.streams import CurriculumStreamPolicy
-from alignair.train.gym.workers import component_plan, worker_slots
+from alignair.train.records.streams import CurriculumStreamPolicy
+from alignair.train.records.workers import component_plan, worker_slots
 
 pytestmark = pytest.mark.component
 

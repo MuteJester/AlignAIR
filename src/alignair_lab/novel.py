@@ -136,7 +136,7 @@ def training_overlap(cache, suite) -> frozenset:
     rerun for the epochs its records span; no simulation)."""
     from alignair.genairr import resolve_dataconfig
     from alignair.reference.reference_set import ReferenceSet
-    from alignair.train.gym.novel import NovelAlleles, epoch_alleles
+    from alignair.train.records.novel import NovelAlleles, epoch_alleles
     from alignair_assay.suites.donors import donors_from_json
     manifest = json.loads((Path(cache) / "manifest.json").read_text(encoding="utf-8"))
     donors = donors_from_json(json.loads((Path(suite) / "donors.json").read_text(encoding="utf-8")))

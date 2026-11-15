@@ -1,7 +1,7 @@
 """Training batches from worker processes, identical to the batches of serial training.
 
 ``parallel_training_data`` replaces the serial record stream and batch adapter that ``train`` hands to
-``training_iterations``. Curriculum components always run in record workers (``gym.workers``). Where
+``training_iterations``. Curriculum components always run in record workers (``records.workers``). Where
 the batches are built depends on the device:
 
 * on an accelerator, an assembler process zips the component queues, prepares the records and
@@ -25,9 +25,10 @@ from itertools import islice
 
 from ..data.training import TrainingDataSetup
 from ..errors import ConfigurationError, TrainingError, error_context
-from .gym.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
-from .gym.workers import (CHUNK_SIZE, QUEUE_CHUNKS, ComponentChannels, RecordWorkers, WorkerGroup, component_plan,
-                          plan_signature, raise_failure, receive, start_record_workers, worker_options)
+from .records.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
+from .processes import WorkerGroup, raise_failure, receive
+from .records.workers import (CHUNK_SIZE, QUEUE_CHUNKS, ComponentChannels, RecordWorkers, component_plan, plan_signature,
+                              start_record_workers, worker_options)
 from .checks import device as checked_device, integer
 from .random_state import capture_rng_state, restore_rng_state, same_rng_state
 

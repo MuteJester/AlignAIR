@@ -7,8 +7,8 @@ import pytest
 from alignair import TrainingConfig, run_training
 from alignair.data.flanks import FlankPolicy
 from alignair.errors import ConfigurationError
-from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records, training_records
-from alignair.train.gym.workers import component_plan
+from alignair.train.records.streams import CurriculumStreamPolicy, stream_records, training_records
+from alignair.train.records.workers import component_plan
 from tests.support.record_workers import shifted
 
 pytestmark = pytest.mark.integration

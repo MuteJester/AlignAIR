@@ -65,7 +65,7 @@ def write_tie_reads(model_path: Path = TEST_CHIP, path: Path = TIE_READS) -> int
     import GenAIRR.data as gd
     from alignair.api import predict_sequences
     from alignair.model_file import load_model
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     loaded = load_model(str(model_path))
     components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
     found = []

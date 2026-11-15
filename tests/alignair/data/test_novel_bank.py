@@ -109,7 +109,8 @@ def _two_locus_novel_batch():
 
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
-    from alignair.train.gym.streams import CurriculumStreamPolicy, seed_block, stream_records
+    from alignair.train.records.seeds import seed_block
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB)
     parameters = dict(CurriculumStreamPolicy().substreams_for(gd.HUMAN_IGH_OGRDB)[1])["unselected-0"]
     records = [dict(r) for r in islice(stream_records(gd.HUMAN_IGH_OGRDB, parameters,

@@ -21,8 +21,8 @@ import pytest
 
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.assembly import TrainingStream, parallel_training_data
-from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
-from alignair.train.gym.workers import component_plan
+from alignair.train.records.streams import CurriculumStreamPolicy, training_records
+from alignair.train.records.workers import component_plan
 from tests.support.record_workers import parallel_records
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED
 from alignair_lab.records import CachedRecordSource, component_counts, genairr_digest, write_record_cache
@@ -139,7 +139,8 @@ def test_the_manifest_records_genairr_the_recipe_and_each_streams_records(recipe
                                   'mutation_cap': None, 'mode': 'auto', 'indel_fraction': {'__tuple__': [0.05, 0.25]},
                                   'indel_form': 'weighted', 'selected_fraction': 0.75}
     files = manifest['code']['files']           # provenance: the code that produced the records
-    assert {'train/gym/streams.py', 'train/gym/experiment.py', 'train/gym/curriculum/base.py'} <= set(files)
+    assert {'train/records/streams.py', 'train/records/seeds.py', 'genairr/experiment.py',
+            'train/records/curriculum.py'} <= set(files)
     root = Path(alignair.__file__).parent
     assert all(digest == hashlib.sha256((root / name).read_bytes()).hexdigest() for name, digest in files.items())
     assert (manifest['seed'], manifest['steps'], manifest['batch_size'], manifest['records']) == (0, 1, 64, 64)
@@ -384,7 +385,7 @@ def test_require_refuses_a_cache_of_another_recipe_or_format(cache, tmp_path, ch
 def rare_change(monkeypatch, **parameters):
     """The live provider with ``parameters`` set in every stream: a change to the producing code that leaves the
     manifest as it was."""
-    from alignair.train.gym import streams
+    from alignair.train.records import streams
     original = streams.stream_records
 
     def changed(dataconfig, stream_parameters, seed):
@@ -415,7 +416,7 @@ def test_the_deep_check_accepts_a_cache_whose_records_are_the_live_ones(cache, t
 def test_require_draws_the_first_records_of_every_stream_live_and_compares_them(recipe_cache, monkeypatch):
     """A change to the code that produces the records (here the provider; equally the seed blocks, the interleave or
     the curriculum) leaves the manifest as it was: only drawing the stream again shows it."""
-    from alignair.train.gym import streams
+    from alignair.train.records import streams
     source = CachedRecordSource(recipe_cache)
     source.require(DATACONFIGS, policy=POLICY, seed=SEED, records=BATCH_SIZE)
     original = streams.stream_records
@@ -466,10 +467,10 @@ def test_a_policy_with_inverted_ds_records_their_share_in_the_manifest():
 
 def test_a_novel_cache_written_in_segments_is_the_serial_stream(tmp_path):
     from alignair.reference.variants import NOVEL_FIELD
-    from alignair.train.gym.novel import NovelAlleles
+    from alignair.train.records.novel import NovelAlleles
     spec = NovelAlleles(epoch_records=2)
     # the unselected streams (selected ones are about 20 times slower to simulate, and their shift across an epoch is
-    # tests/alignair/train/gym/test_novel_streams.py's): each holds 10 records, its segments of 3 cross epochs of 2
+    # tests/alignair/train/records/test_novel_streams.py's): each holds 10 records, its segments of 3 cross epochs of 2
     policy = dataclasses.replace(UNSELECTED, novel_alleles=spec)
     path = tmp_path / "novel"
     manifest = write_record_cache(path, dataconfigs=DATACONFIGS, policy=policy, seed=SEED, steps=1,
@@ -483,7 +484,7 @@ def test_a_novel_cache_written_in_segments_is_the_serial_stream(tmp_path):
 
 
 def test_a_cache_of_another_novel_allele_spec_is_refused(tmp_path):
-    from alignair.train.gym.novel import NovelAlleles
+    from alignair.train.records.novel import NovelAlleles
     policy = dataclasses.replace(UNSELECTED, novel_alleles=NovelAlleles(epoch_records=2))
     write_record_cache(tmp_path / "novel", dataconfigs=DATACONFIGS, policy=policy, seed=SEED, steps=1,
                        batch_size=BATCH_SIZE, workers=2)

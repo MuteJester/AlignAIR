@@ -9,7 +9,7 @@ import pytest
 from alignair import TrainingConfig, run_training
 from alignair.errors import ConfigurationError
 from alignair.model_file import read_metadata
-from alignair.train.gym.streams import CurriculumStreamPolicy
+from alignair.train.records.streams import CurriculumStreamPolicy
 
 
 def _streams(policy):

@@ -7,8 +7,8 @@ from dataclasses import dataclass, field, replace
 
 from ..errors import ConfigurationError
 from ..data.flanks import FlankPolicy
-from .gym.novel import NovelAlleles
-from .gym.streams import inverted_d_share
+from .records.novel import NovelAlleles
+from .records.streams import inverted_d_share
 from .schedules import CosineSchedule
 from .guards import validate_data_workers
 
@@ -39,11 +39,11 @@ class TrainingConfig:
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant
     region) around the curriculum's reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the
     chip's recipe; None trains on the bare reads.
-    ``novel_alleles`` (``train.gym.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and
+    ``novel_alleles`` (``train.records.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and
     puts their rows in each batch's bank (``data.novel_bank``); None, the default, trains on the dataconfigs' alleles
     alone. The model and the saved reference stay the dataconfigs' either way.
     ``inverted_d`` (0 to 1) inverts the D of that share of the curriculum's records
-    (``gym.streams.CurriculumStreamPolicy``); 0, the default, trains on forward Ds alone.
+    (``records.streams.CurriculumStreamPolicy``); 0, the default, trains on forward Ds alone.
     """
     dataconfigs: tuple
     steps: int = 100_000

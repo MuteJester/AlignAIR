@@ -70,7 +70,7 @@ def test_the_verdict(candidate, decisions, baselines, verdict, reason):
 
 @pytest.mark.component
 def test_training_overlap_names_a_held_out_allele_a_training_epoch_drew(tmp_path):
-    from alignair.train.gym.novel import NovelAlleles, epoch_alleles
+    from alignair.train.records.novel import NovelAlleles, epoch_alleles
     from alignair_assay.core.genotype import NovelAllele as HeldOut
     from alignair_assay.suites.donors import Donor, donors_to_json
     from alignair_lab.novel import training_overlap

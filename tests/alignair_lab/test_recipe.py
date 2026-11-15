@@ -3,7 +3,7 @@ novel alleles in its banks, and its cooldown."""
 import pytest
 
 from alignair.data.flanks import FlankPolicy
-from alignair.train.gym.novel import NovelAlleles
+from alignair.train.records.novel import NovelAlleles
 from alignair_lab.recipe import cooldown_config, retrain_config
 
 pytestmark = pytest.mark.component

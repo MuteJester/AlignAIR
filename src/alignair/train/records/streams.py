@@ -3,9 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
-import hashlib
 from itertools import chain
-import json
 from typing import Literal, Protocol
 from collections.abc import Iterable, Iterator, Mapping
 
@@ -14,39 +12,16 @@ from ...data.flanks import FlankPolicy, flank_records
 from ...reference.reference_set import is_tcr
 from ..checks import integer, probability
 from .curriculum import Curriculum
-from .curriculum.base import INDEL_FRACTION, indel_form_name, indel_fraction_range
-from .experiment import build_experiment
+from .curriculum import INDEL_FRACTION, indel_form_name, indel_fraction_range
+from ...genairr.catalog import dataconfig_name
+from ...genairr.experiment import build_experiment
 from .novel import NovelAlleles, novel_records
+from .seeds import STREAM_PURPOSES, seed_block
 
 
 class RecordSource(Protocol):
     """Produce fresh record mappings for one reference, parameter set, and stream seed."""
     def __call__(self, dataconfig, parameters: Mapping, seed: int) -> Iterable[Mapping]: ...
-
-
-# GenAIRR draws record k of the stream of seed s from seed s + k, so streams whose seeds lie close together repeat each
-# other's draws a few records apart (and the same seed under other parameters repeats the V/D/J draw). Every record
-# stream of a training run therefore draws from a reserved block of SEED_BLOCK_RECORDS consecutive seeds. The block is
-# placed by a SHA-256 of what the stream is for (``seed_block``), in [2**62, 2**63): far above the assay's suite seeds
-# ([0, 2**31)) and below GenAIRR's limit (2**63 + 1 works, 2**64 - 1 overflows). Blocks are aligned, so two blocks
-# either coincide or are disjoint. Each purpose has its own quarter of the range, so training, validation and probe
-# blocks never meet. Within one call of ``training_records`` the streams are checked to draw distinct blocks. Across
-# calls of one purpose, such as a resume at another start_step against the original run, disjointness is only
-# probable: two calls of 28 streams share no block with probability about 1 - 28 * 28 / 2**28 (1 - 3e-6).
-STREAM_PURPOSES = ('training', 'validation', 'probe')
-SEED_BLOCK_RECORDS = 2 ** 32
-_FIRST_BLOCK_SEED = 2 ** 62
-_BLOCKS_PER_PURPOSE = 2 ** 28              # 4 quarters of 2**28 blocks of 2**32 seeds: [2**62, 2**63)
-
-
-def seed_block(seed: int, purpose: str, start_step: int, panel: int, component: int, stream: str) -> int:
-    """The first GenAIRR seed of the reserved block of one record stream: run ``seed``, stream ``purpose``
-    (``STREAM_PURPOSES``), the step ``start_step`` a training stream starts at (a resumed run's stream), the
-    stream's reference ``panel`` and curriculum ``component`` positions, and its name among the component's streams
-    (``CurriculumStreamPolicy.substreams_for``)."""
-    key = json.dumps(['alignair.training_records', seed, purpose, start_step, panel, component, stream]).encode()
-    position = int.from_bytes(hashlib.sha256(key).digest()[:8], 'big') % _BLOCKS_PER_PURPOSE
-    return _FIRST_BLOCK_SEED + (STREAM_PURPOSES.index(purpose) * _BLOCKS_PER_PURPOSE + position) * SEED_BLOCK_RECORDS
 
 
 def inverted_d_share(value) -> float:
@@ -58,22 +33,6 @@ def inverted_d_share(value) -> float:
 def mutation_cap_for(dataconfig, mutation_cap):
     """TCR references retain a zero mutation cap; other references use the requested cap."""
     return 0.0 if is_tcr(dataconfig) else mutation_cap
-
-
-def dataconfig_name(dataconfig) -> str:
-    """Use a materialized provider name, explicit custom name, or receptor descriptor."""
-    try:
-        from ...genairr import name_of
-        builtin = name_of(dataconfig)
-        if builtin is not None:
-            return builtin
-    except Exception:  # Naming cannot prevent source construction when a provider is unavailable.
-        pass
-    name = getattr(dataconfig, 'name', None)
-    if name and str(name).strip().lower() not in ('none', 'unnamed'):
-        return str(name)
-    chain_type = getattr(getattr(dataconfig, 'metadata', None), 'chain_type', 'unknown')
-    return str(getattr(chain_type, 'value', chain_type))
 
 
 def effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
@@ -125,8 +84,8 @@ class CurriculumStreamPolicy:
     component's records are drawn under GenAIRR's ``productive_only()`` (``substreams_for``); amplicon records never
     are. ``flanks`` (a ``data.flanks.FlankPolicy``) puts library flanks around every stream's records, drawn from the
     stream's own seed block after its provider (``training_records``); None leaves the simulated reads bare.
-    ``novel_alleles`` (a ``train.gym.novel.NovelAlleles``) makes every stream draw part of its reads from synthetic
-    novel V alleles (``train.gym.novel``); None, the default, draws them from the reference's alleles alone.
+    ``novel_alleles`` (a ``train.records.novel.NovelAlleles``) makes every stream draw part of its reads from synthetic
+    novel V alleles (``train.records.novel``); None, the default, draws them from the reference's alleles alone.
     ``inverted_d`` (0 to 1) is the share of every stream's records whose D GenAIRR inverts (``invert_d``); 0, the
     default, inverts none and leaves the streams' parameters as they were."""
     progresses: tuple[float, ...] = (.3, .6, .9)
@@ -243,7 +202,7 @@ def _scoped_records(records, *, seed, stage):
 
 def stream_records(dataconfig, parameters: Mapping, seed: int) -> Iterator[Mapping]:
     """Default provider: forward GenAIRR records, with D inversion disabled unless requested; a stream whose parameters
-    carry ``novel_alleles`` draws them from its epochs' novel alleles (``train.gym.novel.novel_records``)."""
+    carry ``novel_alleles`` draws them from its epochs' novel alleles (``train.records.novel.novel_records``)."""
     parameters = dict(parameters)
     parameters.setdefault('invert_d_prob', 0.)
     novel = parameters.pop('novel_alleles', None)

@@ -5,7 +5,7 @@ from .setup import OptimizerFactory, build_training_engine
 from .config import TrainingConfig
 from .workflow import TrainingRun, run_training
 from .schedules import CosineSchedule
-from .gym.novel import NovelAlleles
+from .records.novel import NovelAlleles
 
 __all__ = ["TrainingEngine", "StepResult", "ValidationResult",
            "TrainingIteration", "training_iterations", "OptimizerFactory", "build_training_engine",

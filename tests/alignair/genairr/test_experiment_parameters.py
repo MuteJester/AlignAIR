@@ -5,8 +5,8 @@ import pytest
 
 import GenAIRR.data as gd
 from alignair.errors import ConfigurationError
-from alignair.train.gym import Curriculum
-from alignair.train.gym.experiment import build_experiment
+from alignair.train.records import Curriculum
+from alignair.genairr.experiment import build_experiment
 
 pytestmark = pytest.mark.component
 

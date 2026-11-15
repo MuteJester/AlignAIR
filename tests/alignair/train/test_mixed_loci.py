@@ -14,9 +14,10 @@ import GenAIRR.data as gd
 import pytest
 
 from alignair.train.build import required_segments
-from alignair.train.gym import Curriculum, build_experiment
-from alignair.train.gym.streams import (CurriculumStreamPolicy, mutation_cap_for, dataconfig_name,
-                                       effective_mutation_caps)
+from alignair.genairr.experiment import build_experiment
+from alignair.train.records import Curriculum
+from alignair.genairr.catalog import dataconfig_name
+from alignair.train.records.streams import (CurriculumStreamPolicy, mutation_cap_for, effective_mutation_caps)
 from alignair.reference.reference_set import is_tcr
 
 

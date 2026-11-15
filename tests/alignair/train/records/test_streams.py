@@ -6,11 +6,12 @@ import sys
 import pytest
 
 from alignair.errors import ConfigurationError, TrainingDataError, current_error_context
-from alignair.train.gym import streams
-from alignair.train.gym.curriculum.base import INDEL_FRACTION
-from alignair.train.gym.streams import (SEED_BLOCK_RECORDS, SELECTED_FRACTION, CurriculumStreamPolicy,
-                                       dataconfig_name, effective_mutation_caps, seed_block, training_records,
-                                       stream_records)
+from alignair.train.records import streams
+from alignair.train.records.curriculum import INDEL_FRACTION
+from alignair.genairr.catalog import dataconfig_name
+from alignair.train.records.seeds import SEED_BLOCK_RECORDS, seed_block
+from alignair.train.records.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, effective_mutation_caps,
+                                            training_records, stream_records)
 
 pytestmark = pytest.mark.component
 

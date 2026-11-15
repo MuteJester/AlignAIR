@@ -75,7 +75,7 @@ def reads() -> list[str]:
     """Three GenAIRR heavy-chain reads."""
     import itertools
     import GenAIRR.data as gd
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     component = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)[1]
     return [record["sequence"] for record in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, component, 21), 3)]
 

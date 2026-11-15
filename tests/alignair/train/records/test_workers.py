@@ -11,8 +11,10 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
-from alignair.train.gym.streams import CurriculumStreamPolicy, seed_block, training_records
-from alignair.train.gym.workers import RecordWorkers, WorkerGroup, component_plan
+from alignair.train.records.seeds import seed_block
+from alignair.train.records.streams import CurriculumStreamPolicy, training_records
+from alignair.train.processes import WorkerGroup
+from alignair.train.records.workers import RecordWorkers, component_plan
 from tests.support.record_workers import parallel_records
 from tests.support import record_workers
 

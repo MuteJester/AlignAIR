@@ -22,7 +22,7 @@ def test_a_builtin_name_resolves_to_its_dataconfig():
 
 @pytest.mark.integration
 def test_a_name_outside_the_top_level_shortcuts_resolves():
-    from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, training_records
     assert "mouse" in str(resolve_dataconfig("MOUSE_IGH_IMGT").metadata.species).lower()
     record = next(iter(training_records(("MOUSE_IGH_IMGT",), policy=CurriculumStreamPolicy(mode="amplicon"), seed=1)))
     assert record["sequence"]

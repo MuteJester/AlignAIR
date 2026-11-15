@@ -61,7 +61,7 @@ def test_d_presence_agrees_with_the_assays_observability(reference, inverted, co
     the truth observes it. The counts are (absent, short, callable)."""
     import GenAIRR.data as gd
     from alignair.data.targets import read_d_presence
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     streams = []
     for component, substreams in enumerate(CurriculumStreamPolicy().substreams_for(gd.HUMAN_IGH_OGRDB)):
         for name, parameters in substreams:

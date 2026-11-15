@@ -7,8 +7,8 @@ import pytest
 from alignair.core import prepare_model
 from alignair.model_file import read_metadata
 from alignair.reference.reference_set import ReferenceSet
-from alignair.train.gym.curriculum import Curriculum
-from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records, training_records
+from alignair.train.records.curriculum import Curriculum
+from alignair.train.records.streams import CurriculumStreamPolicy, stream_records, training_records
 from alignair.train.trainer import train
 
 pytestmark = pytest.mark.integration

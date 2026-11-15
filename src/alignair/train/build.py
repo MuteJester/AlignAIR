@@ -98,8 +98,8 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
     import torch
 
     from ..api import load_model
-    from ..train.gym import Curriculum, build_experiment
-    from ..train.gym.experiment import GENAIRR_INVERT_D_PROB
+    from ..genairr.experiment import GENAIRR_INVERT_D_PROB, build_experiment
+    from .records import Curriculum
     from ..data.adapters import NucleotideBatchAdapter
     from ..tasks import build_tasks
     from ..reference.reference_set import is_tcr

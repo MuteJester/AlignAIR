@@ -10,7 +10,7 @@ import alignair
 import alignair.aligner
 import alignair.core.config
 import alignair.genotype.infer
-import alignair.train.gym.streams
+import alignair.train.records.streams
 from alignair.core.tokens import TOKEN_DICT
 
 pytestmark = pytest.mark.component
@@ -35,7 +35,7 @@ def test_the_assay_allele_table_does_not_claim_calibrated_probabilities():
 
 
 def test_the_training_records_docstring_claims_no_locus_class_tagging():
-    assert "class ID" not in alignair.train.gym.streams.training_records.__doc__
+    assert "class ID" not in alignair.train.records.streams.training_records.__doc__
 
 
 def test_the_vocab_size_comment_points_at_the_one_vocabulary_instead_of_restating_it():

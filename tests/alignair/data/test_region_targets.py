@@ -91,8 +91,8 @@ def test_region_targets_agree_with_the_boundary_targets_on_genairr_reads():
     cover the encoded read exactly, and each supervised gene's boundary span holds that gene's class only, including
     a span the window cuts short."""
     import GenAIRR.data as gd
-    from alignair.train.gym import Curriculum
-    from alignair.train.gym.streams import stream_records
+    from alignair.train.records import Curriculum
+    from alignair.train.records.streams import stream_records
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     config = prepare_model(reference, max_seq_length=301).config
     records = list(itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, dict(Curriculum().params(0.6)), 0), 12))

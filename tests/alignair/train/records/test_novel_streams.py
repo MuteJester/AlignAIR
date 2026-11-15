@@ -11,8 +11,9 @@ import pytest
 from alignair.errors import ConfigurationError
 from alignair.reference.reference_set import ReferenceSet
 from alignair.reference.variants import NOVEL_FIELD, eligible_bases
-from alignair.train.gym.novel import NovelAlleles, epoch_alleles, novel_support
-from alignair.train.gym.streams import CurriculumStreamPolicy, seed_block, stream_records
+from alignair.train.records.novel import NovelAlleles, epoch_alleles, novel_support
+from alignair.train.records.seeds import seed_block
+from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
 
 SPEC = NovelAlleles()
 

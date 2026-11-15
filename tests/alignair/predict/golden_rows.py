@@ -30,7 +30,7 @@ def draw_reads() -> list[str]:
     """Full-length reads (the first with a V indel), J-anchored amplicon reads, a read longer than the window, and a
     reverse-complemented read."""
     import GenAIRR.data as gd
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
+    from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
     full = list(itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, components[1], 21), 40))
     indel = next(r["sequence"] for r in full if r["n_v_indels"])

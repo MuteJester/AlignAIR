@@ -15,6 +15,7 @@ from numbers import Real
 
 from ...errors import ConfigurationError
 from ...reference.variants import NOVEL_FIELD, NovelAllele, eligible_bases
+from .seeds import SEED_BLOCK_RECORDS
 
 GENERATOR = 1
 
@@ -29,7 +30,6 @@ class NovelAlleles:
     epoch_records: int = 4096
 
     def __post_init__(self):
-        from .streams import SEED_BLOCK_RECORDS
         fraction = self.gene_fraction
         if isinstance(fraction, bool) or not isinstance(fraction, Real) or not 0 < fraction <= 1:
             raise ConfigurationError(f"gene_fraction must be a number in (0, 1], got {fraction!r}",
@@ -87,7 +87,7 @@ def novel_records(dataconfig, parameters, seed: int, spec: NovelAlleles):
     record's ``sequence_id`` counts from 0 across epochs, and a novel read carries its allele's definition."""
     from ...genairr.novel import novel_genotype
     from ...reference.reference_set import ReferenceSet
-    from .experiment import build_experiment
+    from ...genairr.experiment import build_experiment
     reference = ReferenceSet.from_dataconfigs(dataconfig)
     size, k, x = spec.epoch_records, 0, int(seed)
     while True:

@@ -156,16 +156,18 @@ def test_training_has_no_study_schedule():
 def test_training_names_live_in_one_module_each():
     """No compatibility re-exports: the trainer re-exports neither the batch builder, the validator, the task metrics
     nor the GenAIRR identity; ``alignair.train`` does not re-export the runtime's evaluation mode, nor the gym the
-    targets builder; the study's parameters and the warm-start offset are gone."""
+    targets builder; the study's parameters and the warm-start offset are gone; the training records are
+    ``train.records`` (no ``train.gym``)."""
     import alignair.train as train
     from alignair.data import adapters
     from alignair.genairr import novel
     from alignair.tasks import build_tasks
-    from alignair.train import checkpoints, engine, gym, trainer
+    from alignair.train import checkpoints, engine, records, trainer
     assert not any(hasattr(trainer, name) for name in ("build_batch", "validate", "eval_metrics",
                                                        "genairr_source_sha256"))
     assert not hasattr(adapters, "build_nucleotide_batch")
-    assert "evaluation_mode" not in train.__all__ and "build_targets" not in gym.__all__
+    assert "evaluation_mode" not in train.__all__ and "build_targets" not in records.__all__
+    assert _gone("alignair.train.gym") and "build_experiment" not in records.__all__
     assert "start_step" not in inspect.signature(trainer.train).parameters
     assert "cfg" not in inspect.signature(checkpoints.save_checkpoint).parameters
     assert "cfg" not in inspect.signature(checkpoints.save_rotating).parameters
@@ -177,7 +179,7 @@ def test_training_names_live_in_one_module_each():
 def test_the_shipped_package_has_no_test_only_record_stream():
     """``ParallelRecords`` (``training_records`` over worker processes, which only tests built) lives in the tests'
     support package; the trainer runs ``RecordWorkers`` itself."""
-    from alignair.train.gym import workers
+    from alignair.train.records import workers
     assert not hasattr(workers, "ParallelRecords") and not hasattr(workers, "parallel_records")
 
 

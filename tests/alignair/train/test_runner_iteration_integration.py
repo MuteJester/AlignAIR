@@ -7,7 +7,7 @@ import pytest
 from alignair.core import AlignAIR
 from alignair.reference import ReferenceSet
 from alignair.train import trainer
-from alignair.train.gym.streams import training_records, CurriculumStreamPolicy
+from alignair.train.records.streams import training_records, CurriculumStreamPolicy
 from alignair.train.checkpoints import load_training_checkpoint
 from alignair.core import prepare_model
 

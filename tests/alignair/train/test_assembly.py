@@ -12,8 +12,8 @@ import torch
 from alignair.data.training import TrainingDataSetup
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.assembly import AssembledBatches, LocalAssembly, TrainingStream, parallel_training_data
-from alignair.train.gym.streams import CurriculumStreamPolicy
-from alignair.train.gym.workers import component_plan
+from alignair.train.records.streams import CurriculumStreamPolicy
+from alignair.train.records.workers import component_plan
 from tests.support import record_workers
 from tests.support.training_streams import RecordingEngine, assert_same_runs, run, serial_records
 
@@ -85,7 +85,7 @@ def test_a_batch_failure_carries_the_serial_stage_and_step(in_worker):
 
 
 def serial_records_with(stream, provider):
-    from alignair.train.gym.streams import training_records
+    from alignair.train.records.streams import training_records
     return training_records(stream.dataconfigs, policy=stream.policy, seed=stream.seed,
                             start_step=stream.start_step, record_source=provider)
 
@@ -166,7 +166,7 @@ def test_invalid_requests_are_rejected_before_any_process_starts(options):
 def test_assembled_batches_with_novel_alleles_equal_the_serial_batches(igh, in_worker):
     import dataclasses
 
-    from alignair.train.gym.novel import NovelAlleles
+    from alignair.train.records.novel import NovelAlleles
     dataconfig, data = igh
     stream = TrainingStream((dataconfig,), dataclasses.replace(RECIPE, novel_alleles=NovelAlleles(epoch_records=16)),
                             0, data)

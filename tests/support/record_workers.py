@@ -9,8 +9,8 @@ import threading
 from collections.abc import Iterator
 
 from alignair.errors import TrainingDataError, error_context
-from alignair.train.gym.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
-from alignair.train.gym.workers import CHUNK_SIZE, QUEUE_CHUNKS, RecordWorkers
+from alignair.train.records.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
+from alignair.train.records.workers import CHUNK_SIZE, QUEUE_CHUNKS, RecordWorkers
 
 
 def counted(dataconfig, parameters, seed):
@@ -114,7 +114,7 @@ def consume_within(records, seconds, count=100_000):
 
 def shifted(dataconfig, parameters, seed):
     """Real GenAIRR component records, of seed + 1000: other records than the default provider's."""
-    from alignair.train.gym.streams import stream_records
+    from alignair.train.records.streams import stream_records
     yield from stream_records(dataconfig, parameters, seed + 1000)
 
 

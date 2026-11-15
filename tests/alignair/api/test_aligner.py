@@ -88,7 +88,8 @@ def _simulated_read(dataconfig_name: str, seed: int = 11) -> str:
 
     import GenAIRR.data as gd
 
-    from alignair.train.gym import Curriculum, build_experiment
+    from alignair.genairr.experiment import build_experiment
+    from alignair.train.records import Curriculum
     params = {**Curriculum().params(0.1), "invert_d_prob": 0.05}
     params["mutation_rate"] = 0.0
     exp = build_experiment(getattr(gd, dataconfig_name), params, allow_curatable=True)

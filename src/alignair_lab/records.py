@@ -57,9 +57,9 @@ from pathlib import Path
 
 import alignair
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError, error_context
-from alignair.train.gym.streams import (CurriculumStreamPolicy, RecordSource, dataconfig_name, stream_records,
-                                        training_records)
-from alignair.train.gym.workers import component_plan
+from alignair.genairr.catalog import dataconfig_name
+from alignair.train.records.streams import (CurriculumStreamPolicy, RecordSource, stream_records, training_records)
+from alignair.train.records.workers import component_plan
 from alignair.train.trainer import RECIPE
 from alignair_assay.core.provenance import files_digest, genairr_provenance, tree_digest
 
@@ -73,8 +73,8 @@ COMPRESSION_LEVEL = 6
 # The product code, besides GenAIRR, that turns a stream's parameters and seed into records (paths under the alignair
 # package; a directory stands for its Python files): the provider and its scoping, the seed blocks and the interleave,
 # the experiment builder and the curriculum. Recorded as provenance; ``require``'s live draw is the guard.
-PRODUCING_CODE = ("train/gym/streams.py", "train/gym/experiment.py", "train/gym/curriculum", "train/gym/novel.py",
-                  "reference/variants.py", "genairr/novel.py")
+PRODUCING_CODE = ("train/records/streams.py", "train/records/seeds.py", "train/records/curriculum.py",
+                  "train/records/novel.py", "genairr/experiment.py", "reference/variants.py", "genairr/novel.py")
 # Records of every stream ``require`` draws live and compares with the cache, at most what the cache holds per stream.
 VERIFY_RECORDS = 2
 # Records of every unselected and every selected stream ``require`` also compares when the producing code is not the
@@ -740,7 +740,7 @@ class CachedRecordSource:
         """Compare the first records of every stream, drawn live through the provider ``training_records`` uses, with
         the cache's (see ``require``); refuse at the first that differs, naming its stream's seed and its index in
         that stream. Returns the records compared."""
-        from alignair.train.gym import streams as live_streams
+        from alignair.train.records import streams as live_streams
         compared = 0
         for planned in plan:
             entry = self.component(planned.reference, planned.parameters, planned.seed)

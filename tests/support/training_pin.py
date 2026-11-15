@@ -18,7 +18,7 @@ SMALL = {"embed_dim": 4, "trunk_channels": 8}
 
 def _policy():
     from alignair.data.flanks import FlankPolicy
-    from alignair.train.gym.streams import CurriculumStreamPolicy
+    from alignair.train.records.streams import CurriculumStreamPolicy
     return CurriculumStreamPolicy(progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, flanks=FlankPolicy())
 
 
@@ -32,7 +32,7 @@ def _setup():
 def pinned_records() -> list[dict]:
     """The first 64 records of the lab mix (with ``TrainingConfig``'s default flanks) on HUMAN_IGH_OGRDB, seed 0."""
     import GenAIRR.data as gd
-    from alignair.train.gym.streams import training_records
+    from alignair.train.records.streams import training_records
     return [dict(r) for r in itertools.islice(training_records((gd.HUMAN_IGH_OGRDB,), policy=_policy(), seed=0), 64)]
 
 
