@@ -46,7 +46,13 @@ def _derive_cigar_py(read: str, germ: str, indels: int) -> str:
     if n == 0:
         return f"{m}I" if m else ""
 
-    band = abs(m - n) + indels + BAND_MARGIN
+    return _traceback(_band_dp(read, germ, abs(m - n) + indels + BAND_MARGIN), m, n)
+
+
+def _band_dp(read: str, germ: str, band: int) -> dict[tuple[int, int], str]:
+    """The banded global alignment's back pointers: for each reachable cell ``(i, j)`` (read bases, germline bases)
+    within ``band`` diagonals of the net length difference, the operation (M, I or D) its best path ends with."""
+    m, n = len(read), len(germ)
     lo_off, hi_off = min(0, m - n) - band, max(0, m - n) + band   # allowed range of (i - j)
     INF = float("inf")
     cost = {(0, 0): 0.0}
@@ -72,7 +78,11 @@ def _derive_cigar_py(read: str, germ: str, indels: int) -> str:
                     best, op = c, "D"
             if op is not None:
                 cost[(i, j)] = best; back[(i, j)] = op
+    return back
 
+
+def _traceback(back: dict[tuple[int, int], str], m: int, n: int) -> str:
+    """The CIGAR of the best path from ``(m, n)`` back to ``(0, 0)`` along ``back`` (``_band_dp``)."""
     ops, i, j = [], m, n
     while (i, j) != (0, 0):
         op = back.get((i, j))

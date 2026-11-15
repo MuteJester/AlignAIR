@@ -5,6 +5,7 @@ import pytest
 from alignair.predict.results import light_record, read_results
 from alignair.predict.stages import record_loci
 from alignair.predict.state import GeneCall, GermlineAlignment, Predictions
+from tests.support.read_results import prediction_state
 
 pytestmark = pytest.mark.component
 
@@ -16,7 +17,7 @@ def _record(reference_loci):
     preds = Predictions(allele={}, start={}, end={}, mutation_rate=np.array([0.0]), indel_count=np.array([0.0]),
                         orientation=np.array([0]))
     loci = record_loci(alignments["v"], object(), None, reference_loci)     # a reference without a locus schema
-    (read,) = read_results(["ACGT"], ["ACGT"], preds, calls, alignments, None, None, None, None, loci)
+    (read,) = read_results(prediction_state(["ACGT"], preds, calls, alignments), loci)
     return light_record(read)
 
 

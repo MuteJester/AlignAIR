@@ -161,9 +161,9 @@ def settle_end(read: str, germ: str, seq_start: int, seq_end: int, ref_start: in
 
     The model's V end can stop short of an indel near the V's 3' end, or run into N bases. The alignment is anchored
     about ``_END_REACH + _END_ANCHOR`` read bases before its end and extended by a banded DP (+1 a match, -1 a
-    mismatch, -2 a gap column; ``_END_BAND``) over the read and germline bases within ``_END_REACH`` of the end, the read no further than ``limit``
-    (the next segment's start); the best-scoring end (the nearest on a tie) replaces the model's only when it gains at
-    least ``_END_GAIN``. Without a doubtful end (``_end_is_doubtful``) nothing is searched."""
+    mismatch, -2 a gap column; ``_END_BAND``, ``_end_scores``) over the read and germline bases within ``_END_REACH``
+    of the end, the read no further than ``limit`` (the next segment's start); the best-scoring end (the nearest on a
+    tie) replaces the model's only when it gains at least ``_END_GAIN``. Without a doubtful end (``_end_is_doubtful``) nothing is searched."""
     if seq_end - seq_start < _SETTLE_MIN_LENGTH or not _end_is_doubtful(read, germ, seq_end, ref_end, cigar):
         return seq_end, ref_end
     rp, gp = _tail_anchor(seq_start, seq_end, ref_start, cigar, _END_REACH + _END_ANCHOR)
@@ -172,10 +172,23 @@ def settle_end(read: str, germ: str, seq_start: int, seq_end: int, ref_start: in
     m, n = r_max - rp, g_max - gp
     if not (0 <= ci <= m and 0 <= cj <= n):
         return seq_end, ref_end
-    r, q = read[rp:r_max], germ[gp:g_max]
-    # the DP keeps to the cells within _END_BAND diagonals of the anchor's and the end's (a V tail holds few indels)
+    current, best_key, best_cell = _end_scores(read[rp:r_max], germ[gp:g_max], ci, cj)
+    if current <= _UNREACHED // 2 or best_key is None or best_key[0] - current < _END_GAIN:
+        return seq_end, ref_end
+    return rp + best_cell[0], gp + best_cell[1]
+
+
+_UNREACHED = -(1 << 30)  # the score of a cell outside the band
+
+
+def _end_scores(r: str, q: str, ci: int, cj: int) -> tuple[int, tuple[int, int] | None, tuple[int, int]]:
+    """The banded DP of the read bases ``r`` on the germline bases ``q`` from the anchor (their first bases): the score
+    of the model's end ``(ci, cj)``, and the best end within ``_END_REACH`` of it, as ``(score, -distance)`` (the
+    nearest wins a tie) and its cell. The DP keeps to the cells within ``_END_BAND`` diagonals of the anchor's and the
+    end's (a V tail holds few indels)."""
+    m, n = len(r), len(q)
     lo_d, hi_d = min(0, ci - cj) - _END_BAND, max(0, ci - cj) + _END_BAND
-    none = -(1 << 30)
+    none = _UNREACHED
     prev, current, best_key, best_cell = [none] * (n + 1), none, None, (ci, cj)
     for i in range(m + 1):
         row = [none] * (n + 1)
@@ -198,6 +211,4 @@ def settle_end(read: str, germ: str, seq_start: int, seq_end: int, ref_start: in
         if i == ci:
             current = row[cj]
         prev = row
-    if current <= none // 2 or best_key is None or best_key[0] - current < _END_GAIN:
-        return seq_end, ref_end
-    return rp + best_cell[0], gp + best_cell[1]
+    return current, best_key, best_cell

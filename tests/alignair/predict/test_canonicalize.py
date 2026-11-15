@@ -30,6 +30,7 @@ def test_a_record_stores_its_post_crop_pre_orientation_input():
 
     from alignair.predict.results import light_record, read_results
     from alignair.predict.state import GeneCall, Predictions
+    from tests.support.read_results import prediction_state
     fwd = "ACGTACGTAC"
     original = _canonicalize(fwd, 1)                  # the read as submitted (reverse-complemented)
     canonical = _canonicalize(original, 1)            # re-oriented back to forward == fwd
@@ -38,7 +39,7 @@ def test_a_record_stores_its_post_crop_pre_orientation_input():
     aligns = {"v": [None], "j": [None]}
     preds = Predictions(allele={}, start={}, end={}, mutation_rate=np.array([0.0]), indel_count=np.array([0.0]),
                         orientation=np.array([1]))
-    (read,) = read_results([canonical], [original], preds, calls, aligns, None, None, None, None, [None])
+    (read,) = read_results(prediction_state([canonical], preds, calls, aligns, reads=[original]), [None])
     record = light_record(read)
     assert record["sequence"] == canonical
     assert record["input_sequence"] == original

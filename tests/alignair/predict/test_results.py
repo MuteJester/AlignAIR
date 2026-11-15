@@ -7,6 +7,7 @@ import pytest
 from alignair.core.d_presence import SHORT
 from alignair.predict.results import Anchors, GeneStatus, light_record, read_results
 from alignair.predict.state import GeneCall, GermlineAlignment, Predictions
+from tests.support.read_results import prediction_state
 
 pytestmark = pytest.mark.component
 
@@ -21,8 +22,8 @@ def _read(*, d_presence, no_v):
     predictions = Predictions(allele={}, start={}, end={}, mutation_rate=np.array([0.05]),
                               indel_count=np.array([0.0]), orientation=np.array([0]),
                               anchors={"v": np.array([10]), "j": np.array([80])}, d_presence=np.array([d_presence]))
-    (read,) = read_results([SEQ], [SEQ], predictions, calls, alignments, np.array([False]), [False], [no_v],
-                           [("V1",)], ["IGH"])
+    (read,) = read_results(prediction_state([SEQ], predictions, calls, alignments, low_quality=np.array([False]),
+                                            no_v=[no_v], v_ties=[("V1",)]), ["IGH"])
     return read
 
 

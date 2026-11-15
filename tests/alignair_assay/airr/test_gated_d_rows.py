@@ -43,7 +43,7 @@ def test_a_file_mixing_rows_with_and_without_d_fields_has_one_header_and_empty_d
     reads = [_product_read(r, D_CLASSES[klass]) for r, klass in zip(found, (0, 1, 2))]
     records = [light_record(read) for read in reads]
     assert not any(key in records[0] for key in D_FIELDS[1:]) and records[0]["d_call"] == ""
-    rows = build_airr(reads, reference, chain="heavy")
+    rows = build_airr(reads, reference, has_d=True)
     path = tmp_path / "gated.tsv"
     ids = ["absent", "short", "callable"]
     write_airr(str(path), ids, [r["sequence"] for r in records], rows)

@@ -48,7 +48,7 @@ def test_the_anchors_put_the_junction_and_cdr3_in_read_coordinates():
     """The junction runs from the V Cys codon to the end of the J Trp codon, in the read; the CDR3 is the junction
     without those two codons."""
     record = _record()
-    row = build_airr([record], _reference(), chain="light")[0]
+    row = build_airr([record], _reference(), has_d=False)[0]
     read, cys = record.sequence, CYS - V_GERM_START
     junction_end = record.genes["j"].alignment.seq_start + J_ANCHOR + 3
     assert (row["junction_start"], row["junction_end"]) == (cys, junction_end)
@@ -60,7 +60,7 @@ def test_the_anchors_put_the_junction_and_cdr3_in_read_coordinates():
 def test_a_v_deletion_before_the_cys_moves_the_junction_with_the_anchor():
     v_part = V_GERM[V_GERM_START:100] + V_GERM[101:]               # one V germline base deleted
     record = _record(v_cigar=f"{100 - V_GERM_START}M1D{len(V_GERM) - 101}M", v_part=v_part)
-    row = build_airr([record], _reference(), chain="light")[0]
+    row = build_airr([record], _reference(), has_d=False)[0]
     read, cys = record.sequence, CYS - V_GERM_START - 1
     assert (row["junction_start"], row["cdr3_start"], row["cdr3_end"]) == (cys, cys + 3, row["junction_end"] - 3)
     assert row["cdr3"] == read[row["cdr3_start"]:row["cdr3_end"]] == row["junction"][3:-3]
@@ -72,7 +72,7 @@ def test_a_written_row_gives_the_cdr3_as_1_based_closed_positions_in_the_read(in
     1-based, closed; the junction is the CDR3 plus the two conserved codons around it."""
     v_part = V_GERM[V_GERM_START:100] + V_GERM[101:] if indel else None
     record = _record(v_cigar=f"{100 - V_GERM_START}M1D{len(V_GERM) - 101}M" if indel else None, v_part=v_part)
-    row = build_airr([record], _reference(), chain="light")[0]
+    row = build_airr([record], _reference(), has_d=False)[0]
     written = _build_row("r", record.sequence, row, "IGH")
     start, end, query = written["cdr3_start"], written["cdr3_end"], written["sequence"]
     assert (start, end) == (row["cdr3_start"] + 1, row["cdr3_end"])

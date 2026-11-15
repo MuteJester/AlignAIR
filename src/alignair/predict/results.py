@@ -18,7 +18,7 @@ from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS
 from ..core.d_presence import ABSENT, CALLABLE, D_CLASSES, D_PRESENCE
 from .clean import NOT_OBSERVED
 from .junction import JunctionCall, derive_junction
-from .state import GeneCall, GermlineAlignment, Predictions
+from .state import GeneCall, GermlineAlignment, PredictionState
 from .v_presence import V_ABSENT, V_PRESENCE
 
 _PLACEMENT = ("sequence_start", "sequence_end", "germline_start", "germline_end", "cigar")
@@ -104,23 +104,22 @@ def _d_status(klass: int) -> GeneStatus:
     return GeneStatus.CALLED if klass == CALLABLE else GeneStatus.ABSENT if klass == ABSENT else GeneStatus.ABSTAINED
 
 
-def read_results(canonical: Sequence[str], reads: Sequence[str], predictions: Predictions, calls: Mapping,
-                 alignments: Mapping, low_quality, cropped, no_v, v_ties, loci: Sequence[str | None]
-                 ) -> list[ReadResult]:
-    """Each read's ``ReadResult`` from the stages' outputs: its forward-frame and input reads, the predictions, each
-    gene's calls and alignments (in ``calls``' gene order), the segmentation's ``low_quality`` flags, the input
-    policy's ``cropped`` flags, ``no_v`` (the reads without a V), the V ``v_ties`` and each read's locus (``loci``).
-    The D is gated on the D presence head when the model has one and calls a D."""
+def read_results(state: PredictionState, loci: Sequence[str | None]) -> list[ReadResult]:
+    """Each read's ``ReadResult`` from the stages' outputs on ``state`` (each gene's calls and alignments in the calls'
+    gene order, the segmentation's low-quality flags, the cropped flags, the reads without a V and the V ties) and each
+    read's locus (``loci``). The D is gated on the D presence head when the model has one and calls a D."""
+    predictions, calls, alignments = state.predictions, state.calls, state.alignments
+    low_quality, no_v, v_ties = state.segments.low_quality, state.no_v, state.v_ties
     genes = list(calls)
     anchors, d_presence = predictions.anchors, predictions.d_presence
     gated_d = d_presence is not None and "d" in genes
     out = []
-    for i, sequence in enumerate(canonical):
+    for i, sequence in enumerate(state.canonical):
         results = {}
         for g in genes:
             call = calls[g][i]
-            listed = v_ties[i] if g == "v" and v_ties is not None and v_ties[i] else tuple(call.names[:1])
-            if g == "v" and no_v is not None and no_v[i]:
+            listed = v_ties[i] if g == "v" and v_ties[i] else tuple(call.names[:1])
+            if g == "v" and no_v[i]:
                 status = GeneStatus.ABSENT
             elif g == "d" and gated_d:
                 status = _d_status(int(d_presence[i]))
@@ -128,14 +127,14 @@ def read_results(canonical: Sequence[str], reads: Sequence[str], predictions: Pr
                 status = GeneStatus.CALLED
             results[g] = GeneResult(call, alignments[g][i], tuple(listed), status)
         out.append(ReadResult(
-            sequence=sequence, input_sequence=reads[i],
+            sequence=sequence, input_sequence=state.reads[i],
             orientation_id=int(predictions.orientation[i]),
             mutation_rate=float(predictions.mutation_rate[i]), indel_count=float(predictions.indel_count[i]),
             genes=results,
             anchors=None if anchors is None else Anchors(*(_anchor(anchors[g][i]) for g in ANCHOR_GENES)),
             d_presence=D_CLASSES[int(d_presence[i])] if gated_d else None,
             low_quality=None if low_quality is None else bool(low_quality[i]),
-            cropped=bool(cropped[i]) if cropped is not None else False, locus=loci[i]))
+            cropped=bool(state.cropped[i]), locus=loci[i]))
     return out
 
 

@@ -1,11 +1,11 @@
 """Typed reads for tests (``make_read``): a ``ReadResult`` from the few fields a test sets, each gene's call one
-allele with likelihood 1."""
+allele with likelihood 1; and the prediction state the ``records`` stage reads (``prediction_state``)."""
 from __future__ import annotations
 
 from collections.abc import Mapping
 
 from alignair.predict.results import Anchors, GeneResult, GeneStatus, ReadResult
-from alignair.predict.state import GeneCall, GermlineAlignment
+from alignair.predict.state import GeneCall, GermlineAlignment, PredictionState, Segments
 
 _D_STATUS = {"absent": GeneStatus.ABSENT, "short": GeneStatus.ABSTAINED, "callable": GeneStatus.CALLED}
 
@@ -30,3 +30,14 @@ def make_read(sequence: str, *, calls: Mapping[str, str] = {}, alignments: Mappi
                       orientation_id=orientation_id, mutation_rate=mutation_rate, indel_count=indel_count,
                       genes=results, anchors=anchors, d_presence=d_presence, low_quality=low_quality,
                       cropped=cropped, locus=locus)
+
+
+def prediction_state(canonical, predictions, calls, alignments, *, reads=None, low_quality=None, no_v=None,
+                     v_ties=None) -> PredictionState:
+    """The state ``predict.results.read_results`` reads: the input reads are ``canonical`` unless ``reads`` is given,
+    none cropped; no read lacks a V or has V ties unless ``no_v`` or ``v_ties`` says so."""
+    n = len(canonical)
+    return PredictionState(context=None, sequences=None, reads=list(canonical if reads is None else reads),
+                           cropped=[False] * n, predictions=predictions, canonical=list(canonical),
+                           segments=Segments({}, {}, low_quality=low_quality), calls=calls, alignments=alignments,
+                           no_v=[False] * n if no_v is None else no_v, v_ties=[()] * n if v_ties is None else v_ties)

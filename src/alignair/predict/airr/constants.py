@@ -10,5 +10,3 @@ IMGT_REGIONS = {
     "cdr2": (165, 195),
     "fwr3": (195, 312),
 }
-
-SHORT_D_SENTINEL = "Short-D"

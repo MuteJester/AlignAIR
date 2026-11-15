@@ -131,9 +131,7 @@ def build_records(state: PredictionState) -> PredictionState:
     context, cfg = state.context, state.context.cfg
     loci = record_loci(state.alignments["v"], context.reference, state.no_v, cfg.loci,
                        read_locus=state.predictions.read_locus)
-    results = read_results(state.canonical, state.reads, state.predictions, state.calls, state.alignments,
-                           state.segments.low_quality, state.cropped, state.no_v, state.v_ties, loci)
-    return replace(state, results=results)
+    return replace(state, results=read_results(state, loci))
 
 
 def build_rows(state: PredictionState) -> PredictionState:
@@ -142,8 +140,7 @@ def build_rows(state: PredictionState) -> PredictionState:
     if not cfg.airr:
         return replace(state, rows=[light_record(result) for result in state.results])
     from .airr import build_airr
-    return replace(state, rows=build_airr(state.results, context.reference,
-                                          chain=("heavy" if cfg.has_d else "light")))
+    return replace(state, rows=build_airr(state.results, context.reference, has_d=cfg.has_d))
 
 
 def called_loci(v_alignments, reference, no_v) -> list[str] | None:

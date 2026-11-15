@@ -18,13 +18,12 @@ from collections.abc import Sequence
 from alignair.errors import InferenceError
 
 from . import quality
-from .alignment import (build_germline_alignment, build_sequence_alignment,
+from .alignment import (GermlineMaps, build_germline_alignment, build_sequence_alignment,
                         compute_alignment_positions, compute_np_regions,
                         extract_segment_alignments, translate_alignment)
 from ...core.d_presence import ABSENT, D_CLASSES, SHORT
 from ...reference.genes import GENES
 from ...reference.loci import FALLBACK_LOCUS
-from .constants import SHORT_D_SENTINEL
 from ..results import ReadResult, light_record
 from .regions import anchor_junction_fields, extract_regions
 
@@ -47,17 +46,6 @@ class AirrAssemblyError(InferenceError):
                          context={"stage": "airr_assembly", "record_id": ident})
 
 
-def _germline_maps(reference):
-    v, j = reference.gene("V"), reference.gene("J")
-    v_gapped = v.gapped or {n: s for n, s in zip(v.names, v.sequences)}
-    j_ung = {n: s for n, s in zip(j.names, j.sequences)}
-    d_ung = {}
-    if "D" in reference.genes:
-        d = reference.gene("D")
-        d_ung = {n: s for n, s in zip(d.names, d.sequences)}
-    return v_gapped, j_ung, d_ung
-
-
 def _partial(out: dict, reason: str) -> dict:
     """Mark a record as a PARTIAL assembly (valid calls, but one or more expected alignment products
     could not be derived) with a machine-readable reason code — never reported as a clean ``ok``."""
@@ -66,18 +54,22 @@ def _partial(out: dict, reason: str) -> dict:
     return out
 
 
-def _build_one(read: ReadResult, light: dict, v_gapped, j_ung, d_ung, chain) -> dict:
+def _first(call_field: str) -> str:
+    """The first allele of a comma-joined call ("" for no call)."""
+    return call_field.split(",")[0]
+
+
+def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bool) -> dict:
     seq = read.sequence
     out = dict(light)                  # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", FALLBACK_LOCUS)          # a read that carries no locus
-    # a D the D presence head gated (predict.results): an absent one is assembled as a read without a D (the
-    # light-chain path: one NP region between V and J); a short one keeps its span and takes the Short-D path for its
-    # germline alignment (the read's bases between V and J), as it has no call
+    # a D the D presence head gated (predict.results): an absent one is assembled as a read without a D (one NP region
+    # between V and J); a short one keeps its span, and its germline alignment is the read's bases between V and J, as
+    # it has no call
     presence = read.d_presence
-    chain = "light" if presence == D_CLASSES[ABSENT] else chain
+    has_d = has_d and presence != D_CLASSES[ABSENT]
+    short_d = presence == D_CLASSES[SHORT]
     d_gene = read.genes.get("d")
-    d_call = (SHORT_D_SENTINEL if presence == D_CLASSES[SHORT]
-              else None if d_gene is None else d_gene.call_field)
     v, d, j = read.genes["v"].placed, None if d_gene is None else d_gene.placed, read.genes["j"].placed
     junction = read.junction()
     predicted_nonproductive = False
@@ -104,21 +96,17 @@ def _build_one(read: ReadResult, light: dict, v_gapped, j_ung, d_ung, chain) -> 
     if read.low_quality:                           # V/J collapsed -> no feasible alignment
         return _partial(out, "collapsed_segment")
 
-    vss, vse, vgs, vge = v.seq_start, v.seq_end, v.germ_start, v.germ_end
-    jss, jse, jgs, jge = j.seq_start, j.seq_end, j.germ_start, j.germ_end
-    dss, dse, dgs, dge = (None, None, None, None) if d is None else (d.seq_start, d.seq_end, d.germ_start, d.germ_end)
-    v_ref_gapped = v_gapped.get(v_call.split(",")[0], "")
+    names = {"v": _first(v_call), "j": _first(read.genes["j"].call_field),
+             "d": "" if d_gene is None else _first(d_gene.call_field)}
+    v_ref_gapped = germlines.v_gapped.get(names["v"], "")
 
-    seq_alignment = build_sequence_alignment(seq, v_ref_gapped, vss, vse, vgs, vge, jse, v_cigar=v.cigar)
-    np1, np2 = compute_np_regions(seq, vse, jss, dss, dse, chain)
-    germ_alignment = build_germline_alignment(seq, v_gapped, j_ung, d_ung, v_call,
-                                              read.genes["j"].call_field, d_call, vge, jgs,
-                                              jge, dgs, dge, np1, np2, vse, jss, chain, j_seq_end=jse,
-                                              d_cigar=None if d is None else d.cigar, j_cigar=j.cigar)
-    positions = compute_alignment_positions(v_ref_gapped, vge, vse, dss, dse, jss, jse, chain)
+    seq_alignment = build_sequence_alignment(seq, v_ref_gapped, v, j.seq_end)
+    np1, np2 = compute_np_regions(seq, v, d, j, has_d)
+    germ_alignment = build_germline_alignment(seq, germlines, names, v, d, j, np1, np2, has_d=has_d, short_d=short_d)
+    positions = compute_alignment_positions(v_ref_gapped, v, d, j, has_d)
     seq_aa = translate_alignment(seq_alignment)
     germ_aa = translate_alignment(germ_alignment)
-    seg = (extract_segment_alignments(seq_alignment, germ_alignment, seq_aa, germ_aa, positions, chain)
+    seg = (extract_segment_alignments(seq_alignment, germ_alignment, seq_aa, germ_aa, positions, has_d)
            if seq_alignment and germ_alignment else {})
     regions = extract_regions(seq_alignment, seq_aa)
 
@@ -134,9 +122,9 @@ def _build_one(read: ReadResult, light: dict, v_gapped, j_ung, d_ung, chain) -> 
                                          seg.get(f"{g}_germline_alignment"))
         if ident is not None:
             out[f"{g}_identity"] = ident
-    if presence == D_CLASSES[SHORT]:
-        # the short D's germline alignment is the read's own bases (the Short-D path): no statistic of a germline it
-        # does not name, only its read alignment
+    if short_d:
+        # the short D's germline alignment is the read's own bases: no statistic of a germline it does not name, only
+        # its read alignment
         out.update(d_identity=None, d_germline_alignment=None, d_germline_alignment_aa=None)
     if not germ_alignment or not seq_alignment:    # ran the math but a core product is missing
         return _partial(out, "incomplete_alignment")
@@ -144,7 +132,7 @@ def _build_one(read: ReadResult, light: dict, v_gapped, j_ung, d_ung, chain) -> 
     return out
 
 
-def build_airr(reads: Sequence[ReadResult], reference, chain: str = "heavy", strict: bool = False) -> list[dict]:
+def build_airr(reads: Sequence[ReadResult], reference, has_d: bool = True, strict: bool = False) -> list[dict]:
     """Assemble full AIRR rows from each read's typed result. Each returned row carries ``airr_assembly_status``:
     ``"complete"`` (all expected products derived), ``"partial"`` (valid calls but a product could not
     be assembled — with a machine-readable ``airr_assembly_reason``), or ``"failed"`` (an exception,
@@ -153,18 +141,17 @@ def build_airr(reads: Sequence[ReadResult], reference, chain: str = "heavy", str
 
     Expected data-edge exceptions become tagged failures; any other exception is a programming defect
     and is re-raised as :class:`AirrAssemblyError` with the record identifier. ``strict=True`` re-raises
-    even the expected data failures (used to gate release fixtures / tests that must assemble cleanly)."""
-    v_gapped, j_ung, d_ung = _germline_maps(reference)
-    # per-record chain: a multi-chain union may mix loci, so assemble each record with ITS locus's
-    # has-D / heavy-vs-light policy rather than one global chain.
+    even the expected data failures (used to gate release fixtures / tests that must assemble cleanly). ``has_d``
+    says whether a read of a locus the reference does not describe is assembled with a D."""
+    germlines = GermlineMaps.of(reference)
+    # each read is assembled with its own locus's D: a reference of several loci may mix loci with and without one
     locus_hasd = {l.locus: l.has_d for l in getattr(reference, "loci", [])}
     out = []
     for i, read in enumerate(reads):
         ident = f"record[{i}]"
         light = light_record(read)
-        rec_chain = ("heavy" if locus_hasd[read.locus] else "light") if read.locus in locus_hasd else chain
         try:
-            row = _build_one(read, light, v_gapped, j_ung, d_ung, rec_chain)
+            row = _build_one(read, light, germlines, locus_hasd.get(read.locus, has_d))
             row.setdefault("airr_assembly_status", "complete")   # _build_one sets complete/partial
             out.append(row)
         except _EXPECTED_ASSEMBLY_ERRORS as e:

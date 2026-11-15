@@ -51,27 +51,25 @@ def validate(genotype_set: dict) -> list:
     return _validate_structural(genotype_set)
 
 
+# Each Genotype's lists of objects: the list's key and its objects' type (in _REQUIRED).
+_GENOTYPE_LISTS = (("documented_alleles", "DocumentedAllele"), ("undocumented_alleles", "UndocumentedAllele"),
+                   ("deleted_genes", "DeletedGene"))
+
+
+def _missing(obj: dict, kind: str) -> list[str]:
+    """``<kind> missing <key>`` for each key ``_REQUIRED`` lists for ``kind`` that ``obj`` lacks."""
+    return [f"{kind} missing {k}" for k in _REQUIRED[kind] if k not in obj]
+
+
 def _validate_structural(gs: dict) -> list:
-    errors: list[str] = []
-    for k in _REQUIRED["GenotypeSet"]:
-        if k not in gs:
-            errors.append(f"GenotypeSet missing {k}")
+    errors = _missing(gs, "GenotypeSet")
     for gt in gs.get("genotype_class_list", []):
-        for k in _REQUIRED["Genotype"]:
-            if k not in gt:
-                errors.append(f"Genotype missing {k}")
+        errors += _missing(gt, "Genotype")
         if "locus" in gt and gt["locus"] not in _LOCI:
             errors.append(f"Genotype invalid locus {gt.get('locus')!r}")
         if "inference_process" in gt and gt["inference_process"] not in _INFERENCE:
             errors.append(f"Genotype invalid inference_process {gt.get('inference_process')!r}")
-        for da in gt.get("documented_alleles", []):
-            if "label" not in da:
-                errors.append("DocumentedAllele missing label")
-        for ua in gt.get("undocumented_alleles", []):
-            for k in _REQUIRED["UndocumentedAllele"]:
-                if k not in ua:
-                    errors.append(f"UndocumentedAllele missing {k}")
-        for dg in gt.get("deleted_genes", []):
-            if "label" not in dg:
-                errors.append("DeletedGene missing label")
+        for key, kind in _GENOTYPE_LISTS:
+            for obj in gt.get(key, []):
+                errors += _missing(obj, kind)
     return errors
