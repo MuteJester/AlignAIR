@@ -7,7 +7,7 @@ import GenAIRR.data as gd
 
 from alignair.core import AlignAIR, AlignAIRConfig
 from alignair.errors import ConfigurationError
-from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.core.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import ReferenceSet
 from alignair.core.tokens import TOKEN_DICT
 

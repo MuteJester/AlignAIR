@@ -23,7 +23,7 @@ class RawSequenceRecord(NamedTuple):
 
 
 @contextmanager
-def _open_text(path):
+def open_text(path):
     if path == "-":
         yield sys.stdin
     else:
@@ -132,7 +132,7 @@ def iter_sequence_records(path: str | os.PathLike[str], *, format: str = "auto",
     if not isinstance(path, str):
         raise ConfigurationError("sequence input path must be text")
     try:
-        with _open_text(path) as stream:
+        with open_text(path) as stream:
             lines = enumerate(stream, 1)
             first = next((item for item in lines if item[1].strip()), None)
             if first is None:

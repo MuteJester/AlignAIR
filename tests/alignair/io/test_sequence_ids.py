@@ -3,7 +3,7 @@ from itertools import product
 
 import pytest
 
-from alignair.data.identity import UniqueSequenceIds
+from alignair.io.sequence_ids import UniqueSequenceIds
 from alignair.errors import DataContractError
 
 pytestmark = pytest.mark.component

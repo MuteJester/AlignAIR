@@ -360,8 +360,8 @@ def run(args) -> int:
             pool = ProcessPool(aligner, args.threads)
         else:
             torch.set_num_threads(args.threads)
-    from ..aligner import _auto_batch_size
-    args.batch_size = args.batch_size or _auto_batch_size(device, pool.workers if pool is not None else 1)
+    from ..aligner import auto_batch_size
+    args.batch_size = args.batch_size or auto_batch_size(device, pool.workers if pool is not None else 1)
 
     # 2) stream reader-chunk -> predict -> assemble -> join -> write, in bounded memory (~chunk_size)
     from ..io.airr import needs_assembly

@@ -6,7 +6,7 @@ import torch
 
 from alignair import Aligner
 from alignair.api import predict_sequences
-from alignair.core.orientations import orient
+from alignair.core.orientation import orient
 from alignair.errors import InputError
 
 pytestmark = pytest.mark.component

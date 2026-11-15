@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
-from ..network.orientation import NUM_ORIENTATIONS, apply_orientation
+from ..core.orientation import NUM_ORIENTATIONS, apply_orientation
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, CODON
 from ..core.d_presence import ABSENT, D_PRESENCE
 from ..core.boundaries import read_window

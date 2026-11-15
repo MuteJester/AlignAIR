@@ -3,8 +3,8 @@ import time
 
 
 def contend(path, backend, ready, start, active, peak, finished):
-    from alignair.registry.cache import _excl_lock, _lock
-    lock = _excl_lock if backend == "portable" else _lock
+    from alignair.registry.cache import _excl_lock, cache_lock
+    lock = _excl_lock if backend == "portable" else cache_lock
     ready.put(True)
     if not start.wait(15):
         raise TimeoutError("parent did not release the contention barrier")

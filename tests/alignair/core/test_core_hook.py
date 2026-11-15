@@ -8,7 +8,7 @@ import GenAIRR.data as gd
 from alignair.core import AlignAIR, AlignAIRConfig, ModelComponents, prepare_model, register_architecture
 from alignair.core import components
 from alignair.errors import ConfigurationError
-from alignair.network.orientation import apply_orientation
+from alignair.core.orientation import apply_orientation
 from alignair.reference.reference_set import ReferenceSet
 from alignair.tasks.alignment import build_tasks
 

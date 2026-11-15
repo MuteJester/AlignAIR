@@ -13,7 +13,7 @@ import sys
 import time
 
 from . import sources
-from .cache import _version_key, cache_root, installed_models
+from .cache import version_key, cache_root, installed_models
 
 
 def _registry_cache_path(src: str):
@@ -58,7 +58,7 @@ def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool
                 latest = models.get(mid, {}).get("latest")
                 if not latest or latest in vers:
                     continue
-                if _version_key(latest) > _version_key(max(vers, key=_version_key)):
+                if version_key(latest) > version_key(max(vers, key=version_key)):
                     trained = models[mid].get("versions", {}).get(latest, {}).get("trained", "")
                     when = f" ({trained})" if trained else ""
                     print(f"ℹ {mid} {latest}{when} available — run: alignair models update {mid}",

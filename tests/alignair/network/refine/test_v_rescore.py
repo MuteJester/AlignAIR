@@ -7,7 +7,7 @@ import torch
 
 from alignair.core.tokens import TOKEN_DICT
 
-from alignair.refine.vrescore import GAP_COST, banded_scores
+from alignair.network.refine.v_rescore import GAP_COST, banded_scores
 
 pytestmark = pytest.mark.component
 
@@ -70,8 +70,8 @@ def _reference_band_dp(pair, active):
 def test_the_band_recursion_is_the_base_by_base_definition():
     """Pair scores from matches to the outside penalty and bases outside the span (inactive steps) included: the
     recursion's scores are the definition's."""
-    from alignair.refine.ratios import OUTSIDE
-    from alignair.refine.vrescore import band_dp
+    from alignair.network.refine.ratios import OUTSIDE
+    from alignair.network.refine.v_rescore import band_dp
     torch.manual_seed(0)
     pair = torch.randn(3, 2, 40, 17) * 2
     pair[0, :, :5] = OUTSIDE
@@ -103,8 +103,8 @@ def _random_band_inputs(seed, batch=24, candidates=5, length=120, row_length=110
 
 @pytest.mark.parametrize("seed", range(6))
 def test_the_compiled_band_gives_the_torch_band_scores_bit_for_bit(seed):
-    pytest.importorskip("alignair.refine._vband_cy")
-    from alignair.refine import vrescore
+    pytest.importorskip("alignair.network.refine._vband_cy")
+    from alignair.network.refine import v_rescore as vrescore
     inputs = _random_band_inputs(seed)
     assert vrescore.VBAND_BACKEND == "cython"
     assert torch.equal(vrescore.banded_scores(*inputs), vrescore._torch_banded_scores(*inputs))
@@ -112,8 +112,8 @@ def test_the_compiled_band_gives_the_torch_band_scores_bit_for_bit(seed):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="no CUDA device")
 def test_the_compiled_band_takes_and_returns_the_reads_device_with_the_torch_band_scores():
-    pytest.importorskip("alignair.refine._vband_cy")
-    from alignair.refine import vrescore
+    pytest.importorskip("alignair.network.refine._vband_cy")
+    from alignair.network.refine import v_rescore as vrescore
     inputs = [x.cuda() for x in _random_band_inputs(0)]
     scores = vrescore.banded_scores(*inputs)
     assert scores.device == inputs[0].device
@@ -128,7 +128,7 @@ def test_the_v_rescore_keeps_a_small_locus_calls_in_it():
 
     from alignair.core.anchors import ANCHOR_LOGITS
     from alignair.network.scan import OUT
-    from alignair.refine.vrescore import rescore_v
+    from alignair.network.refine.v_rescore import rescore_v
     read = V1[10:]
     length = len(read) + 1
     rows = torch.cat([_tokens(V2)] * 3 + [_tokens(V1)] * 3)                      # 3 in the locus, 3 outside

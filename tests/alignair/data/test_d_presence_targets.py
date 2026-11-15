@@ -11,7 +11,7 @@ import torch
 from alignair.core import AlignAIRConfig
 from alignair.core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
 from alignair.data import NucleotideBatchAdapter
-from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.core.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 # a 37-nt read: V [2, 12), N1 [12, 14), D [14, 24), N2 [24, 26), J [26, 35)

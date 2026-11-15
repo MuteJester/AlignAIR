@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from alignair.core.d_presence import ABSENT, D_PRESENCE_LOGITS
-from alignair.refine.locus import read_loci, restrict_to_locus
+from alignair.network.refine.locus import read_loci, restrict_to_locus
 
 pytestmark = pytest.mark.component
 

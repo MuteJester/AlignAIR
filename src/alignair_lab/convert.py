@@ -95,7 +95,7 @@ def run_convert(args) -> int:
         return report_error(error)
     v3 = _v3_architecture(args.src)
     if v3 is not None:
-        return report_error(serialize._v3_refusal(v3))
+        return report_error(serialize.v3_refusal(v3))
     if lab_config_from_bytes(container.read_section(args.src, "config")).architecture not in LAB_CHIPS:
         return report_error(ConfigurationError(
             f"{args.src} is not a lab chip model file", context={"path": args.src},

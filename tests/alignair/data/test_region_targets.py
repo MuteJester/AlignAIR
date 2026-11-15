@@ -10,7 +10,7 @@ import torch
 from alignair.core import AlignAIRConfig, prepare_model
 from alignair.core.regions import REGIONS as REGION_NAMES
 from alignair.data import NucleotideBatchAdapter
-from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.core.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 CLASS = {name: k for k, name in enumerate(REGION_NAMES)}

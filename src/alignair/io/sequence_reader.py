@@ -12,15 +12,15 @@ from operator import index
 import os
 from typing import List, Tuple
 
-from ..data.identity import UniqueSequenceIds
+from .sequence_ids import UniqueSequenceIds
 from ..data.inputs import normalize_file_read
 from ..errors import ConfigurationError
-from .sequence_records import _open_text, detect_sequence_format, iter_sequence_records
+from .sequence_records import open_text, detect_sequence_format, iter_sequence_records
 
 def _detect_format(path: str, seq_column: str | None = None) -> str:
     if path == "-":
         return "stdin"
-    with _open_text(os.fspath(path)) as stream:
+    with open_text(os.fspath(path)) as stream:
         head = next((line for line in stream if line.strip()), "")
     return detect_sequence_format(os.fspath(path), head, seq_column)
 

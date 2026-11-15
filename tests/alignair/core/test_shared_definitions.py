@@ -4,11 +4,11 @@ import torch
 
 from alignair.core.config import AlignAIRConfig
 from alignair.reference.genes import GENES, model_genes
-from alignair.core.orientations import (COMPLEMENT, FORWARD, NUM_ORIENTATIONS, ORIENTATIONS, REVERSE,
+from alignair.core.orientation import (COMPLEMENT, FORWARD, NUM_ORIENTATIONS, ORIENTATIONS, REVERSE,
                                         REVERSE_COMPLEMENT, orient, reverse_complement)
 from alignair.core.tokens import (BASES, COMPLEMENT_TOKENS, DEFAULT_WINDOW, IGNORE_INDEX, N, PAD, TOKEN_DICT,
                                   VOCAB_SIZE, encode, is_base)
-from alignair.network.orientation import apply_orientation
+from alignair.core.orientation import apply_orientation
 from alignair.predict.config import PredictConfig
 
 pytestmark = pytest.mark.component

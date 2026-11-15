@@ -17,12 +17,12 @@ from .config import AlignAIRConfig
 
 
 def _embedding(cfg):
-    from ..network.embedding import TokenAndPositionEmbedding
+    from .embedding import TokenAndPositionEmbedding
     return TokenAndPositionEmbedding(cfg.vocab_size, cfg.embed_dim, cfg.max_seq_length)
 
 
 def _orientation(cfg):
-    from ..network.orientation import EmbeddingOrientationHead
+    from .orientation import EmbeddingOrientationHead
     return EmbeddingOrientationHead(cfg.embed_dim)
 
 
@@ -71,7 +71,7 @@ _ARCHITECTURES = {"chip-v1": CHIP}
 ARCHITECTURE_MODULES = "ALIGNAIR_ARCHITECTURE_MODULES"
 
 
-def _build_component(factory, *arguments, component):
+def build_component(factory, *arguments, component):
     """Validate a factory result at its construction boundary without running a dummy forward."""
     with error_context(stage="model_construction", component=component):
         module = factory(*arguments)

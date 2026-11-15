@@ -40,7 +40,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from alignair.api import load_model
-from alignair.network.orientation import NUM_ORIENTATIONS
+from alignair.core.orientation import NUM_ORIENTATIONS
 from alignair.predict import PredictConfig
 from alignair.predict.clean import expectations
 from alignair.predict.pipeline import PIPELINE, STAGE_NAMES, Trace, run_stages

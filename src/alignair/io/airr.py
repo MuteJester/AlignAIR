@@ -3,7 +3,7 @@ gene's equivalence set (``*_call_set``), the read's orientation and input, and t
 from __future__ import annotations
 
 from alignair.reference.genes import GENES
-from alignair.core.orientations import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
+from alignair.core.orientation import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
 from alignair.errors import DataContractError
 from alignair.reference.reference_set import FALLBACK_LOCUS
 

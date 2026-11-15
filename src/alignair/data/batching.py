@@ -62,7 +62,7 @@ class BatchAdapter(Protocol):
     def __call__(self, samples: Sequence) -> TrainingBatch: ...
 
 
-def _width(value) -> int:
+def positive_width(value) -> int:
     try:
         if isinstance(value, bool) or index(value) <= 0:
             raise ValueError
@@ -78,7 +78,7 @@ def pad_vectors(vectors, *, width=None, dtype=torch.long, padding=0) -> torch.Te
         if value.ndim != 1 or value.device.type != "cpu":
             raise DataContractError("batch vectors must be one-dimensional CPU tensors",
                                     context={"record_index": i})
-    length = max((value.numel() for value in values), default=0) if width is None else _width(width)
+    length = max((value.numel() for value in values), default=0) if width is None else positive_width(width)
     result = torch.full((len(values), length), padding, dtype=dtype)
     for i, value in enumerate(values):
         if value.numel() > length:
@@ -94,7 +94,7 @@ def collate_samples(samples: Sequence[TrainingSample], *, max_length=None, devic
     samples = list(samples)
     if not samples:
         raise TrainingDataError("cannot collate an empty training batch")
-    width = _width(max_length) if max_length is not None else None
+    width = positive_width(max_length) if max_length is not None else None
     rows = []
     fields = set(samples[0].targets)
     for i, sample in enumerate(samples):

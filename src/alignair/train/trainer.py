@@ -9,7 +9,7 @@ from ..errors import ConfigurationError, error_context
 from ..data.training import prepare_training_data
 from ..core.setup import ModelSetup
 from ..core.runtime import restore_model_state
-from ..genairr.identity import _recorded_genairr_source
+from ..genairr.identity import recorded_genairr_source
 from ..tasks import TrainingTasks, build_tasks
 from .gym.curriculum.base import INDEL_FRACTION
 from .gym.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
@@ -189,7 +189,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                    "data_workers": data_workers,
                    "init_seed": init_seed, "grad_clip": grad_clip,
                    "started_from": "resume" if resume_from else "init_from" if init_from else None,
-                   "genairr_source_sha256": _recorded_genairr_source()}
+                   "genairr_source_sha256": recorded_genairr_source()}
     if novel_alleles is not None:
         _train_args["novel_alleles"] = novel_alleles.to_dict()
     if requested_policy.inverted_d:

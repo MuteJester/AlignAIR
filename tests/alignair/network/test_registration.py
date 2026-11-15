@@ -20,7 +20,7 @@ def test_chip_v1_builds_the_chip_with_the_configured_trunk_width():
 
 
 def test_the_product_network_imports_neither_the_lab_nor_the_assay():
-    code = ("import sys, alignair.network.chip, alignair.network.objective, alignair.refine.vrescore; "
+    code = ("import sys, alignair.network.chip, alignair.network.objective, alignair.network.refine.v_rescore; "
             "print(sorted({m.split('.')[0] for m in sys.modules if m.startswith(('alignair_lab', 'alignair_assay'))}))")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]"

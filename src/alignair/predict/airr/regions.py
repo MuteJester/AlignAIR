@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ...data.projection import translate_nt
+from .translate import translate_nt
 from .constants import IMGT_REGIONS
 
 _FWR_CDR = ("fwr1", "cdr1", "fwr2", "cdr2", "fwr3")

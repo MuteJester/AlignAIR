@@ -16,7 +16,7 @@ import torch
 
 from alignair.core import AlignAIRConfig
 from alignair.data import NucleotideBatchAdapter
-from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
+from alignair.core.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 # a 30-nt read: V [2, 12) with the Cys codon at 9, N1 [12, 14), D [14, 17), N2 [17, 19), J [19, 28) with the Trp

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import re
 
 from ..errors import TrainingDataError
-from .coordinates import _coordinate
+from .coordinates import parse_coordinate
 
 _CIGAR = re.compile(r"([1-9][0-9]*)([MIDNSHP=X])")
 
@@ -43,8 +43,8 @@ def query_reference_map(cigar, query_span, reference_span) -> QueryReferenceMap:
     replaced by an offset-only alignment, even when the two spans happen to have equal lengths.
     """
     try:
-        qs, qe = map(_coordinate, query_span)
-        rs, re_ = map(_coordinate, reference_span)
+        qs, qe = map(parse_coordinate, query_span)
+        rs, re_ = map(parse_coordinate, reference_span)
         if not 0 <= qs <= qe or not 0 <= rs <= re_:
             raise ValueError
     except (TypeError, ValueError, OverflowError) as exc:

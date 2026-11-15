@@ -35,7 +35,7 @@ def _config_fields() -> frozenset:
     return frozenset(field.name for field in dataclasses.fields(AlignAIRConfig))
 
 
-def _v3_refusal(architecture: str) -> ModelError:
+def v3_refusal(architecture: str) -> ModelError:
     return ModelError(f"this is an AlignAIR 3 model (architecture {architecture!r}); AlignAIR 4 reads chip models "
                       "only — use alignair<4 to run it", context={"architecture": architecture},
                       hint="pip install 'alignair<4' runs it.")
@@ -78,7 +78,7 @@ def config_from_bytes(b: bytes) -> AlignAIRConfig:
     raw = json.loads(b.decode("utf-8"))
     architecture = raw.get("architecture", V3_ARCHITECTURE)
     if architecture == V3_ARCHITECTURE:
-        raise _v3_refusal(architecture)
+        raise v3_refusal(architecture)
     raw = _without_retired_v4_settings(raw, architecture)
     unknown = sorted(set(raw) - _config_fields())
     if unknown and set(unknown) <= RETIRED_V3_FIELDS:

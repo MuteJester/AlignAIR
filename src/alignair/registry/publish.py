@@ -20,7 +20,7 @@ from pathlib import Path
 
 from ..errors import MissingDependencyError, RegistryError
 from ..model_file import read_metadata
-from .cache import _lock, _version_key
+from .cache import cache_lock, version_key
 from .hf import hf_token
 from .sources import DEFAULT_REGISTRY
 from .validate import validate_registry
@@ -46,7 +46,7 @@ def publish_local(artifact_path: str, model_id: str, version: str, registry_dir:
              for name, source in (companions or {}).items()}
     # per-registry lock: serialize concurrent publishers so they can't clobber each other's staged/tmp
     # files or lose each other's registry updates. Process-unique staging paths as well.
-    with _lock(registry_dir / "registry.json.lock"):
+    with cache_lock(registry_dir / "registry.json.lock"):
         return _publish_locked(data, md, model_id, version, registry_dir, rel, final,
                                description, entry_extra, extra)
 
@@ -79,7 +79,7 @@ def _publish_locked(data, md, model_id, version, registry_dir, rel, final, descr
             {"schema": "alignair.registry.v1", "models": {}}
         m = reg["models"].setdefault(model_id, {"versions": {}})
         m["versions"][version] = entry
-        m["latest"] = max(m["versions"], key=_version_key)
+        m["latest"] = max(m["versions"], key=version_key)
         if description or md.get("description"):
             m.setdefault("description", description or md.get("description"))
         for k in ("species", "receptor", "locus"):

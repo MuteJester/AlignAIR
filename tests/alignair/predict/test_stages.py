@@ -11,7 +11,7 @@ import pytest
 from alignair.errors import InferenceError, InputError
 from alignair.predict import PredictConfig
 from alignair.predict.pipeline import PIPELINE, STAGE_NAMES, Stage, Trace, predict, run_stages
-from alignair.core.orientations import orient
+from alignair.core.orientation import orient
 from alignair.predict.state import PER_READ_FIELDS, GeneCall, PredictionState, Predictions, Segments
 from tests.alignair.predict.golden_rows import FIXTURE, golden_model
 

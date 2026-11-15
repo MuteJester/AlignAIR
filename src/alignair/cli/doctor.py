@@ -50,16 +50,16 @@ def diagnostics() -> dict:
         pass
     try:    # the two kernels: each compiled (Cython) when built, else its pure-Python / torch fallback
         from ..predict.heuristic_matcher import DERIVE_BACKEND
-        from ..refine.vrescore import VBAND_BACKEND
+        from ..network.refine.v_rescore import VBAND_BACKEND
         info["derive_backend"] = DERIVE_BACKEND
         info["vband_backend"] = VBAND_BACKEND
     except Exception:                                  # noqa: BLE001
         pass
     try:
         from ..registry.cache import cache_root
-        from ..registry.sources import _config_dir
+        from ..registry.sources import config_dir
         info["cache_dir"] = str(cache_root())
-        info["config_dir"] = _config_dir()
+        info["config_dir"] = config_dir()
     except Exception:                                  # noqa: BLE001
         pass
     return info

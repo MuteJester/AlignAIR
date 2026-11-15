@@ -31,7 +31,7 @@ def genairr_source_sha256() -> str:
     return tree_sha256(str(Path(GenAIRR.__file__).resolve().parent))
 
 
-def _recorded_genairr_source() -> str | None:
+def recorded_genairr_source() -> str | None:
     """``genairr_source_sha256()``, or None, said on one line, when a file of the package cannot be read: the digest
     is provenance, and never fails a run."""
     try:

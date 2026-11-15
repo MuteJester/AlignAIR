@@ -5,7 +5,7 @@ import numpy as np
 
 from alignair.io.airr import _cigar
 from alignair.io.airr_validate import cigar_query_length
-from alignair.core.orientations import orient as _canonicalize
+from alignair.core.orientation import orient as _canonicalize
 from alignair.predict.threshold import select_alleles
 
 pytestmark = pytest.mark.component

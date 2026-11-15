@@ -10,7 +10,7 @@ from dataclasses import replace
 
 import numpy as np
 
-from ..core.orientations import NUM_ORIENTATIONS, orient
+from ..core.orientation import NUM_ORIENTATIONS, orient
 from ..data.inputs import prepare_nucleotide_inputs
 from ..errors import InputError
 from .clean import clean

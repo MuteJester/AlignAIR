@@ -126,7 +126,7 @@ def _excl_lock(path: Path, *, timeout: float = 600.0, stale_after: float = 3600.
 
 
 @contextlib.contextmanager
-def _lock(path: Path):
+def cache_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         import fcntl
@@ -144,7 +144,7 @@ def _lock(path: Path):
 
 def _open_stream(source: str, relpath: str, offline: bool, revision: str = "main"):
     url = registry_sources.artifact_url(source, relpath, revision=revision)
-    local = registry_sources._local_path(url)
+    local = registry_sources.local_path(url)
     if local is not None:
         return open(local, "rb")
     if offline:
@@ -159,7 +159,7 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
     a present, matching ``dest`` is returned without re-downloading."""
     dest = Path(dest)
     part = dest.with_name(dest.name + ".part")
-    with _lock(dest.with_name(dest.name + ".lock")):
+    with cache_lock(dest.with_name(dest.name + ".lock")):
         if dest.exists() and (expected_sha256 is None or sha256_file(dest) == expected_sha256):
             _write_sidecar(dest, expected_sha256)                 # record hash for later offline checks
             return dest
@@ -272,13 +272,13 @@ def installed_models() -> dict[str, list[str]]:
         return out
     for d in sorted(root.iterdir()):
         if d.is_dir():
-            vers = sorted((p.name[: -len(".alignair")] for p in d.glob("*.alignair")), key=_version_key)
+            vers = sorted((p.name[: -len(".alignair")] for p in d.glob("*.alignair")), key=version_key)
             if vers:
                 out[d.name] = vers
     return out
 
 
-def _version_key(v: str):
+def version_key(v: str):
     try:
         return (0, tuple(int(x) for x in v.split(".")))
     except ValueError:

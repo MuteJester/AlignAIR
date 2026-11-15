@@ -1,5 +1,5 @@
 import pytest
-from alignair.data.projection import CODON_TABLE, translate_nt
+from alignair.predict.airr.translate import CODON_TABLE, translate_nt
 
 pytestmark = pytest.mark.component
 

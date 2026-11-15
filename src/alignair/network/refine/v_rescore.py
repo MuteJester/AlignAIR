@@ -24,8 +24,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from ..core.anchors import ANCHOR_LOGITS
-from ..core.tokens import is_base
+from ...core.anchors import ANCHOR_LOGITS
+from ...core.tokens import is_base
 from .ratios import OUTSIDE, RATE, pair_ratios
 
 BAND = 8                    # bases of net insertion or deletion the band holds

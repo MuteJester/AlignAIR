@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from alignair.network.parser import IMPOSSIBLE, expected_slot
-from alignair.refine.ratios import OUTSIDE, RATE, pair_ratios
+from alignair.network.refine.ratios import OUTSIDE, RATE, pair_ratios
 
 pytestmark = pytest.mark.component
 

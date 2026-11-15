@@ -21,8 +21,8 @@ from __future__ import annotations
 import torch
 from torch.nn import functional as F
 
-from ..core.tokens import is_base
-from ..network.scan import allele_log_posterior
+from ...core.tokens import is_base
+from ..scan import allele_log_posterior
 from .ratios import RATE, pair_ratios
 
 FLANK = 6                  # bases on each side of the V end and J start the junction keeps

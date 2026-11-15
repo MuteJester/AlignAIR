@@ -1,10 +1,10 @@
 """Build the optional Cython extension. All package metadata lives in ``pyproject.toml``; this shim
 exists only to declare + compile the germline-CIGAR kernel (``alignair.predict._derive_cy``) and the V re-score's band
-kernel (``alignair.refine._vband_cy``).
+kernel (``alignair.network.refine._vband_cy``).
 
 The extensions are *best-effort*: if Cython or a C compiler is unavailable, the build is skipped and the
 package falls back to the identical pure-Python / torch implementations at import time (see
-``alignair.predict.heuristic_matcher.DERIVE_BACKEND`` and ``alignair.refine.vrescore.VBAND_BACKEND``). Binary
+``alignair.predict.heuristic_matcher.DERIVE_BACKEND`` and ``alignair.network.refine.v_rescore.VBAND_BACKEND``). Binary
 wheels built in CID (cibuildwheel) ship the compiled kernels; a plain source install still works everywhere.
 """
 from setuptools import Extension, setup
@@ -34,7 +34,7 @@ def _ext_modules():
         return []
     return cythonize(
         [Extension("alignair.predict._derive_cy", ["src/alignair/predict/_derive_cy.pyx"]),
-         Extension("alignair.refine._vband_cy", ["src/alignair/refine/_vband_cy.pyx"])],
+         Extension("alignair.network.refine._vband_cy", ["src/alignair/network/refine/_vband_cy.pyx"])],
         compiler_directives={"language_level": "3"},
     )
 

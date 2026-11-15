@@ -5,7 +5,7 @@ from ..reference.genes import GENES
 from ..errors import TrainingDataError
 
 
-def _coordinate(value):
+def parse_coordinate(value):
     # Native simulator integers and serialized integer strings are supported.
     # int(1.9) and int(True) would silently turn invalid annotations into labels.
     if isinstance(value, bool):
@@ -23,7 +23,7 @@ def query_spans(record):
         if values == [None, None]:
             continue
         try:
-            start, end = map(_coordinate, values)
+            start, end = map(parse_coordinate, values)
             if not 0 <= start <= end <= length:
                 raise ValueError("query coordinates outside the read")
         except (TypeError, ValueError, OverflowError) as exc:
@@ -48,7 +48,7 @@ def segment_spans(record):
                 hint="Inspect the simulator record and coordinate contract; no germline coordinates were inferred."
             ) from KeyError(gene)
         try:
-            gs, ge = map(_coordinate, values)
+            gs, ge = map(parse_coordinate, values)
             if not 0 <= gs <= ge:
                 raise ValueError("invalid germline coordinates")
         except (TypeError, ValueError, OverflowError) as exc:

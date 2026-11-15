@@ -14,10 +14,10 @@ import torch.nn as nn
 
 from .config import AlignAIRConfig
 from .boundaries import boundary_masks
-from .components import _build_component, architecture_components
+from .components import build_component, architecture_components
 from ..errors import ConfigurationError
 from .runtime import restore_model_state
-from ..network.orientation import BankOrientation, apply_orientation
+from .orientation import BankOrientation, apply_orientation
 
 
 class AlignAIR(nn.Module):
@@ -27,10 +27,10 @@ class AlignAIR(nn.Module):
             raise ConfigurationError("model construction requires an AlignAIRConfig", context={"field": "config"})
         cfg = self.cfg = deepcopy(cfg)
         components = architecture_components(cfg.architecture)
-        self.embedding = _build_component(components.embedding, cfg, component="embedding")
-        self.orientation_head = _build_component(components.orientation_head, cfg, component="orientation_head")
+        self.embedding = build_component(components.embedding, cfg, component="embedding")
+        self.orientation_head = build_component(components.orientation_head, cfg, component="orientation_head")
         self.bank_orientation = BankOrientation() if cfg.bank_orientation else None
-        self.core = _build_component(components.core, cfg, component="core")
+        self.core = build_component(components.core, cfg, component="core")
 
     @classmethod
     def from_state_dict(cls, cfg: AlignAIRConfig, state_dict: Mapping[str, object], *,

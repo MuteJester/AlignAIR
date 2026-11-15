@@ -5,7 +5,7 @@ import torch
 
 from alignair.core.tokens import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
-from alignair.core.orientations import reverse_complement
+from alignair.core.orientation import reverse_complement
 from alignair.network.bank import BankCompiler
 from alignair.network.scan import OUT, BankScan, allele_log_posterior
 

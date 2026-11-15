@@ -23,10 +23,10 @@ from __future__ import annotations
 
 import torch
 
-from ..core.anchors import ANCHOR_LOGITS
-from ..core.tokens import is_base
+from ...core.anchors import ANCHOR_LOGITS
+from ...core.tokens import is_base
 
-from ..network.parser import expected_slot
+from ..parser import expected_slot
 from .ratios import OUTSIDE, RATE, pair_ratios
 
 WINDOW = 24               # bases from the anchor whose evidence counts

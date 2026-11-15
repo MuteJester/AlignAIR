@@ -22,9 +22,9 @@ from __future__ import annotations
 import torch
 from torch.nn import functional as F
 
-from ..core.tokens import is_base
-from ..network.parser import IMPOSSIBLE, expected_slot
-from .dlocal import junction, junction_bounds
+from ...core.tokens import is_base
+from ..parser import IMPOSSIBLE, expected_slot
+from .d_local import junction, junction_bounds
 from .ratios import OUTSIDE, RATE, pair_ratios
 
 MIN_SCORE = 0.0            # the best stretch a read's junction needs on its called allele for the D to be refined

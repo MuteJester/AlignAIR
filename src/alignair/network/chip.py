@@ -42,11 +42,11 @@ from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
 from ..core.boundaries import width_bucket
 from ..core.d_presence import D_PRESENCE_LOGITS
 from ..errors import ConfigurationError
-from ..refine.boundaries import refine_boundaries
-from ..refine.dlocal import local_d_log_posterior
-from ..refine.drefine import refine_d_boundaries
-from ..refine.locus import read_loci, restrict_to_locus
-from ..refine.vrescore import rescore_v
+from .refine.vj_boundaries import refine_boundaries
+from .refine.d_local import local_d_log_posterior
+from .refine.d_boundaries import refine_d_boundaries
+from .refine.locus import read_loci, restrict_to_locus
+from .refine.v_rescore import rescore_v
 from .bank import BankCompiler
 from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser, expected_slot
 from .presence import D_LENGTH_SCALE, DPresenceEvidence

@@ -22,7 +22,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from ..core.orientations import reverse_complement
+from ..core.orientation import reverse_complement
 from ..core.tokens import BASES
 from ..reference.frames import gene_frames
 

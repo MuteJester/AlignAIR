@@ -9,7 +9,7 @@ import torch
 
 from ..core.tokens import encode
 from ..errors import InputError, error_context
-from .batching import _width, pad_vectors
+from .batching import positive_width, pad_vectors
 
 BASES = frozenset("ACGTN")
 # The IUPAC ambiguity codes: read as N, and not counted as unusable characters.
@@ -71,7 +71,7 @@ def prepare_nucleotide_inputs(sequences, max_length: int) -> tuple[list[str], li
     positive integer, before any read is read; an InputError for a batch that is a bare value or is empty, and for a
     read that is not a string or is empty (named ``seq_<index>``; no read after it is read)."""
     with error_context(field="max_length"):
-        window = _width(max_length)
+        window = positive_width(max_length)
     reads, cropped = [], []
     for index, value in enumerate(sequence_batch_iterator(sequences)):
         with error_context(stage="sequence_input_validation", record_index=index, record_id=f"seq_{index}"):

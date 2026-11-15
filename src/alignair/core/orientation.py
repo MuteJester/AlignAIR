@@ -1,21 +1,46 @@
-"""In-model orientation: the token transforms (identity / reverse-complement / complement / reverse), the 4-class
-orientation head on the shared embedding, and the bank orientation (the transform under which a read's k-mers are the
-bound reference's). All transforms are involutions, so canonicalizing = re-applying the predicted transform."""
+"""The four orientations a read can come in, in the order of the orientation head's classes, and orienting a read:
+as a string (``orient``), as a token batch (``apply_orientation``), by the 4-class orientation head on the shared
+embedding (``EmbeddingOrientationHead``) and by the bound reference (``BankOrientation``: the orientation under which a
+read's k-mers are the reference's). Each orientation is an involution: applying a read's orientation to it again gives
+the forward read."""
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..core.orientations import COMPLEMENT, FORWARD, NUM_ORIENTATIONS, REVERSE, REVERSE_COMPLEMENT
-from ..core.tokens import COMPLEMENT_TOKENS, encode, is_base
 from ..errors import ConfigurationError
+from .tokens import COMPLEMENT_TOKENS, encode, is_base
 
-_COMPLEMENT = torch.tensor(COMPLEMENT_TOKENS, dtype=torch.long)
+ORIENTATIONS = ("forward", "reverse_complement", "complement", "reverse")
+FORWARD, REVERSE_COMPLEMENT, COMPLEMENT, REVERSE = range(len(ORIENTATIONS))
+NUM_ORIENTATIONS = len(ORIENTATIONS)
+
+_COMPLEMENT_BASES = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+
+
+def reverse_complement(sequence: str) -> str:
+    return sequence.translate(_COMPLEMENT_BASES)[::-1]
+
+
+def orient(sequence: str, orientation: int) -> str:
+    """``sequence`` under ``orientation`` (an index of ``ORIENTATIONS``); a character that is not a base or N stays."""
+    if orientation == FORWARD:
+        return sequence
+    if orientation == REVERSE_COMPLEMENT:
+        return reverse_complement(sequence)
+    if orientation == COMPLEMENT:
+        return sequence.translate(_COMPLEMENT_BASES)
+    if orientation == REVERSE:
+        return sequence[::-1]
+    raise ValueError(f"orientation {orientation!r} is not one of 0..{NUM_ORIENTATIONS - 1}")
+
+
+_COMPLEMENT_TOKENS = torch.tensor(COMPLEMENT_TOKENS, dtype=torch.long)
 
 
 def complement(tokens: torch.Tensor) -> torch.Tensor:
-    return _COMPLEMENT.to(tokens.device)[tokens]
+    return _COMPLEMENT_TOKENS.to(tokens.device)[tokens]
 
 
 def reverse_valid(tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:

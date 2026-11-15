@@ -7,9 +7,9 @@ import torch
 from alignair.core.tokens import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
-from alignair.core.orientations import reverse_complement
+from alignair.core.orientation import reverse_complement
 from alignair.network.bank import BankCompiler
-from alignair.refine.drefine import refine_d_boundaries
+from alignair.network.refine.d_boundaries import refine_d_boundaries
 
 pytestmark = pytest.mark.component
 
@@ -101,7 +101,7 @@ def test_a_heavy_weight_on_a_long_read_still_finds_the_d(monkeypatch):
     """At a weight where the evidence of the bases before the junction alone passes the impossible logit, the D is
     still the one its germline places: the evidence counts from the V end, and a slot no path uses never outweighs
     one a path does. N2 runs 10 bases, 4 of them past the germline's end; the J starts at 34."""
-    from alignair.refine import drefine
+    from alignair.network.refine import d_boundaries as drefine
     monkeypatch.setattr(drefine, "EVIDENCE_WEIGHT", 200.)
     out, _ = _refined(V + N1 + D1[3:15] + "C" * 10 + J, j_start=34)
     assert out["d_start_logits"].argmax().item() == 12

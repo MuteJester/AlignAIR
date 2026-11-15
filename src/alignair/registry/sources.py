@@ -34,7 +34,7 @@ class OfflineError(RegistryError):
     code = "ALIGNAIR_OFFLINE"
 
 
-def _config_dir() -> str:
+def config_dir() -> str:
     """The per-OS user config dir (``platformdirs``: ~/.config on Linux honoring XDG_CONFIG_HOME,
     ~/Library/Application Support on macOS, %APPDATA% on Windows), or ``ALIGNAIR_CONFIG_DIR`` when set."""
     import platformdirs
@@ -44,7 +44,7 @@ def _config_dir() -> str:
 
 
 def _config_registries(config_path: str | None) -> list[str]:
-    path = config_path or os.path.join(_config_dir(), "config.toml")
+    path = config_path or os.path.join(config_dir(), "config.toml")
     if not os.path.exists(path):
         return []
     with open(path, "rb") as f:
@@ -85,7 +85,7 @@ def artifact_url(source: str, relpath: str, *, revision: str = "main") -> str:
     return urljoin(base, relpath)
 
 
-def _local_path(url: str) -> str | None:
+def local_path(url: str) -> str | None:
     if url.startswith("file://"):
         return url[len("file://"):]
     if "://" not in url:
@@ -97,7 +97,7 @@ def fetch_bytes(source: str, relpath: str, *, offline: bool = False, revision: s
     """Fetch a small file (e.g. ``registry.json``) from a source. Large artifacts stream via the
     cache module. Raises :class:`OfflineError` if ``offline`` and the source is remote."""
     url = artifact_url(source, relpath, revision=revision)
-    local = _local_path(url)
+    local = local_path(url)
     if local is not None:
         with open(local, "rb") as f:
             return f.read()

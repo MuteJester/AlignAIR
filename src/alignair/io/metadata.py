@@ -12,7 +12,7 @@ import tempfile
 import zlib
 
 from ..errors import DataContractError, InputError, OperationIOError, error_context
-from .sequence_records import _open_text
+from .sequence_records import open_text
 
 _META_DEFAULTS = ("cell_id", "barcode", "sample_id", "umi_count", "umis", "reads",
                   "duplicate_count", "consensus_count", "raw_clonotype_id", "raw_consensus_id",
@@ -52,7 +52,7 @@ def _metadata_rows(path, id_column, keep_columns, normalize_10x, rename=None):
     path = os.fspath(path)
     with error_context(stage="metadata_reading", path=path):
         try:
-            with _open_text(path) as stream:
+            with open_text(path) as stream:
                 lines = enumerate(stream, 1)
                 first = next((item for item in lines if item[1].strip()), (1, ""))
                 number, head = first

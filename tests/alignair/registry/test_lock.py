@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from alignair.registry.cache import _excl_lock, cache_root
-from alignair.registry.sources import _config_dir
+from alignair.registry.sources import config_dir
 
 pytestmark = pytest.mark.integration
 
@@ -142,4 +142,4 @@ def test_cache_and_config_roots_honor_env_overrides(monkeypatch, tmp_path):
     monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "c"))
     monkeypatch.setenv("ALIGNAIR_CONFIG_DIR", str(tmp_path / "cfg"))
     assert cache_root() == Path(str(tmp_path / "c"))
-    assert _config_dir() == str(tmp_path / "cfg")
+    assert config_dir() == str(tmp_path / "cfg")

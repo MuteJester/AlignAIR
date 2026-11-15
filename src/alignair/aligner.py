@@ -40,7 +40,7 @@ def resolve_device(device: str | None = "auto") -> str:
     return d
 
 
-def _auto_batch_size(device: str, workers: int = 1) -> int:
+def auto_batch_size(device: str, workers: int = 1) -> int:
     """256 on a GPU, 64 in one CPU process, 16 per single-threaded CPU worker (``predict.parallel``), whose
     activations then stay in its share of the cache."""
     if device.startswith("cuda"):
@@ -204,7 +204,7 @@ class Aligner:
         ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{V|D|J: allele names}`` dict) is the
         bank the calls come from: a subset of the bound reference."""
         from .api import predict_sequences
-        bs = _auto_batch_size(self.device) if batch_size in (None, "auto") else int(batch_size)
+        bs = auto_batch_size(self.device) if batch_size in (None, "auto") else int(batch_size)
         if genotype is not None:
             overrides["genotype"] = genotype
         records = predict_sequences(self.model, self.reference, sequences, device=self.device,

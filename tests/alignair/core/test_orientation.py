@@ -4,7 +4,7 @@ import torch
 
 from alignair.data.batching import pad_vectors
 from alignair.core.tokens import TOKEN_DICT
-from alignair.network.orientation import (NUM_ORIENTATIONS, EmbeddingOrientationHead, apply_orientation, complement,
+from alignair.core.orientation import (NUM_ORIENTATIONS, EmbeddingOrientationHead, apply_orientation, complement,
                                           reverse_valid)
 
 pytestmark = pytest.mark.component
