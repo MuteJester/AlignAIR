@@ -65,24 +65,6 @@ def _loci_from_membership(per_index: Dict[str, list], order: List[str],
     return loci
 
 
-def _infer_loci_from_names(genes: Dict[str, "GeneReference"]) -> List["LocusInfo"]:
-    """Reconstruct the per-locus schema from allele names alone — for references serialized before the
-    schema was stored. Order follows first appearance in the V allele order (the union appends per dataconfig).
-    Fails closed on interleaved / nonstandard-named loci (see :func:`_loci_from_membership`)."""
-    order: List[str] = []
-    per_index: Dict[str, list] = {}                      # GENE -> [locus_or_None per allele index]
-    for G in ("V", "J", "D"):
-        ref = genes.get(G)
-        if ref is None:
-            continue
-        loci_of = [_locus_from_name(n) for n in ref.names]
-        per_index[G] = loci_of
-        for lc in loci_of:                               # V first -> chain_type-class-id order
-            if lc is not None and lc not in order:
-                order.append(lc)
-    return _loci_from_membership(per_index, order)
-
-
 @dataclass
 class GeneReference:
     names: List[str]          # ordered allele names
@@ -236,8 +218,6 @@ class ReferenceSet:
                           species=l.get("species"),
                           shared={G: tuple(names) for G, names in (l.get("shared") or {}).items()})
                 for l in data.get("loci", [])]
-        if not loci:                                     # references serialized before the schema existed
-            loci = _infer_loci_from_names(out)
         provenance = [SourceProvenance.from_dict(source) for source in data.get("provenance") or ()]
         return cls(out, bool(data.get("has_d")), loci=loci, provenance=provenance)
 
@@ -345,13 +325,6 @@ class ReferenceSet:
                 return last + 1
         return 0
 
-    def allele_locus(self, gene: str, name: str) -> str | None:
-        """The locus whose range holds the allele ``name`` of ``gene``, else None."""
-        ref = self.genes.get(gene.upper())
-        if ref is None or name not in ref.index:
-            return None
-        return self._membership()[gene.upper()][ref.index[name]]
-
     def extend(self, other: "ReferenceSet", *, on_conflict: str = "error") -> "ReferenceSet":
         """This reference with ``other``'s alleles added (a donor's novel or undocumented alleles), each at the end of
         its locus's block in its gene; this reference is unchanged.
@@ -404,14 +377,6 @@ class ReferenceSet:
         provenance = [*self.provenance, *(src for src in other.provenance if src not in self.provenance)]
         return ReferenceSet(genes, self.has_d or other.has_d, loci=self._loci_keeping_fields(per_index, extra),
                             provenance=provenance)
-
-    @classmethod
-    def from_yaml(cls, path: str) -> "ReferenceSet":
-        """Load a genotype YAML: top-level keys v/d/j, each {allele_name: dna_seq}."""
-        import yaml
-        with open(path) as f:
-            data = yaml.safe_load(f)
-        return cls.from_genotype(data)
 
     @staticmethod
     def _infer_segment(name: str) -> str | None:
@@ -468,21 +433,3 @@ class ReferenceSet:
             raise InputError(f"{path} names {len(twice)} alleles twice with two sequences: {', '.join(twice[:5])}",
                              context={"path": path, "alleles": twice}, hint="Give each allele one name.")
         return cls.from_genotype({g: m for g, m in genes.items() if m})
-
-    def to_yaml(self, path: str) -> None:
-        import yaml
-        data = {g.lower(): dict(zip(ref.names, ref.sequences))
-                for g, ref in self.genes.items()}
-        with open(path, "w") as f:
-            yaml.safe_dump(data, f, sort_keys=False)
-
-    def infer_locus(self) -> str | None:
-        """Infer the locus (IGH/IGK/IGL/TRA/TRB/TRD/TRG) from the V allele names, or None."""
-        import re
-        from collections import Counter
-        loci = Counter()
-        for n in self.gene("V").names:
-            m = re.match(r"(IG[HKL]|TR[ABGD])", n.upper())
-            if m:
-                loci[m.group(1)] += 1
-        return loci.most_common(1)[0][0] if loci else None

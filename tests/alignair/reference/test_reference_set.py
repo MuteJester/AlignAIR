@@ -53,16 +53,6 @@ def test_from_genotype_light_no_d():
     assert set(rs.genes) == {"V", "J"}
 
 
-def test_yaml_roundtrip(tmp_path):
-    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    p = tmp_path / "genotype.yaml"
-    rs.to_yaml(str(p))
-    rs2 = ReferenceSet.from_yaml(str(p))
-    for g in ("V", "D", "J"):
-        assert rs2.gene(g).names == rs.gene(g).names
-        assert rs2.gene(g).sequences == rs.gene(g).sequences
-
-
 def test_from_fasta_infers_gene_and_loads(tmp_path):
     p = tmp_path / "genotype.fasta"
     p.write_text(">IGHV1-2*02 some desc\nACGTACGT\n>NOVEL_IGHV9*01\nTTTTGGGG\n"
@@ -91,17 +81,6 @@ def test_subset_preserves_the_gapped_forms():
     keepV = rs.gene("V").names[:5]
     sub = rs.subset({"V": keepV})
     assert sub.gene("V").gapped == {n: rs.gene("V").gapped[n] for n in keepV}
-
-
-def test_infer_locus():
-    rs = ReferenceSet.from_dataconfigs(gdata.HUMAN_IGH_OGRDB)
-    assert rs.infer_locus() == "IGH"
-    igk = ReferenceSet.from_genotype({"v": {"IGKV1-5*01": "ACGT"}, "j": {"IGKJ1*01": "TTTT"}})
-    assert igk.infer_locus() == "IGK"
-    trb = ReferenceSet.from_genotype({"v": {"TRBV2*01": "ACGT"}, "j": {"TRBJ1-1*01": "TTTT"}})
-    assert trb.infer_locus() == "TRB"
-    custom = ReferenceSet.from_genotype({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}})
-    assert custom.infer_locus() is None
 
 
 def test_from_genotype_with_anchors():

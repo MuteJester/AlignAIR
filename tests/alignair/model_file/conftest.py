@@ -1,53 +1,11 @@
-"""Model files for the conversion tests: the toy chip saved as a lab chip file (a lab name, AlignAIR 3's settings), a
-model file whose configuration names conv-v1 (written without building conv-v1), and the rows a model file gives in
-a process without the lab."""
+"""A model file whose configuration names conv-v1 (written without building conv-v1), for the AlignAIR 3 refusal
+tests."""
 from __future__ import annotations
 
 import json
-import os
-import shutil
-import subprocess
-import sys
 
-import pytest
-import torch
 
 from alignair.model_file import container, serialize
-
-
-# Settings of AlignAIR 3's configuration a lab chip file's configuration carried (the converter drops them).
-LAB_ERA_SETTINGS = {"filters": 128, "block_out": 576, "latent_size_factor": 2, "classification_mode": "multilabel",
-                    "boundary_mode": "half_open", "use_meta_heads": False, "chip_inputs": True}
-
-
-def save_toy_lab_chip(path, lab_name: str, *, chip_copy=None) -> str:
-    """A random-init chip on HUMAN_IGH_OGRDB as the lab's training runs saved one: with its training sections, and a
-    configuration naming ``lab_name`` with AlignAIR 3's settings (``LAB_ERA_SETTINGS``) and no ``trunk_channels``
-    (the lab name held the width): the file the converter reads. ``chip_copy``: also keep the same model saved as the
-    chip-v1 file it was before its configuration was rewritten."""
-    import GenAIRR.data as gd
-    from alignair.core import prepare_model
-    from alignair.model_file import save_model
-    from alignair.model_file.convert import LAB_CHIPS
-    from alignair.reference.reference_set import ReferenceSet
-    torch.manual_seed(0)
-    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), trunk_channels=LAB_CHIPS[lab_name])
-    save_model(str(path), setup.build_model().eval(), dataconfigs=[gd.HUMAN_IGH_OGRDB],
-               training={"steps": 7, "batch_size": 2}, include_trusted_pickle=True)
-    if chip_copy is not None:
-        shutil.copyfile(path, chip_copy)
-    header = container.read_header(str(path))
-    config = json.loads(container.read_section(str(path), "config"))
-    config = {**{k: v for k, v in config.items() if k != "trunk_channels"}, "architecture": lab_name,
-              **LAB_ERA_SETTINGS}
-    sections, formats = {}, {}
-    for name, section in header["sections"].items():
-        sections[name] = (json.dumps(config).encode() if name == "config" else container.read_section(str(path), name),
-                          section["codec"])
-        formats[name] = section.get("format", "bytes")
-    rewritten = {key: value for key, value in header.items() if not key.startswith("_") and key != "sections"}
-    container.write_container(str(path), {**rewritten, "_formats": formats}, sections)
-    return str(path)
 
 
 def write_v3_header_file(tmp_path) -> str:
@@ -62,24 +20,3 @@ def write_v3_header_file(tmp_path) -> str:
                 "weights": (serialize.state_dict_to_bytes({}), "zlib")}
     container.write_container(str(path), header, sections)
     return str(path)
-
-
-def rows_in_clean_process(path, reads: list[str]) -> list[dict]:
-    """``golden.predict_rows(path, reads)`` in a subprocess whose environment lacks ``ALIGNAIR_ARCHITECTURE_MODULES``
-    (the lab never registered), as JSON rows."""
-    env = {key: value for key, value in os.environ.items() if key != "ALIGNAIR_ARCHITECTURE_MODULES"}
-    code = ("import json, sys; from alignair_assay.diagnostics.golden import predict_rows; "
-            "print(json.dumps(predict_rows(sys.argv[1], json.loads(sys.argv[2]))))")
-    out = subprocess.run([sys.executable, "-c", code, str(path), json.dumps(reads)], capture_output=True, text=True,
-                         env=env, check=True)
-    return json.loads(out.stdout.strip().splitlines()[-1])
-
-
-@pytest.fixture(scope="module")
-def reads() -> list[str]:
-    """Three GenAIRR heavy-chain reads."""
-    import itertools
-    import GenAIRR.data as gd
-    from alignair.train.gym.streams import CurriculumStreamPolicy, stream_records
-    component = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)[1]
-    return [record["sequence"] for record in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, component, 21), 3)]

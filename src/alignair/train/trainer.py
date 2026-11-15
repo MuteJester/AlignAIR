@@ -1,30 +1,25 @@
-"""Training loop for the AlignAIR model on GenAIRR record streams.
-
-``build_batch`` is a compatibility import of the shared data adapter.
-"""
+"""Training loop for the AlignAIR model on GenAIRR record streams."""
 from __future__ import annotations
 
 import hashlib
 import itertools
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 from ..errors import ConfigurationError, error_context
-from ..data.adapters import build_nucleotide_batch as build_batch
 from ..data.training import prepare_training_data
 from ..core.setup import ModelSetup
 from ..core.runtime import restore_model_state
+from ..genairr.identity import _recorded_genairr_source
 from ..tasks import TrainingTasks, build_tasks
 from .gym.curriculum.base import INDEL_FRACTION
 from .gym.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, dataconfig_name, effective_mutation_caps,
                           selection_supported, training_records)
-from .engine import validate
 from .setup import build_training_engine
 from .loop import training_iterations
 from .checkpoints import (save_checkpoint, save_rotating, latest_checkpoint, load_training_checkpoint,
                           validate_continuation, _stem, _ext)
 from .random_state import restore_rng_state as _restore_rng
 from .schedules import CosineSchedule
-from .study import TrainingStudy, StudySession
 
 # How a run's curriculum records and targets are built, recorded as ``train_args["recipe"]``: "v3" draws every stream
 # from its own reserved seed block and a selected fraction of each full-length component under productive_only(); "v4"
@@ -34,22 +29,12 @@ from .study import TrainingStudy, StudySession
 RECIPE = 'v4'
 
 
-from ..genairr.identity import _recorded_genairr_source, genairr_source_sha256  # noqa: F401  (re-exported)
-
-
-def eval_metrics(out: dict, targets: dict, cfg) -> dict:
-    """Compatibility entry for the shared alignment task metrics."""
-    return build_tasks(cfg).metrics(out, targets)
-
-
 @dataclass(frozen=True)
 class TrainingOutcome:
     """This invocation's completed updates and best checkpoint, never inferred from old files."""
     model: object
     steps: int
     best_model_path: str | None
-    checkpoints: dict = field(default_factory=dict)
-    validations: tuple = ()
 
 
 def _check_novel_alleles(dataconfigs, reference_set, spec) -> None:
@@ -72,7 +57,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
           mutation_cap=None, init_from=None,
           grad_clip=None, val_every=0, val_batches=4,
           tasks: TrainingTasks | None = None, model_setup: ModelSetup | None = None, on_iteration=None,
-          schedule=None, study=None, start_step=0, data_workers=0, record_source=None,
+          schedule=None, data_workers=0, record_source=None,
           indel_fraction=INDEL_FRACTION, indel_form='weighted', selected_fraction=SELECTED_FRACTION, flanks=None,
           novel_alleles=None, inverted_d=0.):
     """Train ``model`` on the curriculum stream of ``dataconfigs``.
@@ -121,15 +106,12 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                               grad_clip=grad_clip)
     if on_iteration is not None and not callable(on_iteration):
         raise ConfigurationError('on_iteration must be callable or None')
-    if (init_from and resume_path or isinstance(start_step, bool) or not isinstance(start_step, int)
-            or start_step < 0 or start_step and not init_from):
-        raise ConfigurationError('choose resume_path or init_from; a warm-start offset requires init_from')
+    if init_from and resume_path:
+        raise ConfigurationError('choose resume_path or init_from')
     if schedule is not None:
         if not isinstance(schedule, CosineSchedule):
             raise ConfigurationError('schedule must be a CosineSchedule or None')
         schedule.validate(lr)
-    if study is not None and not isinstance(study, TrainingStudy):
-        raise ConfigurationError('study must be a TrainingStudy or None')
 
     setup = model_setup or ModelSetup(reference_set, cfg, cfg.input_space, cfg.label_space)
     if setup.reference is not reference_set or setup.config != cfg:
@@ -162,7 +144,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                                    scheduler_factory=schedule.build if schedule is not None else None)
     opt = engine.optimizer
 
-    start = start_step
+    start = 0
     resume_from = latest_checkpoint(resume_path) if resume_path else None
     if resume_path and resume_from is None:
         raise ConfigurationError('resume checkpoint does not exist', context={'path': str(resume_path)})
@@ -203,7 +185,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                    "selected_shares": list(source_policy.selected_shares(force_mixture=len(dataconfigs) > 1)),
                    "selection_unavailable": unselectable,
                    "flanks": flanks.to_dict() if flanks is not None else None,
-                   "schedule": schedule_metadata, "study": study.to_dict() if study is not None else None,
+                   "schedule": schedule_metadata,
                    "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
                    # provenance only: worker processes reproduce the serial batches exactly
                    "data_workers": data_workers,
@@ -221,10 +203,8 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
             _train_args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
 
     def _checkpoint(path, step, **extra):
-        save_checkpoint(path, cfg, model, step, opt, dataconfigs=_dcs,
+        save_checkpoint(path, model, step, opt, dataconfigs=_dcs,
                         train_args={**_train_args, **extra}, label_schema=schema, scheduler=engine.scheduler)
-
-    observation = StudySession(study, model, _checkpoint) if study is not None else None
 
     # fixed-seed, immutable validation batches for best-checkpoint selection
     val_set = []
@@ -260,8 +240,6 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
             total, parts, grad_norm = iteration.result
             if on_iteration is not None:
                 on_iteration(iteration)
-            if observation is not None:
-                observation.observe(iteration)
             if log_every and step % log_every == 0:
                 line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
                         + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
@@ -276,13 +254,12 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                     best_path = f"{stem}.best{ext}"
                     _checkpoint(best_path, step, val_score=vscore)
             if save_path and save_every and step % save_every == 0:
-                save_rotating(save_path, cfg, model, step, opt, dataconfigs=_dcs, train_args=_train_args,
+                save_rotating(save_path, model, step, opt, dataconfigs=_dcs, train_args=_train_args,
                               label_schema=schema, scheduler=engine.scheduler)
     finally:
         if workers is not None:                    # finished, failed or interrupted: no worker outlives the run
             workers.close()
     if save_path:                                  # save the ACTUAL completed step, not the requested one
-        save_rotating(save_path, cfg, model, completed, opt, dataconfigs=_dcs, train_args=_train_args,
+        save_rotating(save_path, model, completed, opt, dataconfigs=_dcs, train_args=_train_args,
                       label_schema=schema, scheduler=engine.scheduler)
-    return TrainingOutcome(model, completed, best_path, observation.checkpoints if observation else {},
-                           tuple(observation.validations) if observation else ())
+    return TrainingOutcome(model, completed, best_path)

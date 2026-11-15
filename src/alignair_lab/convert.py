@@ -6,19 +6,31 @@ A model file trained as ``lab-chip-v1`` (a 128-channel trunk) or ``lab-chipw64-v
 architecture and SHA-256); the weights and the embedded reference are carried over byte for byte, nothing is
 unpickled, and the training sections (pickled dataconfigs, optimizer state) are left out, so the result is an
 inference model file. The written file is read back (reference integrity and bindings) before it replaces ``dst``.
+``python -m alignair_lab convert SRC DST`` runs it (``run_convert``).
 """
 from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import os
 
-from ..errors import ConfigurationError
-from . import container, serialize
+from alignair.core.config import AlignAIRConfig
+from alignair.errors import ConfigurationError, report_error
+from alignair.model_file import container, read_model_state, serialize
 
 LAB_CHIPS = {"lab-chip-v1": 128, "lab-chipw64-v1": 64}
 ARCHITECTURE = "chip-v1"
 _TRAINING_SECTIONS = ("dataconfig/", "train_state")
+
+
+def lab_config_from_bytes(b: bytes) -> AlignAIRConfig:
+    """A lab chip file's configuration with AlignAIR 3's retired settings left out, and AlignAIR 4's retired ones
+    held at their one value (``serialize.config_from_bytes``' rule); ``convert_lab_chip`` rewrites it as chip-v1's."""
+    raw = json.loads(b.decode("utf-8"))
+    raw = serialize._without_retired_v4_settings(raw, raw.get("architecture"))
+    fields = {field.name for field in dataclasses.fields(AlignAIRConfig)}
+    return AlignAIRConfig(**{key: value for key, value in raw.items() if key in fields})
 
 
 def _sha256(path: str) -> str:
@@ -32,9 +44,8 @@ def _sha256(path: str) -> str:
 def convert_lab_chip(src: str, dst: str) -> dict:
     """Write ``dst``, the ``chip-v1`` inference model file of the lab chip model file ``src``; returns ``{"from",
     "to", "trunk_channels", "sha256"}`` (``sha256``: of ``dst``). ConfigurationError when ``src`` is not a lab chip."""
-    from . import read_model_state
     header = container.read_header(src)
-    cfg = serialize.lab_config_from_bytes(container.read_section(src, "config"))
+    cfg = lab_config_from_bytes(container.read_section(src, "config"))
     if cfg.architecture not in LAB_CHIPS:
         raise ConfigurationError(f"{src} is not a lab chip model file: its architecture is {cfg.architecture!r}",
                                  context={"path": src, "architecture": cfg.architecture},
@@ -65,3 +76,30 @@ def convert_lab_chip(src: str, dst: str) -> dict:
             os.remove(tmp)
     return {"from": cfg.architecture, "to": ARCHITECTURE, "trunk_channels": converted.trunk_channels,
             "sha256": _sha256(dst)}
+
+
+def _v3_architecture(path) -> str | None:
+    """The architecture an AlignAIR 3 model file's configuration names (``conv-v1``, or none at all), else None; the
+    configuration is read as JSON, nothing unpickled."""
+    raw = json.loads(container.read_section(path, "config").decode("utf-8"))
+    architecture = raw.get("architecture", serialize.V3_ARCHITECTURE)
+    return architecture if architecture == serialize.V3_ARCHITECTURE else None
+
+
+def run_convert(args) -> int:
+    """``convert SRC DST``: refuse an AlignAIR 3 file (with the version that runs it) and any file that is not a lab
+    chip, else convert it."""
+    from alignair.model_file import v3_checkpoint_error
+    if not container.is_alignair_file(args.src):
+        return report_error(v3_checkpoint_error(args.src))
+    v3 = _v3_architecture(args.src)
+    if v3 is not None:
+        return report_error(serialize._v3_refusal(v3))
+    if lab_config_from_bytes(container.read_section(args.src, "config")).architecture not in LAB_CHIPS:
+        return report_error(ConfigurationError(
+            f"{args.src} is not a lab chip model file", context={"path": args.src},
+            hint=f"Only {', '.join(sorted(LAB_CHIPS))} model files convert to {ARCHITECTURE}."))
+    summary = convert_lab_chip(args.src, args.dst)
+    print(f"converted {args.src} ({summary['from']}) -> {args.dst} ({summary['to']}, trunk_channels "
+          f"{summary['trunk_channels']}; safe, pickle-free)")
+    return 0

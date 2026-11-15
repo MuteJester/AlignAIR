@@ -33,7 +33,6 @@
     "src/alignair/train/config.py": {"statements": 98, "branches": 95},
     "src/alignair/train/workflow.py": {"statements": 98, "branches": 95},
     "src/alignair/train/schedules.py": {"statements": 98, "branches": 95},
-    "src/alignair/train/study.py": {"statements": 98, "branches": 95},
     "src/alignair/data/training.py": {"statements": 98, "branches": 95},
     "src/alignair/train/loop.py": {"statements": 98, "branches": 95},
     "src/alignair/train/engine.py": {"statements": 98, "branches": 90},

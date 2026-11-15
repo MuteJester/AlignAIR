@@ -82,8 +82,6 @@ def test_the_core_receives_orientation_corrected_tokens(architecture):
 def test_build_tasks_returns_the_architecture_objective(architecture):
     cfg = config(architecture=architecture(core=ToyCore, objective=lambda cfg: SENTINEL))
     assert build_tasks(cfg) is SENTINEL
-    with pytest.raises(ConfigurationError):
-        build_tasks(cfg, genes=("v",))
 
 
 def test_a_registered_core_is_the_models_core(architecture):

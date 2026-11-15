@@ -92,12 +92,11 @@ class TrainingEngine:
             return StepResult(total_value, part_values, gradient_norm)
 
     def validate(self, batches) -> ValidationResult:
-        return validate(self.model, batches, getattr(self.model, "cfg", None), tasks=self.tasks)
+        return validate(self.model, batches, tasks=self.tasks)
 
 
-def validate(model, val_batches, cfg, *, tasks: TrainingTasks | None = None) -> ValidationResult:
+def validate(model, val_batches, *, tasks: TrainingTasks) -> ValidationResult:
     """Aggregate supervised totals/counts and restore mode on both success and failure."""
-    tasks = build_tasks(cfg) if tasks is None else tasks
     accumulator = MetricAccumulator()
     with evaluation_mode(model):
         for inputs, targets in val_batches:

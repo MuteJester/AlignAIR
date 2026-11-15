@@ -171,5 +171,3 @@ class NucleotideBatchAdapter:
 
 
 
-def build_nucleotide_batch(records, reference_set, config, device="cpu", augment_orientation=None):
-    return tuple(NucleotideBatchAdapter(reference_set, config, device, augment_orientation)(records))

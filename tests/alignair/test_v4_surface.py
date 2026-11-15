@@ -135,3 +135,74 @@ def test_reads_have_one_nucleotide_normaliser():
     assert not any(hasattr(inputs, name) for name in gone)
     assert inputs.normalize_file_read(" acgtr ").sequence == "ACGTN"
     assert not hasattr(sequence_reader, "validate") and not hasattr(sequence_reader, "validate_sequence")
+
+
+def test_training_has_no_study_schedule():
+    """``val_every`` and ``on_iteration`` do what the study schedule did; it, and the run fields only it filled, are
+    gone."""
+    import alignair.train as train
+    from alignair.train import trainer
+    from alignair.train.config import TrainingConfig
+    from alignair.train.workflow import TrainingRun
+    assert not hasattr(train, "TrainingStudy") and _gone("alignair.train.study")
+    assert "study" not in {field.name for field in dataclasses.fields(TrainingConfig)}
+    assert "study" not in inspect.signature(trainer.train).parameters
+    assert {field.name for field in dataclasses.fields(TrainingRun)} == {"model_path", "best_model_path", "steps"}
+
+
+def test_training_names_live_in_one_module_each():
+    """No compatibility re-exports: the trainer re-exports neither the batch builder, the validator, the task metrics
+    nor the GenAIRR identity; ``alignair.train`` does not re-export the runtime's evaluation mode, nor the gym the
+    targets builder; the study's parameters and the warm-start offset are gone."""
+    import alignair.train as train
+    from alignair.data import adapters
+    from alignair.genairr import novel
+    from alignair.tasks import build_tasks
+    from alignair.train import checkpoints, engine, gym, trainer
+    assert not any(hasattr(trainer, name) for name in ("build_batch", "validate", "eval_metrics",
+                                                       "genairr_source_sha256"))
+    assert not hasattr(adapters, "build_nucleotide_batch")
+    assert "evaluation_mode" not in train.__all__ and "build_targets" not in gym.__all__
+    assert "start_step" not in inspect.signature(trainer.train).parameters
+    assert "cfg" not in inspect.signature(checkpoints.save_checkpoint).parameters
+    assert "cfg" not in inspect.signature(checkpoints.save_rotating).parameters
+    assert "cfg" not in inspect.signature(engine.validate).parameters
+    assert "genes" not in inspect.signature(build_tasks).parameters
+    assert "indels" not in inspect.signature(novel.derive_variant).parameters
+
+
+def test_the_shipped_package_has_no_test_only_record_stream():
+    """``ParallelRecords`` (``training_records`` over worker processes, which only tests built) lives in the tests'
+    support package; the trainer runs ``RecordWorkers`` itself."""
+    from alignair.train.gym import workers
+    assert not hasattr(workers, "ParallelRecords") and not hasattr(workers, "parallel_records")
+
+
+def test_no_error_class_is_never_raised():
+    import alignair.errors as errors
+    assert not hasattr(errors, "AccessPolicyError")
+
+
+def test_a_reference_has_one_genotype_format_and_no_unused_locus_helpers():
+    """A genotype file is ``genotype.files``' {V|D|J: names}; the reference's own lossy YAML format and its unused
+    locus helpers are gone."""
+    from alignair.reference import anchors
+    from alignair.reference.reference_set import ReferenceSet
+    assert not any(hasattr(ReferenceSet, name) for name in ("from_yaml", "to_yaml", "infer_locus", "allele_locus"))
+    assert not hasattr(anchors, "gap_from_known")
+
+
+def test_the_aligner_module_is_the_inference_surface_only():
+    """``alignair.aligner`` holds the Aligner and its result; the training names live in ``alignair.train`` (and stay
+    on the top-level package)."""
+    import alignair
+    from alignair import aligner
+    assert not {"TrainingConfig", "TrainingRun", "run_training"} & set(aligner.__all__)
+    assert not any(hasattr(aligner, name) for name in ("TrainingConfig", "TrainingRun", "run_training"))
+    assert {"TrainingConfig", "TrainingRun", "run_training"} <= set(alignair.__all__)
+
+
+def test_the_registry_resolves_catalog_ids_through_its_sources_directly():
+    """No one-line wrapper of ``sources.find_model`` in the cache."""
+    from alignair.registry import cache
+    assert not hasattr(cache, "_find")

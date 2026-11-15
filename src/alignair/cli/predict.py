@@ -245,7 +245,7 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
     from ..model_file import container, read_metadata, serialize
     md = read_metadata(model_path) if container.is_alignair_file(model_path) else {}
     ref = md.get("reference", {})
-    given = args.reference is not None and bound_reference is not None
+    given = args.reference is not None
     prov = {
         "model_spec": args.model, "model_path": os.path.abspath(model_path),
         "model_id": md.get("model_id"), "model_version": md.get("model_version"),

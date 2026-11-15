@@ -81,10 +81,7 @@ def download_from_hub(spec: str, *, revision: str | None = None, filename: str |
             "loading a model directly from a Hugging Face repo needs 'huggingface_hub'; "
             "install it with `pip install alignair[hub]` (or `[cli]`).",
             context={"dependency": "huggingface_hub", "stage": "model_download"}) from e
-    try:
-        from .. import __version__ as _v
-    except Exception:                                    # noqa: BLE001
-        _v = "0"
+    from .. import __version__
     try:
         if offline:
             # Some SDK versions build telemetry headers even with local_files_only.
@@ -94,7 +91,7 @@ def download_from_hub(spec: str, *, revision: str | None = None, filename: str |
                 return Path(cached)
             raise FileNotFoundError(f"{repo_id}@{rev or 'main'}:{fname} is not in the local HF cache")
         path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=_token(token),
-                               local_files_only=offline, library_name="alignair", library_version=_v)
+                               library_name="alignair", library_version=__version__)
     except Exception as e:                               # normalize hub errors to an actionable message
         hint = " (offline: not in the local HF cache)" if offline else ""
         raise RegistryError(

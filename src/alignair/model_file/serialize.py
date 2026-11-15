@@ -67,9 +67,9 @@ def _without_retired_v4_settings(raw: dict, architecture: str) -> dict:
 
 def config_from_bytes(b: bytes) -> AlignAIRConfig:
     """The model file's configuration. An AlignAIR 3 file (architecture ``conv-v1``; a file without an architecture
-    is one) is refused with the version that reads it; a file of another architecture whose configuration holds
-    AlignAIR 3's retired settings, with the conversion that rewrites it; a setting this version does not know, as a
-    file of a newer AlignAIR."""
+    is one), and a file of another architecture whose configuration holds AlignAIR 3's retired settings, are refused
+    with the version that reads them; a setting this version does not know, as a file of a newer AlignAIR. AlignAIR 4's
+    retired settings are dropped at their one value (``_without_retired_v4_settings``)."""
     raw = json.loads(b.decode("utf-8"))
     architecture = raw.get("architecture", V3_ARCHITECTURE)
     if architecture == V3_ARCHITECTURE:
@@ -77,29 +77,15 @@ def config_from_bytes(b: bytes) -> AlignAIRConfig:
     raw = _without_retired_v4_settings(raw, architecture)
     unknown = sorted(set(raw) - _config_fields())
     if unknown and set(unknown) <= RETIRED_V3_FIELDS:
-        from .convert import LAB_CHIPS
-        if architecture in LAB_CHIPS:
-            raise ModelError(f"this is a lab chip model file (architecture {architecture!r}) of AlignAIR 3's "
-                             "configuration: convert it to chip-v1 first",
-                             context={"architecture": architecture, "settings": unknown},
-                             hint="alignair convert <lab-file>.alignair <chip-file>.alignair")
         raise ModelError(f"this model file (architecture {architecture!r}) was written before AlignAIR 4: its "
                          f"configuration holds AlignAIR 3's settings {unknown}",
                          context={"architecture": architecture, "settings": unknown},
-                         hint="Convert it again from the lab chip file it came from (alignair convert), or run it "
-                              "with alignair<4.")
+                         hint="Run it with alignair<4.")
     if unknown:
         raise ModelError(f"the model file's configuration has settings this AlignAIR does not know: {unknown}",
                          context={"architecture": architecture, "settings": unknown},
                          hint="It was written by a newer AlignAIR: upgrade alignair to read it.")
     return AlignAIRConfig(**raw)
-
-
-def lab_config_from_bytes(b: bytes) -> AlignAIRConfig:
-    """A lab chip file's configuration with AlignAIR 3's retired settings left out (``convert.convert_lab_chip``
-    rewrites it as chip-v1's)."""
-    raw = json.loads(b.decode("utf-8"))
-    return AlignAIRConfig(**{key: value for key, value in raw.items() if key in _config_fields()})
 
 
 def state_dict_to_bytes(sd: dict) -> bytes:

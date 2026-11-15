@@ -27,7 +27,9 @@ def register(sub) -> None:
 def _simulate_reads(dataconfig, n: int, seed: int = 7) -> list:
     """A handful of simulated reads for the demo (moderate SHM), via the training gym."""
     from ..train.gym import Curriculum, build_experiment
-    exp = build_experiment(dataconfig, dict(Curriculum().params(0.3)), allow_curatable=True)
+    from ..train.gym.experiment import GENAIRR_INVERT_D_PROB
+    exp = build_experiment(dataconfig, {**Curriculum().params(0.3), "invert_d_prob": GENAIRR_INVERT_D_PROB},
+                           allow_curatable=True)
     return [str(r["sequence"]).upper()
             for r in itertools.islice(exp.stream_records(n=None, seed=seed), n)]
 

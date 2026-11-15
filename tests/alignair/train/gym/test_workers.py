@@ -12,7 +12,8 @@ import pytest
 
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.gym.streams import CurriculumStreamPolicy, seed_block, training_records
-from alignair.train.gym.workers import RecordWorkers, WorkerGroup, component_plan, parallel_records
+from alignair.train.gym.workers import RecordWorkers, WorkerGroup, component_plan
+from tests.support.record_workers import parallel_records
 from tests.support import record_workers
 
 pytestmark = pytest.mark.integration

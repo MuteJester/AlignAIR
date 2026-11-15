@@ -75,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
+def _run_convert(args) -> int:
+    from .convert import run_convert
+    return run_convert(args)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m alignair_lab", description="AlignAIR architecture experiments.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -242,6 +247,12 @@ def build_parser() -> argparse.ArgumentParser:
                               help="a model configuration field of the baseline (repeatable)")
     add_protocol_arguments(novel_screen)
     novel_screen.set_defaults(func=run_novel_screen)
+
+    convert = commands.add_parser("convert", help="rewrite a lab chip model file (lab-chip-v1, lab-chipw64-v1) as a "
+                                                  "safe, pickle-free chip-v1 .alignair")
+    convert.add_argument("src")
+    convert.add_argument("dst")
+    convert.set_defaults(func=_run_convert)
 
     dev = commands.add_parser("igblast-dev", help="run IgBLAST with the assay on a copy of the dev build's suites")
     dev.add_argument("--run-dir", default=str(igblast.IGBLAST_DEV), help="the assay run (default %(default)s)")

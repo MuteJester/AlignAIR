@@ -6,7 +6,11 @@ from dataclasses import dataclass
 import os
 import threading
 
+from collections.abc import Iterator
+
 from alignair.errors import TrainingDataError, error_context
+from alignair.train.gym.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
+from alignair.train.gym.workers import CHUNK_SIZE, QUEUE_CHUNKS, RecordWorkers
 
 
 def counted(dataconfig, parameters, seed):
@@ -112,3 +116,45 @@ def shifted(dataconfig, parameters, seed):
     """Real GenAIRR component records, of seed + 1000: other records than the default provider's."""
     from alignair.train.gym.streams import stream_records
     yield from stream_records(dataconfig, parameters, seed + 1000)
+
+
+class ParallelRecords(Iterator):
+    """``training_records`` with each component generated in a worker process; close it to stop them."""
+
+    def __init__(self, dataconfigs, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
+                 workers: int, provider: RecordSource = stream_records,
+                 chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS, start_step: int = 0):
+        if not isinstance(dataconfigs, (str, bytes)):
+            try:
+                dataconfigs = tuple(dataconfigs)
+            except TypeError:
+                pass                                     # training_records reports the request
+        self._source = RecordWorkers(dataconfigs, policy=policy, seed=seed, workers=workers, provider=provider,
+                                     chunk_size=chunk_size, queue_chunks=queue_chunks, start_step=start_step)
+        self._records = training_records(dataconfigs, policy=policy, seed=seed, record_source=self._source,
+                                         start_step=start_step)
+
+    def __next__(self):
+        if self._records is None:
+            raise StopIteration
+        return next(self._records)
+
+    def close(self):
+        """Stop every worker; the stream then ends. Idempotent."""
+        self._records = None
+        self._source.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def parallel_records(dataconfigs, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
+                     workers: int, provider: RecordSource = stream_records,
+                     chunk_size: int = CHUNK_SIZE, queue_chunks: int = QUEUE_CHUNKS,
+                     start_step: int = 0) -> ParallelRecords:
+    """The ``training_records`` stream, with its component providers running in worker processes."""
+    return ParallelRecords(dataconfigs, policy=policy, seed=seed, workers=workers, provider=provider,
+                           chunk_size=chunk_size, queue_chunks=queue_chunks, start_step=start_step)

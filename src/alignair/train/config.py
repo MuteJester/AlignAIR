@@ -10,7 +10,6 @@ from ..data.flanks import FlankPolicy
 from .gym.novel import NovelAlleles
 from .gym.streams import inverted_d_share
 from .schedules import CosineSchedule
-from .study import TrainingStudy
 from .guards import validate_data_workers
 
 _PRESETS = {
@@ -63,7 +62,6 @@ class TrainingConfig:
     model_options: Mapping = field(default_factory=dict)
     resume_path: str | None = None
     schedule: CosineSchedule | None = None
-    study: TrainingStudy | None = None
     init_from: str | None = None
     data_workers: int = 0
     flanks: FlankPolicy | None = field(default_factory=FlankPolicy)
@@ -83,8 +81,6 @@ class TrainingConfig:
             if not isinstance(self.schedule, CosineSchedule):
                 raise ConfigurationError('schedule must be a CosineSchedule or None')
             self.schedule.validate(self.lr)
-        if self.study is not None and not isinstance(self.study, TrainingStudy):
-            raise ConfigurationError('study must be a TrainingStudy or None')
         if self.input_space != 'nucleotide' or self.label_space != 'alleles':
             raise ConfigurationError('AlignAIR trains on nucleotide reads with allele labels')
         if isinstance(self.dataconfigs, (str, bytes)):

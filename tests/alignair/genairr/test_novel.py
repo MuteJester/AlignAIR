@@ -44,12 +44,6 @@ def test_a_genairr_refusal_names_the_allele(igh):
     assert caught.value.context["allele"] == name
 
 
-def test_indel_variants_wait_for_genairr_g3(igh):
-    base = sorted(a for names in eligible_bases(igh).values() for a in names)[0]
-    with pytest.raises(NotImplementedError, match="G3"):
-        derive_variant(igh, base, substitutions=1, rng=random.Random(0), indels=1)
-
-
 def test_derive_variant_is_the_snp_generator_until_g3(igh):
     base = sorted(a for names in eligible_bases(igh).values() for a in names)[0]
     assert derive_variant(igh, base, substitutions=2, rng=random.Random(3)) == snp_variant(igh, base, 2,

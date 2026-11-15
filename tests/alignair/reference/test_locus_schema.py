@@ -124,3 +124,14 @@ def test_the_default_locus_is_the_references_one_locus_else_igh():
     trb = ReferenceSet.from_genotype({"V": {"TRBV10-1*01": "ACGT"}, "J": {"TRBJ1-1*01": "TTTT"}})
     unnamed = ReferenceSet.from_genotype({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}})
     assert (trb.default_locus, unnamed.default_locus) == ("TRB", "IGH")
+
+
+@pytest.mark.parametrize("genes", [
+    {"v": {"IGHV1*01": "ACGT", "IGKV1*01": "ACGG", "NOVEL*01": "ACCC"}, "j": {"IGHJ1*01": "TTTT", "IGKJ1*01": "TTTA"}},
+    {"v": {"IGHV1*01": "ACGT"}, "j": {"IGHJ1*01": "TTTT"}},
+], ids=["no_schema", "one_locus"])
+def test_a_saved_reference_reloads_with_the_locus_schema_it_had(genes):
+    """The stored schema is the schema: a reference saved with none reloads with none (its names are not re-read)."""
+    from alignair.model_file.serialize import reference_from_json, reference_to_json
+    reference = ReferenceSet.from_genotype(genes)
+    assert reference_from_json(reference_to_json(reference)).locus_names() == reference.locus_names()

@@ -1,7 +1,7 @@
 """One public build/train/checkpoint/reload workflow."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import os
 import random
 
@@ -14,8 +14,6 @@ class TrainingRun:
     model_path: str
     best_model_path: str | None = None
     steps: int = 0
-    checkpoints: dict = field(default_factory=dict)
-    validations: tuple = ()
 
     def best_aligner(self, *, device='auto'):
         """The best (or last) model, reloaded through the shared model owner."""
@@ -87,8 +85,8 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
           lr=config.lr, short_boost=config.short_boost, seed=config.seed, init_seed=config.init_seed, device=device,
           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every,
           model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
-          schedule=config.schedule, study=config.study,
+          schedule=config.schedule,
           init_from=config.init_from,
           data_workers=config.data_workers, record_source=record_source, flanks=config.flanks,
           novel_alleles=config.novel_alleles, inverted_d=config.inverted_d)
-    return TrainingRun(path, outcome.best_model_path, outcome.steps, outcome.checkpoints, outcome.validations)
+    return TrainingRun(path, outcome.best_model_path, outcome.steps)

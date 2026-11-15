@@ -7,7 +7,7 @@ never configures logging, installs exception hooks, or retries automatically.
 from .base import AlignAIRError, ExitCode
 from .context import current_error_context, error_context
 from .exceptions import (
-    AccessPolicyError, ArtifactIntegrityError, ConfigurationError, DataContractError,
+    ArtifactIntegrityError, ConfigurationError, DataContractError,
     InferenceError, InputError, InternalError, MissingDependencyError, ModelError,
     ModelFormatError, ModelIntegrityError, ModelSectionError, NumericalError,
     OperationCancelledError, OperationIOError, RegistryError, TrainingDataError, TrainingError,
@@ -15,7 +15,7 @@ from .exceptions import (
 from .reporting import error_reporting, format_error, log_error, report_error
 
 __all__ = [
-    "AlignAIRError", "ExitCode", "AccessPolicyError", "ArtifactIntegrityError",
+    "AlignAIRError", "ExitCode", "ArtifactIntegrityError",
     "ConfigurationError", "DataContractError", "InferenceError", "InputError", "InternalError",
     "MissingDependencyError", "ModelError", "ModelFormatError", "ModelIntegrityError",
     "ModelSectionError", "NumericalError", "OperationCancelledError", "OperationIOError", "RegistryError",

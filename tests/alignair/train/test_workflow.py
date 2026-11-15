@@ -68,10 +68,8 @@ def test_training_seed_reproduces_weights_and_raw_predictions(tmp_path):
 
 
 def test_training_config_has_one_owner_and_snapshots_model_options():
-    from alignair.aligner import TrainingConfig as old_config, TrainingRun as old_run, run_training as old_train
     from alignair.train import TrainingConfig as owned_config, TrainingRun as owned_run, run_training as owned_train
-    assert TrainingConfig is old_config is owned_config
-    assert TrainingRun is old_run is owned_run and run_training is old_train is owned_train
+    assert TrainingConfig is owned_config and TrainingRun is owned_run and run_training is owned_train
     options = {'trunk_channels': 4}
     config = request(model_options=options)
     options['trunk_channels'] = 999
@@ -184,7 +182,7 @@ def test_without_an_init_seed_the_data_seed_draws_the_initial_weights(tmp_path, 
 
 
 def test_a_run_records_its_gradient_clip_how_it_started_and_its_genairr_source(tmp_path):
-    from alignair.train.trainer import genairr_source_sha256
+    from alignair.genairr.identity import genairr_source_sha256
     scratch = run_training(request(steps=1, grad_clip=.5), output_dir=tmp_path / 'scratch')
     resumed = run_training(request(steps=2, grad_clip=.5, resume_path=scratch.model_path),
                            output_dir=tmp_path / 'resumed')

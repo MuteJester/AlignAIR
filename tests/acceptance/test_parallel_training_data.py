@@ -5,7 +5,7 @@ import pytest
 
 from alignair.train.assembly import TrainingStream, parallel_training_data
 from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
-from alignair.train.gym.workers import parallel_records
+from tests.support.record_workers import parallel_records
 from tests.support.training_streams import assert_same_runs, run, serial_records
 
 pytestmark = [pytest.mark.acceptance, pytest.mark.slow]

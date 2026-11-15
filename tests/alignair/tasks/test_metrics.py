@@ -4,7 +4,7 @@ import torch
 
 from alignair.tasks import MetricAccumulator
 from alignair.tasks.metrics import alignment_metrics
-from alignair.train.trainer import validate
+from alignair.train.engine import validate
 
 from .conftest import AlleleTasks
 
@@ -40,7 +40,7 @@ def test_validation_weights_by_supervised_counts_instead_of_batch_means(task_bat
             return batch
 
     model = Echo().train()
-    metrics, score = validate(model, [(first, first_targets), (second, second_targets)], None, tasks=AlleleTasks())
+    metrics, score = validate(model, [(first, first_targets), (second, second_targets)], tasks=AlleleTasks())
     assert metrics["v_allele_top1"] == pytest.approx(2 / 3)
     assert metrics["j_allele_top1"] == 1
     assert score == pytest.approx(5 / 6)
@@ -65,7 +65,7 @@ def test_validation_restores_model_mode_after_task_failure(task_batch):
 
     model = Broken().train()
     with pytest.raises(RuntimeError, match="broken task"):
-        validate(model, [(out, targets)], None, tasks=AlleleTasks())
+        validate(model, [(out, targets)], tasks=AlleleTasks())
     assert model.training
 
 

@@ -10,7 +10,7 @@ pytestmark = pytest.mark.integration
 
 
 def _params():
-    return dict(Curriculum().params(0.3))
+    return {**Curriculum().params(0.3), "invert_d_prob": 0.05}
 
 
 def test_tcr_generates_without_shm_error():

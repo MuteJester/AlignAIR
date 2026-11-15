@@ -106,7 +106,7 @@ def test_required_segments_are_per_locus():
 def test_mixed_d_and_nond_validation_retains_every_locus(dc, name):
     """TRA+TRB: a union has_d would drop ALL TRA records (they have no D coordinates), silently
     reducing the validation report to TRB. Per-locus segments must retain both."""
-    params = dict(Curriculum().params(0.3))
+    params = {**Curriculum().params(0.3), "invert_d_prob": 0.05}
     params["mutation_rate"] = 0.0                          # TCR: no SHM
     exp = build_experiment(dc, params, allow_curatable=True)
     recs = list(itertools.islice(exp.stream_records(n=None, seed=7), 8))

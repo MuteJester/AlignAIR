@@ -7,9 +7,8 @@
    and V gapped form, so a sequence the model trained on keeps the model's anchor;
 3. GenAIRR's resolver (``alignair.genairr.anchors.resolve_anchor``: a V from its IMGT gaps, a J from a unique
    F/W-G-X-G motif under its locus), whose position counts when it is inferred or verified;
-4. for a V still without a gapped form: the gaps of the nearest same-length allele of ``known`` (``gap_from_known``)
-   and its anchor. This is the interim until GenAIRR gaps an ungapped V by its nearest template (ask G6), when
-   ``gap_from_known`` calls it instead; a V of another length stays without, reported.
+4. for a V still without a gapped form: the gaps and anchor of the nearest same-length allele of ``known`` (at most
+   ``MAX_DIFFERENT`` of its bases differ); a V of another length stays without, reported.
 
 Each V and J allele records how its anchor was found (``AlleleInfo.anchor_evidence``: supplied, known_allele,
 nearest_known_allele or the resolver's method; ambiguous, unresolved or invalid when none was). A D is left as given. Given a ``known``
@@ -82,13 +81,6 @@ class _Donors:
         anchor = (self.known.anchors or {}).get(best)
         return gapped, anchor, AnchorEvidence("nearest_known_allele", "inferred" if anchor is not None else "unresolved",
                                               f"{fewest} of {len(sequence)} bases differ", best)
-
-
-def gap_from_known(sequence: str, known: GeneReference) -> tuple[str | None, int | None, AnchorEvidence] | None:
-    """The gapped form (``sequence``'s bases on its columns) and anchor of the known allele of ``sequence``'s length
-    that differs from it at the fewest bases (ties by name), when those are at most ``MAX_DIFFERENT`` of its bases;
-    else None. Only a known allele whose gapped form is its sequence with gaps lends its gaps."""
-    return _Donors(known).nearest(sequence)
 
 
 def _verdict(resolved) -> AnchorEvidence:

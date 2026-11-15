@@ -1,18 +1,29 @@
-"""A GenAIRR genotype fixes which alleles recombine, so it cannot be combined with allele restrictions or weights."""
+"""``build_experiment`` simulates with the parameters the curriculum, the record streams and the benchmark give it: a
+key it does not read is refused (a typo would otherwise simulate the default silently), and the share of inverted Ds
+is always given, never a hidden default."""
 import pytest
 
 import GenAIRR.data as gd
 from alignair.errors import ConfigurationError
+from alignair.train.gym import Curriculum
 from alignair.train.gym.experiment import build_experiment
 
 pytestmark = pytest.mark.component
 
 
-@pytest.mark.parametrize("other", [{"restrict_alleles": {"V": ["IGHV1-2*02"]}},
-                                   {"v_allele_weights": {"IGHV1-2*02": 1.0}}], ids=["restrict_alleles", "weights"])
-@pytest.mark.parametrize("genotype", [{"genotype_seed": 3}], ids=["sampled"])
-def test_a_genotype_with_restricted_alleles_or_weights_is_refused(genotype, other):
-    with pytest.raises(ConfigurationError) as caught:
-        build_experiment(gd.HUMAN_IGH_OGRDB, {**genotype, **other})
-    message = str(caught.value)
-    assert "genotype" in message and next(iter(other)) in message
+def _params(**extra):
+    return {**Curriculum().params(0.3), "invert_d_prob": 0.0, **extra}
+
+
+@pytest.mark.parametrize("key", ["genotype_seed", "receptor_revision_prob", "paired_end", "mutation_rat"])
+def test_a_key_the_builder_does_not_read_is_refused(key):
+    with pytest.raises(ConfigurationError, match=key) as caught:
+        build_experiment(gd.HUMAN_IGH_OGRDB, _params(**{key: 1}))
+    assert caught.value.context["field"] == key
+
+
+def test_the_share_of_inverted_ds_is_required():
+    params = _params()
+    del params["invert_d_prob"]
+    with pytest.raises(ConfigurationError, match="invert_d_prob"):
+        build_experiment(gd.HUMAN_IGH_OGRDB, params)

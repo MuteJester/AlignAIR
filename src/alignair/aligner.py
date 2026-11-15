@@ -1,19 +1,12 @@
-"""Stable object API: the public surface for loading a model and predicting, plus a typed
-training entry. Everything here is a thin, documented wrapper over the internal functions
-(``load_model`` / ``predict`` / ``train``), so behavior is identical while the surface is stable, typed,
-and registry-aware.
+"""The inference surface: load a model (``Aligner.from_pretrained``) and predict, a thin, typed and registry-aware
+wrapper over ``alignair.api``.
 
     from alignair import Aligner
     aligner = Aligner.from_pretrained("alignair4-igh-human", device="auto")   # catalog id (PENDING-V4-PUBLISH), path, or id@version
     result = aligner.predict(["CAGGTGCAGCTG..."])
     result.write_airr("predictions.tsv")
 
-    from alignair import TrainingConfig, run_training
-    run = run_training(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
-    aligner = run.best_aligner()
-
-(The typed training entry is ``run_training`` rather than ``train`` because ``alignair.train`` is the
-training subpackage — a top-level ``train`` name would collide with it.)
+Training is ``alignair.run_training`` (``alignair.train``).
 """
 from __future__ import annotations
 
@@ -23,8 +16,7 @@ from .reference.reference_set import FALLBACK_LOCUS
 from dataclasses import dataclass
 from typing import Iterator, Optional, Sequence
 
-__all__ = ["Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
-           "resolve_device"]
+__all__ = ["Aligner", "PredictionResult", "resolve_device"]
 
 
 def resolve_device(device: str | None = "auto") -> str:
@@ -251,7 +243,3 @@ class Aligner:
         if buf:
             yield from self.predict(buf, batch_size=batch_size, **kw).records
 
-
-# Public training names remain available here for existing imports; their owner is alignair.train.
-from .train.config import TrainingConfig
-from .train.workflow import TrainingRun, run_training

@@ -14,10 +14,8 @@ from ..errors import ConfigurationError
 from ..reference.variants import NovelAllele, snp_variant
 
 
-def derive_variant(reference, base: str, *, substitutions: int, rng, indels: int = 0) -> NovelAllele | None:
-    """A novel allele of ``base`` (``snp_variant``); short indels wait for GenAIRR's ``derive_variant`` (ask G3)."""
-    if indels > 0:
-        raise NotImplementedError("short indel novel alleles wait for GenAIRR's derive_variant (ask G3)")
+def derive_variant(reference, base: str, *, substitutions: int, rng) -> NovelAllele | None:
+    """A novel allele of ``base`` with ``substitutions`` SNPs (``snp_variant``)."""
     return snp_variant(reference, base, substitutions, rng)
 
 

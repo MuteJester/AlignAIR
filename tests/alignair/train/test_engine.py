@@ -7,7 +7,8 @@ import torch
 from alignair.data import TrainingBatch
 from alignair.errors import ConfigurationError
 from alignair.tasks import MetricReport
-from alignair.train import TrainingEngine, evaluation_mode
+from alignair.core.runtime import evaluation_mode
+from alignair.train import TrainingEngine
 from alignair.train.guards import NonFiniteLossError
 
 pytestmark = pytest.mark.component
@@ -113,13 +114,6 @@ def test_engine_validation_uses_task_support_and_accepts_custom_models_without_c
     assert result.metrics == {'accuracy': pytest.approx(2/3)}
     assert result.score == pytest.approx(2/3)
     assert model.training
-
-
-def test_historical_trainer_imports_delegate_to_shared_owners():
-    from alignair.train import trainer, engine, checkpoints, random_state
-    assert trainer.validate is engine.validate
-    assert trainer.save_checkpoint is checkpoints.save_checkpoint
-    assert trainer._restore_rng is random_state.restore_rng_state
 
 
 @pytest.mark.parametrize('constant', [False, True])

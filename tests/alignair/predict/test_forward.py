@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 import torch
 
-from alignair.core import evaluation_mode
 from alignair.errors import ConfigurationError, InferenceError, NumericalError, current_error_context
 from alignair.predict import PredictConfig
 from alignair.predict.forward import forward_batch, output_numpy, prediction_batches, run_model
@@ -115,11 +114,6 @@ def test_nucleotide_forward_uses_shared_normalization_unknowns_and_cropping():
     assert batches[0]['tokenized_sequence'].tolist() == [[1,4,3,0],[1,5,5,0]]
     assert batches[1]['tokenized_sequence'].tolist() == [[5,5,0,0]]
     assert model.training
-
-
-def test_historical_evaluation_context_is_the_shared_core_runtime_owner():
-    from alignair.train.engine import evaluation_mode as old
-    assert old is evaluation_mode
 
 
 class Oriented(torch.nn.Module):

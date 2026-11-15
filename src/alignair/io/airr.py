@@ -1,6 +1,5 @@
-"""Write AlignAIR predictions as an AIRR rearrangement TSV, with extension columns the AIRR schema does not cover
-(per-gene equivalence set, resolution level and set confidence). Only the equivalence set (``*_call_set``) is
-populated."""
+"""Write AlignAIR predictions as an AIRR rearrangement TSV, with extension columns the AIRR schema does not cover: each
+gene's equivalence set (``*_call_set``), the read's orientation and input, and the assembly's outcome."""
 from __future__ import annotations
 
 from alignair.errors import DataContractError
@@ -12,7 +11,7 @@ from typing import List
 
 GENES = ("v", "d", "j")
 # The full AIRR rearrangement schema we emit (a superset of what predict()+build_airr produce), then
-# our optional uncertainty/resolution extensions (only `*_call_set` is populated by default). Per the
+# our extensions (each gene's equivalence set, orientation, input read, assembly outcome). Per the
 # AIRR `rev_comp` contract: a reverse-complement row (id 1) emits the ORIGINAL post-crop query as
 # `sequence` with `rev_comp=T`, and its coordinates/alignments are on `RC(sequence)` (the model's
 # forward frame); forward/complement/reverse rows emit the forward frame with `rev_comp=F`.
@@ -34,11 +33,11 @@ _PERGENE_ALN = [f"{g}_{k}" for g in GENES
                 for k in ("sequence_alignment", "germline_alignment",
                           "sequence_alignment_aa", "germline_alignment_aa",
                           "alignment_start", "alignment_end")]
-_EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "resolved_call", "call_level", "set_confidence")]
+_EXT = [f"{g}_call_set" for g in GENES]
 # extension fields: full-transform orientation label + original (pre-orientation) input read +
 # per-read segmentation quality flag. `orientation`/`input_sequence` keep the AIRR standard `rev_comp`
 # boolean honest (it is set only for a true reverse-complement) without losing the actual transform.
-_MISC = ["mutation_rate", "is_contaminant", "orientation", "input_sequence", "segmentation_low_quality",
+_MISC = ["mutation_rate", "orientation", "input_sequence", "segmentation_low_quality",
          "length_cropped", "airr_assembly_status", "airr_assembly_reason", "airr_assembly_error"]
 COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
            + _REGIONS + _PERGENE_ALN + _EXT + _MISC)
@@ -205,8 +204,6 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     if p.get("cdr3_start") is not None:
         # 0-based -> 1-based; the record's end-exclusive cdr3_end is already AIRR's closed end
         row["cdr3_start"] = _airr_start(p["cdr3_start"])
-    isc = p.get("is_contaminant")
-    row["is_contaminant"] = ("T" if isc else "F") if isc is not None else None
     if not row.get("sequence_alignment"):          # fallback when build_airr was not run
         starts = [p.get(f"{g}_sequence_start") for g in GENES if p.get(f"{g}_sequence_start") is not None]
         ends = [p.get(f"{g}_sequence_end") for g in GENES if p.get(f"{g}_sequence_end")]
@@ -227,8 +224,6 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
         cset = (p.get(f"{g}_call_set") or p.get(f"{g}_calls")
                 or ([p.get(f"{g}_call")] if p.get(f"{g}_call") else []))
         row[f"{g}_call_set"] = ",".join(c for c in cset if c)
-        conf = p.get(f"{g}_set_confidence")
-        row[f"{g}_set_confidence"] = f"{conf:.4f}" if conf is not None else None
     return row
 
 

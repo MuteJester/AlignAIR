@@ -25,16 +25,11 @@ class IntegrityError(ArtifactIntegrityError):
 def cache_root() -> Path:
     """The local model cache root. Honors ``ALIGNAIR_CACHE_DIR``; otherwise the correct per-OS user
     cache dir via ``platformdirs`` (``~/.cache/alignair`` on Linux honoring ``XDG_CACHE_HOME``,
-    ``~/Library/Caches/alignair`` on macOS, ``%LOCALAPPDATA%\\alignair`` on Windows), falling back to
-    the XDG/home convention if ``platformdirs`` is unavailable."""
+    ``~/Library/Caches/alignair`` on macOS, ``%LOCALAPPDATA%\\alignair`` on Windows)."""
+    import platformdirs
     if os.environ.get("ALIGNAIR_CACHE_DIR"):
         return Path(os.environ["ALIGNAIR_CACHE_DIR"])
-    try:
-        import platformdirs
-        return Path(platformdirs.user_cache_dir("alignair"))
-    except ImportError:                                            # pragma: no cover - stdlib fallback
-        xdg = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
-        return Path(xdg) / "alignair"
+    return Path(platformdirs.user_cache_dir("alignair"))
 
 
 def cache_path(model_id: str, version: str) -> Path:
@@ -249,7 +244,7 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
 
     lookup_error = None
     try:
-        found = _find(model_id, version, srcs, offline)
+        found = registry_sources.find_model(model_id, version, srcs, offline=offline)
     except RegistryError as exc:
         lookup_error = exc
         found = None
@@ -327,10 +322,6 @@ def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | 
             ok = sha is None or _sha256_file(cache_path(mid, ver)) == sha
             out.append((mid, ver, ok))
     return out
-
-
-def _find(model_id, version, srcs, offline):
-    return registry_sources.find_model(model_id, version, srcs, offline=offline)
 
 
 def _known_ids(srcs, offline) -> list[str]:

@@ -97,12 +97,16 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
 
     from ..api import load_model
     from ..train.gym import Curriculum, build_experiment
-    from ..train.trainer import build_batch, eval_metrics
+    from ..train.gym.experiment import GENAIRR_INVERT_D_PROB
+    from ..data.adapters import NucleotideBatchAdapter
+    from ..tasks import build_tasks
     from ..reference.reference_set import is_tcr
     model, ref = load_model(checkpoint_path, device="cpu")
+    tasks = build_tasks(model.cfg)
     agg: dict = {}
     for i, dc in enumerate(dcs):
-        params = dict(Curriculum(indel_form="uniform").params(0.3))   # pinned: the eval data never drifts
+        params = {**Curriculum(indel_form="uniform").params(0.3),    # pinned: the eval data never drifts
+                  "invert_d_prob": GENAIRR_INVERT_D_PROB}
         if is_tcr(dc):                            # TCR loci do not undergo SHM (GenAIRR forbids mutate())
             params["mutation_rate"] = 0.0
         exp = build_experiment(dc, params, allow_curatable=True)
@@ -110,9 +114,9 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
         recs = [r for r in itertools.islice(exp.stream_records(n=None, seed=seed + i), batch_size * n_batches * 3)
                 if all(r.get(f"{g}_sequence_start") is not None for g in segs)]
         for b in range(0, len(recs) - batch_size + 1, batch_size):    # +1: include the last full batch
-            batch_in, targets = build_batch(recs[b:b + batch_size], ref, model.cfg, device="cpu")
+            batch_in, targets = NucleotideBatchAdapter(ref, model.cfg, "cpu")(recs[b:b + batch_size])
             with torch.no_grad():
-                for k, v in eval_metrics(model(batch_in), targets, model.cfg).items():
+                for k, v in tasks.metrics(model(batch_in), targets).items():
                     agg.setdefault(k, []).append(v)
     return {k: round(sum(vs) / len(vs), 4) for k, vs in agg.items() if vs}
 

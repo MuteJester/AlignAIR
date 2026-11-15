@@ -82,12 +82,6 @@ class MissingDependencyError(AlignAIRError, ImportError):
     category = "dependency"
 
 
-class AccessPolicyError(AlignAIRError, RuntimeError):
-    """A protected dataset or artifact cannot be accessed in this operation."""
-    code = "ALIGNAIR_ACCESS_DENIED"
-    category = "access"
-
-
 class OperationIOError(AlignAIRError, OSError):
     """An expected filesystem or operating-system operation failed."""
     code = "ALIGNAIR_IO_FAILED"

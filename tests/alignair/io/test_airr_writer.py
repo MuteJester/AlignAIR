@@ -296,3 +296,12 @@ def test_writer_emits_only_selected_columns():
         assert "junction" not in header and "v_cigar" not in header
     finally:
         os.remove(tmp)
+
+
+def test_the_table_has_no_extension_column_alignair_never_fills():
+    """The equivalence set is AlignAIR's one per-gene extension; the resolution, set confidence and contaminant
+    columns, which nothing in AlignAIR 4 fills, are not written."""
+    from alignair.io.airr import COLUMNS
+    never = {f"{g}_{k}" for g in "vdj" for k in ("resolved_call", "call_level", "set_confidence")} | {"is_contaminant"}
+    assert not never & set(COLUMNS)
+    assert {"v_call_set", "d_call_set", "j_call_set", "orientation", "input_sequence"} <= set(COLUMNS)

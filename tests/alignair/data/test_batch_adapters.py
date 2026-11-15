@@ -106,13 +106,6 @@ def test_record_adapters_reject_the_wrong_objective_and_malformed_records():
         adapter(_reference(), cfg, overflow="discard")([_record()])
 
 
-def test_the_trainers_batch_builder_is_the_shared_adapter():
-    from alignair.train.trainer import build_batch
-    from alignair.data.adapters import build_nucleotide_batch
-
-    assert build_batch is build_nucleotide_batch
-
-
 def test_an_empty_read_is_adapted_with_nothing_to_supervise():
     record = _record()
     record["sequence"] = ""

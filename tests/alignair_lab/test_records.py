@@ -22,7 +22,8 @@ import pytest
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError
 from alignair.train.assembly import TrainingStream, parallel_training_data
 from alignair.train.gym.streams import CurriculumStreamPolicy, training_records
-from alignair.train.gym.workers import component_plan, parallel_records
+from alignair.train.gym.workers import component_plan
+from tests.support.record_workers import parallel_records
 from alignair_lab.recipe import BATCH_SIZE, DATACONFIGS, POLICY, SEED
 from alignair_lab.records import CachedRecordSource, component_counts, genairr_digest, write_record_cache
 from tests.support.training_streams import assert_same_runs, run, serial_records

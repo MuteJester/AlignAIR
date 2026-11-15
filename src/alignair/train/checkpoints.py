@@ -14,7 +14,7 @@ from ..io.atomic import atomic_write
 from .random_state import capture_rng_state
 
 
-def save_checkpoint(path, cfg, model, step, opt=None, *, dataconfigs=None, train_args=None, label_schema=None,
+def save_checkpoint(path, model, step, opt=None, *, dataconfigs=None, train_args=None, label_schema=None,
                     scheduler=None):
     """Self-contained .alignair checkpoint, retaining embedded reference and trusted training state."""
     from .. import model_file as mf
@@ -86,7 +86,7 @@ def _step_of(path) -> int:
     return int(match.group(1)) if match else -1
 
 
-def save_rotating(base_path, cfg, model, step, opt, keep=3, *, dataconfigs=None, train_args=None, label_schema=None,
+def save_rotating(base_path, model, step, opt, keep=3, *, dataconfigs=None, train_args=None, label_schema=None,
                   scheduler=None):
     """Keep numbered checkpoints and atomically refresh the convenient base-path copy."""
     try:
@@ -97,7 +97,7 @@ def save_rotating(base_path, cfg, model, step, opt, keep=3, *, dataconfigs=None,
         raise ConfigurationError("checkpoint retention must be a positive integer") from exc
     stem, extension = _stem(base_path), _ext(base_path)
     path = f"{stem}.step{step}{extension}"
-    save_checkpoint(path, cfg, model, step, opt, dataconfigs=dataconfigs, train_args=train_args,
+    save_checkpoint(path, model, step, opt, dataconfigs=dataconfigs, train_args=train_args,
                     label_schema=label_schema, scheduler=scheduler)
     atomic_write(base_path, lambda temporary: shutil.copyfile(path, temporary), stage="training_checkpoint")
     candidates = [candidate for candidate in glob.glob(f"{glob.escape(stem)}.step*{extension}")

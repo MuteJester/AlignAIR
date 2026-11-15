@@ -75,7 +75,7 @@ def test_invalid_germline_span_is_rejected(start, end):
 
 def test_batch_masks_removed_genes_in_training_and_metrics():
     from alignair.core.config import AlignAIRConfig
-    from alignair.data.adapters import build_nucleotide_batch
+    from alignair.data.adapters import NucleotideBatchAdapter
     from alignair.reference.reference_set import GeneReference, ReferenceSet
     from alignair.tasks.metrics import alignment_metrics
 
@@ -85,7 +85,7 @@ def test_batch_masks_removed_genes_in_training_and_metrics():
     removed = _record()
     removed.update(j_sequence_start=12, j_sequence_end=12,
                    j_germline_start=None, j_germline_end=None, j_cigar="")
-    _, targets = build_nucleotide_batch([_record(), removed], reference, cfg, augment_orientation=False)
+    _, targets = NucleotideBatchAdapter(reference, cfg, augment_orientation=False)([_record(), removed])
     assert targets["j_supervise"].tolist() == [True, False]
     assert targets["v_supervise"].tolist() == [True, True]
     outputs = {key: value.clone() for key, value in targets.items()}
