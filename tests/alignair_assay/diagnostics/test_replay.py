@@ -305,7 +305,7 @@ def test_spans_replace_the_corrected_segments(make_shaped_model, s0_reads):
     # the classifier kept its own spans; the germline reader read the substituted ones (a V end it may move by up to
     # _END_REACH bases where the alignment shows the V goes on or stops earlier)
     assert _same_raw(out, base)
-    from alignair.predict.heuristic_matcher import _END_REACH
+    from alignair.predict.germline.settle import _END_REACH
     assert all(out.germline["v"][i].seq_start >= 5 and out.germline["v"][i].seq_end <= 200 + _END_REACH for i in given)
     assert [out.calls[g] for g in GENES] == [base.calls[g] for g in GENES]
 

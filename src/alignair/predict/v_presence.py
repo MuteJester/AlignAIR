@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import functools
 
-from .cigar import ALIGNED, cigar_ops, matched_bases
+from .germline.cigar import ALIGNED, cigar_ops, matched_bases
 
 V_KMER = 15
 V_MIN_SPAN = 20

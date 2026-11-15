@@ -164,7 +164,8 @@ def test_a_whole_v_with_a_deletion_near_its_start_is_placed_from_the_germline_st
 def test_settling_a_start_never_moves_it_onto_read_bases_that_do_not_match_the_germline():
     """Two read bases before the V's first observed base (germline 40) that differ from the germline bases before
     it: from the right start, the settled start stays there (moving onto them gains nothing)."""
-    from alignair.predict.heuristic_matcher import derive_cigar, settle_start
+    from alignair.predict.germline.cigar import derive_cigar
+    from alignair.predict.germline.settle import settle_start
     flip = {"A": "C", "C": "A", "G": "T", "T": "G"}
     read = flip[_V[38]] + flip[_V[39]] + _deleted(_V[40:], 10)
     cigar = derive_cigar(read, _V[40:], 0.4)
@@ -191,7 +192,7 @@ def test_a_whole_v_whose_first_bases_are_mutated_keeps_its_start(mutated):
 def test_settling_leaves_a_degenerate_placement_as_placed(read, start, end, cigar):
     """Three read bases over a 287-base germline window (``278D1M6D2M``), or a segment shorter than the matcher's
     anchor: no nearby start repairs such a placement, so none is searched and the matcher's stands."""
-    from alignair.predict.heuristic_matcher import settle_start
+    from alignair.predict.germline.settle import settle_start
     assert settle_start(read, _V, start, end, 0.0, cigar) == (start, cigar)
 
 
@@ -229,7 +230,8 @@ def test_a_v_end_past_its_last_germline_base_is_trimmed_back():
 
 def test_a_v_end_is_not_moved_past_its_limit():
     """The read position the V may reach (the next segment's start) bounds an extension."""
-    from alignair.predict.heuristic_matcher import derive_cigar, settle_end
+    from alignair.predict.germline.cigar import derive_cigar
+    from alignair.predict.germline.settle import settle_end
     read = _deleted(_V, 281) + _unlike(_V[:10])
     cigar = derive_cigar(read[:279], _V[:279], 0.6)
     seq_end, germ_end = settle_end(read, _V, 0, 279, 0, 279, cigar, 282)

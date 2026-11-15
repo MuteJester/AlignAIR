@@ -72,12 +72,15 @@ def test_non_finite_outputs_are_refused_once_by_the_forward():
 
 
 def test_the_germline_reader_has_its_settings_fixed_and_returns_cigars():
-    """The matcher is built with the settings every model aligns with; the CIGAR derivation returns the CIGAR (its
-    result object only ever carried the CIGAR); the unused anchor decoder and gene tuple are gone."""
-    from alignair.predict import decode, heuristic_matcher, state
-    assert list(inspect.signature(heuristic_matcher.HeuristicGermlineMatcher).parameters) == ["germlines"]
-    assert heuristic_matcher.derive_cigar("ACGGT", "ACGT", 1) == "2M1I2M"
-    assert not hasattr(heuristic_matcher, "derive_alignment")
+    """The locator is built with the settings every model aligns with; the CIGAR derivation returns the CIGAR (its
+    result object only ever carried the CIGAR); the unused anchor decoder and gene tuple are gone; the reader is one
+    package (no heuristic_matcher module beside it)."""
+    from alignair.predict import decode, state
+    from alignair.predict.germline import cigar, locate
+    assert list(inspect.signature(locate.GermlineLocator).parameters) == ["germlines"]
+    assert cigar.derive_cigar("ACGGT", "ACGT", 1) == "2M1I2M"
+    assert not hasattr(cigar, "derive_alignment")
+    assert _gone("alignair.predict.heuristic_matcher") and _gone("alignair.predict.cigar")
     assert not any(hasattr(state, name) for name in ("AlignResult", "GENES"))
     assert not hasattr(decode, "decoded_anchors")
 

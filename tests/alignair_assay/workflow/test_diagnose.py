@@ -203,7 +203,7 @@ def test_the_modules_the_stages_import_lazily_are_loaded_with_the_code_digest():
     """In a fresh process, importing diagnostics.identity (which takes the code digest) loads every module the
     pipeline's stages import lazily, the AIRR assembly among them, so the digest is of the code the evaluator runs."""
     import subprocess
-    lazy = ("alignair.model_file", "alignair.predict.heuristic_matcher", "alignair.predict.airr",
+    lazy = ("alignair.model_file", "alignair.predict.germline", "alignair.predict.airr",
             "alignair.predict.airr.builder")
     code = ("import sys, alignair_assay.diagnostics.identity; "
             f"print(sorted(m for m in {lazy!r} if m not in sys.modules))")
@@ -220,7 +220,7 @@ def test_the_model_key_is_its_weights_and_the_alignair_code(built, tmp_path, sav
     # The code this process imported: in this checkout, the code the alignair-local runner fingerprints. The modules
     # the stages import lazily are loaded with the evaluator, so the digest is of the code that runs.
     assert code == local_code_identity()
-    assert {"alignair.predict.heuristic_matcher", "alignair.model_file"} <= set(sys.modules)
+    assert {"alignair.predict.germline", "alignair.model_file"} <= set(sys.modules)
     report = json.loads(layout.diagnostics_json(result.model_key).read_text())
     assert report["model"]["weights_sha256"] == weights_sha256(checkpoint) == sha256_file(checkpoint)
     assert report["model"]["code_sha256"] == code["code_sha256"]

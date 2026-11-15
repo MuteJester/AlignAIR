@@ -22,10 +22,10 @@ def load(package, name):
     return mod
 
 
-derive = load("predict", "_derive_cy")
+derive = load(os.path.join("predict", "germline"), "_derive_cy")
 assert derive.derive_cigar(b"ACGGT", b"ACGT", 1) == "2M1I2M", derive.derive_cigar(b"ACGGT", b"ACGT", 1)
 
-band = load("refine", "_vband_cy")
+band = load(os.path.join("network", "refine"), "_vband_cy")
 read = np.array([[1, 3, 4, 2]], dtype=np.int64)                # the read is its row: four matches on one diagonal
 one, zero = np.array([0], dtype=np.int64), np.zeros((1, 1), dtype=np.int64)
 out = np.empty((1, 1), dtype=np.float32)

@@ -1,7 +1,7 @@
 """One reader of the CIGARs the germline reader writes, and the walks the prediction stages make over them."""
 import pytest
 
-from alignair.predict.cigar import aligned_columns, aligned_runs, cigar_ops, matched_bases
+from alignair.predict.germline.cigar import aligned_columns, aligned_runs, cigar_ops, matched_bases
 
 pytestmark = pytest.mark.component
 

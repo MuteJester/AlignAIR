@@ -2,8 +2,8 @@
 """Compiled C-speed kernel for the germline CIGAR reconstruction.
 
 A banded global alignment of a *pinned* read/germline window (both ends fixed by the
-``HeuristicGermlineMatcher``), producing an M/I/D CIGAR. Byte-identical to the pure-Python reference
-``alignair.predict.heuristic_matcher._derive_cigar_py`` (same scoring, band and tie-breaking), ~100x
+``GermlineLocator``), producing an M/I/D CIGAR. Byte-identical to the pure-Python reference
+``alignair.predict.germline.cigar._derive_cigar_py`` (same scoring, band and tie-breaking), ~100x
 faster. Built as an optional extension; if the ``.so`` is absent the pure-Python fallback is used.
 """
 from libc.stdlib cimport malloc, free

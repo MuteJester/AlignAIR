@@ -126,7 +126,7 @@ __pycache__/
 
 # Cython build artifacts
 build/
-src/alignair/predict/_derive_cy.c
+src/alignair/predict/germline/_derive_cy.c
 src/alignair/network/refine/_vband_cy.c
 *.so
 

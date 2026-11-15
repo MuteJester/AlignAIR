@@ -6,7 +6,7 @@ import statistics
 from collections import Counter
 
 from ..reference.genes import GENES
-from ..predict.cigar import cigar_ops
+from ..predict.germline.cigar import cigar_ops
 from .validate import validate_airr
 
 

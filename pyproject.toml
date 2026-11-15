@@ -87,7 +87,7 @@ exclude = ["alignair_assay*", "alignair_lab*"]
 
 # ship the Cython sources so an sdist can (re)build the optional kernels (germline CIGAR, the V re-score's band)
 [tool.setuptools.package-data]
-"alignair.predict" = ["*.pyx"]
+"alignair.predict.germline" = ["*.pyx"]
 "alignair.network.refine" = ["*.pyx"]
 
 # ── Wheel building (cibuildwheel) ───────────────────────────────────────────

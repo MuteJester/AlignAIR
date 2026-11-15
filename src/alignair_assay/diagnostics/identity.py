@@ -20,7 +20,7 @@ from pathlib import Path
 
 import alignair
 import alignair.model_file  # noqa: F401 (loaded before the code digest, see the module docstring)
-import alignair.predict.heuristic_matcher  # noqa: F401 (loaded before the code digest, see the module docstring)
+import alignair.predict.germline  # noqa: F401 (loaded before the code digest, see the module docstring)
 import alignair.predict.airr  # noqa: F401 (loaded before the code digest, see the module docstring)
 import torch
 

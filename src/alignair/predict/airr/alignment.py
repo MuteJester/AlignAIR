@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 
 from GenAIRR.utilities import translate
 
-from ..cigar import ALIGNED, cigar_ops
+from ..germline.cigar import ALIGNED, cigar_ops
 from .constants import SHORT_D_SENTINEL
 
 
