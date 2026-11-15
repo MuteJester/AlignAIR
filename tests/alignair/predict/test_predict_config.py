@@ -15,7 +15,7 @@ def test_prediction_has_one_genotype_mechanism_and_one_reader():
     assert "aligner" not in inspect.signature(pipeline.predict).parameters
 
 
-@pytest.mark.parametrize("overrides", [{}, {"threshold": 0.3, "cap": 5, "airr": False}, {"chain_types": ("X",)}])
+@pytest.mark.parametrize("overrides", [{}, {"threshold": 0.3, "cap": 5, "airr": False}, {"loci": ("X",)}])
 def test_for_model_is_the_config_predict_sequences_builds(overrides, monkeypatch):
     from types import SimpleNamespace
     from alignair import api

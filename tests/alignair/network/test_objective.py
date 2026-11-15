@@ -8,12 +8,13 @@ from alignair.tasks.objective import build_tasks
 
 from alignair.network.objective import (
     LOSS_WEIGHTS, ChipObjective, parse_loss, scan_loss, shm_labels)
-from alignair.network.parser import STATES, crf
+from alignair.core.regions import REGIONS
+from alignair.network.parser import crf
 from alignair.network.scan import OUT
 
 pytestmark = pytest.mark.component
 
-V, N1, J = STATES.index("V"), STATES.index("N1"), STATES.index("J")
+V, N1, J = REGIONS.index("V"), REGIONS.index("N1"), REGIONS.index("J")
 
 
 def _path(length, v_end, j_start):
@@ -27,12 +28,12 @@ def _misplaced_parse_loss(length):
     boundaries 2 bases late."""
     true = _path(length, length - 100, length - 95)
     believed = _path(length, length - 98, length - 93)
-    emissions = torch.full((1, length, len(STATES)), -10.)
+    emissions = torch.full((1, length, len(REGIONS)), -10.)
     emissions[0, torch.arange(length), believed] = 10.
     mask = torch.ones(1, length, dtype=torch.bool)
-    allowed = torch.zeros(1, length, len(STATES), dtype=torch.bool)
+    allowed = torch.zeros(1, length, len(REGIONS), dtype=torch.bool)
     allowed[0, torch.arange(length), true] = True
-    output = crf(emissions, torch.zeros(1, length, len(STATES), len(STATES)), mask)
+    output = crf(emissions, torch.zeros(1, length, len(REGIONS), len(REGIONS)), mask)
     return float(parse_loss(output, allowed, true.unsqueeze(0), mask))
 
 
@@ -86,7 +87,7 @@ def test_a_one_allele_bank_skips_the_scan_term():
 
 def test_deletion_labels_and_non_germline_bases_are_ignored_by_the_shm_term():
     state = torch.tensor([[0, 1, 2, 3, 0, -100]])            # germline, substitution, insertion, deletion, ..., pad
-    region = torch.tensor([[STATES.index("V")] * 4 + [STATES.index("N1"), -100]])
+    region = torch.tensor([[REGIONS.index("V")] * 4 + [REGIONS.index("N1"), -100]])
     assert shm_labels(state, region).tolist() == [[0, 1, 2, -100, -100, -100]]
 
 

@@ -6,12 +6,13 @@ import pytest
 import torch
 
 from alignair.network import parser as parser_module
-from alignair.network.parser import STATES, Parser, crf, crf_nll
+from alignair.core.regions import REGIONS
+from alignair.network.parser import Parser, crf, crf_nll
 
 pytestmark = pytest.mark.component
 
-S = len(STATES)
-V, N1, J = STATES.index("V"), STATES.index("N1"), STATES.index("J")
+S = len(REGIONS)
+V, N1, J = REGIONS.index("V"), REGIONS.index("N1"), REGIONS.index("J")
 
 
 def _random(batch, length, seed=0):

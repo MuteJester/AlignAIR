@@ -128,15 +128,15 @@ class NucleotideBatchAdapter:
                     record = bank.resolve(record)
                 bundle = build_targets(record, reference, self.config.has_d)
                 if bank is not None:                     # a novel allele the read cannot tell from its family
-                    for gene, (start, end) in bundle["germline"].items():
+                    for gene, (start, end) in bundle["germline_spans"].items():
                         calls = bundle["calls"].get(gene.upper())
                         if calls:
                             calls.update(*(bank.ties(gene, call, (start, end)) for call in list(calls)))
                 targets = {}
                 for gene in genes:
-                    present = gene in bundle["germline"]
+                    present = gene in bundle["germline_spans"]
                     supervise = present and not (gene == "d" and bundle["d_inverted"])
-                    start, end = bundle["inseq"].get(gene, (0, 0))
+                    start, end = bundle["query_spans"].get(gene, (0, 0))
                     targets[f"{gene}_start"] = torch.tensor([float(start)], dtype=torch.float32)
                     targets[f"{gene}_end"] = torch.tensor([float(end)], dtype=torch.float32)
                     targets[f"{gene}_supervise"] = torch.tensor(supervise)

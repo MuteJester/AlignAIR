@@ -144,10 +144,10 @@ def test_predict_config_is_the_one_predict_sequences_builds(small_model, monkeyp
     model, reference_set = small_model
     seen = []
     monkeypatch.setattr(api, "_predict", lambda model, sequences, reference, cfg, device: seen.append(cfg) or [])
-    for overrides in ({}, {"threshold": 0.3, "cap": 5, "airr": False}, {"chain_types": ("X",)}):
+    for overrides in ({}, {"threshold": 0.3, "cap": 5, "airr": False}, {"loci": ("X",)}):
         api.predict_sequences(model, reference_set, ["ACGT"], device="cpu", batch_size=7, **overrides)
         assert predict_config(model, reference_set, batch_size=7, **overrides) == seen[-1]
-    assert seen[0].chain_types == ("IGH",)
+    assert seen[0].loci == ("IGH",)
 
 
 # --- captured stages ------------------------------------------------------------------------------------------

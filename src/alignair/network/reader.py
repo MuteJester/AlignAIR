@@ -1,6 +1,6 @@
 """The SHM reader: what happened to each base, read from its sequence context alone.
 
-Per base, from the trunk's features: the edit state (``EDIT_STATES``: germline, substitution, insertion), whose
+Per base, from the trunk's features: the edit state (``READ_EDITS``: germline, substitution, insertion), whose
 substitution probability ``m`` and insertion probability ``inserted`` the bank scans use as costs; and per gene the
 base's column in that gene's frame (``alignair.reference.frames``). It never predicts the germline base itself, which
 would be the reference memorized: what the germline is comes only from the bank. Both heads are 1x1 convolutions of
@@ -14,15 +14,18 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from ..core.edit_states import EDIT_LABELS
 from ..reference.frames import FRAME_WIDTHS
 
-
-EDIT_STATES = ("germline", "substitution", "insertion")
+# The edit labels a read base can carry: every one but deletion (no read base), which is the last label, so the
+# reader's class indices are the training labels' (``core.edit_states.EDIT_INDEX``).
+assert EDIT_LABELS[-1] == "deletion", "deletion must be the last edit label"
+READ_EDITS = EDIT_LABELS[:-1]
 
 
 @dataclass
 class ReaderOutput:
-    edit_logits: torch.Tensor                 # (B, L, 3) over EDIT_STATES
+    edit_logits: torch.Tensor                 # (B, L, 3) over READ_EDITS
     coord_logits: dict                        # gene -> (B, L, FRAME_WIDTHS[gene])
 
     @property
@@ -44,7 +47,7 @@ def top_coordinates(coord_logits: torch.Tensor, k: int) -> tuple[torch.Tensor, t
 class ShmReader(nn.Module):
     def __init__(self, channels: int, genes: tuple[str, ...] = ("v", "d", "j")):
         super().__init__()
-        self.edit = nn.Conv1d(channels, len(EDIT_STATES), 1)
+        self.edit = nn.Conv1d(channels, len(READ_EDITS), 1)
         self.coords = nn.ModuleDict({gene: nn.Conv1d(channels, FRAME_WIDTHS[gene], 1) for gene in genes})
 
     def forward(self, features: torch.Tensor, mask: torch.Tensor, coordinates: bool = True) -> ReaderOutput:

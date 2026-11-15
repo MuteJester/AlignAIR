@@ -9,7 +9,7 @@ from ..reference.genes import GENES
 from ..core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
 from ..core.regions import REGION_INDEX
 from ..core.tokens import encode
-from ..core.edit_states import STATE_INDEX
+from ..core.edit_states import EDIT_INDEX
 from .coordinates import segment_spans
 from .alignment import parse_cigar, query_reference_map
 
@@ -96,10 +96,10 @@ def _label_segment_states(state, seq, ss, gref, gs, cigar):
                 if obs >= len(seq):
                     break
                 if pending_del:
-                    state[obs] = STATE_INDEX["deletion"]
+                    state[obs] = EDIT_INDEX["deletion"]
                     pending_del = False
                 elif germ < len(gref) and seq[obs] != gref[germ]:
-                    state[obs] = STATE_INDEX["substitution"]
+                    state[obs] = EDIT_INDEX["substitution"]
                 # else leaves germline (0)
                 obs += 1
                 germ += 1
@@ -107,7 +107,7 @@ def _label_segment_states(state, seq, ss, gref, gs, cigar):
             for _ in range(count):
                 if obs >= len(seq):
                     break
-                state[obs] = STATE_INDEX["insertion"]
+                state[obs] = EDIT_INDEX["insertion"]
                 obs += 1
         elif op in ("D", "N"):
             germ += count
@@ -201,8 +201,8 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         "tokens": encode(seq),
         "region_labels": region,
         "state_labels": state,
-        "germline": germ,
-        "inseq": coords,
+        "germline_spans": germ,
+        "query_spans": coords,
         "calls": calls,
         "d_inverted": bool(record.get("d_inverted", False)),   # an inverted D is RC(germline) in the read
         "mutation_rate": observed_mutation_rate(record, germ),

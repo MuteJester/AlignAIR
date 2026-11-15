@@ -9,13 +9,13 @@ from alignair.predict.state import GeneCall, GermlineAlignment, Predictions
 pytestmark = pytest.mark.component
 
 
-def _record(chain_types):
+def _record(reference_loci):
     calls = {"v": [GeneCall(("IGKV1",), (1.0,))], "j": [GeneCall(("IGKJ1",), (1.0,))]}
     alignments = {"v": [GermlineAlignment("IGKV1", 0, 10, 0, 10, "10M")],
                   "j": [GermlineAlignment("IGKJ1", 20, 30, 0, 10, "10M")]}
     preds = Predictions(allele={}, start={}, end={}, mutation_rate=np.array([0.0]), indel_count=np.array([0.0]),
                         orientation=np.array([0]))
-    loci = record_loci(alignments["v"], object(), None, chain_types)     # a reference without a locus schema
+    loci = record_loci(alignments["v"], object(), None, reference_loci)     # a reference without a locus schema
     (read,) = read_results(["ACGT"], ["ACGT"], preds, calls, alignments, None, None, None, None, loci)
     return light_record(read)
 
@@ -24,9 +24,9 @@ def test_a_one_locus_reference_labels_the_record():
     assert _record(("IGK",))["locus"] == "IGK"
 
 
-@pytest.mark.parametrize("chain_types", [None, ("IGH", "IGK")])
-def test_no_locus_label_without_a_one_locus_reference(chain_types):
-    assert "locus" not in _record(chain_types)
+@pytest.mark.parametrize("reference_loci", [None, ("IGH", "IGK")])
+def test_no_locus_label_without_a_one_locus_reference(reference_loci):
+    assert "locus" not in _record(reference_loci)
 
 
 def test_a_multi_locus_reference_labels_each_row_with_its_called_vs_locus():

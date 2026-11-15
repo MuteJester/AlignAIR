@@ -25,14 +25,15 @@ from torch.nn import functional as F
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
 from ..core.d_presence import D_CLASSES, D_PRESENCE, D_PRESENCE_LOGITS
-from ..core.edit_states import STATE_INDEX
+from ..core.edit_states import EDIT_INDEX
+from ..core.regions import REGIONS
 from ..core.orientation import NUM_ORIENTATIONS
 from ..core.tokens import IGNORE_INDEX
 from ..tasks.metrics import MetricReport, alignment_metrics
 from ..tasks.supervision import supervised_rows
 
-from .parser import GENES as STATE_OF, STATES, ParserOutput, crf_nll
-from .reader import EDIT_STATES
+from .parser import GENE_STATE, ParserOutput, crf_nll
+from .reader import READ_EDITS
 from .scan import OUT
 
 LOSS_WEIGHTS = {name: 1.0 for name in ("orientation", "parse", *ANCHOR_KEYS.values(), "shm", "coord", "scan_v",
@@ -43,9 +44,9 @@ def shm_labels(state_labels: torch.Tensor, region: torch.Tensor) -> torch.Tensor
     """The product's per-base edit states (germline, substitution, insertion, deletion) as the reader's classes on V,
     D and J bases; ``IGNORE_INDEX`` for a deletion-tagged base, a base outside V, D and J, and a pad."""
     germline_encoded = torch.zeros_like(region, dtype=torch.bool)
-    for state in STATE_OF.values():
+    for state in GENE_STATE.values():
         germline_encoded |= region == state
-    keep = germline_encoded & (state_labels >= 0) & (state_labels != STATE_INDEX["deletion"])
+    keep = germline_encoded & (state_labels >= 0) & (state_labels != EDIT_INDEX["deletion"])
     return state_labels.masked_fill(~keep, IGNORE_INDEX)
 
 
@@ -74,8 +75,8 @@ def _mean(values: torch.Tensor, rows: torch.Tensor) -> torch.Tensor:
 
 
 def _allowed_states(bits: torch.Tensor) -> torch.Tensor:
-    """(B, L) bitmasks over ``STATES`` -> (B, L, S) bool."""
-    return ((bits.unsqueeze(-1) >> torch.arange(len(STATES), device=bits.device)) & 1).bool()
+    """(B, L) bitmasks over ``REGIONS`` -> (B, L, S) bool."""
+    return ((bits.unsqueeze(-1) >> torch.arange(len(REGIONS), device=bits.device)) & 1).bool()
 
 
 class ChipObjective:
@@ -105,9 +106,9 @@ class ChipObjective:
 
         labels = shm_labels(targets["state_labels"], targets["region"])
         edit = outputs["chip_edit_logits"]
-        parts["shm"] = (F.cross_entropy(edit.reshape(-1, len(EDIT_STATES)), labels.reshape(-1),
+        parts["shm"] = (F.cross_entropy(edit.reshape(-1, len(READ_EDITS)), labels.reshape(-1),
                                         ignore_index=IGNORE_INDEX)
-                        if (labels >= 0).any() else edit.sum() * 0.) / math.log(len(EDIT_STATES))
+                        if (labels >= 0).any() else edit.sum() * 0.) / math.log(len(READ_EDITS))
 
         coord = []
         for gene in self.genes:
@@ -155,7 +156,7 @@ class ChipObjective:
         if "chip_edit_logits" in outputs:
             labels = shm_labels(targets["state_labels"], targets["region"])
             probs = outputs["chip_edit_logits"].softmax(-1)
-            onehot = F.one_hot(labels.clamp_min(0), len(EDIT_STATES)).to(probs.dtype)
+            onehot = F.one_hot(labels.clamp_min(0), len(READ_EDITS)).to(probs.dtype)
             report.add("shm_brier", ((probs - onehot) ** 2).sum(-1), labels >= 0)
         if D_PRESENCE_LOGITS in outputs and D_PRESENCE in targets:
             report.add("d_presence_acc", outputs[D_PRESENCE_LOGITS].argmax(-1) == targets[D_PRESENCE],

@@ -48,7 +48,7 @@ from .refine.d_boundaries import refine_d_boundaries
 from .refine.locus import read_loci, restrict_to_locus
 from .refine.v_rescore import rescore_v
 from .bank import BankCompiler
-from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser, expected_slot
+from .parser import GENE_STATE, IMPOSSIBLE, Parser, expected_slot
 from .presence import D_LENGTH_SCALE, DPresenceEvidence
 from .reader import ShmReader, top_coordinates
 from .scan import BankScan, allele_log_posterior
@@ -165,20 +165,20 @@ class ChipCore(nn.Module):
         for gene, head in self.anchors.items():
             logits = head(features, mask)
             out[ANCHOR_LOGITS[gene]] = torch.cat(
-                [logits[:, :length] + log_region[..., STATE_OF[gene]], logits[:, length:]], -1)
+                [logits[:, :length] + log_region[..., GENE_STATE[gene]], logits[:, length:]], -1)
 
         teach = (torch.rand(mask.shape[0], device=mask.device) < P_TEACHER
                  if self.training and chip_batch else None)
         keep = (1 - reading.inserted) * mask
         for gene in self.genes:
-            weights = valve(parsed.marginals[..., STATE_OF[gene]], ROUTE_VALVE)
+            weights = valve(parsed.marginals[..., GENE_STATE[gene]], ROUTE_VALVE)
             if windowed:
-                columns, probs = self.reader.top_columns(features, gene, parsed.marginals[..., STATE_OF[gene]] > SUPPORT,
+                columns, probs = self.reader.top_columns(features, gene, parsed.marginals[..., GENE_STATE[gene]] > SUPPORT,
                                                          TOP_K)
             else:
                 columns, probs = top_coordinates(reading.coord_logits[gene], TOP_K)
             if teach is not None:
-                true_region = (batch["teacher_region"] == STATE_OF[gene]).to(weights.dtype)
+                true_region = (batch["teacher_region"] == GENE_STATE[gene]).to(weights.dtype)
                 true_column = batch[f"teacher_coord_{gene}"]
                 taught_columns = torch.zeros_like(columns)
                 taught_columns[..., 0] = true_column.clamp_min(0)
@@ -199,13 +199,13 @@ class ChipCore(nn.Module):
             out[f"{gene}_allele"] = torch.exp(log_posterior - log_posterior.max(-1, keepdim=True).values)
 
         if self.d_presence is not None:
-            in_d = parsed.marginals[..., STATE_OF["d"]].detach()
+            in_d = parsed.marginals[..., GENE_STATE["d"]].detach()
             posterior = out["d_log_posterior"].detach().exp()
             evidence = torch.stack([in_d.max(1).values, in_d.sum(1) / D_LENGTH_SCALE, posterior.max(-1).values,
                                     -torch.xlogy(posterior, posterior).sum(-1)], -1)
             out[D_PRESENCE_LOGITS] = self.d_presence(evidence)
 
-        in_vdj = sum(parsed.marginals[..., STATE_OF[gene]] for gene in self.genes)
+        in_vdj = sum(parsed.marginals[..., GENE_STATE[gene]] for gene in self.genes)
         out["mutation_rate"] = (reading.m * in_vdj).sum(1, keepdim=True) / in_vdj.sum(1, keepdim=True).clamp_min(1.)
         out["indel_count"] = (reading.inserted * in_vdj).sum(1, keepdim=True)
         # One locus per read (V, D and J of its best same-locus V-J pair), for prediction batches only: an adapter batch

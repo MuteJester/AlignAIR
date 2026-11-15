@@ -129,7 +129,7 @@ def build_records(state: PredictionState) -> PredictionState:
     pre-orientation read and ``canonical`` its forward frame: the result owns the pre-orientation read, so the AIRR
     writer emits the right ``sequence``/``rev_comp`` for the Python API and the CLI alike."""
     context, cfg = state.context, state.context.cfg
-    loci = record_loci(state.alignments["v"], context.reference, state.no_v, cfg.chain_types,
+    loci = record_loci(state.alignments["v"], context.reference, state.no_v, cfg.loci,
                        read_locus=state.predictions.read_locus)
     results = read_results(state.canonical, state.reads, state.predictions, state.calls, state.alignments,
                            state.segments.low_quality, state.cropped, state.no_v, state.v_ties, loci)
@@ -163,18 +163,18 @@ def called_loci(v_alignments, reference, no_v) -> list[str] | None:
             for i, aln in enumerate(v_alignments)]
 
 
-def record_loci(v_alignments, reference, no_v, chain_types, read_locus=None) -> list[str | None]:
+def record_loci(v_alignments, reference, no_v, loci, read_locus=None) -> list[str | None]:
     """Per read, its locus label: in a reference of several loci, the read's locus (``read_locus``, the network's
-    ``refine.locus``: its J and D are of it too; a V allele two loci share, TRAV/DV, is called in either) for a read
-    with a V call and ``""`` without one, or its V call's locus without ``read_locus`` (``called_loci``); else the
-    one locus of ``chain_types`` when there is exactly one, else None (no label)."""
-    loci = called_loci(v_alignments, reference, no_v)
-    if loci is not None and read_locus is not None:
+    ``network.refine.locus``: its J and D are of it too; a V allele two loci share, TRAV/DV, is called in either) for a
+    read with a V call and ``""`` without one, or its V call's locus without ``read_locus`` (``called_loci``); else
+    the one locus of ``loci`` when there is exactly one, else None (no label)."""
+    called = called_loci(v_alignments, reference, no_v)
+    if called is not None and read_locus is not None:
         names = reference.locus_names()
-        loci = [names[int(k)] if label else "" for label, k in zip(loci, read_locus)]
-    if loci is not None:
-        return loci
-    one = chain_types[0] if chain_types is not None and len(chain_types) == 1 else None
+        called = [names[int(k)] if label else "" for label, k in zip(called, read_locus)]
+    if called is not None:
+        return called
+    one = loci[0] if loci is not None and len(loci) == 1 else None
     return [one] * len(v_alignments)
 
 

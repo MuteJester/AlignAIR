@@ -36,8 +36,8 @@ def test_removed_gene_has_no_alignment_supervision(gene):
                    f"{gene}_germline_start": None, f"{gene}_germline_end": None,
                    f"{gene}_cigar": ""})
     bundle = build_targets(record, _reference(), has_d=True)
-    assert gene not in bundle["germline"]
-    assert gene not in bundle["inseq"]
+    assert gene not in bundle["germline_spans"]
+    assert gene not in bundle["query_spans"]
     assert np.isfinite(bundle["state_labels"]).all()
     assert len(bundle["tokens"]) == len(record["sequence"])
 

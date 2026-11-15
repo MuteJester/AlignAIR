@@ -3,7 +3,7 @@ import pytest
 import torch
 
 from alignair.reference.frames import FRAME_WIDTHS
-from alignair.network.reader import EDIT_STATES, ShmReader, top_coordinates
+from alignair.network.reader import READ_EDITS, ShmReader, top_coordinates
 
 pytestmark = pytest.mark.component
 
@@ -11,7 +11,7 @@ pytestmark = pytest.mark.component
 def test_shapes():
     reader = ShmReader(channels=8)
     out = reader(torch.randn(2, 10, 8), torch.ones(2, 10, dtype=torch.bool))
-    assert EDIT_STATES == ("germline", "substitution", "insertion")
+    assert READ_EDITS == ("germline", "substitution", "insertion")
     assert out.edit_logits.shape == (2, 10, 3)
     assert {gene: logits.shape for gene, logits in out.coord_logits.items()} == {
         gene: (2, 10, width) for gene, width in FRAME_WIDTHS.items()}

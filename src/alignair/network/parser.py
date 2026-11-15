@@ -1,6 +1,6 @@
 """The parser: one ordered path of recombination regions per read.
 
-A read is an ordered concatenation of regions, ``STATES`` = (pre, V, N1, D, N2, J, post); any region may be empty, so
+A read is an ordered concatenation of regions, ``core.regions.REGIONS`` = (pre, V, N1, D, N2, J, post); any region may be empty, so
 a read without a D, a light chain or a fragment is the same path with regions skipped. The parser is a linear-chain
 CRF over those states whose transitions only move forward (b >= a): per base, an emission score for each state (a 1x1
 convolution of the trunk's features), and per base a score for each transition from the previous base's state (a 1x1
@@ -28,8 +28,8 @@ from torch import nn
 from ..core.regions import REGIONS
 
 
-STATES = REGIONS
-GENES = {"v": STATES.index("V"), "d": STATES.index("D"), "j": STATES.index("J")}
+# Each gene's parser state (its region).
+GENE_STATE = {"v": REGIONS.index("V"), "d": REGIONS.index("D"), "j": REGIONS.index("J")}
 IMPOSSIBLE = -1e4          # the boundary logit of a slot no path uses (finite, so a softmax over the slots is defined)
 NEG = -1e9                 # a forbidden score: finite, so a logsumexp over forbidden terms only keeps finite gradients
 
@@ -139,7 +139,7 @@ def crf(emissions: torch.Tensor, transitions: torch.Tensor, mask: torch.Tensor,
     last = log_marginals.gather(1, (lengths - 1).clamp_min(0)[:, None, None].expand(-1, 1, emissions.shape[-1]))[:, 0]
     boundary_logits = {}
     batch, length = mask.shape
-    for gene, state in GENES.items():
+    for gene, state in GENE_STATE.items():
         start = torch.full((batch, length), NEG, device=emissions.device)
         start[:, 0] = log_marginals[:, 0, state]
         start[:, 1:] = torch.logsumexp(pairs[:, :, :state, state], -1)
@@ -164,12 +164,12 @@ class Parser(nn.Module):
 
     def __init__(self, channels: int):
         super().__init__()
-        self.emit = nn.Conv1d(channels, len(STATES), 1)
-        self.trans = nn.Conv1d(channels, len(STATES) ** 2, 1)
+        self.emit = nn.Conv1d(channels, len(REGIONS), 1)
+        self.trans = nn.Conv1d(channels, len(REGIONS) ** 2, 1)
 
     def forward(self, features: torch.Tensor, mask: torch.Tensor) -> ParserOutput:
         batch, length, _ = features.shape
         x = features.transpose(1, 2)
         emissions = self.emit(x).transpose(1, 2)
-        transitions = self.trans(x).transpose(1, 2).reshape(batch, length, len(STATES), len(STATES))
+        transitions = self.trans(x).transpose(1, 2).reshape(batch, length, len(REGIONS), len(REGIONS))
         return crf(emissions, transitions, mask)
