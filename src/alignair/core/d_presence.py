@@ -1,4 +1,4 @@
-"""The D presence a model with a D presence head predicts (``AlignAIRConfig.d_presence_head``): the one definition of
+"""The D presence a model with a D predicts (its D presence head, built exactly when ``has_d``): the one definition of
 its classes, its keys and the length a D needs to be called.
 
 A read's D is one of three classes, by its observed germline bases (the D germline from its first to its last aligned

@@ -52,7 +52,7 @@ from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser
 from .presence import DPresenceEvidence
 from .reader import ShmReader, top_coordinates
 from .scan import BankScan, allele_log_posterior
-from .trunk import TRUNK_CHANNELS, AnchorHead, DilatedTrunk
+from .trunk import AnchorHead, DilatedTrunk
 
 ROUTE_VALVE = 0.1
 P_TEACHER = 0.5
@@ -90,19 +90,19 @@ def _expectation(logits: torch.Tensor, slots: torch.Tensor) -> torch.Tensor:
 
 
 class ChipCore(nn.Module):
-    """The chip's units on a trunk ``channels`` wide (chip-v1: ``cfg.trunk_channels``, 64 as trained)."""
+    """The chip's units on a trunk ``cfg.trunk_channels`` wide (64 as trained)."""
 
-    def __init__(self, cfg, channels: int = TRUNK_CHANNELS):
+    def __init__(self, cfg):
         super().__init__()
+        channels = cfg.trunk_channels
         self.genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
         self.counts = {gene: getattr(cfg, _COUNT[gene]) for gene in self.genes}
         self.trunk = DilatedTrunk(cfg.embed_dim, channels)
         self.parser = Parser(channels)
-        self.anchors = (nn.ModuleDict({gene: AnchorHead(channels) for gene in ANCHOR_GENES}) if cfg.anchor_heads
-                        else None)
+        self.anchors = nn.ModuleDict({gene: AnchorHead(channels) for gene in ANCHOR_GENES})
         self.reader = ShmReader(channels, genes=self.genes)
         self.scans = nn.ModuleDict({gene: BankScan() for gene in self.genes})
-        self.d_presence = DPresenceEvidence() if cfg.d_presence_head else None
+        self.d_presence = DPresenceEvidence() if cfg.has_d else None
         self.bank = None
 
     def bind_reference(self, reference) -> None:
@@ -145,7 +145,7 @@ class ChipCore(nn.Module):
                 out[key] = F.pad(value, (0, extra), value=IMPOSSIBLE)
             elif key.startswith("chip_") and value.dim() > 1:          # per-position internals: masked by the losses
                 out[key] = torch.cat([value, value.new_zeros(value.shape[0], extra, *value.shape[2:])], 1)
-        for gene, head in (self.anchors or {}).items():
+        for gene, head in self.anchors.items():
             logits = out[ANCHOR_LOGITS[gene]]                           # a pad slot: the bias plus log(no region)
             pad = (head.position.bias + math.log(1e-6)).expand(logits.shape[0], extra)
             out[ANCHOR_LOGITS[gene]] = torch.cat([logits[:, :width], pad, logits[:, width:]], -1)
@@ -164,11 +164,10 @@ class ChipCore(nn.Module):
 
         length = mask.shape[1]
         log_region = torch.log(parsed.marginals + 1e-6)
-        if self.anchors is not None:
-            for gene, head in self.anchors.items():
-                logits = head(features, mask)
-                out[ANCHOR_LOGITS[gene]] = torch.cat(
-                    [logits[:, :length] + log_region[..., STATE_OF[gene]], logits[:, length:]], -1)
+        for gene, head in self.anchors.items():
+            logits = head(features, mask)
+            out[ANCHOR_LOGITS[gene]] = torch.cat(
+                [logits[:, :length] + log_region[..., STATE_OF[gene]], logits[:, length:]], -1)
 
         teach = (torch.rand(mask.shape[0], device=mask.device) < P_TEACHER
                  if self.training and chip_batch else None)
@@ -216,14 +215,13 @@ class ChipCore(nn.Module):
         # locus masks do not cover.
         if not (self.training or chip_batch) and bank.locus_count:
             restrict_to_locus(out, read_loci(out, bank), bank)
-        if self.anchors is not None:                  # the V end and J start, counted along the bank from the anchors
-            refine_boundaries(out, tokens, mask, end_mask, bank)
+        refine_boundaries(out, tokens, mask, end_mask, bank)   # the V end and J start, counted along the bank from the anchors
         if "d" in self.genes and not self.training:   # the D call: the scan's times the junction's local alignment
             local = local_d_log_posterior(out, tokens, mask, bank, counts["d"])
             out["d_log_posterior"] = torch.log_softmax(out["d_log_posterior"] + local, -1)
             out["d_allele"] = torch.exp(out["d_log_posterior"] - out["d_log_posterior"].amax(-1, keepdim=True))
             refine_d_boundaries(out, tokens, mask, end_mask, bank)     # the D's edges on the called germline
-        if self.anchors is not None and not self.training:     # the V call: the scan's times its banded alignment
+        if not self.training:                         # the V call: the scan's times its banded alignment
             rescore_v(out, tokens, bank)
 
         if chip_batch:

@@ -6,8 +6,8 @@ Per record (``chip_record_targets``):
 - ``coord_{gene}``: each base's column in its gene's frame (``reference.frames``), for the bases the gene's CIGAR maps
   to its primary allele; ``IGNORE`` for every other base (insertions, other regions, an alignment that cannot be
   mapped, an inverted D, whose germline the forward frame does not hold).
-- ``region``: each base's recombination region as a ``READ_REGIONS`` index.
-- ``region_allowed``: a bitmask over ``READ_REGIONS`` per base: its region, plus the neighbouring region where the
+- ``region``: each base's recombination region as a ``REGIONS`` index.
+- ``region_allowed``: a bitmask over ``REGIONS`` per base: its region, plus the neighbouring region where the
   read cannot place the boundary. Each gene's end may move right over the bases that continue its germline (N or
   flank bases that happen to equal the trimmed germline), and its start left over the bases that precede its
   germline, up to the neighbouring gene or the read's edge; and each edge may move inward over its run of bases that
@@ -29,20 +29,20 @@ import math
 import numpy as np
 import torch
 
-from ..core.regions import READ_REGIONS, REGION_INDEX
+from ..core.regions import REGIONS
 from .alignment import query_reference_map
 from .batching import PositionLabels
 from .coordinates import segment_spans
 
 IGNORE = -100
 GENES = ("v", "d", "j")
-_BIT = {gene: 1 << READ_REGIONS.index(gene.upper()) for gene in GENES}
+_BIT = {gene: 1 << REGIONS.index(gene.upper()) for gene in GENES}
 # The region a gene's edge base may be read as once its boundary moves inward: the N region or flank after its end,
 # before its start.
-_NP_AFTER = {"v": 1 << READ_REGIONS.index("N1"), "d": 1 << READ_REGIONS.index("N2"),
-             "j": 1 << READ_REGIONS.index("post")}
-_NP_BEFORE = {"v": 1 << READ_REGIONS.index("pre"), "d": 1 << READ_REGIONS.index("N1"),
-              "j": 1 << READ_REGIONS.index("N2")}
+_NP_AFTER = {"v": 1 << REGIONS.index("N1"), "d": 1 << REGIONS.index("N2"),
+             "j": 1 << REGIONS.index("post")}
+_NP_BEFORE = {"v": 1 << REGIONS.index("pre"), "d": 1 << REGIONS.index("N1"),
+              "j": 1 << REGIONS.index("N2")}
 
 
 def _primary(record, gene: str) -> str:
@@ -57,11 +57,11 @@ def _germline(reference, gene: str, allele: str) -> str | None:
 
 
 def chip_record_targets(record, reference, frames, region_labels) -> dict:
-    """The chip's per-base targets of one record; ``region_labels`` are ``data.targets``' (``REGION_INDEX`` values)."""
+    """The chip's per-base targets of one record; ``region_labels`` are ``data.targets``' (``REGIONS`` indices)."""
     sequence = str(record["sequence"]).upper()
     coords, germ = segment_spans(record)
     inverted_d = bool(record.get("d_inverted", False))
-    region = np.asarray(region_labels, dtype=np.int64) - REGION_INDEX[READ_REGIONS[0]]
+    region = np.asarray(region_labels, dtype=np.int64)
     targets = {}
     for gene in frames:
         column = np.full(len(sequence), IGNORE, dtype=np.int64)

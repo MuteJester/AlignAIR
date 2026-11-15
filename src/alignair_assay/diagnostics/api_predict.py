@@ -13,9 +13,9 @@ and the genotype arm run the same code and model:
    CLI's does. The model's reference must be the one in ``--reference``, which the runner verified against the
    truth reference.
 2. ``--genotype``, a JSON ``{"v": [...], "d": [...], "j": [...]}``, is read with AlignAIR's
-   ``genotype.files.load_genotype(path, reference=<the model's>, drop_unknown=False)``. It returns
-   ``(genotype, unknown)`` and raises on an allele the model does not hold. Its ``genotype``, ``{gene letter: set of
-   allele names}``, is the type ``predict_sequences`` takes: the bank the model is bound to for each chunk.
+   ``genotype.files.load_genotype(path)`` and its bank built with ``genotype.genotype_bank``, which raises on an
+   allele the model does not hold. The ``genotype``, ``{gene letter: set of allele names}``, is the type
+   ``predict_sequences`` takes: the bank the model is bound to for each chunk.
 3. The reads are read with ``alignair.iter_sequences`` in chunks of ``CHUNK_SIZE``, the CLI's default
    ``--chunk-size``, so the cleaned reads, their ids and the batches are the CLI's.
 4. Each chunk is predicted with ``alignair.predict_sequences(model, reference, sequences, device=, batch_size=,
@@ -104,7 +104,7 @@ def main(argv=None) -> int:
                               locus=locus)
     else:
         try:  # the genotype path's errors: reading the genotype and building its bank, before any read
-            genotype, _ = load_genotype(args.genotype, reference=reference, drop_unknown=False)
+            genotype = load_genotype(args.genotype)
             genotype_bank(reference, genotype)
         except GENOTYPE_ERRORS as error:
             traceback.print_exc()

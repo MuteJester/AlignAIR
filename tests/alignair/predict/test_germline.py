@@ -164,10 +164,10 @@ def test_a_whole_v_with_a_deletion_near_its_start_is_placed_from_the_germline_st
 def test_settling_a_start_never_moves_it_onto_read_bases_that_do_not_match_the_germline():
     """Two read bases before the V's first observed base (germline 40) that differ from the germline bases before
     it: from the right start, the settled start stays there (moving onto them gains nothing)."""
-    from alignair.predict.heuristic_matcher import derive_alignment, settle_start
+    from alignair.predict.heuristic_matcher import derive_cigar, settle_start
     flip = {"A": "C", "C": "A", "G": "T", "T": "G"}
     read = flip[_V[38]] + flip[_V[39]] + _deleted(_V[40:], 10)
-    cigar = derive_alignment(read, _V[40:], 0.4).cigar
+    cigar = derive_cigar(read, _V[40:], 0.4)
     assert settle_start(read, _V, 40, len(_V), 0.4, cigar) == (40, cigar)
 
 
@@ -229,8 +229,8 @@ def test_a_v_end_past_its_last_germline_base_is_trimmed_back():
 
 def test_a_v_end_is_not_moved_past_its_limit():
     """The read position the V may reach (the next segment's start) bounds an extension."""
-    from alignair.predict.heuristic_matcher import derive_alignment, settle_end
+    from alignair.predict.heuristic_matcher import derive_cigar, settle_end
     read = _deleted(_V, 281) + _unlike(_V[:10])
-    cigar = derive_alignment(read[:279], _V[:279], 0.6).cigar
+    cigar = derive_cigar(read[:279], _V[:279], 0.6)
     seq_end, germ_end = settle_end(read, _V, 0, 279, 0, 279, cigar, 282)
     assert seq_end <= 282

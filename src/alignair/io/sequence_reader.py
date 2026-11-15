@@ -13,8 +13,7 @@ import os
 from typing import List, Tuple
 
 from ..data.identity import UniqueSequenceIds
-from ..data.inputs import (nucleotide_file_policy, validate_nucleotide as validate,
-                           validate_nucleotide_sequence as validate_sequence)
+from ..data.inputs import normalize_file_read
 from ..errors import ConfigurationError
 from .sequence_records import _open_text, detect_sequence_format, iter_sequence_records
 
@@ -70,10 +69,9 @@ def iter_sequence_batches(path: str, chunk_size: int = 20000, seq_column: str | 
     records = []
     dropped = 0
     allocator = UniqueSequenceIds()
-    policy = nucleotide_file_policy()
     with closing(iter_sequence_records(path, seq_column=seq_column, id_column=id_column)) as source:
         for position, (source_id, raw) in enumerate(source):
-            result = policy.normalize(raw)
+            result = normalize_file_read(raw)
             sequence, reason = result.sequence, result.error
             if sequence is None:
                 dropped += 1

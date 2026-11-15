@@ -25,11 +25,10 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from ..core.regions import READ_REGIONS
+from ..core.regions import REGIONS
 
-from .trunk import TRUNK_CHANNELS
 
-STATES = tuple(READ_REGIONS)
+STATES = REGIONS
 GENES = {"v": STATES.index("V"), "d": STATES.index("D"), "j": STATES.index("J")}
 IMPOSSIBLE = -1e4          # the boundary logit of a slot no path uses (finite, so a softmax over the slots is defined)
 NEG = -1e9                 # a forbidden score: finite, so a logsumexp over forbidden terms only keeps finite gradients
@@ -157,7 +156,7 @@ def crf_nll(output: ParserOutput, allowed: torch.Tensor, mask: torch.Tensor) -> 
 class Parser(nn.Module):
     """``(features (B, L, C), mask (B, L)) -> ParserOutput``."""
 
-    def __init__(self, channels: int = TRUNK_CHANNELS):
+    def __init__(self, channels: int):
         super().__init__()
         self.emit = nn.Conv1d(channels, len(STATES), 1)
         self.trans = nn.Conv1d(channels, len(STATES) ** 2, 1)

@@ -25,8 +25,6 @@ from torch import nn
 from ..reference.frames import gene_frames
 
 BASES = "ATGC"
-EXTENSION_KEYS = ("bank_order", "bank_extension_table", "bank_extension_cover", "bank_extension_sequence",
-                  "bank_extension_anchor")
 _COMPLEMENT = str.maketrans("ACGTN", "TGCAN")
 
 

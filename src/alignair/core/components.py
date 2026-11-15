@@ -56,7 +56,7 @@ def _chip_core(cfg: AlignAIRConfig) -> nn.Module:
     """The chip's core (``alignair.network.chip``) on a trunk ``cfg.trunk_channels`` wide; imported when built, so the
     registry does not import the network."""
     from ..network.chip import ChipCore
-    return ChipCore(cfg, channels=cfg.trunk_channels)
+    return ChipCore(cfg)
 
 
 def _chip_objective(cfg: AlignAIRConfig):

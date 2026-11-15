@@ -90,10 +90,10 @@ def _provenance(*, publish: bool = False):
 
 _RESERVED_CARD_KEYS = {"format_version", "model_format_version", "model_class", "model_id",
                        "model_version", "sections", "_formats", "reference", "model", "training",
-                       "inference", "provenance", "created", "created_by_alignair"}
+                       "provenance", "created", "created_by_alignair"}
 
 
-def save_model(path, model, *, dataconfigs, training, inference=None,
+def save_model(path, model, *, dataconfigs, training,
                optimizer=None, rng=None, description="", include_trusted_pickle=True,
                model_id=None, model_version=None, card=None, label_schema=None, scheduler=None) -> None:
     """Write an .alignair model file. ``include_trusted_pickle=True`` (default) keeps the pickled
@@ -133,11 +133,6 @@ def save_model(path, model, *, dataconfigs, training, inference=None,
     steps = int(training.get("steps", 0) or 0)
     training = dict(training)
     training.setdefault("total_sequences_seen", steps * bs)
-    inf = {"threshold": 0.5, "selector": "absolute", "cap": 3,
-           "pad_mode": "right", "airr": True,
-           "chain_types": [ct for ct, _ in resolved] if cfg.num_chain_types > 1 else None}
-    if inference:
-        inf.update(inference)
 
     versions = _versions()
     header = {
@@ -155,7 +150,6 @@ def save_model(path, model, *, dataconfigs, training, inference=None,
                   "param_count": sum(p.numel() for p in model.parameters()),
                   "allele_counts": {"v": cfg.v_allele_count, "d": cfg.d_allele_count,
                                     "j": cfg.j_allele_count}},
-        "inference": inf,
         "training": training,
         "reference": {
             "reference_fasta_sha256": serialize.reference_fasta_sha256(reference),
@@ -366,13 +360,10 @@ def load_training_state(path, *, device="cpu") -> TrainingState:
                          metadata=data.metadata, scheduler_state=data.scheduler_state)
 
 
-def read_dataconfig(path, index=None):
-    md = container.read_header(path)
-    n = len(md["reference"]["dataconfigs"])
-    if index is not None:
-        return serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{index}"))
-    dcs = [serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{i}")) for i in range(n)]
-    return dcs[0] if n == 1 else dcs
+def read_dataconfig(path, index: int):
+    """The pickled GenAIRR DataConfig section ``dataconfig/<index>`` of a training checkpoint (trusted input only: it
+    is unpickled)."""
+    return serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{index}"))
 
 
 def read_reference(path) -> str:

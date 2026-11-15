@@ -10,7 +10,7 @@ from collections.abc import Mapping
 
 import torch
 
-from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS, codon_starts
+from ..core.anchors import codon_starts
 from ..errors import NumericalError
 
 
@@ -39,15 +39,6 @@ def decode_anchors(logits: torch.Tensor, read: torch.Tensor) -> torch.Tensor:
     starts = codon_starts(_bool(read))
     return _masked_argmax(torch.as_tensor(logits), torch.cat([starts, starts.new_ones(starts.shape[0], 1)], dim=-1),
                           what="anchor")
-
-
-def decoded_anchors(outputs: Mapping) -> dict[str, torch.Tensor] | None:
-    """The V and J anchors of a model's outputs (``decode_anchors``; L for not observed) as ``{"v": ..., "j": ...}``,
-    or None when the outputs carry no anchor logits. The read is the start slots: an anchor is a codon start."""
-    if not all(ANCHOR_LOGITS[gene] in outputs for gene in ANCHOR_GENES):
-        return None
-    read, _ = boundary_slots(outputs)
-    return {gene: decode_anchors(outputs[ANCHOR_LOGITS[gene]], read) for gene in ANCHOR_GENES}
 
 
 def boundary_slots(outputs: Mapping) -> tuple[torch.Tensor, torch.Tensor]:

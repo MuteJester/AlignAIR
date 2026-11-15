@@ -88,7 +88,7 @@ def pad_vectors(vectors, *, width=None, dtype=torch.long, padding=0) -> torch.Te
 
 
 def collate_samples(samples: Sequence[TrainingSample], *, max_length=None, device="cpu",
-                    reserve_terminal_slot=False, reject_empty_sequences=True) -> TrainingBatch:
+                    reserve_terminal_slot=False) -> TrainingBatch:
     """Stack dense targets and pad positional targets, preserving each field's declared dtype."""
     samples = list(samples)
     if not samples:
@@ -103,9 +103,6 @@ def collate_samples(samples: Sequence[TrainingSample], *, max_length=None, devic
                 raise TrainingDataError("tokens must be a one-dimensional integer vector", context={"field": "tokens"})
             if (tokens < 0).any():
                 raise TrainingDataError("training tokens must be nonnegative", context={"field": "tokens"})
-            if reject_empty_sequences and not (tokens != 0).any():
-                raise TrainingDataError("training tokens must contain a nonempty encoded read",
-                                        context={"field": "tokens"})
             if set(sample.targets) != fields:
                 raise TrainingDataError("training samples have different target fields",
                                         context={"missing": sorted(fields - set(sample.targets)),

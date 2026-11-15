@@ -26,7 +26,7 @@ def test_an_unparseable_genotype_file_is_a_configuration_error_with_the_format_h
     path = tmp_path / name
     path.write_text(text)
     with pytest.raises(ConfigurationError, match="not a YAML or JSON genotype") as caught:
-        load_genotype(str(path), reference=igh, drop_unknown=False)
+        load_genotype(str(path))
     assert "V, D, J" in caught.value.hint and "--reference" in caught.value.hint
     assert caught.value.context["path"] == str(path)
 
@@ -36,7 +36,7 @@ def test_a_genotype_that_is_not_a_segment_to_alleles_mapping_is_refused(tmp_path
     path = tmp_path / "donor.yaml"
     path.write_text(text)
     with pytest.raises(ConfigurationError) as caught:
-        load_genotype(str(path), reference=igh, drop_unknown=False)
+        load_genotype(str(path))
     assert "V, D, J" in caught.value.hint
 
 
@@ -44,7 +44,7 @@ def test_a_genotype_keyed_by_gene_names_says_so(tmp_path, igh):
     path = tmp_path / "donor.yaml"
     path.write_text("IGHVF1-G3:\n  - IGHVF1-G3*02\nIGHVF6-G21:\n  - IGHVF6-G21*07\n")
     with pytest.raises(ConfigurationError, match=r"gene names \(IGHVF1-G3, IGHVF6-G21\)") as caught:
-        load_genotype(str(path), reference=igh, drop_unknown=False)
+        load_genotype(str(path))
     assert "V, D, J" in caught.value.hint
 
 
@@ -58,8 +58,8 @@ def test_genotype_bank_refuses_gene_name_keys_and_unknown_keys_alike(igh):
 def test_segment_keys_in_any_case_still_load(tmp_path, igh):
     path = tmp_path / "donor.yaml"
     path.write_text("v: [IGHVF1-G3*02]\nJ: [IGHJ4*02]\n")
-    genotype, unknown = load_genotype(str(path), reference=igh, drop_unknown=False)
-    assert genotype == {"v": {"IGHVF1-G3*02"}, "j": {"IGHJ4*02"}} and not unknown
+    genotype = load_genotype(str(path))
+    assert genotype == {"v": {"IGHVF1-G3*02"}, "j": {"IGHJ4*02"}}
     assert len(genotype_bank(igh, genotype).gene("V")) == 1
 
 

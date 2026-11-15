@@ -2,10 +2,8 @@
 read/germline coordinates + a CIGAR.
 
 The anchored :class:`HeuristicGermlineMatcher` locates the segment within the germline (robust to mutated/5'- and
-3'-truncated ends, no drift), and the pinned-window banded DP (:func:`derive_alignment`, C-speed via the compiled
-``_derive_cy`` kernel, pure-Python fallback) reconstructs the M/I/D CIGAR. Needs no native aligner dependency.
-
-``Short-D`` (empty germline) is a sentinel: a zero-length germline window meaning "no real D".
+3'-truncated ends, no drift), and the pinned-window banded DP (:func:`derive_cigar`, C-speed via the compiled
+``_derive_cy`` kernel, pure-Python fallback) reconstructs the M/I/D CIGAR.
 """
 from __future__ import annotations
 
@@ -26,14 +24,14 @@ def _heuristic_alignment(seq, s, e, allele, germ, indel, matcher, derive, *, lim
     from .heuristic_matcher import settle_end, settle_start
     gm = matcher.match_one(seq, s, e, allele, indel)        # robust anchored localization (coords)
     seq_end, ref_start, ref_end = gm.seq_end, gm.ref_start, gm.ref_end
-    cigar = derive(seq[gm.seq_start:seq_end], germ[ref_start:ref_end], indel).cigar
+    cigar = derive(seq[gm.seq_start:seq_end], germ[ref_start:ref_end], indel)
     if limit is not None:
         upper = seq.upper()
         ref_start, cigar = settle_start(upper[gm.seq_start:seq_end], germ, ref_start, ref_end, indel, cigar)
         end = settle_end(upper, germ, gm.seq_start, seq_end, ref_start, ref_end, cigar, limit)
         if end != (seq_end, ref_end):
             seq_end, ref_end = end
-            cigar = derive(upper[gm.seq_start:seq_end], germ[ref_start:ref_end], indel).cigar
+            cigar = derive(upper[gm.seq_start:seq_end], germ[ref_start:ref_end], indel)
     return GermlineAlignment(allele, gm.seq_start, seq_end, ref_start, ref_end, cigar)
 
 
@@ -79,7 +77,7 @@ def align_germline(sequences, segments, calls, reference, *, indel_counts=None, 
     search window and CIGAR band; defaults to 0 per read when absent. ``v_limits`` (per read) bounds where a V end may
     move to; defaults to ``v_end_limits`` of ``segments``.
     """
-    from .heuristic_matcher import HeuristicGermlineMatcher, derive_alignment as derive
+    from .heuristic_matcher import HeuristicGermlineMatcher, derive_cigar as derive
     genes = list(segments.start)
     germlines: dict[str, str] = {}
     for gene in genes:
@@ -102,7 +100,7 @@ def align_germline(sequences, segments, calls, reference, *, indel_counts=None, 
             allele = call.names[0]
             s, e = int(seg_s[i]), int(seg_e[i])
             germ = _germline_seq(gene_ref, allele)
-            if not germ:                                    # Short-D / empty-reference sentinel
+            if not germ:                                    # an allele with no germline sequence: an empty alignment
                 results.append(GermlineAlignment(allele, s, s, 0, 0, ""))
                 continue
             ind = float(indel_counts[i]) if indel_counts is not None else 0.0

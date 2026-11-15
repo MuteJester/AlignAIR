@@ -16,7 +16,6 @@ from torch.nn import functional as F
 
 from ..reference.frames import FRAME_WIDTHS
 
-from .trunk import TRUNK_CHANNELS
 
 EDIT_STATES = ("germline", "substitution", "insertion")
 
@@ -43,7 +42,7 @@ def top_coordinates(coord_logits: torch.Tensor, k: int = 3) -> tuple[torch.Tenso
 
 
 class ShmReader(nn.Module):
-    def __init__(self, channels: int = TRUNK_CHANNELS, genes: tuple[str, ...] = ("v", "d", "j")):
+    def __init__(self, channels: int, genes: tuple[str, ...] = ("v", "d", "j")):
         super().__init__()
         self.edit = nn.Conv1d(channels, len(EDIT_STATES), 1)
         self.coords = nn.ModuleDict({gene: nn.Conv1d(channels, FRAME_WIDTHS[gene], 1) for gene in genes})

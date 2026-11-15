@@ -89,7 +89,7 @@ def test_a_genotype_constrains_the_calls(checkpoint, inputs, reference, tmp_path
 
 
 @pytest.mark.parametrize("v, error", [
-    (["IGHVX9*01"], "UnknownAlleleError: unknown alleles in genotype for v: ['IGHVX9*01']"),
+    (["IGHVX9*01"], "UnknownAlleleError: the genotype names alleles the reference does not hold: IGHVX9*01"),
     ([], "InputError: the genotype leaves gene V with no allele"),
 ])
 def test_a_failure_on_the_genotype_path_is_told_apart(checkpoint, inputs, reference, tmp_path, capsys, v, error):

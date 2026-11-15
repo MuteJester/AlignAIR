@@ -22,9 +22,8 @@ def test_established_defaults_and_reference_derived_label_sizes():
     ref = _reference()
     setup = prepare_model(ref)
     cfg = setup.config
-    assert (cfg.architecture, cfg.vocab_size, cfg.use_orientation, cfg.bank_orientation, cfg.anchor_heads,
-            cfg.d_presence_head, cfg.reject_empty_sequences, cfg.max_seq_length, cfg.trunk_channels) == (
-        'chip-v1', 6, True, True, True, True, False, 576, 64)
+    assert (cfg.architecture, cfg.vocab_size, cfg.bank_orientation, cfg.max_seq_length, cfg.trunk_channels) == (
+        'chip-v1', 6, True, 576, 64)
     assert setup.reference is ref and cfg.d_allele_count == 2
     assert setup.label_counts == {'v': 3, 'd': 2, 'j': 2}
     assert ref.gene('V').names == ['V2', 'V1', 'V3'] and ref.gene('D').index == {'D2': 0, 'D1': 1}
@@ -64,11 +63,10 @@ def test_preparation_does_not_allocate_model_parameters(monkeypatch):
         prepared.build_model()
 
 
-def test_head_choices_remain_independent_of_the_input_and_label_identity():
-    setup = prepare_model(_reference(), use_orientation=False, bank_orientation=False, anchor_heads=False,
-                          d_presence_head=False)
+def test_the_bank_orientation_choice_is_independent_of_the_input_and_label_identity():
+    setup = prepare_model(_reference(), bank_orientation=False)
     assert setup.label_space == 'alleles' and setup.config.v_allele_count == 3
-    assert not (setup.config.use_orientation or setup.config.anchor_heads or setup.config.d_presence_head)
+    assert not setup.config.bank_orientation
 
 
 def test_locus_head_count_comes_from_the_ordered_reference_schema():

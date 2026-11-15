@@ -2,20 +2,18 @@
 empty rejection, and duplicate-ID disambiguation with preserved order."""
 import pytest
 
-from alignair.io.sequence_reader import read_sequences, validate, validate_sequence
+from alignair.data.inputs import normalize_file_read
+from alignair.io.sequence_reader import read_sequences
 
 pytestmark = pytest.mark.component
 
 
-def test_validate_sequence_reasons():
-    assert validate_sequence("")[1] == "empty"
-    assert validate_sequence("   ")[1] == "empty"
-    assert validate_sequence("acgt")[0] == "ACGT"                 # uppercased, ok
-    assert validate_sequence("ACGTR")[0] == "ACGTN"              # IUPAC ambiguity -> N
-    assert validate_sequence("ACGT", max_len=3)[1] == "too_long"  # length policy
-    assert validate_sequence("XXXXZZ")[1] == "ambiguous"        # >20% unusable
-    # back-compat wrapper still returns just the cleaned string (or None)
-    assert validate("acgt") == "ACGT" and validate("") is None
+def test_file_read_reasons():
+    assert normalize_file_read("").error == "empty"
+    assert normalize_file_read("   ").error == "empty"
+    assert normalize_file_read("acgt").sequence == "ACGT"                # uppercased, ok
+    assert normalize_file_read("ACGTR").sequence == "ACGTN"              # IUPAC ambiguity -> N
+    assert normalize_file_read("XXXXZZ").error == "ambiguous"            # >20% unusable
 
 
 def test_reader_disambiguates_duplicate_ids_preserving_order(tmp_path):

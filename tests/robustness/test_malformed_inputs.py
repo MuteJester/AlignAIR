@@ -1,6 +1,5 @@
 """Robustness/fuzz: malformed inputs produce clean, typed errors (or a safe negative),
 never an uncaught crash or silent garbage."""
-import numpy as np
 import pytest
 
 from alignair.errors import ModelFormatError
@@ -49,31 +48,6 @@ def test_empty_input_file_is_reported_not_crashed(tmp_path):
     p.write_text("")
     ids, seqs, info = read_sequences(str(p))
     assert seqs == [] and ids == []                         # empty, handled gracefully
-
-
-def test_nonfinite_probabilities_are_caught():
-    from alignair.predict.stages import assert_finite as _assert_finite
-    with pytest.raises(ValueError, match="non-finite"):
-        _assert_finite({"v": np.array([[0.5, np.nan, 0.3]])}, "fuzz")
-    with pytest.raises(ValueError, match="non-finite"):
-        _assert_finite({"j": np.array([[np.inf, 0.1]])}, "fuzz")
-
-
-def test_raw_predictions_validated_before_use():
-    """A damaged checkpoint emitting NaN outputs is rejected right after clean(), before it
-    can become a plausible argmax call or a clipped-NaN coordinate."""
-    from alignair.predict.stages import validate_predictions as _validate_predictions
-    from alignair.predict.state import Predictions
-    bad_probs = Predictions(allele={"v": np.array([[np.nan, 0.2]])}, start={"v": np.array([0.0])},
-                            end={"v": np.array([1.0])}, mutation_rate=np.zeros(1),
-                            indel_count=np.zeros(1))
-    with pytest.raises(ValueError, match="non-finite allele"):
-        _validate_predictions(bad_probs)
-    bad_coord = Predictions(allele={"v": np.array([[0.9, 0.1]])}, start={"v": np.array([np.inf])},
-                            end={"v": np.array([1.0])}, mutation_rate=np.zeros(1),
-                            indel_count=np.zeros(1))
-    with pytest.raises(ValueError, match="non-finite start"):
-        _validate_predictions(bad_coord)
 
 
 def test_oversized_sequence_is_cropped_not_truncated_silently():

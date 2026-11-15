@@ -9,8 +9,7 @@ from alignair.model_file import read_training_state
 
 pytestmark = pytest.mark.integration
 
-OPTIONS = {"architecture": "chip-v1", "embed_dim": 8, "anchor_heads": True,
-           "d_presence_head": True}
+OPTIONS = {"architecture": "chip-v1", "embed_dim": 8}
 
 
 @pytest.mark.parametrize("channels", [64, 16])

@@ -2,7 +2,7 @@
 
 A boundary is the argmax of the model's masked position logits (``decode``); outputs without logits keep the
 model's soft-argmax expectation. A model with anchor heads gives its V and J anchors, decoded by argmax over the read's
-positions and the null slot (``decode.decoded_anchors``); productivity is derived from them later
+codon starts and the null slot (``decode.decode_anchors``); productivity is derived from them later
 (``predict.junction``).
 """
 from __future__ import annotations

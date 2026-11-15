@@ -12,12 +12,12 @@ def _records():
     return [
         dict(base, v_call="IGHV1-2*01", j_call="IGHJ4*02", productive=True, vj_in_frame=True,
              stop_codon=False, junction="TGTGCGAAA", junction_length=9, v_sequence_start=0,
-             v_sequence_end=30, v_cigar="30M", j_cigar="20M", v_set_confidence=0.90, v_identity=0.98,
+             v_sequence_end=30, v_cigar="30M", j_cigar="20M", v_identity=0.98,
              orientation_id=0),
         dict(base, v_call="IGHV1-2*01", j_call="IGHJ6*03", productive=True, vj_in_frame=True,
              stop_codon=False, junction="TGTGCGAGAGGG", junction_length=12, v_sequence_start=0,
-             v_sequence_end=30, v_cigar="15M1I14M", j_cigar="20M", v_set_confidence=0.30,
-             v_identity=0.80, orientation_id=1),                        # reoriented + indel + low conf
+             v_sequence_end=30, v_cigar="15M1I14M", j_cigar="20M",
+             v_identity=0.80, orientation_id=1),                        # reoriented + indel
         dict(base, v_call="IGHV3-23*01", j_call="IGHJ4*02", productive=False, vj_in_frame=False,
              stop_codon=True, junction="", junction_length=0, v_sequence_start=0, v_sequence_end=30,
              v_cigar="30M", j_cigar="20M", orientation_id=0),           # nonproductive, no junction
@@ -47,9 +47,7 @@ def test_qc_section(tmp_path):
     qc = analyze_file(_write_tsv(tmp_path))["qc"]
     assert qc["orientation"] == {"forward": 2, "reverse_complement": 1}
     assert qc["indel_flagged_reads"] == 1                          # the 1I cigar
-    assert qc["low_confidence_reads"]["n"] == 1                    # v_set_confidence 0.30 < 0.5
     assert qc["field_completeness_pct"]["v_call"] == 100.0
-    assert abs(qc["v_set_confidence"]["mean"] - 0.6) < 0.01        # mean of 0.90, 0.30
 
 
 def test_qc_counts_each_orientation_by_the_transform_the_read_needed(tmp_path):

@@ -25,7 +25,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .state import AlignResult
 
 _ACCEL = 0.05          # per-step velocity increment that amplifies same-state (match/mismatch) runs
 _START_CHECK = 30      # segment bases compared at the placement's start when checking it for a mis-anchor
@@ -119,16 +118,13 @@ except (ImportError, OSError):                              # pragma: no cover -
     DERIVE_BACKEND = "python"
 
 
-def derive_alignment(read_window: str, germline_window: str, indel_count=0) -> AlignResult:
-    """Reconstruct a base-level alignment of a read segment against its (already located) germline
-    window -> an ``AlignResult`` (M/I/D CIGAR + coords).
+def derive_cigar(read_window: str, germline_window: str, indel_count=0) -> str:
+    """The M/I/D CIGAR of a read segment against its (already located) germline window.
 
     The window is *pinned* by :class:`HeuristicGermlineMatcher` (both ends fixed), so it can't drift
     the way an ends-free aligner does. Uses the compiled :mod:`_derive_cy` kernel when present, else
     the identical pure-Python fallback (:data:`DERIVE_BACKEND` reports which)."""
-    m, n = len(read_window), len(germline_window)
-    indels = max(0, int(round(_scalar(indel_count))))
-    return AlignResult(0.0, _derive_cigar(read_window, germline_window, indels), 0, m, 0, n)
+    return _derive_cigar(read_window, germline_window, _indel_allowance(indel_count))
 
 
 _SETTLE_REACH = 6      # germline bases the start may move either way when settle_start re-places it
@@ -240,7 +236,7 @@ def settle_start(read: str, germ: str, ref_start: int, ref_end: int, indel_count
             if start < 0 or start >= pin:
                 continue
             window = germ[start:pin]
-            candidate = derive_alignment(prefix, window, indel_count).cigar
+            candidate = derive_cigar(prefix, window, indel_count)
             score = _alignment_score(prefix, window, candidate)
             if score > best_score:
                 best_score, best = score, (start, candidate)
@@ -259,30 +255,25 @@ class GermlineMatch:
     ref_end: int
 
 
-class HeuristicGermlineMatcher:
-    def __init__(self, germlines: dict[str, str], *, anchor_k: int = 15,
-                 search_span: int | None = 50, end_offset_penalty: float = 0.1,
-                 fallback_rate: float = 0.3):
-        """``germlines``: {allele_name -> uppercase ungapped germline}. ``anchor_k``: end-anchor k-mer
-        length. ``search_span``: max offset scanned inward from the germline 3' end (default 50 — deep
-        enough to find a 3'-truncated end, e.g. a read ending inside J, while bounding cost on long V;
-        ``None`` = adaptive/unbounded). ``end_offset_penalty``: per-offset bias toward the germline 3'
-        end — keeps 5'-truncated reads (V) anchored at their intact 3' end while still letting genuinely
-        3'-truncated reads (J) move deep when the deeper match is clearly better. The TF version was
-        ``search_span=30, end_offset_penalty=0``, which was blind to J 3'-truncation.
+# The matcher's settings. _ANCHOR_K: the end-anchor k-mer length. _SEARCH_SPAN: the deepest offset scanned inward from
+# the germline 3' end (deep enough to find a 3'-truncated end, e.g. a read ending inside J, while bounding the cost on
+# a long V). _END_OFFSET_PENALTY: a per-offset bias toward the germline 3' end, which keeps 5'-truncated reads (V)
+# anchored at their intact 3' end while letting genuinely 3'-truncated reads (J) move deep when the deeper match is
+# clearly better. _FALLBACK_RATE: the end-anchor assumes the segment's 3' end sits near the germline 3' end, which
+# breaks on 3'-truncated amplicons (an FR1 read cut before V's 3' end) and then misplaces the germline coordinates by
+# about the truncation; a placement whose substitution rate exceeds this (a clear mis-anchor; SHM stays well below)
+# is relocated with a whole-germline offset scan that does not care which end is truncated. The same rate on the
+# segment's tail tells overhang from insertions in a segment longer than its germline.
+_ANCHOR_K = 15
+_SEARCH_SPAN = 50
+_END_OFFSET_PENALTY = 0.1
+_FALLBACK_RATE = 0.3
 
-        ``fallback_rate``: the end-anchor assumes the segment's 3' end sits near the germline 3' end,
-        which breaks on 3'-truncated *amplicons* (e.g. an FR1 read cut before V's 3' end) — it then
-        mislocates the germline coordinates by ~the truncation length. So after anchoring we *verify*
-        the placement's substitution rate and, if it exceeds ``fallback_rate`` (a clear mis-anchor, vs
-        SHM's <~0.2), relocate with a whole-germline offset scan that is agnostic to which end is
-        truncated. Set to 0 to disable the fallback (pure end-anchor). The same rate on the segment's tail
-        tells overhang from insertions in a segment longer than its germline."""
+
+class HeuristicGermlineMatcher:
+    def __init__(self, germlines: dict[str, str]):
+        """``germlines``: {allele_name -> uppercase ungapped germline}."""
         self._germlines = germlines
-        self._anchor_k = anchor_k
-        self._search_span = search_span
-        self._end_offset_penalty = end_offset_penalty
-        self._fallback_rate = fallback_rate
 
     # ------------------------------------------------------------------ scoring
     @staticmethod
@@ -323,25 +314,22 @@ class HeuristicGermlineMatcher:
         seg_len, ref_len = len(segment), len(germline)
         # a segment shorter than the anchor (most D segments) is its own anchor: a longer window would compare it with
         # the window's first bases only and put its end past its last base
-        k = max(1, min(self._anchor_k, seg_len))
+        k = max(1, min(_ANCHOR_K, seg_len))
         len_diff = abs(ref_len - seg_len)
         # the indel head undercounts (reads with three indels can predict ~0.03), so both searches below reach at
         # least _INDEL_REACH bases past what the length alone allows
-        indels = max(0, int(round(float(_scalar(indel_count)))))
+        indels = _indel_allowance(indel_count)
 
         # 1) anchor on the END k-mer; slide the germline 3' end over the offset window. The window
         #    spans the length difference plus the indel allowance (insertions make a read longer than the
         #    germline stretch it covers, so its 3' end can sit deeper than the length difference), the
-        #    deeper offsets only while the window stays inside the germline; optionally capped by
-        #    ``search_span`` — the cap is what blinded the TF version to J 3'-truncation.
-        span = min(len_diff + max(indels, _INDEL_REACH), max(len_diff, ref_len - k))
-        if self._search_span is not None:
-            span = min(span, self._search_span)
+        #    deeper offsets only while the window stays inside the germline, and at most _SEARCH_SPAN deep.
+        span = min(len_diff + max(indels, _INDEL_REACH), max(len_diff, ref_len - k), _SEARCH_SPAN)
         end_kmer = segment[-k:]
         best_end, best_cost = ref_len, float("inf")
         for offset in range(span + 1):
             window = germline[ref_len - (k + offset): ref_len - offset]
-            cost = self._anchor_cost(end_kmer, window) + self._end_offset_penalty * offset
+            cost = self._anchor_cost(end_kmer, window) + _END_OFFSET_PENALTY * offset
             if cost < best_cost:
                 best_cost, best_end = cost, ref_len - offset
                 if best_cost == 0:
@@ -395,9 +383,9 @@ class HeuristicGermlineMatcher:
         return sum(a != b for a, b in zip(segment, window)) / m
 
     def _tail_mismatch_rate(self, segment: str, germline: str, ref_end: int) -> float:
-        """Substitution rate of the segment's last ``anchor_k`` bases against the germline ending at ``ref_end``: SHM
+        """Substitution rate of the segment's last ``_ANCHOR_K`` bases against the germline ending at ``ref_end``: SHM
         rate where the tail is germline, ~random where it is overhang (0 when there is no tail to compare)."""
-        k = min(self._anchor_k, len(segment), ref_end)
+        k = min(_ANCHOR_K, len(segment), ref_end)
         if k == 0:
             return 0.0
         return sum(a != b for a, b in zip(segment[-k:], germline[ref_end - k:ref_end])) / k
@@ -425,8 +413,7 @@ class HeuristicGermlineMatcher:
         # so if the segment's head mismatches the germline there far above SHM rate, relocate the START
         # with the truncation-agnostic whole-germline scan while KEEPING the anchor's end (which stays
         # accurate).
-        if self._fallback_rate and (
-                self._start_mismatch_rate(segment, germline, ref_start) > self._fallback_rate):
+        if self._start_mismatch_rate(segment, germline, ref_start) > _FALLBACK_RATE:
             scan_start, _ = self._scan_locate(segment, germline)
             if scan_start < ref_end:
                 ref_start = scan_start
@@ -438,7 +425,7 @@ class HeuristicGermlineMatcher:
         # coordinates stay.
         pure_overhang = orig_len > ref_len or (orig_len == ref_len and indel_count == 0)
         if pure_overhang and (ref_start > 0 or ref_end < ref_len) and (
-                self._tail_mismatch_rate(segment, germline, ref_end) > self._fallback_rate):
+                self._tail_mismatch_rate(segment, germline, ref_end) > _FALLBACK_RATE):
             seq_start = max(0, seq_start + ref_start)
             seq_end = min(len(sequence), seq_end - (ref_len - ref_end))
             ref_start, ref_end = 0, ref_len
@@ -446,12 +433,13 @@ class HeuristicGermlineMatcher:
 
 
 def _scalar(x) -> float:
-    """Coerce a possibly-numpy / 0-d indel count to a Python float (matches the TF squeeze/round)."""
-    try:
-        import numpy as np
-        return float(np.asarray(x).squeeze())
-    except (ImportError, TypeError, ValueError):
-        return float(x)
+    """A possibly-numpy / 0-d indel count as a Python float."""
+    return float(np.asarray(x).squeeze())
+
+
+def _indel_allowance(indel_count) -> int:
+    """The whole number of indels a predicted (float) indel count allows: rounded, never negative."""
+    return max(0, round(_scalar(indel_count)))
 
 
 _END_REACH = 12        # read and germline bases a V end may move either way

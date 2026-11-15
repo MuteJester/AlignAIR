@@ -7,6 +7,8 @@ import GenAIRR.data as gd
 import pytest
 import torch
 
+from alignair.core.anchors import ANCHOR_LOGITS
+from alignair.core.d_presence import D_PRESENCE_LOGITS
 from alignair.errors import InferenceError
 from alignair.predict import PredictConfig
 from alignair.predict.forward import run_model
@@ -33,9 +35,22 @@ def _small(reference, **options):
 MODELS = {
     "chip": _chip,
     "igk": lambda: _small(ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB)),
-    "bare": lambda: _small(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), anchor_heads=False,
-                           d_presence_head=False, use_orientation=False, bank_orientation=False),
 }
+
+
+class _WithoutOptionalHeads(torch.nn.Module):
+    """A core registered through ``core.components`` may give no anchor or D presence logits: the chip with them
+    dropped."""
+
+    def __init__(self, inner):
+        super().__init__()
+        self.inner, self.cfg = inner, inner.cfg
+
+    def forward(self, batch):
+        out = self.inner(batch)
+        for key in (*ANCHOR_LOGITS.values(), D_PRESENCE_LOGITS):
+            out.pop(key, None)
+        return out
 
 
 def _batch(model_and_reference):
@@ -85,9 +100,9 @@ def test_a_light_chain_keeps_its_parsers_d_logits():
     assert genes == ("v", "j") and "d" not in out.genes and "d" in out.boundary_logits
 
 
-def test_a_model_without_optional_heads_predicts_rows_without_them():
+def test_a_core_without_the_optional_heads_predicts_rows_without_them():
     from alignair.api import predict_sequences
-    model, reference = MODELS["bare"]()
-    rows = predict_sequences(model, reference, READS, device="cpu")
-    assert {row["orientation_id"] for row in rows} == {0} and all(row["productive"] is None for row in rows)
+    model, reference = _small(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))
+    rows = predict_sequences(_WithoutOptionalHeads(model), reference, READS, device="cpu")
+    assert rows and all(row["productive"] is None for row in rows)
     assert not any("v_anchor" in row or "d_presence" in row for row in rows)

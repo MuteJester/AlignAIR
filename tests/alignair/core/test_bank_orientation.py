@@ -100,10 +100,7 @@ def test_the_bank_index_is_not_saved_with_the_weights(reference):
     assert not [key for key in model.state_dict() if key.startswith("bank_orientation")]
 
 
-def test_the_option_is_a_boolean_and_needs_the_orientation_head():
+def test_the_option_is_a_boolean():
     with pytest.raises(ConfigurationError) as caught:
         build_model_config(3, 2, 2, has_d=True, max_seq_length=LENGTH, bank_orientation=1)
-    assert caught.value.context["field"] == "bank_orientation"
-    with pytest.raises(ConfigurationError) as caught:
-        build_model_config(3, 2, 2, has_d=True, max_seq_length=LENGTH, bank_orientation=True, use_orientation=False)
     assert caught.value.context["field"] == "bank_orientation"

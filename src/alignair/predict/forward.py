@@ -14,7 +14,7 @@ from ..core.runtime import evaluation_mode
 from ..data.inference import SequenceInputAdapter
 from ..data.inputs import prepare_nucleotide_inputs
 from ..data.tokenizer import NucleotideTokenizer
-from ..errors import ConfigurationError, InferenceError, InputError, NumericalError, error_context
+from ..errors import ConfigurationError, InferenceError, NumericalError, error_context
 
 
 def _positive(value, field):
@@ -26,32 +26,17 @@ def _positive(value, field):
         raise ConfigurationError(f"{field} must be a positive integer", context={"field": field}) from exc
 
 
-def _output_keys(keys):
-    if keys is None:
-        return None
-    try:
-        selected = tuple(keys)
-        if (isinstance(keys, str) or not selected or any(not isinstance(key, str) or not key for key in selected)
-                or len(set(selected)) != len(selected)):
-            raise ValueError
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError("output keys must be a nonempty sequence of distinct names") from exc
-    return selected
-
-
-def forward_batch(model, inputs, *, expected_rows: int, output_keys=None) -> dict[str, torch.Tensor]:
-    """Run one prepared batch and return detached, validated outputs on their model devices."""
+def forward_batch(model, inputs, *, expected_rows: int) -> dict[str, torch.Tensor]:
+    """Run one prepared batch and return its detached, validated outputs on their model devices."""
     count = _positive(expected_rows, "expected_rows")
-    keys = _output_keys(output_keys)
     if not isinstance(model, torch.nn.Module) or not isinstance(inputs, Mapping):
         raise ConfigurationError("model inference requires a torch module and an input mapping")
     with error_context(stage="model_inference"), evaluation_mode(model):
         outputs = model(inputs)
         if not isinstance(outputs, Mapping) or not outputs:
             raise InferenceError("model outputs must be a nonempty mapping")
-        selected = tuple(outputs) if keys is None else keys
         result = {}
-        for key in selected:
+        for key in outputs:
             value = outputs.get(key)
             if (not isinstance(key, str) or not key or not isinstance(value, torch.Tensor)
                     or value.ndim == 0 or value.shape[0] != count or value.is_complex()):
@@ -69,10 +54,9 @@ class PredictionBatch(NamedTuple):
     outputs: dict[str, torch.Tensor]
 
 
-def prediction_batches(model, records, input_adapter, *, batch_size: int, output_keys=None):
+def prediction_batches(model, records, input_adapter, *, batch_size: int):
     """Lazily predict ordered batches, including the tail; caller mode/context is restored before yield."""
     batch_size = _positive(batch_size, "batch_size")
-    keys = _output_keys(output_keys)
     if not isinstance(model, torch.nn.Module) or not callable(input_adapter):
         raise ConfigurationError("prediction batches require a torch module and callable input adapter")
 
@@ -80,7 +64,7 @@ def prediction_batches(model, records, input_adapter, *, batch_size: int, output
         stream, offset = iter(records), 0
         while chunk := tuple(islice(stream, batch_size)):
             with error_context(stage="prediction_batch", record_offset=offset, batch_size=len(chunk)):
-                outputs = forward_batch(model, input_adapter(chunk), expected_rows=len(chunk), output_keys=keys)
+                outputs = forward_batch(model, input_adapter(chunk), expected_rows=len(chunk))
             yield PredictionBatch(offset, len(chunk), outputs)
             offset += len(chunk)
 
@@ -91,39 +75,6 @@ def output_numpy(value: torch.Tensor):
     """Snapshot an output on CPU; float32 represents bfloat16 where NumPy has no native dtype."""
     value = value.detach().float() if value.dtype == torch.bfloat16 else value.detach()
     return value.to(device="cpu", copy=True).numpy()
-
-
-def collect_prediction_outputs(batches, *, transform=None) -> dict[str, np.ndarray]:
-    """Collect PredictionBatch outputs with stable keys, row counts, shapes and NumPy dtypes.
-
-    By default, snapshot raw tensors as NumPy arrays. An optional transform maps each tensor
-    to an array before collection (for example, per-batch categorical softmax).
-    Snapshot arrays before advancing the stream so reused model/transform buffers are safe.
-    Empty streams raise InputError. Model execution and device placement belong to the caller.
-    """
-    collected, signatures = {}, {}
-    for batch in batches:
-        with error_context(stage="output_collection", record_offset=batch.record_offset, batch_size=batch.size):
-            if not batch.outputs or (collected and batch.outputs.keys() != collected.keys()):
-                raise InferenceError("prediction output keys changed between batches or are empty",
-                                     context={"expected_keys": list(collected), "actual_keys": list(batch.outputs)})
-            for key, tensor in batch.outputs.items():
-                with error_context(field=key):
-                    value = output_numpy(tensor) if transform is None else transform(tensor)
-                    if not isinstance(value, np.ndarray) or value.ndim == 0 or value.shape[0] != batch.size:
-                        raise InferenceError("collected output must be an array with one row per input",
-                                             context={"expected_rows": batch.size})
-                    signature = (value.shape[1:], value.dtype)
-                    if key in signatures and signature != signatures[key]:
-                        shape, dtype = signatures[key]
-                        raise InferenceError("prediction output shape or dtype changed between batches",
-                                             context={"expected_shape": shape, "actual_shape": value.shape[1:],
-                                                      "expected_dtype": str(dtype), "actual_dtype": str(value.dtype)})
-                    signatures[key] = signature
-                    collected.setdefault(key, []).append(value if transform is None else value.copy())
-    if not collected:
-        raise InputError("prediction output collection requires a nonempty sequence batch")
-    return {key: np.concatenate(values, axis=0) for key, values in collected.items()}
 
 
 class _TeacherForced:

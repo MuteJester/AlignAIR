@@ -393,9 +393,9 @@ def test_the_product_decodes_by_argmax_and_the_soft_decoder_substitutes_the_expe
     decoded = {g: decode_boundaries(base, g, "argmax") for g in GENES}
     # the replay's baseline is the product: the heads' argmax decoder is the same implementation
     expected = stages.correct_segments({g: decoded[g][0] for g in GENES}, {g: decoded[g][1] for g in GENES},
-                                         lengths, 576, "right")
+                                         lengths)
     expectation = stages.correct_segments({g: base.raw[f"{g}_start"].reshape(-1) for g in GENES},
-                                            {g: base.raw[f"{g}_end"].reshape(-1) for g in GENES}, lengths, 576, "right")
+                                            {g: base.raw[f"{g}_end"].reshape(-1) for g in GENES}, lengths)
     for g in GENES:
         assert np.array_equal(base.segments.start[g], expected.start[g])
         assert np.array_equal(base.segments.end[g], expected.end[g])
@@ -469,7 +469,7 @@ def test_a_product_stage_change_reaches_the_replay(small_model, s0_reads, monkey
     ids, seqs = _inputs(s0_reads)
     assert STAGES == STAGE_NAMES
     product = stages.select_alleles
-    monkeypatch.setattr(stages, "select_alleles", lambda p, n, param, cap, sel: product(p, n, param, 1, sel))
+    monkeypatch.setattr(stages, "select_alleles", lambda p, n, threshold, cap: product(p, n, threshold, 1))
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
     assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
     assert all(len(call.names) == 1 for call in out.calls["v"])

@@ -1,4 +1,4 @@
-"""D presence targets: with ``AlignAIRConfig.d_presence_head`` on, the nucleotide adapter gives each read its D's class
+"""D presence targets: for a configuration with a D, the nucleotide adapter gives each read its D's class
 (``core.d_presence``): absent (0), too short to call (1) or callable (2), by the D's observed germline bases inside the
 window the model sees. The observed germline is the D germline from the first to the last aligned base of its
 alignment (CIGAR), internal deletions included and edge gaps left out, as the assay's truth measures a segment's
@@ -46,7 +46,7 @@ def _reference():
 
 def _config(length=64, **options):
     return AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=length,
-                          d_presence_head=True, **options)
+                          **options)
 
 
 def _presence(record, config=None):

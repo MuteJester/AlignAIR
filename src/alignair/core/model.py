@@ -16,7 +16,7 @@ import torch.nn as nn
 from .config import AlignAIRConfig
 from .boundaries import boundary_masks
 from .components import _build_component, architecture_components
-from ..errors import ConfigurationError, InputError
+from ..errors import ConfigurationError
 from .runtime import restore_model_state
 from ..network.orientation import BankOrientation, apply_orientation
 
@@ -29,8 +29,7 @@ class AlignAIR(nn.Module):
         cfg = self.cfg = deepcopy(cfg)
         components = architecture_components(cfg.architecture)
         self.embedding = _build_component(components.embedding, cfg, component="embedding")
-        self.orientation_head = (_build_component(components.orientation_head, cfg, component="orientation_head")
-                                 if cfg.use_orientation else None)
+        self.orientation_head = _build_component(components.orientation_head, cfg, component="orientation_head")
         self.bank_orientation = BankOrientation() if cfg.bank_orientation else None
         self.core = _build_component(components.core, cfg, component="core")
 
@@ -51,26 +50,21 @@ class AlignAIR(nn.Module):
     def forward(self, batch: dict) -> dict:
         tokens = batch["tokenized_sequence"]
         mask, end_mask = boundary_masks(tokens)
-        if self.cfg.reject_empty_sequences and not mask.any(-1).all():
-            raise InputError("empty (all-pad) sequence in batch; reject empty reads upstream")
         out: dict = {}
 
         # orientation: predict from the shared initial embeddings, correct the input via an
         # involution transform, then re-embed the canonicalized read for the core.
-        emb = emb0 = self.embedding(tokens)
-        corrected = tokens
-        if self.orientation_head is not None:
-            orient_logits = self.orientation_head(emb0, mask)
-            out["orientation_logits"] = orient_logits
-            called = orient_logits.argmax(-1)
-            if self.bank_orientation is not None and "orientation" not in batch:
-                voted, won = self.bank_orientation.vote(tokens, mask)        # the reference's reading, where it wins
-                called = torch.where(won, voted, called)
-            out["orientation"] = called
-            correct = (batch["orientation"] if "orientation" in batch   # teacher-forced during training
-                       else called.detach())                            # self-corrected at inference
-            corrected = apply_orientation(tokens, mask, correct)
-            emb = self.embedding(corrected)
+        orient_logits = self.orientation_head(self.embedding(tokens), mask)
+        out["orientation_logits"] = orient_logits
+        called = orient_logits.argmax(-1)
+        if self.bank_orientation is not None and "orientation" not in batch:
+            voted, won = self.bank_orientation.vote(tokens, mask)        # the reference's reading, where it wins
+            called = torch.where(won, voted, called)
+        out["orientation"] = called
+        correct = (batch["orientation"] if "orientation" in batch   # teacher-forced during training
+                   else called.detach())                            # self-corrected at inference
+        corrected = apply_orientation(tokens, mask, correct)
+        emb = self.embedding(corrected)
 
         out["start_mask"], out["end_mask"] = mask, end_mask
         out.update(self.core(emb, mask, end_mask, tokens=corrected, batch=batch))
@@ -78,11 +72,7 @@ class AlignAIR(nn.Module):
 
     def component_modules(self) -> dict[str, nn.Module]:
         """Named inspection points shared by profilers and model diagnostics: the registered modules themselves."""
-        modules = {"embedding": self.embedding}
-        if self.orientation_head is not None:
-            modules["orientation_head"] = self.orientation_head
-        modules["core"] = self.core
-        return modules
+        return {"embedding": self.embedding, "orientation_head": self.orientation_head, "core": self.core}
 
     def bind_reference(self, reference) -> None:
         """Give the parts that read the reference their bank (an input, not weights): the bank orientation's k-mer
@@ -95,12 +85,3 @@ class AlignAIR(nn.Module):
         genes = ("V", "J", "D") if self.cfg.has_d else ("V", "J")
         self.cfg = replace(self.cfg, **{f"{gene.lower()}_allele_count": len(reference.gene(gene)) for gene in genes})
 
-    # ------------------------------------------------------------------ constructors
-    @classmethod
-    def from_config(cls, cfg: AlignAIRConfig) -> "AlignAIR":
-        return cls(cfg)
-
-    @classmethod
-    def from_dataconfigs(cls, *dataconfigs, **kwargs) -> "AlignAIR":
-        """One GenAIRR dataconfig -> single-chain model; several -> multi-chain model."""
-        return cls(AlignAIRConfig.from_dataconfigs(*dataconfigs, **kwargs))

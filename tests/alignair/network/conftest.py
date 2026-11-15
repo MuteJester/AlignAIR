@@ -10,8 +10,7 @@ from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 SEQUENCE = "ACGTACGT" + "AT" + "GGCC" + "CT" + "TGGAA"
 SPANS = {"v": (0, 8, 0, 8), "d": (10, 14, 1, 5), "j": (16, 21, 2, 7)}
-OPTIONS = dict(architecture="chip-v1", trunk_channels=128, max_seq_length=64, anchor_heads=True,
-               d_presence_head=True)
+OPTIONS = dict(architecture="chip-v1", trunk_channels=128, max_seq_length=64)
 
 
 def toy_reference():

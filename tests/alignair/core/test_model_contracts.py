@@ -8,7 +8,7 @@ from torch import nn
 
 from alignair.core import AlignAIR, AlignAIRConfig, ModelComponents, build_model_config, register_architecture
 from alignair.core import components
-from alignair.errors import ConfigurationError, InputError
+from alignair.errors import ConfigurationError
 
 pytestmark = pytest.mark.component
 
@@ -74,43 +74,29 @@ def test_the_model_takes_only_an_alignair_config(config):
         AlignAIR(config)
 
 
-def test_an_empty_read_is_refused_when_the_configuration_says_so(scratch):
+def test_an_all_pad_read_reaches_the_core(scratch):
     register_architecture("test-echo-v1", ModelComponents(core=EchoCore, objective=_objective))
     tokens = torch.zeros(2, 32, dtype=torch.long)
     tokens[0, :5] = 1                                          # the second read is all padding
-    strict = AlignAIR(_config(architecture="test-echo-v1", bank_orientation=False, reject_empty_sequences=True))
-    with pytest.raises(InputError, match="empty"):
-        strict({"tokenized_sequence": tokens})
-    lenient = AlignAIR(_config(architecture="test-echo-v1", bank_orientation=False))
-    assert lenient({"tokenized_sequence": tokens})["tokens"].shape == (2, 32)
+    model = AlignAIR(_config(architecture="test-echo-v1", bank_orientation=False))
+    assert model({"tokenized_sequence": tokens})["tokens"].shape == (2, 32)
 
 
-def test_without_an_orientation_head_the_core_reads_the_tokens_as_given(scratch):
+def test_every_model_orients_its_reads_and_binding_a_reference_counts_its_alleles(scratch):
     register_architecture("test-echo-v1", ModelComponents(core=EchoCore, objective=_objective))
-    model = AlignAIR(_config(architecture="test-echo-v1", use_orientation=False, bank_orientation=False)).eval()
-    assert model.orientation_head is None and model.bank_orientation is None
-    assert set(model.component_modules()) == {"embedding", "core"}
-    tokens = torch.randint(1, 5, (2, 32))
-    out = model({"tokenized_sequence": tokens})
-    assert torch.equal(out["tokens"], tokens) and "orientation_logits" not in out and "orientation" not in out
+    model = AlignAIR(_config(architecture="test-echo-v1", bank_orientation=False)).eval()
+    assert set(model.component_modules()) == {"embedding", "orientation_head", "core"}
+    out = model({"tokenized_sequence": torch.randint(1, 5, (2, 32))})
+    assert out["orientation_logits"].shape == (2, 4) and out["orientation"].shape == (2,)
     assert out["start_mask"].all() and not out["end_mask"][:, 0].any()
     from alignair.reference import ReferenceSet
     model.bind_reference(ReferenceSet.from_genotype({"V": {"V*01": "ACGT"}, "D": {"D*01": "GG"}, "J": {"J*01": "TT"}}))
     assert (model.cfg.v_allele_count, model.cfg.j_allele_count, model.cfg.d_allele_count) == (1, 1, 1)
 
 
-def test_a_model_built_from_dataconfigs_takes_their_genes(scratch):
-    import GenAIRR.data as gd
-    register_architecture("test-echo-v1", ModelComponents(core=EchoCore, objective=_objective))
-    model = AlignAIR.from_dataconfigs(gd.HUMAN_IGK_OGRDB, architecture="test-echo-v1", bank_orientation=False)
-    assert not model.cfg.has_d and model.cfg.genes == ("v", "j")
-    assert AlignAIR.from_config(model.cfg).cfg == model.cfg
-
-
 def test_the_configurations_own_checks_name_their_field():
-    for options, field in (({"trunk_channels": 0}, "trunk_channels"), ({"anchor_heads": 1}, "anchor_heads"),
-                           ({"has_d": False, "d_presence_head": True}, "d_presence_head"),
-                           ({"use_orientation": False}, "bank_orientation"), ({"input_space": "protein"}, "input_space")):
+    for options, field in (({"trunk_channels": 0}, "trunk_channels"), ({"bank_orientation": 1}, "bank_orientation"),
+                           ({"input_space": "protein"}, "input_space")):
         with pytest.raises(ConfigurationError) as caught:
             AlignAIRConfig(2, 2, 2, **options)
         assert caught.value.context["field"] == field, options

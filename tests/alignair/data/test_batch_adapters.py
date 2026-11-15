@@ -72,7 +72,7 @@ def test_strict_window_and_unknown_alleles_report_record_context():
     assert caught.value.context["gene"] == "V"
 
 
-def test_orientation_is_repeatable_and_disabled_models_receive_forward_reads():
+def test_orientation_is_repeatable_and_unaugmented_batches_hold_forward_reads():
     adapter = NucleotideBatchAdapter(_reference(), _config())
     torch.manual_seed(14)
     first = adapter([_record(), _record()])
@@ -80,11 +80,8 @@ def test_orientation_is_repeatable_and_disabled_models_receive_forward_reads():
     second = adapter([_record(), _record()])
     torch.testing.assert_close(first.inputs["tokenized_sequence"], second.inputs["tokenized_sequence"])
     torch.testing.assert_close(first.inputs["orientation"], first.targets["orientation"])
-    unoriented = _config(use_orientation=False, bank_orientation=False)
-    disabled = NucleotideBatchAdapter(_reference(), unoriented)([_record()])
-    assert "orientation" not in disabled.inputs and "orientation" not in disabled.targets
-    with pytest.raises(ConfigurationError, match="requires"):
-        NucleotideBatchAdapter(_reference(), unoriented, augment_orientation=True)([_record()])
+    forward = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
+    assert forward.inputs["orientation"].tolist() == [0] and forward.targets["orientation"].tolist() == [0]
 
 
 def test_record_adapter_to_shared_model_and_task_loss_backpropagates():
@@ -101,7 +98,7 @@ def test_record_adapter_to_shared_model_and_task_loss_backpropagates():
 
 
 def test_record_adapters_reject_the_wrong_objective_and_malformed_records():
-    cfg = _config(use_orientation=False, bank_orientation=False)
+    cfg = _config(bank_orientation=False)
     adapter = NucleotideBatchAdapter
     with pytest.raises(TrainingDataError, match="mappings"):
         adapter(_reference(), cfg)([None])
@@ -116,7 +113,7 @@ def test_the_trainers_batch_builder_is_the_shared_adapter():
     assert build_batch is build_nucleotide_batch
 
 
-def test_nucleotide_empty_read_policy_matches_the_model_configuration():
+def test_an_empty_read_is_adapted_with_nothing_to_supervise():
     record = _record()
     record["sequence"] = ""
     for gene in ("v", "d", "j"):
@@ -126,5 +123,3 @@ def test_nucleotide_empty_read_policy_matches_the_model_configuration():
     for gene in ("v", "d", "j"):
         assert not batch.targets[gene+"_supervise"].item()
     assert (batch.targets["state_labels"] == -100).all()
-    with pytest.raises(TrainingDataError, match="nonempty"):
-        NucleotideBatchAdapter(_reference(), _config(reject_empty_sequences=True))([record])

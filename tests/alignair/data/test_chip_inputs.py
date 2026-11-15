@@ -10,7 +10,7 @@ import GenAIRR.data as gd
 from alignair.core import AlignAIRConfig
 from alignair.data import NucleotideBatchAdapter
 from alignair.data.chip_inputs import chip_batch_inputs, chip_record_targets
-from alignair.core.regions import READ_REGIONS, REGION_INDEX
+from alignair.core.regions import REGION_INDEX, REGIONS as REGION_NAMES
 from alignair.reference.frames import gene_frames
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
@@ -46,7 +46,7 @@ def _region_labels():
 
 
 def _bits(*names):
-    return sum(1 << READ_REGIONS.index(name) for name in names)
+    return sum(1 << REGION_NAMES.index(name) for name in names)
 
 
 def _targets(record=None):
@@ -141,7 +141,7 @@ def test_v_start_and_j_end_extend_over_flank_bases_that_continue_their_germline(
 
 def test_region_is_the_read_region_index():
     region = _targets()["region"].values
-    assert region.tolist() == [READ_REGIONS.index(name) for name in REGIONS]
+    assert region.tolist() == [REGION_NAMES.index(name) for name in REGIONS]
 
 
 def _allele_targets(reference, calls, gene="v"):

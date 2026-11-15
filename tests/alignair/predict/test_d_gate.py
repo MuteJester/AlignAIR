@@ -6,7 +6,6 @@
 - callable: the row is the ungated one.
 
 The row carries the class (``d_presence``). The stub wraps the test chip, whose own head it overrides."""
-from dataclasses import replace
 
 import pytest
 import torch
@@ -35,7 +34,7 @@ class DPresenceStub(torch.nn.Module):
     def __init__(self, inner, classes: dict):
         super().__init__()
         self.inner, self.classes = inner, classes
-        self.cfg = replace(inner.cfg, d_presence_head=True)
+        self.cfg = inner.cfg
 
     def forward(self, batch):
         out = self.inner(batch)

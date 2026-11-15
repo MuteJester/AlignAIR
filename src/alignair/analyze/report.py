@@ -9,7 +9,6 @@ from collections import Counter
 from .validate import validate_airr
 
 _CIG = re.compile(r"\d+([MIDNSX=])")
-_LOW_CONF = 0.5
 
 
 def _truthy(v) -> bool:
@@ -85,13 +84,11 @@ def qc(rows: list[dict]) -> dict:
     n = len(rows)
     orient = Counter(_orientation(r) for r in rows)
     indel = sum(1 for r in rows if any(_has_indel(r.get(f"{g}_cigar")) for g in ("v", "d", "j")))
-    confs = [x for x in (_num(r.get("v_set_confidence")) for r in rows) if x is not None]
     ident = [x for x in (_num(r.get("v_identity")) for r in rows) if x is not None]
     fields = ["v_call", "j_call", "junction", "cdr3", "sequence_alignment"]
     comp = {f: (round(100.0 * sum(1 for r in rows if r.get(f)) / n, 1) if n else 0.0) for f in fields}
     return {"orientation": dict(orient), "indel_flagged_reads": indel,
-            "v_set_confidence": _stat(confs), "v_identity": _stat(ident),
-            "low_confidence_reads": {"n": sum(1 for x in confs if x < _LOW_CONF), "threshold": _LOW_CONF},
+            "v_identity": _stat(ident),
             "field_completeness_pct": comp}
 
 
@@ -125,10 +122,8 @@ def format_text(report: dict) -> str:
     L.append("QC")
     L.append("  orientation:      " + (", ".join(f"{k} {v}" for k, v in q["orientation"].items()) or "-"))
     L.append(f"  indel-flagged:    {q['indel_flagged_reads']}")
-    conf, idn = q["v_set_confidence"], q["v_identity"]
-    L.append("  V confidence:     " + (f"mean {conf['mean']} ({conf['min']}–{conf['max']})" if conf.get("n") else "n/a"))
+    idn = q["v_identity"]
     L.append("  V identity:       " + (f"mean {idn['mean']}" if idn.get("n") else "n/a"))
-    L.append(f"  low-confidence:   {q['low_confidence_reads']['n']} (< {q['low_confidence_reads']['threshold']})")
     L.append("  completeness:     " + ", ".join(f"{k} {v}%" for k, v in q["field_completeness_pct"].items()))
     L.append("VALIDATION")
     L.append("  required columns: " + ("OK" if not val["missing_required_columns"]

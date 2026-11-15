@@ -4,10 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from collections.abc import Mapping
 from contextlib import contextmanager
-from operator import index
 from typing import TYPE_CHECKING
 
-import numpy as np
 import torch
 
 from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
@@ -18,7 +16,6 @@ from ..core.boundaries import read_window
 from ..reference.frames import gene_frames
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .chip_inputs import chip_batch_inputs, chip_record_targets
-from .encoders import encode_allele_sets
 from .novel_bank import batch_bank
 from .targets import UNSCORABLE, build_targets, read_anchors, read_d_presence
 
@@ -44,11 +41,19 @@ def _record_context(i, record):
                                     context={"field": exc.args[0] if isinstance(exc, KeyError) else None}) from exc
 
 
-def _alleles(reference, gene, calls):
+def _alleles(reference, gene, calls) -> torch.Tensor:
+    """The multi-hot target of a record's ``calls`` over the reference's alleles of ``gene``; TrainingDataError for a
+    call the reference does not hold."""
     vocabulary = reference.gene(gene.upper())
+    encoded = torch.zeros(len(vocabulary.names), dtype=torch.float32)
     with error_context(gene=gene.upper()):
-        return torch.from_numpy(encode_allele_sets(
-            [[name.strip() for name in calls]], vocabulary.index, len(vocabulary.names), strict=True)[0])
+        for name in calls:
+            position = vocabulary.index.get(name.strip())
+            if position is None:
+                raise TrainingDataError("training allele is not in the model reference",
+                                        context={"allele": name.strip()})
+            encoded[position] = 1
+    return encoded
 
 
 def _window(sample, width, genes, null_slot=None):
@@ -144,29 +149,24 @@ class NucleotideBatchAdapter:
                 for key in ("mutation_rate", "indel_count"):
                     targets[key] = torch.tensor([bundle[key]], dtype=torch.float32)
                 targets["state_labels"] = PositionLabels(bundle["state_labels"])
-                if self.config.anchor_heads:
-                    targets.update(_anchor_targets(read_anchors(record, reference), self.config))   # forward frame
-                if self.config.d_presence_head:
+                targets.update(_anchor_targets(read_anchors(record, reference), self.config))   # forward frame
+                if self.config.has_d:
                     targets.update(_d_presence_targets(record, self.config))
                 targets.update(chip_record_targets(record, reference, frames, bundle["region_labels"]))
                 sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
                 samples.append(_limit(sample, self.config, genes, self.overflow))
-        batch = collate_samples(samples, max_length=self.config.max_seq_length, reserve_terminal_slot=True,
-                                reject_empty_sequences=self.config.reject_empty_sequences)
+        batch = collate_samples(samples, max_length=self.config.max_seq_length, reserve_terminal_slot=True)
         batch.inputs.update(chip_batch_inputs(batch.targets, reference,     # forward frame, like the targets
                                               paired=None if bank is None else bank.paired()))
         if bank is not None:
             batch.inputs.update({key: value.to(self.device) for key, value in bank.inputs(frames).items()})
-        if self.config.use_orientation:
-            augment = True if self.augment_orientation is None else self.augment_orientation
-            labels = (torch.randint(0, NUM_ORIENTATIONS, (len(samples),)) if augment
-                      else torch.zeros(len(samples), dtype=torch.long))
-            batch.inputs["tokenized_sequence"] = apply_orientation(
-                batch.inputs["tokenized_sequence"], batch.token_mask, labels)
-            batch.inputs["orientation"] = labels
-            batch.targets["orientation"] = labels
-        elif self.augment_orientation:
-            raise ConfigurationError("orientation augmentation requires the model's orientation head")
+        augment = True if self.augment_orientation is None else self.augment_orientation
+        labels = (torch.randint(0, NUM_ORIENTATIONS, (len(samples),)) if augment
+                  else torch.zeros(len(samples), dtype=torch.long))
+        batch.inputs["tokenized_sequence"] = apply_orientation(
+            batch.inputs["tokenized_sequence"], batch.token_mask, labels)
+        batch.inputs["orientation"] = labels
+        batch.targets["orientation"] = labels
         return batch.to(self.device)
 
 

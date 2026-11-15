@@ -1,4 +1,4 @@
-"""Anchor targets: with ``AlignAIRConfig.anchor_heads`` on, the nucleotide adapter gives each read its V anchor (the
+"""Anchor targets: the nucleotide adapter gives each read its V anchor (the
 first base of the V Cys codon) and J anchor (the first base of the J Trp/Phe codon) as long read positions, or the null
 slot L (the model's ``max_seq_length``) when the anchor is not observed.
 
@@ -56,7 +56,7 @@ def _reference(v_germline=None, j_germline=None, anchors=ANCHORS):
 
 def _config(length=NULL, **options):
     return AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=length,
-                          anchor_heads=True, **options)
+                          **options)
 
 
 def _anchors(record, reference=None, config=None):

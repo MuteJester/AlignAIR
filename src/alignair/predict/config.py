@@ -11,12 +11,10 @@ from ..core.boundaries import read_window
 class PredictConfig:
     max_seq_length: int = 576
     has_d: bool = True
-    selector: str = "absolute"        # derived, calibration-free set rule (p >= threshold)
-    threshold: float = 0.5            # the set's cut on the allele scores (absolute); a percentage for the relative rule
+    threshold: float = 0.5            # the called set keeps the alleles scoring at least this (relative to the best)
     cap: int = 3                      # max alleles per gene
     batch_size: int = 64
     airr: bool = True                 # assemble full AIRR fields (junction/CDR/FWR/np/identity); off = light records
-    pad_mode: str = "right"           # reads are right-padded
     chain_types: Optional[tuple] = None  # ordered locus names of the reference; one locus labels every record
 
     @property

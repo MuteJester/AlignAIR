@@ -37,15 +37,13 @@ def test_already_center_padded_samples_keep_their_coordinates():
     assert batch.targets["v_start"].item() == 1
 
 
-@pytest.mark.parametrize("failure", ["empty_batch", "empty_read", "float_tokens", "negative_token", "keys",
+@pytest.mark.parametrize("failure", ["empty_batch", "float_tokens", "negative_token", "keys",
                                      "dtypes", "shapes", "positional_shape", "positional_kind", "padding"])
 def test_invalid_sample_contracts_raise_located_errors(failure):
     targets = {"v_class": torch.tensor(0)}
     samples = [TrainingSample(np.array([1, 2]), dict(targets)), TrainingSample(np.array([3]), dict(targets))]
     if failure == "empty_batch":
         samples = []
-    elif failure == "empty_read":
-        samples[0] = TrainingSample(np.zeros(2, np.int64), targets)
     elif failure == "float_tokens":
         samples[0] = TrainingSample(np.array([1.2, 2.]), targets)
     elif failure == "negative_token":

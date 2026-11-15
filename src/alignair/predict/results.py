@@ -129,7 +129,7 @@ def read_results(canonical: Sequence[str], reads: Sequence[str], predictions: Pr
             results[g] = GeneResult(call, alignments[g][i], tuple(listed), status)
         out.append(ReadResult(
             sequence=sequence, input_sequence=reads[i],
-            orientation_id=0 if predictions.orientation is None else int(predictions.orientation[i]),
+            orientation_id=int(predictions.orientation[i]),
             mutation_rate=float(predictions.mutation_rate[i]), indel_count=float(predictions.indel_count[i]),
             genes=results,
             anchors=None if anchors is None else Anchors(*(_anchor(anchors[g][i]) for g in ANCHOR_GENES)),

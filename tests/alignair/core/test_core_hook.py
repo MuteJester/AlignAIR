@@ -86,8 +86,8 @@ def test_build_tasks_returns_the_architecture_objective(architecture):
         build_tasks(cfg, genes=("v",))
 
 
-def test_anchor_and_d_presence_flags_are_allowed_with_a_core(architecture):
-    model = AlignAIR(config(architecture=architecture(core=ToyCore), anchor_heads=True, d_presence_head=True))
+def test_a_registered_core_is_the_models_core(architecture):
+    model = AlignAIR(config(architecture=architecture(core=ToyCore)))
     assert isinstance(model.core, ToyCore)
 
 

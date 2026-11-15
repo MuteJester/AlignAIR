@@ -33,11 +33,11 @@ def check_segment_keys(keys, *, source: str = "the genotype", context=None) -> N
                              hint=FORMAT_HINT)
 
 
-def load_genotype(path: str, *, reference=None, drop_unknown: bool = True):
+def load_genotype(path: str) -> dict[str, set[str]]:
     """Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment
-    works too; the sequences are ignored). Returns ``{segment: set(names)}``, segments lower-case; with a
-    ``reference``, ``(genotype, unknown)``, the names it does not hold dropped (``drop_unknown``) or refused
-    (``UnknownAlleleError``). ConfigurationError for a file that is not such a mapping, or one keyed by gene names."""
+    works too; the sequences are ignored). Returns ``{segment: set(names)}``, segments lower-case. ConfigurationError
+    for a file that is not such a mapping, or one keyed by gene names. ``genotype_bank`` checks its alleles against a
+    reference."""
     with open(path) as f:
         text = f.read()
     data = _parse(text, path)
@@ -47,25 +47,7 @@ def load_genotype(path: str, *, reference=None, drop_unknown: bool = True):
             raise ConfigurationError(f"{path} is not a YAML or JSON genotype: its {segment} entry is "
                                      f"{type(names).__name__} {names!r}, not a list of allele names",
                                      context={"path": path, "segment": str(segment)}, hint=FORMAT_HINT)
-    genotype = {str(g).lower(): {str(n) for n in names} for g, names in data.items()}
-    if reference is None:
-        return genotype
-    unknown: dict[str, set] = {}
-    for g, names in list(genotype.items()):
-        try:
-            ref_names = set(reference.gene(g.upper()).names)
-        except (KeyError, AttributeError):                 # gene not in this reference -> skip validation
-            continue
-        bad = {n for n in names if n not in ref_names}
-        if bad:
-            unknown[g] = bad
-            if drop_unknown:
-                genotype[g] = names - bad
-            else:
-                raise UnknownAlleleError(f"unknown alleles in genotype for {g}: {sorted(bad)} (not in the reference)",
-                                         context={"gene": g, "alleles": sorted(bad)},
-                                         hint="Give their sequences in --reference.")
-    return genotype, unknown
+    return {str(g).lower(): {str(n) for n in names} for g, names in data.items()}
 
 
 def _parse(text: str, path: str) -> dict:

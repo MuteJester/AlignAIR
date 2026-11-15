@@ -42,7 +42,7 @@ def test_older_allele_artifact_loads_without_schema_when_head_dimensions_match(a
 
 @pytest.mark.parametrize('change,detail', [
     ({'v_allele_count': 5}, 'head size'), ({'d_allele_count': 5}, 'head size'),
-    ({'j_allele_count': 5}, 'head size'), ({'has_d': False, 'd_presence_head': False}, 'disabled D'),
+    ({'j_allele_count': 5}, 'head size'), ({'has_d': False}, 'disabled D'),
     ({'num_chain_types': 2}, 'chain count'), ({'vocab_size': 9}, 'vocabulary'),
     ({'max_seq_length': 0}, 'max_seq_length'),
 ])

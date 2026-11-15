@@ -6,7 +6,6 @@ A decoded anchor is the argmax of its logits over the read's positions and the n
 anchor is not observed (None)."""
 import itertools
 import json
-from dataclasses import replace
 
 import pytest
 import torch
@@ -75,7 +74,7 @@ class AnchorStub(torch.nn.Module):
     def __init__(self, inner, anchors: dict, orientations: dict | None = None):
         super().__init__()
         self.inner, self.anchors, self.orientations = inner, anchors, orientations or {}
-        self.cfg = replace(inner.cfg, anchor_heads=True)
+        self.cfg = inner.cfg
 
     def forward(self, batch):
         out = self.inner(batch)

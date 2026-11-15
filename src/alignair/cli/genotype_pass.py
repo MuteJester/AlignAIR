@@ -104,12 +104,8 @@ def recount(counts: dict, fail_reasons: dict, partial_reasons: dict, before: lis
 
 def write_genotype(path: str, genotype: dict, locus: str) -> None:
     """The genotype ``{gene: alleles}`` as an AIRR GenotypeSet JSON at ``path``."""
-    from ..genotype.airr import GeneCall, to_genotype_set
-    zygosity = {1: "homozygous", 2: "heterozygous"}
-    calls = [GeneCall(gene=gene, alleles=[{"name": allele} for allele in alleles],
-                      zygosity=zygosity.get(len(alleles), "multi-allelic/duplication-candidate"),
-                      deletion_candidate=False, reasons=[], novel=[]) for gene, alleles in genotype.items()]
-    genotype_set, _ = to_genotype_set(calls, locus, set_id="alignair-genotype-pass")
+    from ..genotype.airr import to_genotype_set
+    genotype_set, _ = to_genotype_set(genotype, locus, set_id="alignair-genotype-pass")
     with open(path, "w") as handle:
         json.dump(genotype_set, handle, indent=2)
 

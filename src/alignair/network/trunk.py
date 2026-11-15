@@ -11,7 +11,6 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-TRUNK_CHANNELS = 128
 # Two passes of doubling dilations; with kernel 5 each position sees 1 + 4 x 126 = 505 positions.
 DILATIONS = (1, 2, 4, 8, 16, 32, 1, 2, 4, 8, 16, 32)
 
@@ -41,7 +40,7 @@ class DilatedTrunk(nn.Module):
     Each position sees ``receptive_field = 1 + (kernel - 1) * sum(dilations)`` positions around it, clipped to the
     read."""
 
-    def __init__(self, in_channels: int, channels: int = TRUNK_CHANNELS, kernel: int = 5,
+    def __init__(self, in_channels: int, channels: int, kernel: int = 5,
                  dilations: tuple[int, ...] = DILATIONS, dropout: float = 0.1):
         super().__init__()
         self.project = nn.Conv1d(in_channels, channels, 1)
@@ -63,7 +62,7 @@ class AnchorHead(nn.Module):
     positions (``mask``). A pad position's slot is the convolution's bias (its features are zero); the anchor term
     and the decoder read the read's positions and the null slot only."""
 
-    def __init__(self, channels: int = TRUNK_CHANNELS):
+    def __init__(self, channels: int):
         super().__init__()
         self.position = nn.Conv1d(channels, 1, 1)
         self.null = nn.Linear(2 * channels, 1)

@@ -356,7 +356,7 @@ def run(args) -> int:
         from ..genotype.bank import genotype_bank
         from ..genotype.files import load_genotype
         try:                    # an allele the bound reference lacks is refused, not dropped
-            genotype, _unknown = load_genotype(args.genotype, reference=reference, drop_unknown=False)
+            genotype = load_genotype(args.genotype)
             bank = genotype_bank(reference, genotype)
             aligner = aligner.bound_to(bank)                                    # the genotype is the bank: bound once
         except ValueError as e:

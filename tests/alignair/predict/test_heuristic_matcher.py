@@ -9,8 +9,8 @@ from alignair.predict.heuristic_matcher import GermlineMatch, HeuristicGermlineM
 _G = "ACGTACGTAC" * 4          # a 40 bp germline
 
 
-def _matcher(**kw):
-    return HeuristicGermlineMatcher({"V1": _G}, **kw)
+def _matcher():
+    return HeuristicGermlineMatcher({"V1": _G})
 
 
 def test_exact_clean_segment_quick_exits_to_full_germline():
@@ -96,11 +96,11 @@ def test_a_segment_shorter_than_the_anchor_spans_as_many_germline_bases_as_read_
     read = "CCCC" + germline[4:15] + "TTTT"
     m = HeuristicGermlineMatcher({"D1": germline}).match_one(read, 4, 15, "D1", indel_count=0)
     assert m == GermlineMatch(seq_start=4, seq_end=15, ref_start=4, ref_end=15)
-    assert derive_alignment(read[4:15], germline[4:15], 0).cigar == "11M"
+    assert derive_cigar(read[4:15], germline[4:15], 0) == "11M"
 
 
-# ---------------- derive_alignment (CIGAR reconstruction) ----------------
-from alignair.predict.heuristic_matcher import derive_alignment
+# ---------------- derive_cigar (CIGAR reconstruction) ----------------
+from alignair.predict.heuristic_matcher import derive_cigar
 
 pytestmark = pytest.mark.component
 
@@ -116,33 +116,33 @@ def _consumes(cigar):
 
 
 def test_derive_gap_free_is_single_M_run():
-    r = derive_alignment("ACGTACGT", "ACGTACGT", indel_count=0)
-    assert r.cigar == "8M" and (r.q_end, r.t_end) == (8, 8)
+    cigar = derive_cigar("ACGTACGT", "ACGTACGT", indel_count=0)
+    assert cigar == "8M"
 
 
 def test_derive_substitution_stays_M():
-    r = derive_alignment("ACGT", "AGGT", indel_count=0)      # 1 SHM, no indel
-    assert r.cigar == "4M"                                    # M spans matches + mismatches
+    cigar = derive_cigar("ACGT", "AGGT", indel_count=0)      # 1 SHM, no indel
+    assert cigar == "4M"                                    # M spans matches + mismatches
 
 
 def test_derive_insertion_places_I():
-    r = derive_alignment("ACGGT", "ACGT", indel_count=1)      # read has an extra base
-    assert _consumes(r.cigar) == (5, 4)                       # consumes 5 read, 4 germline
-    assert "I" in r.cigar and "D" not in r.cigar
+    cigar = derive_cigar("ACGGT", "ACGT", indel_count=1)      # read has an extra base
+    assert _consumes(cigar) == (5, 4)                       # consumes 5 read, 4 germline
+    assert "I" in cigar and "D" not in cigar
 
 
 def test_derive_deletion_places_D():
-    r = derive_alignment("ACT", "ACGT", indel_count=1)        # germline has an extra base
-    assert _consumes(r.cigar) == (3, 4)
-    assert "D" in r.cigar and "I" not in r.cigar
+    cigar = derive_cigar("ACT", "ACGT", indel_count=1)        # germline has an extra base
+    assert _consumes(cigar) == (3, 4)
+    assert "D" in cigar and "I" not in cigar
 
 
 def test_derive_places_a_balanced_insertion_and_deletion_the_indel_count_missed():
     # a base inserted at 50 and one deleted at 150 keep the window lengths equal; the model's count rounds to none
     germ = _LONG[:200]
     read = germ[:50] + "A" + germ[50:150] + germ[151:]
-    r = derive_alignment(read, germ, indel_count=0.03)
-    assert "I" in r.cigar and "D" in r.cigar and _consumes(r.cigar) == (200, 200)
+    cigar = derive_cigar(read, germ, indel_count=0.03)
+    assert "I" in cigar and "D" in cigar and _consumes(cigar) == (200, 200)
 
 
 def test_derive_keeps_spread_substitutions_as_matches_when_the_lengths_agree():
@@ -150,12 +150,12 @@ def test_derive_keeps_spread_substitutions_as_matches_when_the_lengths_agree():
     read = list(_LONG[:200])
     for i in range(5, 200, 20):
         read[i] = "A" if read[i] != "A" else "C"
-    assert derive_alignment("".join(read), _LONG[:200], indel_count=0).cigar == "200M"
+    assert derive_cigar("".join(read), _LONG[:200], indel_count=0) == "200M"
 
 
 def test_derive_empty_windows():
-    assert derive_alignment("", "ACG", 0).cigar == "3D"
-    assert derive_alignment("ACG", "", 0).cigar == "3I"
+    assert derive_cigar("", "ACG", 0) == "3D"
+    assert derive_cigar("ACG", "", 0) == "3I"
 
 
 def test_the_compiled_kernel_matches_the_python_reference():

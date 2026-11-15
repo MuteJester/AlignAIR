@@ -11,7 +11,7 @@ from dataclasses import replace
 import numpy as np
 
 from ..data.inputs import prepare_nucleotide_inputs
-from ..errors import InputError, NumericalError
+from ..errors import InputError
 from .clean import clean
 from .forward import run_model
 from .germline import align_germline, realign_v
@@ -50,10 +50,9 @@ def run_forward(state: PredictionState) -> PredictionState:
 
 
 def decode_outputs(state: PredictionState) -> PredictionState:
-    """``clean``: the batches decoded into ``Predictions``, which must be finite before any use; a teacher-forced
+    """``clean``: the batches decoded into ``Predictions`` (the forward refused any non-finite output); a teacher-forced
     orientation is the read's orientation (the model's own where none was given)."""
     predictions = clean(state.batches, state.context.cfg.genes)
-    validate_predictions(predictions)
     if state.orientation_given is not None:
         own = predictions.orientation
         predictions = replace(predictions, orientation=np.array(
@@ -65,16 +64,14 @@ def canonicalize_reads(state: PredictionState) -> PredictionState:
     """``canonicalize``: each read in the model's forward frame (its predicted orientation), so the coordinates, the
     germline and the AIRR assembly all agree."""
     orient = state.predictions.orientation
-    canonical = [canonicalize(s, int(orient[i]) if orient is not None else 0) for i, s in enumerate(state.reads)]
+    canonical = [canonicalize(s, int(orient[i])) for i, s in enumerate(state.reads)]
     return replace(state, canonical=canonical)
 
 
 def correct_spans(state: PredictionState) -> PredictionState:
     """``segments``: the decoded boundaries corrected into ``Segments`` on the forward-frame reads."""
-    cfg = state.context.cfg
     seq_lens = np.array([len(s) for s in state.canonical])
-    segments = correct_segments(state.predictions.start, state.predictions.end, seq_lens, cfg.max_seq_length,
-                                cfg.pad_mode)
+    segments = correct_segments(state.predictions.start, state.predictions.end, seq_lens)
     return replace(state, segments=segments)
 
 
@@ -82,7 +79,7 @@ def select_calls(state: PredictionState) -> PredictionState:
     """``alleles``: each gene's call set from the allele scores."""
     context, cfg = state.context, state.context.cfg
     names = {g: list(context.reference.gene(g.upper()).names) for g in cfg.genes}
-    calls = select_alleles(state.predictions.allele, names, cfg.threshold, cfg.cap, cfg.selector)
+    calls = select_alleles(state.predictions.allele, names, cfg.threshold, cfg.cap)
     return replace(state, calls=calls)
 
 
@@ -146,30 +143,6 @@ def build_rows(state: PredictionState) -> PredictionState:
     from .airr import build_airr
     return replace(state, rows=build_airr(state.results, context.reference,
                                           chain=("heavy" if cfg.has_d else "light")))
-
-
-def assert_finite(allele: dict, stage: str) -> None:
-    """Fail loudly if any post-transform allele probability is non-finite (NaN/Inf) — a silently
-    NaN'd probability would otherwise propagate into calls/confidence."""
-    for g, a in allele.items():
-        if not np.all(np.isfinite(a)):
-            raise NumericalError(f"non-finite allele probabilities after {stage} (gene {g!r})",
-                                 context={"stage": stage, "gene": g, "field": "allele_probabilities"})
-
-
-def validate_predictions(preds, stage: str = "model forward") -> None:
-    """Fail loudly if ANY raw model output is non-finite: a damaged checkpoint emitting NaN
-    would otherwise be silently turned into a plausible call (argmax fallback) and clipped coordinates."""
-    assert_finite(preds.allele, stage)
-    for name, d in (("start", preds.start), ("end", preds.end)):
-        for g, a in d.items():
-            if not np.all(np.isfinite(a)):
-                raise NumericalError(f"non-finite {name} coordinates after {stage} (gene {g!r})",
-                                     context={"stage": stage, "gene": g, "field": name})
-    for name in ("mutation_rate", "indel_count"):
-        a = getattr(preds, name)
-        if a is not None and not np.all(np.isfinite(a)):
-            raise NumericalError(f"non-finite {name} after {stage}", context={"stage": stage, "field": name})
 
 
 def called_loci(v_alignments, reference, no_v) -> list[str] | None:

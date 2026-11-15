@@ -1,4 +1,4 @@
-"""The conserved V and J anchors a model with anchor heads locates (``AlignAIRConfig.anchor_heads``): the one
+"""The conserved V and J anchors a model's anchor heads locate: the one
 definition of their codon length, their genes and their keys.
 
 An anchor is the read position of the first base of a conserved codon: V's Cys, J's Trp/Phe. The junction runs from

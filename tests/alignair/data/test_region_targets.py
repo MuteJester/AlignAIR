@@ -1,5 +1,5 @@
 """The chip's region targets (``region``, and the ``teacher_region`` input): each read position's recombination region
-(pre, V, N1, D, N2, J, post) as a ``READ_REGIONS`` index, in the forward frame the model's orientation correction
+(pre, V, N1, D, N2, J, post) as a ``core.regions.REGIONS`` index, in the forward frame the model's orientation correction
 restores, cropped to the model's window as the boundary targets are, the padding value past the read. The parse loss
 and teacher forcing train on them, so they are pinned against the boundary targets on live GenAIRR reads too."""
 import itertools
@@ -8,12 +8,12 @@ import pytest
 import torch
 
 from alignair.core import AlignAIRConfig
-from alignair.core.regions import READ_REGIONS
+from alignair.core.regions import REGIONS as REGION_NAMES
 from alignair.data import NucleotideBatchAdapter
 from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
-CLASS = {name: k for k, name in enumerate(READ_REGIONS)}
+CLASS = {name: k for k, name in enumerate(REGION_NAMES)}
 # a 30-nt read: pre [0, 2), V [2, 12), N1 [12, 14), D [14, 17), N2 [17, 19), J [19, 28), post [28, 30)
 SEQUENCE = "GA" + "CAGGTGCAGC" + "TT" + "GGT" + "AC" + "TGGGGCCAG" + "CC"
 SPANS = {"v": (2, 12), "d": (14, 17), "j": (19, 28)}
@@ -43,7 +43,7 @@ def _config(length=64):
 
 @pytest.mark.component
 def test_region_targets_are_each_read_positions_region():
-    assert READ_REGIONS == ("pre", "V", "N1", "D", "N2", "J", "post")
+    assert REGION_NAMES == ("pre", "V", "N1", "D", "N2", "J", "post")
     batch = NucleotideBatchAdapter(_reference(), _config(), augment_orientation=False)([_record()])
     labels = batch.targets["region"]
     assert labels.shape == (1, 64) and labels.dtype == torch.long
