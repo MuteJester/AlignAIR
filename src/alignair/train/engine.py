@@ -9,7 +9,7 @@ import torch
 from ..errors import ConfigurationError, TrainingError, error_context
 from ..core.runtime import evaluation_mode
 from ..tasks import MetricReport, TrainingTasks, build_tasks
-from .guards import NonFiniteLossError, check_finite_loss, validate_grad_clip
+from .guards import NonFiniteTrainingError, check_finite_loss, validate_grad_clip
 
 
 class StepResult(NamedTuple):
@@ -78,7 +78,7 @@ class TrainingEngine:
                            if not torch.isfinite(parameter.grad).all()]
                 # Do not leave rejected gradients available for a caller to accidentally reuse.
                 self.optimizer.zero_grad(set_to_none=True)
-                raise NonFiniteLossError(
+                raise NonFiniteTrainingError(
                     f"non-finite gradient norm at step {step} (loss was finite: {total_value:.3g})",
                     context={"stage": "training_gradient", "total": total_value, "parameters": invalid,
                              "reason": "nonfinite_gradient" if invalid else "gradient_norm_overflow"},

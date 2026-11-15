@@ -20,8 +20,8 @@ back-compat. I/O + reference helpers: ``read_sequences``, ``write_airr``, ``Refe
 from .errors import AlignAIRError
 from .reference.reference_set import ReferenceSet
 from .io.sequence_reader import read_sequences, iter_sequences
-from .io.metadata import DuplicateMetadataId
-from .io.airr import write_airr, AirrWriter, PredictionCountMismatch
+from .io.metadata import DuplicateMetadataIdError
+from .io.airr import write_airr, AirrWriter, PredictionCountMismatchError
 from .analyze.compare import compare_airr
 from .api import load_model, predict_sequences, train_model
 from .aligner import Aligner, PredictionResult, resolve_device
@@ -45,6 +45,6 @@ __all__ = [
     "load_model", "predict_sequences", "train_model",
     "AlignAIR", "AlignAIRConfig", "PredictConfig",
     "ReferenceSet", "read_sequences", "iter_sequences",
-    "write_airr", "AirrWriter", "compare_airr", "DuplicateMetadataId", "PredictionCountMismatch",
+    "write_airr", "AirrWriter", "compare_airr", "DuplicateMetadataIdError", "PredictionCountMismatchError",
     "__version__",
 ]

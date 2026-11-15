@@ -248,3 +248,17 @@ def test_the_bundle_export_reads_its_provenance_from_the_checkpoint_only():
     assert _gone("alignair.train.build")
     assert "training" not in inspect.signature(bundle.export_bundle).parameters
     assert not hasattr(bundle, "build_dataconfigs") and not hasattr(bundle, "training_plan")
+
+
+def test_every_renamed_error_class_carries_the_error_suffix():
+    """The error classes are named for what failed, with the ``Error`` suffix: the old names are gone."""
+    import alignair
+    from alignair import io, registry
+    from alignair.registry import cache
+    from alignair.train import guards
+    gone = [(alignair, "DuplicateMetadataId"), (alignair, "PredictionCountMismatch"), (io, "DuplicateMetadataId"),
+            (registry, "IntegrityError"), (cache, "IntegrityError"), (guards, "NonFiniteLossError")]
+    assert not [name for module, name in gone if hasattr(module, name)]
+    assert all(hasattr(module, name) for module, name in (
+        (alignair, "DuplicateMetadataIdError"), (alignair, "PredictionCountMismatchError"),
+        (registry, "DownloadIntegrityError"), (guards, "NonFiniteTrainingError")))

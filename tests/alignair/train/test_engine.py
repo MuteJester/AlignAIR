@@ -9,7 +9,7 @@ from alignair.errors import ConfigurationError
 from alignair.tasks import MetricReport
 from alignair.core.runtime import evaluation_mode
 from alignair.train import TrainingEngine
-from alignair.train.guards import NonFiniteLossError
+from alignair.train.guards import NonFiniteTrainingError
 
 pytestmark = pytest.mark.component
 
@@ -50,7 +50,7 @@ def test_rejected_step_does_not_update_parameters_optimizer_or_scheduler(failure
             return (out + model.other) * 1e30, {}
         return out.square() + model.other.abs().sqrt(), {}
     engine = TrainingEngine(model, optimizer, tasks=SimpleNamespace(loss=objective), grad_clip=1., scheduler=scheduler)
-    with pytest.raises(NonFiniteLossError) as caught:
+    with pytest.raises(NonFiniteTrainingError) as caught:
         engine.step(({}, {}), step=17)
     assert caught.value.context['step'] == 17
     if failure == 'parameter_gradient':

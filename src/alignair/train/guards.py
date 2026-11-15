@@ -14,7 +14,7 @@ class TrainingConfigError(ConfigurationError, TrainingError):
     code = "ALIGNAIR_TRAINING_CONFIG"
 
 
-class NonFiniteLossError(TrainingError, NumericalError):
+class NonFiniteTrainingError(TrainingError, NumericalError):
     """Loss or a gradient became NaN/Inf — training is aborted with a per-task diagnostic rather than
     continuing to corrupt the weights."""
     code = "ALIGNAIR_TRAINING_NONFINITE"
@@ -79,8 +79,8 @@ def check_finite_loss(step: int, total: float, parts: dict) -> None:
     if math.isfinite(float(total)):
         return
     diag = ", ".join(f"{k}={v:.3g}" for k, v in parts.items())
-    raise NonFiniteLossError(f"non-finite loss {total!r} at step {step}; per-task: {diag}. "
-                             f"Lower the learning rate, add gradient clipping (--grad-clip), or check "
-                             f"the data/targets.", context={"stage": "training_loss", "step": step,
-                                                           "total": total, "parts": parts},
-                             hint="Lower the learning rate or check the training data and targets.")
+    raise NonFiniteTrainingError(f"non-finite loss {total!r} at step {step}; per-task: {diag}. "
+                                 f"Lower the learning rate, add gradient clipping (--grad-clip), or check "
+                                 f"the data/targets.", context={"stage": "training_loss", "step": step,
+                                                               "total": total, "parts": parts},
+                                 hint="Lower the learning rate or check the training data and targets.")

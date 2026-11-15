@@ -208,10 +208,10 @@ def test_needs_assembly_skips_for_light_selections():
 def test_writer_rejects_prediction_count_mismatch():
     """Fewer/extra predictions than inputs must RAISE (never zip-truncate + silently drop reads);
     the atomic output is discarded."""
-    from alignair.io.airr import AirrWriter, PredictionCountMismatch
+    from alignair.io.airr import AirrWriter, PredictionCountMismatchError
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
-        with pytest.raises(PredictionCountMismatch):
+        with pytest.raises(PredictionCountMismatchError):
             with AirrWriter(tmp) as w:
                 w.write(["r1", "r2", "r3"], ["A", "C", "G"], [{"sequence": "A"}, {"sequence": "C"}])
         assert not os.path.exists(tmp)                 # discarded, not a truncated partial file

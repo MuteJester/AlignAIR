@@ -11,13 +11,13 @@ pytestmark = pytest.mark.component
 
 
 @pytest.mark.parametrize("module,name,builtin", [
-    ("io.metadata", "DuplicateMetadataId", ValueError),
-    ("io.airr", "PredictionCountMismatch", RuntimeError),
+    ("io.metadata", "DuplicateMetadataIdError", ValueError),
+    ("io.airr", "PredictionCountMismatchError", RuntimeError),
     ("predict.airr.builder", "AirrAssemblyError", Exception),
-    ("registry.cache", "IntegrityError", RuntimeError),
+    ("registry.cache", "DownloadIntegrityError", RuntimeError),
     ("registry.sources", "OfflineError", RuntimeError),
     ("train.guards", "TrainingConfigError", ValueError),
-    ("train.guards", "NonFiniteLossError", RuntimeError),
+    ("train.guards", "NonFiniteTrainingError", RuntimeError),
     ("genotype.files", "UnknownAlleleError", ValueError),
 ])
 def test_canonical_exceptions_preserve_builtin_catchability(module, name, builtin):

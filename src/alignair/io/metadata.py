@@ -22,14 +22,14 @@ _10X_TO_AIRR = {"barcode": "cell_id", "umis": "umi_count", "reads": "consensus_c
 _SQL_PARAM_CHUNK = 900
 
 
-class DuplicateMetadataId(InputError):
+class DuplicateMetadataIdError(InputError):
     """A metadata join key occurs more than once; neither row may silently win."""
     code = "ALIGNAIR_DUPLICATE_METADATA_ID"
 
 
 def _duplicate(key):
-    return DuplicateMetadataId(f"duplicate metadata id {key!r}; select a unique metadata join key",
-                               context={"record_id": key})
+    return DuplicateMetadataIdError(f"duplicate metadata id {key!r}; select a unique metadata join key",
+                                    context={"record_id": key})
 
 
 def _metadata_plan(fields, id_column, keep_columns, normalize_10x, path):

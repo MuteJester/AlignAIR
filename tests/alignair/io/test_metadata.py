@@ -1,7 +1,7 @@
 """Metadata uniqueness, normalization and disk-backed lifecycle contracts."""
 import pytest
 
-from alignair.io.metadata import DuplicateMetadataId, MetadataIndex, build_metadata_index, load_metadata
+from alignair.io.metadata import DuplicateMetadataIdError, MetadataIndex, build_metadata_index, load_metadata
 from alignair.errors import DataContractError, InputError, OperationIOError, current_error_context
 
 pytestmark = pytest.mark.component
@@ -64,13 +64,13 @@ def test_metadata_index_temp_db_deleted_on_success(tmp_path):
 def test_metadata_index_duplicate_id_fails_and_cleans_up(tmp_path, monkeypatch):
     """A non-unique join key fails closed (no silent last-wins) AND leaves no orphan temp DB."""
     import tempfile
-    from alignair.io.metadata import build_metadata_index, DuplicateMetadataId
+    from alignair.io.metadata import build_metadata_index, DuplicateMetadataIdError
     m = tmp_path / "dup.csv"
     m.write_text("contig_id,cell_id\nc1,A\nc1,B\n")               # c1 twice
     original_mkstemp = tempfile.mkstemp
     monkeypatch.setattr(tempfile, 'mkstemp', lambda **kwargs: original_mkstemp(dir=tmp_path, **kwargs))
     before = set(tmp_path.glob('*.alignair-meta.sqlite'))
-    with pytest.raises(DuplicateMetadataId, match="c1"):
+    with pytest.raises(DuplicateMetadataIdError, match="c1"):
         build_metadata_index(str(m), id_column="contig_id")
     after = set(tmp_path.glob('*.alignair-meta.sqlite'))
     assert after == before                                       # no orphan temp DB left behind
@@ -80,7 +80,7 @@ def test_metadata_index_duplicate_id_fails_and_cleans_up(tmp_path, monkeypatch):
 def test_both_loaders_reject_duplicate_join_keys_without_leaking_error_context(tmp_path, loader):
     path = tmp_path / 'metadata.csv'
     path.write_text('id,cell_id\nread,one\nread,two\n')
-    with pytest.raises(DuplicateMetadataId) as caught:
+    with pytest.raises(DuplicateMetadataIdError) as caught:
         loader(path)
     assert caught.value.context['path'] == str(path)
     assert caught.value.context['record_id'] == 'read'
@@ -91,7 +91,7 @@ def test_failed_insert_is_atomic_and_preserves_earlier_committed_batches():
     with MetadataIndex() as index:
         index.put_many([('first', {'value': 'original'})])
         for rows in ([('second', {}), ('first', {})], [('second', {}), ('second', {})]):
-            with pytest.raises(DuplicateMetadataId) as caught:
+            with pytest.raises(DuplicateMetadataIdError) as caught:
                 index.put_many(rows)
             assert caught.value.__cause__ is not None
             assert index.get_many(['first', 'second']) == {'first': {'value': 'original'}}
@@ -261,7 +261,7 @@ def test_large_metadata_input_batches_inserts_and_cleans_up_late_duplicate(tmp_p
             super().put_many(items)
     monkeypatch.setattr('alignair.io.metadata.MetadataIndex', ObservedIndex)
     if duplicate_last:
-        with pytest.raises(DuplicateMetadataId):
+        with pytest.raises(DuplicateMetadataIdError):
             build_metadata_index(path)
     else:
         index, _ = build_metadata_index(path)

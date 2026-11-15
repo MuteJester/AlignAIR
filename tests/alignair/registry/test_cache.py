@@ -41,7 +41,7 @@ def test_download_rejects_bad_hash_and_installs_nothing(monkeypatch, tmp_path):
     monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "c"))
     src, _ = _registry(tmp_path)
     dest = cache.cache_path("human-igh", "2.1.0")
-    with pytest.raises(cache.IntegrityError):
+    with pytest.raises(cache.DownloadIntegrityError):
         cache.download_verified(src, "human-igh/2.1.0.alignair", dest, "0" * 64)
     assert not dest.exists() and not dest.with_name(dest.name + ".part").exists()
 

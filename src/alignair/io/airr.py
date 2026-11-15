@@ -62,7 +62,7 @@ def metadata_column(column: str) -> str:
     return f"meta_{column}" if column in _PROTECTED_FIELDS else column
 
 
-class PredictionCountMismatch(DataContractError):
+class PredictionCountMismatchError(DataContractError):
     """The writer was given a different number of ids / sequences / predictions — a pipeline or model
     defect. Raised instead of silently truncating (and losing reads) via ``zip``."""
     code = "ALIGNAIR_PREDICTION_COUNT_MISMATCH"
@@ -265,14 +265,14 @@ class AirrWriter:
         (barcode/UMI/sample/cell_id) merged into each output row without overwriting model fields.
 
         The three lists must be the same length — a mismatch (a pipeline/model defect returning fewer or
-        extra predictions) raises :class:`PredictionCountMismatch` rather than silently truncating via
+        extra predictions) raises :class:`PredictionCountMismatchError` rather than silently truncating via
         ``zip`` and losing reads."""
         if not (len(ids) == len(sequences) == len(preds)):
-            raise PredictionCountMismatch(
+            raise PredictionCountMismatchError(
                 f"cardinality mismatch: ids={len(ids)}, sequences={len(sequences)}, "
                 f"predictions={len(preds)} — refusing to write (would silently drop reads)")
         if metas is not None and len(metas) != len(ids):
-            raise PredictionCountMismatch(f"metas={len(metas)} != records={len(ids)}")
+            raise PredictionCountMismatchError(f"metas={len(metas)} != records={len(ids)}")
         for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds)):
             row = _build_row(sid, seq, p, self.locus)
             if metas and metas[i]:

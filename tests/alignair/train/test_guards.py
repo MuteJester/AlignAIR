@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from alignair.train.guards import (NonFiniteLossError, TrainingConfigError,
+from alignair.train.guards import (NonFiniteTrainingError, TrainingConfigError,
                                     check_finite_loss, validate_training_request)
 
 pytestmark = pytest.mark.component
@@ -44,7 +44,7 @@ def test_finite_loss_passes():
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_non_finite_loss_aborts(bad):
-    with pytest.raises(NonFiniteLossError, match="non-finite loss"):
+    with pytest.raises(NonFiniteTrainingError, match="non-finite loss"):
         check_finite_loss(42, bad, {"v_allele": float("nan")})
 
 
@@ -81,7 +81,7 @@ def test_a_training_step_rejects_non_finite_loss_or_gradient_before_optimizer(mo
         calls.append(True)
         return original_step(*args, **kwargs)
     monkeypatch.setattr(opt, "step", optimizer_step)
-    with pytest.raises(NonFiniteLossError, match="non-finite (loss|gradient)") as caught:
+    with pytest.raises(NonFiniteTrainingError, match="non-finite (loss|gradient)") as caught:
         TrainingEngine(m, opt, tasks=tasks).step(({}, {}), step=17)
     assert caught.value.code == "ALIGNAIR_TRAINING_NONFINITE"
     assert caught.value.context["stage"] == ("training_gradient" if bad is None else "training_loss")

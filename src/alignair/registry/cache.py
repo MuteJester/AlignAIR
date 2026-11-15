@@ -18,7 +18,7 @@ from ..io.files import sha256_file
 from . import sources as registry_sources
 
 
-class IntegrityError(ArtifactIntegrityError):
+class DownloadIntegrityError(ArtifactIntegrityError):
     """A downloaded artifact failed SHA256 verification."""
     code = "ALIGNAIR_DOWNLOAD_INTEGRITY"
 
@@ -160,7 +160,7 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
         got = h.hexdigest()
         if expected_sha256 and got != expected_sha256:
             part.unlink(missing_ok=True)
-            raise IntegrityError(
+            raise DownloadIntegrityError(
                 f"SHA256 mismatch for {relpath}: expected {expected_sha256}, got {got} — refusing to install.",
                 context={"stage": "model_download", "source": source, "artifact": relpath,
                          "path": dest, "expected_sha256": expected_sha256, "actual_sha256": got},
