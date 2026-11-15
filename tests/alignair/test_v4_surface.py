@@ -206,3 +206,16 @@ def test_the_registry_resolves_catalog_ids_through_its_sources_directly():
     """No one-line wrapper of ``sources.find_model`` in the cache."""
     from alignair.registry import cache
     assert not hasattr(cache, "_find")
+
+
+def test_reads_are_tokenized_by_the_one_vocabulary():
+    import alignair.data
+    assert _gone("alignair.data.tokenizer") and _gone("alignair.data.inference")
+    assert not hasattr(alignair.data, "SequenceInputAdapter")
+    assert alignair.data.tokenize_batch(["ACGT", "GN"], 6)["tokenized_sequence"].tolist() == [[1, 4, 3, 2, 0, 0],
+                                                                                              [3, 5, 0, 0, 0, 0]]
+
+
+def test_the_boundary_decoder_keeps_no_test_only_helper():
+    from alignair.predict import decode
+    assert not hasattr(decode, "decoded_boundaries")

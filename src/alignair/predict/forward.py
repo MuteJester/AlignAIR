@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from functools import partial
 from itertools import islice
 from operator import index
 from typing import NamedTuple
@@ -11,9 +12,7 @@ import torch
 
 from ..core.boundaries import width_bucket
 from ..core.runtime import evaluation_mode
-from ..data.inference import SequenceInputAdapter
-from ..data.inputs import prepare_nucleotide_inputs
-from ..data.tokenizer import NucleotideTokenizer
+from ..data.inputs import prepare_nucleotide_inputs, tokenize_batch
 from ..errors import ConfigurationError, InferenceError, NumericalError, error_context
 
 
@@ -107,8 +106,7 @@ def run_model(model, sequences, cfg, device: str = "cpu", *, orientation=None) -
     its outputs. Which and how many reads of its bucket share its batch (the bucket's last batch may be part-full)
     can still move their last float bits."""
     reads, _ = prepare_nucleotide_inputs(sequences, cfg.window)
-    adapter = SequenceInputAdapter(NucleotideTokenizer(), cfg.max_seq_length, device,
-                                    vocab_size=6)
+    adapter = partial(tokenize_batch, width=cfg.max_seq_length, device=device)
     records = reads
     if orientation is not None:
         records, adapter = list(zip(reads, orientation, strict=True)), _TeacherForced(adapter, model)

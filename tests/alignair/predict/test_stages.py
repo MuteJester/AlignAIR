@@ -11,7 +11,7 @@ import pytest
 from alignair.errors import InferenceError, InputError
 from alignair.predict import PredictConfig
 from alignair.predict.pipeline import PIPELINE, STAGE_NAMES, Stage, Trace, predict, run_stages
-from alignair.predict.stages import canonicalize
+from alignair.core.orientations import orient
 from alignair.predict.state import PER_READ_FIELDS, GeneCall, PredictionState, Predictions, Segments
 from tests.alignair.predict.golden_rows import FIXTURE, golden_model
 
@@ -83,7 +83,7 @@ def test_given_orientations_frame_the_reads(golden):
     given = [1 if i % 2 else None for i in range(len(reads))]
     state = run_stages(PredictionState.start(model, reference, cfg, "cpu", reads, orientation=given))
     assert all(int(state.predictions.orientation[i]) == o for i, o in enumerate(given) if o is not None)
-    assert state.canonical == [canonicalize(r, int(o)) for r, o in zip(state.reads, state.predictions.orientation)]
+    assert state.canonical == [orient(r, int(o)) for r, o in zip(state.reads, state.predictions.orientation)]
 
 
 def _row(value, i):

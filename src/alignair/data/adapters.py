@@ -23,10 +23,6 @@ if TYPE_CHECKING:
     from ..core.config import AlignAIRConfig
 
 
-def _genes(config):
-    return ("v", "j", "d") if config.has_d else ("v", "j")
-
-
 @contextmanager
 def _record_context(i, record):
     if not isinstance(record, Mapping):
@@ -121,7 +117,7 @@ class NucleotideBatchAdapter:
 
     def __call__(self, records) -> TrainingBatch:
         samples = []
-        genes = _genes(self.config)
+        genes = self.config.genes
         records = list(records)
         bank = batch_bank(self.reference, records)       # None unless a read comes from a novel allele
         reference = self.reference if bank is None else bank.reference

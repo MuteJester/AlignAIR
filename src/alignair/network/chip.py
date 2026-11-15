@@ -48,8 +48,8 @@ from ..refine.drefine import refine_d_boundaries
 from ..refine.locus import read_loci, restrict_to_locus
 from ..refine.vrescore import rescore_v
 from .bank import BankCompiler
-from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser
-from .presence import DPresenceEvidence
+from .parser import GENES as STATE_OF, IMPOSSIBLE, Parser, expected_slot
+from .presence import D_LENGTH_SCALE, DPresenceEvidence
 from .reader import ShmReader, top_coordinates
 from .scan import BankScan, allele_log_posterior
 from .trunk import AnchorHead, DilatedTrunk
@@ -57,6 +57,9 @@ from .trunk import AnchorHead, DilatedTrunk
 ROUTE_VALVE = 0.1
 P_TEACHER = 0.5
 TOP_K = 3
+# Added to a region marginal before its log; a pad slot's anchor logit is the anchor bias plus the log of it (the slot
+# is in no region).
+_REGION_FLOOR = 1e-6
 SUPPORT = 1e-8            # at inference, the region marginal over which a base's columns are read for the gene's scan
 _COUNT = {"v": "v_allele_count", "d": "d_allele_count", "j": "j_allele_count"}
 
@@ -83,10 +86,6 @@ def trimmed_width(mask: torch.Tensor) -> int:
     return min(mask.shape[1], int(mask.sum(1).max()) + 1)
 
 
-def _expectation(logits: torch.Tensor, slots: torch.Tensor) -> torch.Tensor:
-    """The expected slot (B, 1) of the boundary distribution over the allowed slots."""
-    probs = logits.masked_fill(~slots, IMPOSSIBLE).softmax(-1)
-    return (probs * torch.arange(logits.shape[-1], device=logits.device)).sum(-1, keepdim=True)
 
 
 class ChipCore(nn.Module):
@@ -95,7 +94,7 @@ class ChipCore(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         channels = cfg.trunk_channels
-        self.genes = ("v", "d", "j") if cfg.has_d else ("v", "j")
+        self.genes = cfg.genes
         self.counts = {gene: getattr(cfg, _COUNT[gene]) for gene in self.genes}
         self.trunk = DilatedTrunk(cfg.embed_dim, channels)
         self.parser = Parser(channels)
@@ -147,7 +146,7 @@ class ChipCore(nn.Module):
                 out[key] = torch.cat([value, value.new_zeros(value.shape[0], extra, *value.shape[2:])], 1)
         for gene, head in self.anchors.items():
             logits = out[ANCHOR_LOGITS[gene]]                           # a pad slot: the bias plus log(no region)
-            pad = (head.position.bias + math.log(1e-6)).expand(logits.shape[0], extra)
+            pad = (head.position.bias + math.log(_REGION_FLOOR)).expand(logits.shape[0], extra)
             out[ANCHOR_LOGITS[gene]] = torch.cat([logits[:, :width], pad, logits[:, width:]], -1)
         return out
 
@@ -159,11 +158,11 @@ class ChipCore(nn.Module):
         reading = self.reader(features, mask, coordinates=not windowed)
         out = dict(parsed.boundary_logits)
         for gene in self.genes:
-            out[f"{gene}_start"] = _expectation(out[f"{gene}_start_logits"], mask)
-            out[f"{gene}_end"] = _expectation(out[f"{gene}_end_logits"], end_mask)
+            out[f"{gene}_start"] = expected_slot(out[f"{gene}_start_logits"], mask)
+            out[f"{gene}_end"] = expected_slot(out[f"{gene}_end_logits"], end_mask)
 
         length = mask.shape[1]
-        log_region = torch.log(parsed.marginals + 1e-6)
+        log_region = torch.log(parsed.marginals + _REGION_FLOOR)
         for gene, head in self.anchors.items():
             logits = head(features, mask)
             out[ANCHOR_LOGITS[gene]] = torch.cat(
@@ -203,7 +202,7 @@ class ChipCore(nn.Module):
         if self.d_presence is not None:
             in_d = parsed.marginals[..., STATE_OF["d"]].detach()
             posterior = out["d_log_posterior"].detach().exp()
-            evidence = torch.stack([in_d.max(1).values, in_d.sum(1) / 50., posterior.max(-1).values,
+            evidence = torch.stack([in_d.max(1).values, in_d.sum(1) / D_LENGTH_SCALE, posterior.max(-1).values,
                                     -torch.xlogy(posterior, posterior).sum(-1)], -1)
             out[D_PRESENCE_LOGITS] = self.d_presence(evidence)
 

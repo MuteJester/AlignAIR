@@ -14,7 +14,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-GAP = "."
+from .codons import GAP
+from .genes import model_genes
+
 FRAME_WIDTHS = {"v": 384, "d": 48, "j": 96}
 J_ANCHOR_COLUMN = 48
 NO_COLUMN = -1
@@ -39,8 +41,7 @@ def _v_columns(sequence: str, gapped: str | None) -> np.ndarray:
 def gene_frames(reference) -> dict[str, GeneFrame]:
     """The frames of the reference's genes, keyed ``"v"``, ``"d"`` (with a D) and ``"j"``."""
     frames = {}
-    genes = ("v", "d", "j") if reference.has_d else ("v", "j")
-    for gene in genes:
+    for gene in model_genes(reference.has_d):
         alleles = reference.gene(gene.upper())
         anchors = alleles.anchors or {}
         width = FRAME_WIDTHS[gene]

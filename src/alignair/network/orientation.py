@@ -7,14 +7,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ..core.orientations import COMPLEMENT, FORWARD, NUM_ORIENTATIONS, REVERSE, REVERSE_COMPLEMENT
+from ..core.tokens import COMPLEMENT_TOKENS, encode, is_base
 from ..errors import ConfigurationError
 
-# Complement lookup by token id: A(1)<->T(2), G(3)<->C(4), N(5)->N, pad(0)->pad.
-_COMPLEMENT = torch.tensor([0, 2, 1, 4, 3, 5], dtype=torch.long)
-
-# Transform ids
-IDENTITY, REVERSE_COMPLEMENT, COMPLEMENT, REVERSE = 0, 1, 2, 3
-NUM_ORIENTATIONS = 4
+_COMPLEMENT = torch.tensor(COMPLEMENT_TOKENS, dtype=torch.long)
 
 
 def complement(tokens: torch.Tensor) -> torch.Tensor:
@@ -34,11 +31,11 @@ def reverse_valid(tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
 def apply_orientation(tokens: torch.Tensor, mask: torch.Tensor,
                       transform_ids: torch.Tensor) -> torch.Tensor:
-    """Apply a per-row transform id in {0,1,2,3} to the token batch."""
+    """Apply a per-row orientation (an index of ``core.orientations.ORIENTATIONS``) to the token batch."""
     comp = complement(tokens)
-    rev = reverse_valid(tokens, mask)
-    revcomp = reverse_valid(comp, mask)
-    variants = torch.stack([tokens, revcomp, comp, rev], dim=0)  # (4,B,L)
+    oriented = {FORWARD: tokens, REVERSE_COMPLEMENT: reverse_valid(comp, mask), COMPLEMENT: comp,
+                REVERSE: reverse_valid(tokens, mask)}
+    variants = torch.stack([oriented[k] for k in range(NUM_ORIENTATIONS)], dim=0)  # (4,B,L)
     B = tokens.shape[0]
     return variants[transform_ids, torch.arange(B, device=tokens.device)]
 
@@ -50,7 +47,7 @@ class EmbeddingOrientationHead(nn.Module):
     mean-pool could not tell a read from its reverse. Feeds the in-model correct-and-re-embed step.
     """
 
-    def __init__(self, embed_dim: int, num_orientations: int = 4):
+    def __init__(self, embed_dim: int, num_orientations: int = NUM_ORIENTATIONS):
         super().__init__()
         self.conv = nn.Conv1d(embed_dim, embed_dim, 7, padding="same")
         self.fc = nn.Linear(embed_dim, num_orientations)
@@ -65,7 +62,6 @@ class EmbeddingOrientationHead(nn.Module):
 # Bases in a bank-orientation k-mer: a random 12-mer is one of 4**12 ≈ 16.8M, so against the ~70k k-mers of a human
 # IGH reference a k-mer hits by chance about 0.4% of the time, while an unmutated germline stretch hits all along.
 BANK_KMER = 12
-_BASE_TOKENS = {"A": 1, "T": 2, "G": 3, "C": 4}
 
 
 class BankOrientation(nn.Module):
@@ -85,13 +81,13 @@ class BankOrientation(nn.Module):
         """(B, L) tokens -> (B, L - k + 1) base-4 codes of their k-mers; -1 for a k-mer holding a non-A/C/G/T token."""
         if tokens.shape[1] < self.k:
             return tokens.new_full((tokens.shape[0], 0), -1)
-        acgt = (tokens >= 1) & (tokens <= 4)
+        acgt = is_base(tokens)
         windows = (tokens - 1).clamp(0, 3).unfold(1, self.k, 1)
         powers = 4 ** torch.arange(self.k - 1, -1, -1, device=tokens.device)
         return torch.where(acgt.unfold(1, self.k, 1).all(-1), (windows * powers).sum(-1), -1)
 
     def bind(self, reference) -> None:
-        codes = [self._codes(torch.tensor([[_BASE_TOKENS.get(base, 5) for base in sequence.upper()]]))[0]
+        codes = [self._codes(torch.from_numpy(encode(sequence))[None])[0]
                  for gene in reference.genes.values() for sequence in gene.sequences]
         codes = torch.cat(codes) if codes else torch.zeros(0, dtype=torch.long)
         present = torch.zeros(4 ** self.k, dtype=torch.bool)

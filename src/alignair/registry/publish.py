@@ -21,6 +21,7 @@ from pathlib import Path
 from ..errors import MissingDependencyError, RegistryError
 from ..model_file import read_metadata
 from .cache import _lock, _version_key
+from .hf import hf_token
 from .sources import DEFAULT_REGISTRY
 from .validate import validate_registry
 
@@ -148,7 +149,7 @@ def upload_version(registry_dir: str, model_id: str, version: str, *, repo_id: s
         raise MissingDependencyError("upload_version needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
     if api is None:
         from huggingface_hub import HfApi
-        api = HfApi(token=token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+        api = HfApi(token=hf_token(token))
     operations = [CommitOperationAdd(path_in_repo=rel, path_or_fileobj=str(registry_dir / rel)) for rel in paths]
     api.create_commit(repo_id=repo_id, operations=operations, commit_message=f"{model_id} {version}",
                       repo_type="model", revision=revision)

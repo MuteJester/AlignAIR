@@ -122,3 +122,14 @@ def test_a_missing_model_file_is_reported_missing_not_fetched_from_the_hub(spec,
     assert not hf.is_hf_repo_spec(spec)
     with pytest.raises(ModelError, match="model file does not exist"):
         resolve_model(spec)
+
+
+def test_a_hub_token_is_the_given_one_then_hf_token_then_the_hub_variable(monkeypatch):
+    from alignair.registry.hf import hf_token
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+    assert hf_token(None) is None
+    monkeypatch.setenv("HUGGING_FACE_HUB_TOKEN", "hub")
+    assert hf_token(None) == "hub"
+    monkeypatch.setenv("HF_TOKEN", "hf")
+    assert hf_token(None) == "hf" and hf_token("given") == "given"

@@ -11,7 +11,7 @@ import alignair.aligner
 import alignair.core.config
 import alignair.genotype.lean
 import alignair.train.gym.streams
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 
 pytestmark = pytest.mark.component
 
@@ -38,10 +38,9 @@ def test_the_training_records_docstring_claims_no_locus_class_tagging():
     assert "class ID" not in alignair.train.gym.streams.training_records.__doc__
 
 
-def test_the_vocab_size_comment_gives_the_tokenizers_order():
+def test_the_vocab_size_comment_points_at_the_one_vocabulary_instead_of_restating_it():
     line = next(l for l in Path(alignair.core.config.__file__).read_text().splitlines() if "vocab_size: int" in l)
-    order = ", ".join(f"{k}={v}" for k, v in sorted(TOKEN_DICT.items(), key=lambda kv: kv[1]))
-    assert order in line
+    assert "core.tokens.TOKEN_DICT" in line and not any(f"{k}={v}" in line for k, v in TOKEN_DICT.items())
 
 
 def test_the_dead_update_goldens_option_is_gone():

@@ -3,9 +3,10 @@ columns, a match costing log(1 - m) and a mismatch log(m / 3)."""
 import pytest
 import torch
 
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
-from alignair.network.bank import BankCompiler, reverse_complement
+from alignair.core.orientations import reverse_complement
+from alignair.network.bank import BankCompiler
 from alignair.network.scan import OUT, BankScan, allele_log_posterior
 
 pytestmark = pytest.mark.component

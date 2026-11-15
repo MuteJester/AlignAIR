@@ -48,7 +48,7 @@ def test_rotation_retains_newest_steps_and_recovers_latest_with_literal_path_cha
 
 @pytest.mark.parametrize('keep', [0, -1, True, 1.5])
 def test_invalid_retention_cannot_write_or_prune_anything(tmp_path, keep):
-    with pytest.raises(ConfigurationError, match='retention'):
+    with pytest.raises(ConfigurationError, match='keep must be an integer >= 1'):
         checkpoints.save_rotating(tmp_path/'model', None, 1, None, keep=keep)
     assert list(tmp_path.iterdir()) == []
 

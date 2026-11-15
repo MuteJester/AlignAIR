@@ -21,11 +21,12 @@ from __future__ import annotations
 import torch
 from torch.nn import functional as F
 
+from ..core.tokens import is_base
 from ..network.scan import allele_log_posterior
+from .ratios import RATE, pair_ratios
 
 FLANK = 6                  # bases on each side of the V end and J start the junction keeps
 CROP = 96                  # the junction's most bases
-RATE = (0.01, 0.25)        # the mutation rate the ratios use, clamped
 TEMPERATURE = 1.0          # the scores' temperature in the alleles' log posterior
 
 
@@ -43,7 +44,7 @@ def junction(tokens: torch.Tensor, mask: torch.Tensor, v_end: torch.Tensor, j_st
     width = int((stop - start).clamp(1, CROP).max())
     position = start[:, None] + torch.arange(width, device=tokens.device)
     crop = tokens.gather(1, position.clamp_max(length - 1))
-    return torch.where((position < stop[:, None]) & (crop >= 1) & (crop <= 4), crop, 0)
+    return torch.where((position < stop[:, None]) & is_base(crop), crop, 0)
 
 
 def local_scores(crop: torch.Tensor, rows: torch.Tensor, m: torch.Tensor) -> torch.Tensor:
@@ -53,7 +54,7 @@ def local_scores(crop: torch.Tensor, rows: torch.Tensor, m: torch.Tensor) -> tor
     row base as (1 if a base, its one-hot), so a match gives match, a mismatch mismatch and a pad 0, for every
     (diagonal, row) of a row base at once."""
     width = rows.shape[1]
-    match, mismatch = torch.log(4 * (1 - m)), torch.log(4 * m / 3)                         # (B, 1)
+    match, mismatch = pair_ratios(m)                                                      # (B, 1)
     padded = F.pad(crop, (width - 1, width - 1))                                           # (B, offsets + W - 1)
     read = torch.cat([mismatch[..., None] * (padded > 0)[..., None],
                       (match - mismatch)[..., None] * F.one_hot(padded, 6)[..., 1:]], -1).to(match.dtype)

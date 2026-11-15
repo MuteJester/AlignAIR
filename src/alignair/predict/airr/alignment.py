@@ -5,14 +5,12 @@ Pure per-sequence functions. Reference germline maps are plain ``{allele_name: s
 """
 from __future__ import annotations
 
-import re
 from typing import Dict, List, Optional, Tuple
 
 from GenAIRR.utilities import translate
 
+from ..cigar import ALIGNED, cigar_ops
 from .constants import SHORT_D_SENTINEL
-
-_CIGAR = re.compile(r"(\d+)([MIDNS=X])")
 
 
 def _count_gaps(ref: str) -> int:
@@ -31,9 +29,8 @@ def _germline_placed(seq, v_seq_start, v_seq_end, v_germ_start, v_germ_end, v_ci
     describes ``seq[v_seq_start:v_seq_end]`` against that germline span): ``-`` where the read lacks the germline base,
     and a read base the germline lacks is left out. None when the CIGAR does not span both windows."""
     placed, r = [], v_seq_start
-    for count, op in _CIGAR.findall(v_cigar or ""):
-        count = int(count)
-        if op in "M=X":
+    for count, op in cigar_ops(v_cigar):
+        if op in ALIGNED:
             placed.extend(seq[r:r + count])
             r += count
         elif op in "DN":
@@ -89,9 +86,8 @@ def _germline_along(germ, read_len, cigar) -> str:
     if read_len is None:
         return germ
     placed, g = [], 0
-    for count, op in _CIGAR.findall(cigar or ""):
-        count = int(count)
-        if op in "M=X":
+    for count, op in cigar_ops(cigar):
+        if op in ALIGNED:
             placed.append(germ[g:g + count])
             g += count
         elif op == "I":

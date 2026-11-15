@@ -4,8 +4,8 @@ bank masks and teacher inputs.
 Per record (``chip_record_targets``):
 
 - ``coord_{gene}``: each base's column in its gene's frame (``reference.frames``), for the bases the gene's CIGAR maps
-  to its primary allele; ``IGNORE`` for every other base (insertions, other regions, an alignment that cannot be
-  mapped, an inverted D, whose germline the forward frame does not hold).
+  to its primary allele; ``IGNORE_INDEX`` for every other base (insertions, other regions, an alignment that cannot
+  be mapped, an inverted D, whose germline the forward frame does not hold).
 - ``region``: each base's recombination region as a ``REGIONS`` index.
 - ``region_allowed``: a bitmask over ``REGIONS`` per base: its region, plus the neighbouring region where the
   read cannot place the boundary. Each gene's end may move right over the bases that continue its germline (N or
@@ -29,13 +29,13 @@ import math
 import numpy as np
 import torch
 
+from ..reference.genes import GENES
 from ..core.regions import REGIONS
+from ..core.tokens import IGNORE_INDEX
 from .alignment import query_reference_map
 from .batching import PositionLabels
 from .coordinates import segment_spans
 
-IGNORE = -100
-GENES = ("v", "d", "j")
 _BIT = {gene: 1 << REGIONS.index(gene.upper()) for gene in GENES}
 # The region a gene's edge base may be read as once its boundary moves inward: the N region or flank after its end,
 # before its start.
@@ -64,7 +64,7 @@ def chip_record_targets(record, reference, frames, region_labels) -> dict:
     region = np.asarray(region_labels, dtype=np.int64)
     targets = {}
     for gene in frames:
-        column = np.full(len(sequence), IGNORE, dtype=np.int64)
+        column = np.full(len(sequence), IGNORE_INDEX, dtype=np.int64)
         if gene in coords and not (gene == "d" and inverted_d):
             columns = frames[gene].columns.get(_primary(record, gene))
             path = query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene])
@@ -72,10 +72,10 @@ def chip_record_targets(record, reference, frames, region_labels) -> dict:
                 for offset, base in enumerate(path.positions):
                     if base is not None and base < len(columns) and columns[base] >= 0:
                         column[path.query_start + offset] = columns[base]
-        targets[f"coord_{gene}"] = PositionLabels(column, IGNORE)
+        targets[f"coord_{gene}"] = PositionLabels(column, IGNORE_INDEX)
     allowed = np.left_shift(1, region).astype(np.int64)
     _movable_boundaries(allowed, sequence, record, reference, coords, germ, inverted_d)
-    targets["region"] = PositionLabels(region, IGNORE)
+    targets["region"] = PositionLabels(region, IGNORE_INDEX)
     targets["region_allowed"] = PositionLabels(allowed, 0)
     return targets
 

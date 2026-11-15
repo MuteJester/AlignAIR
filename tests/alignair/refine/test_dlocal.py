@@ -5,9 +5,9 @@ import math
 import pytest
 import torch
 
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 
-from alignair.network.bank import reverse_complement
+from alignair.core.orientations import reverse_complement
 from alignair.refine.dlocal import junction, local_scores
 
 pytestmark = pytest.mark.component

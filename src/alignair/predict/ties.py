@@ -16,11 +16,10 @@ listed. This is what lets a bound reference's alleles the model never trained on
 from __future__ import annotations
 
 import functools
-import re
 
 import numpy as np
 
-_CIGAR = re.compile(r"(\d+)([MIDNSHP=X])")
+from .cigar import aligned_columns
 _NO_BASE = 0                                      # the code of a column an allele holds no base at
 
 
@@ -39,23 +38,6 @@ def _table(gapped: tuple) -> tuple:
     return bases, tuple(columns)
 
 
-def _aligned(aln) -> tuple:
-    """The read and germline positions of the alignment's M columns."""
-    reads, germs = [], []
-    r, g = aln.seq_start, aln.germ_start
-    for count, op in _CIGAR.findall(aln.cigar or ""):
-        count = int(count)
-        if op in "M=X":
-            reads.extend(range(r, r + count))
-            germs.extend(range(g, g + count))
-            r, g = r + count, g + count
-        elif op == "I":
-            r += count
-        elif op == "D":
-            g += count
-    return np.array(reads, dtype=np.int64), np.array(germs, dtype=np.int64)
-
-
 class _Bank:
     """The bound reference's V alleles as the comparison reads them: names, their index, base codes and columns."""
 
@@ -69,7 +51,7 @@ class _Bank:
         """``(matches, call)``: per allele, how many of the read bases the call's alignment ``aln`` puts on germline
         bases it matches at their IMGT columns, and the call's row."""
         call = self.index[aln.allele]
-        reads, germs = _aligned(aln)
+        reads, germs = aligned_columns(aln.cigar, aln.seq_start, aln.germ_start)
         own = self.columns[call]
         inside = germs < len(own)
         reads, germs = reads[inside], germs[inside]

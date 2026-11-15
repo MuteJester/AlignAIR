@@ -22,10 +22,11 @@ from __future__ import annotations
 import torch
 from torch.nn import functional as F
 
-from .dlocal import RATE, junction, junction_bounds
-from ..network.parser import IMPOSSIBLE
+from ..core.tokens import is_base
+from ..network.parser import IMPOSSIBLE, expected_slot
+from .dlocal import junction, junction_bounds
+from .ratios import OUTSIDE, RATE, pair_ratios
 
-OUTSIDE = -8.0             # the ratio of a read base the diagonal pairs with no germline base
 MIN_SCORE = 0.0            # the best stretch a read's junction needs on its called allele for the D to be refined
 # The evidence's weight against the parser's log-probability. On the lab's dev suites (the width screens, 20k steps;
 # IgBLAST 74.1% and 75.2%) the D start and end land in the assay's intervals for 81.5% and 81.0% of reads without the
@@ -49,7 +50,7 @@ def best_diagonal(crop: torch.Tensor, rows: torch.Tensor, m: torch.Tensor) -> tu
     windows = F.pad(crop, (width - 1, width - 1)).unfold(1, width, 1)     # window o pairs crop o + k - (W - 1) with k
     read, germline = windows[:, None], rows[:, :, None]                     # (B, 1, O, W), (B, K, 1, W)
     both = (read > 0) & (germline > 0)
-    match, mismatch = torch.log(4 * (1 - m))[..., None, None], torch.log(4 * m / 3)[..., None, None]
+    match, mismatch = (ratio[..., None, None] for ratio in pair_ratios(m))
     ratio = torch.where(both & (read == germline), match, torch.where(both, mismatch, 0.))
     total = F.pad(ratio.cumsum(-1), (1, 0))
     stretch = (total - total.cummin(-1).values).amax(-1)                    # (B, K, O): Kadane's best stretch
@@ -64,9 +65,9 @@ def evidence(tokens: torch.Tensor, mask: torch.Tensor, germline: torch.Tensor, s
     length, width = tokens.shape[1], germline.shape[1]
     base = torch.arange(length, device=tokens.device) - shift[:, None]
     paired = torch.where((base >= 0) & (base < width), germline.gather(1, base.clamp(0, width - 1)), 0)
-    ratio = torch.where(paired > 0, torch.where(tokens == paired, torch.log(4 * (1 - m)), torch.log(4 * m / 3)),
-                        OUTSIDE)
-    ratio = torch.where(mask & (tokens >= 1) & (tokens <= 4), ratio, 0.)
+    match, mismatch = pair_ratios(m)
+    ratio = torch.where(paired > 0, torch.where(tokens == paired, match, mismatch), OUTSIDE)
+    ratio = torch.where(mask & is_base(tokens), ratio, 0.)
     return F.pad(ratio.cumsum(1), (1, 0))[:, :length]
 
 
@@ -92,6 +93,4 @@ def refine_d_boundaries(out: dict, tokens: torch.Tensor, mask: torch.Tensor, end
     refinable = ((score > MIN_SCORE) & (v_end < j_start))[:, None]
     for key, refined, slots in (("d_start_logits", starts + later, mask), ("d_end_logits", ends + earlier, end_mask)):
         out[key] = torch.where(refinable, refined.clamp_min(IMPOSSIBLE), out[key])   # a slot no D uses: impossible
-        probs = out[key].masked_fill(~slots, IMPOSSIBLE).softmax(-1)
-        out[key.removesuffix("_logits")] = (probs * torch.arange(probs.shape[-1], device=probs.device)).sum(
-            -1, keepdim=True)
+        out[key.removesuffix("_logits")] = expected_slot(out[key], slots)

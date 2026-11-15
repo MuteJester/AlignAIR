@@ -3,7 +3,7 @@ germline, counted from the conserved anchor, the parser's boundary distribution 
 import pytest
 import torch
 
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 from alignair.network.bank import BankCompiler

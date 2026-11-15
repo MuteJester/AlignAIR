@@ -34,6 +34,12 @@ IMPOSSIBLE = -1e4          # the boundary logit of a slot no path uses (finite, 
 NEG = -1e9                 # a forbidden score: finite, so a logsumexp over forbidden terms only keeps finite gradients
 
 
+def expected_slot(logits: torch.Tensor, slots: torch.Tensor) -> torch.Tensor:
+    """The expected slot (B, 1) of the boundary distribution ``logits`` (B, L) over the allowed ``slots``."""
+    probs = logits.masked_fill(~slots, IMPOSSIBLE).softmax(-1)
+    return (probs * torch.arange(logits.shape[-1], device=logits.device)).sum(-1, keepdim=True)
+
+
 @dataclass
 class ParserOutput:
     emissions: torch.Tensor           # (B, L, S)

@@ -18,6 +18,13 @@ def capture_rng_state(*, include_cuda: bool = True) -> dict:
     return state
 
 
+def same_rng_state(left: dict, right: dict) -> bool:
+    """Whether two CPU random states (``capture_rng_state(include_cuda=False)``) are equal, generator by generator."""
+    return (left['python'] == right['python'] and torch.equal(left['torch'], right['torch'])
+            and left['numpy'][0] == right['numpy'][0] and np.array_equal(left['numpy'][1], right['numpy'][1])
+            and left['numpy'][2:] == right['numpy'][2:])
+
+
 def _byte_tensor(state):
     value = torch.as_tensor(state, device="cpu")
     if value.ndim != 1 or value.dtype == torch.bool or value.is_floating_point() or value.is_complex():

@@ -7,6 +7,7 @@ import statistics
 from collections.abc import Mapping
 
 from ..api import predict_sequences
+from ..reference.genes import GENES
 from ..errors import ConfigurationError, DataContractError
 
 
@@ -67,7 +68,7 @@ def score(truth: list[dict], preds: list[dict]) -> dict:
             raise DataContractError("benchmark truth and prediction IDs are misaligned",
                                     context={"record_offset": offset})
     m: dict = {}
-    for g in ("v", "d", "j"):
+    for g in GENES:
         pairs = [(t, p) for t, p in zip(truth, preds) if t.get(f"{g}_call")]
         m[f"{g}_call_acc"] = _mean([_call_correct(p.get(f"{g}_call"), t.get(f"{g}_call")) for t, p in pairs])
     jt = [(t, p) for t, p in zip(truth, preds) if t.get("junction")]

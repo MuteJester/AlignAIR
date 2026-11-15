@@ -6,6 +6,7 @@ import torch
 
 from alignair import Aligner
 from alignair.api import predict_sequences
+from alignair.core.orientations import orient
 from alignair.errors import InputError
 
 pytestmark = pytest.mark.component
@@ -67,7 +68,7 @@ def test_normalized_read_reaches_tokens_alignment_and_record_coordinates(monkeyp
     assert len(result) == 1
     record = result.records[0]
     assert record['input_sequence'] == 'ACN' and record['length_cropped'] is True
-    assert record['sequence'] == stages.canonicalize('ACN', orientation)
+    assert record['sequence'] == orient('ACN', orientation)
     assert alignment_reads == [record['sequence']]
     assert model.training
 

@@ -21,17 +21,15 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass
 from itertools import islice
-from operator import index
 
-import numpy as np
-import torch
 
 from ..data.training import TrainingDataSetup
 from ..errors import ConfigurationError, TrainingError, error_context
 from .gym.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
 from .gym.workers import (CHUNK_SIZE, QUEUE_CHUNKS, ComponentChannels, RecordWorkers, WorkerGroup, component_plan,
                           plan_signature, raise_failure, receive, start_record_workers, worker_options)
-from .random_state import capture_rng_state, restore_rng_state
+from .checks import device as checked_device, integer
+from .random_state import capture_rng_state, restore_rng_state, same_rng_state
 
 QUEUE_BATCHES = 4        # assembled batches in flight (about 1 MB each at batch 64): the assembler's lead
 
@@ -50,28 +48,6 @@ class TrainingStream:
         """The curriculum's records, built as ``train`` builds its training stream."""
         return training_records(self.dataconfigs, policy=self.policy, seed=self.seed, start_step=self.start_step,
                                 record_source=record_source)
-
-
-def _count(value, field):
-    try:
-        if isinstance(value, bool) or index(value) < 1:
-            raise ValueError
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError(f'{field} must be a positive integer', context={'field': field}) from exc
-    return index(value)
-
-
-def _device(value) -> torch.device:
-    try:
-        return torch.device(value)
-    except (TypeError, ValueError, RuntimeError) as exc:
-        raise ConfigurationError('invalid training device', context={'field': 'device'}) from exc
-
-
-def _same_rng(left, right) -> bool:
-    return (left['python'] == right['python'] and torch.equal(left['torch'], right['torch'])
-            and left['numpy'][0] == right['numpy'][0] and np.array_equal(left['numpy'][1], right['numpy'][1])
-            and left['numpy'][2:] == right['numpy'][2:])
 
 
 def assemble_batches(payload, inputs, link):
@@ -109,9 +85,9 @@ class AssembledBatches:
             raise ConfigurationError('batch assembly requires a TrainingStream', context={'field': 'stream'})
         self._options = worker_options(workers=workers, provider=provider, chunk_size=chunk_size,
                                        queue_chunks=queue_chunks)
-        self._batch_size = _count(batch_size, 'batch_size')
-        self._queue_batches = _count(queue_batches, 'queue_batches')
-        self._stream, self._device = stream, _device(device)
+        self._batch_size = integer(batch_size, 'batch_size')
+        self._queue_batches = integer(queue_batches, 'queue_batches')
+        self._stream, self._device = stream, checked_device(device)
         stream.records()                               # rejects a bad request now; nothing runs until iterated
         self._group = self._batches = self._pending = self._expected = None
         self._records, self._ended = deque(), False
@@ -163,7 +139,7 @@ class AssembledBatches:
             raise TrainingError('the batch adapter received records other than those it assembled',
                                 context={'stage': 'training_batch_assembly'})
         _, batch, rng = pending
-        if not _same_rng(capture_rng_state(include_cuda=False), self._expected):
+        if not same_rng_state(capture_rng_state(include_cuda=False), self._expected):
             raise TrainingError('a CPU random draw between training steps cannot be replayed by batches '
                                 'assembled ahead', context={'stage': 'training_batch_assembly'},
                                 hint='Keep CPU random draws out of the training step and its callbacks, '
@@ -198,7 +174,7 @@ class LocalAssembly:
         self._workers = RecordWorkers(stream.dataconfigs, policy=stream.policy, seed=stream.seed, workers=workers,
                                       provider=provider, chunk_size=chunk_size, queue_chunks=queue_chunks,
                                       start_step=stream.start_step)
-        self._adapter, self._device = stream.data.batch_adapter, _device(device)
+        self._adapter, self._device = stream.data.batch_adapter, checked_device(device)
         self.records = stream.records(record_source=self._workers)
 
     @property
@@ -229,7 +205,7 @@ def parallel_training_data(stream: TrainingStream, *, batch_size: int, workers: 
     runs on the CPU; ``assemble_in_worker`` overrides that choice. Nothing starts before the first
     record is requested; close the result (or use it as a context manager) to stop every process.
     """
-    device = _device(device)
+    device = checked_device(device)
     if assemble_in_worker is None:
         assemble_in_worker = device.type != 'cpu'
     elif type(assemble_in_worker) is not bool:

@@ -14,9 +14,9 @@ from __future__ import annotations
 import torch
 
 from ..core.d_presence import ABSENT, D_PRESENCE_LOGITS
+from ..reference.genes import GENES
 from ..network.scan import OUT
 
-GENES = ("v", "d", "j")
 NOT_ABSENT = -1e4             # a read of a locus without D: every D-presence class but ABSENT this far behind
 
 

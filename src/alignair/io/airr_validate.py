@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import csv
 
+from ..reference.genes import GENES
+
 _REQUIRED = ("sequence_id", "sequence", "v_call", "j_call")
-_GENES = ("v", "d", "j")
 _QUERY_OPS = set("MIS=X")          # CIGAR ops that consume query bases (D/N/H/P do not)
 
 
@@ -64,7 +65,7 @@ def validate_airr_file(path: str) -> dict:
                 errors.append((sid, "empty sequence"))
                 continue
             L = len(seq)
-            for g in _GENES:
+            for g in GENES:
                 cig = row.get(f"{g}_cigar")
                 if cig:
                     q = cigar_query_length(cig)

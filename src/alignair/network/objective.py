@@ -26,6 +26,8 @@ from torch.nn import functional as F
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
 from ..core.d_presence import D_CLASSES, D_PRESENCE, D_PRESENCE_LOGITS
 from ..core.edit_states import STATE_INDEX
+from ..core.orientations import NUM_ORIENTATIONS
+from ..core.tokens import IGNORE_INDEX
 from ..tasks.metrics import MetricReport, alignment_metrics
 from ..tasks.supervision import supervised_rows
 
@@ -33,19 +35,18 @@ from .parser import GENES as STATE_OF, STATES, ParserOutput, crf_nll
 from .reader import EDIT_STATES
 from .scan import OUT
 
-IGNORE = -100
 LOSS_WEIGHTS = {name: 1.0 for name in ("orientation", "parse", *ANCHOR_KEYS.values(), "shm", "coord", "scan_v",
                                        "scan_d", "scan_j", "d_presence")}
 
 
 def shm_labels(state_labels: torch.Tensor, region: torch.Tensor) -> torch.Tensor:
     """The product's per-base edit states (germline, substitution, insertion, deletion) as the reader's classes on V,
-    D and J bases; ``IGNORE`` for a deletion-tagged base, a base outside V, D and J, and a pad."""
+    D and J bases; ``IGNORE_INDEX`` for a deletion-tagged base, a base outside V, D and J, and a pad."""
     germline_encoded = torch.zeros_like(region, dtype=torch.bool)
     for state in STATE_OF.values():
         germline_encoded |= region == state
     keep = germline_encoded & (state_labels >= 0) & (state_labels != STATE_INDEX["deletion"])
-    return state_labels.masked_fill(~keep, IGNORE)
+    return state_labels.masked_fill(~keep, IGNORE_INDEX)
 
 
 def scan_loss(log_posterior: torch.Tensor, true: torch.Tensor, supervise: torch.Tensor):
@@ -80,13 +81,14 @@ def _allowed_states(bits: torch.Tensor) -> torch.Tensor:
 class ChipObjective:
     def __init__(self, config):
         self.config = config
-        self.genes = ("v", "d", "j") if config.has_d else ("v", "j")
+        self.genes = config.genes
 
     def loss(self, outputs: dict, targets: dict):
         mask = outputs["start_mask"]
         parts = {}
         if "orientation_logits" in outputs and "orientation" in targets:
-            parts["orientation"] = F.cross_entropy(outputs["orientation_logits"], targets["orientation"]) / math.log(4)
+            parts["orientation"] = (F.cross_entropy(outputs["orientation_logits"], targets["orientation"])
+                                    / math.log(NUM_ORIENTATIONS))
 
         parsed = ParserOutput(outputs["chip_emissions"], outputs["chip_transitions"], mask, outputs["chip_log_z"],
                               None, {})
@@ -103,7 +105,8 @@ class ChipObjective:
 
         labels = shm_labels(targets["state_labels"], targets["region"])
         edit = outputs["chip_edit_logits"]
-        parts["shm"] = (F.cross_entropy(edit.reshape(-1, len(EDIT_STATES)), labels.reshape(-1), ignore_index=IGNORE)
+        parts["shm"] = (F.cross_entropy(edit.reshape(-1, len(EDIT_STATES)), labels.reshape(-1),
+                                        ignore_index=IGNORE_INDEX)
                         if (labels >= 0).any() else edit.sum() * 0.) / math.log(len(EDIT_STATES))
 
         coord = []
@@ -111,7 +114,7 @@ class ChipObjective:
             logits, columns = outputs[f"chip_coord_logits_{gene}"], targets[f"coord_{gene}"]
             if (columns >= 0).any():
                 coord.append(F.cross_entropy(logits.reshape(-1, logits.shape[-1]), columns.reshape(-1),
-                                             ignore_index=IGNORE) / math.log(logits.shape[-1]))
+                                             ignore_index=IGNORE_INDEX) / math.log(logits.shape[-1]))
         parts["coord"] = torch.stack(coord).mean() if coord else edit.sum() * 0.
 
         for gene in self.genes:

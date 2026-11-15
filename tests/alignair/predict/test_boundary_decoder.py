@@ -5,7 +5,8 @@ import torch
 
 from alignair.predict.clean import clean
 from alignair.predict.outputs import ModelOutputs
-from alignair.predict.decode import decode_boundaries, decoded_boundaries
+from alignair.predict.decode import decode_boundaries
+from tests.support.boundaries import decoded_boundaries
 from alignair.predict.segment import correct_segments
 
 pytestmark = pytest.mark.component

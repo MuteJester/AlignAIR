@@ -4,15 +4,15 @@ import numpy as np
 
 from ..errors import AlignAIRError, TrainingDataError, error_context
 
-from .tokenizer import TOKEN_DICT
 from ..core.anchors import ANCHOR_GENES, CODON
+from ..reference.genes import GENES
 from ..core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
 from ..core.regions import REGION_INDEX
+from ..core.tokens import encode
 from ..core.edit_states import STATE_INDEX
 from .coordinates import segment_spans
 from .alignment import parse_cigar, query_reference_map
 
-_GENES = ("v", "d", "j")
 # What ``read_d_presence`` and ``read_anchors`` give for a segment the record places in the read whose alignment cannot
 # be mapped (no CIGAR, or one that disagrees with the segment's read and germline spans): the assay's truth calls such a
 # segment unscorable, so the adapter trains no term on it, rather than calling it absent or its anchor not observed.
@@ -77,11 +77,6 @@ def _anchor(record, gene: str, reference_set, coords, germ, length: int) -> int 
             position = path.query_start + offset - (0 if gene == "v" else CODON - 1)
             return position if 0 <= position and position + CODON <= length else None
     return None
-
-
-def _tok(seq: str) -> np.ndarray:
-    n = TOKEN_DICT["N"]
-    return np.array([TOKEN_DICT.get(c, n) for c in seq.upper()], dtype=np.int64)
 
 
 def _label_segment_states(state, seq, ss, gref, gs, cigar):
@@ -188,7 +183,7 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
 
     # ---- per-position edit state from each segment's CIGAR (exact, indel-aware) ----
     state = np.zeros(L, dtype=np.int64)  # germline = 0
-    for g in _GENES:
+    for g in GENES:
         if g not in coords:
             continue
         call = str(record[f"{g}_call"]).split(",")[0]
@@ -201,9 +196,9 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
         cigar = record.get(f"{g}_cigar")
         _label_segment_states(state, seq, ss, ref.sequences[idx], gs, cigar)
 
-    calls = {g.upper(): allele_set(record, g, reference_set) for g in _GENES if record.get(f"{g}_call")}
+    calls = {g.upper(): allele_set(record, g, reference_set) for g in GENES if record.get(f"{g}_call")}
     return {
-        "tokens": _tok(seq),
+        "tokens": encode(seq),
         "region_labels": region,
         "state_labels": state,
         "germline": germ,

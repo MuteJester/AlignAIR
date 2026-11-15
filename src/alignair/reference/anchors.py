@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..errors import InputError
+from .codons import CYS_CODONS, GAP, IMGT_CODON_104
 from .info import ANCHORED, AlleleInfo, AnchorEvidence
 from .reference_set import _CHAIN_OF_LOCUS, GeneReference, ReferenceSet, _loci_from_membership, _locus_from_name
 
@@ -30,9 +31,8 @@ class LocusMismatchWarning(UserWarning):
     """A reference of another locus was bound to a model of one locus: allowed, but the model never trained on it."""
 
 
+_LATER_CODONS = 6            # a Cys this many codons or fewer past codon 104 puts a gapped form off IMGT numbering
 MAX_DIFFERENT = 0.1          # the largest share of a V's bases its nearest known allele may differ at
-GAP = "."
-CYS = ("TGT", "TGC")
 _GENES = ("V", "J")
 
 
@@ -95,12 +95,15 @@ def imgt_position(sequence: str, gapped: str | None) -> tuple[int, str] | None:
     its gapped form is its sequence with gaps on IMGT numbering; else None. The owner's rule (2026-11-07): codon 104
     anchors the V whatever its residue, as IMGT numbers the junction from it. A form whose Cys sits a codon or more
     past column 309 (columns 312-327) is not on IMGT numbering (GenAIRR G2) and gets none."""
-    if not gapped or len(gapped) < 312 or GAP in gapped[309:312] or gapped.replace(GAP, "").upper() != sequence:
+    codon_end = IMGT_CODON_104 + 3
+    if (not gapped or len(gapped) < codon_end or GAP in gapped[IMGT_CODON_104:codon_end]
+            or gapped.replace(GAP, "").upper() != sequence):
         return None
-    codon = gapped[309:312].upper()
-    if codon in CYS or any(gapped[c:c + 3].upper() in CYS for c in range(312, 328, 3)):
+    codon = gapped[IMGT_CODON_104:codon_end].upper()
+    later = range(codon_end, codon_end + 3 * _LATER_CODONS, 3)
+    if codon in CYS_CODONS or any(gapped[c:c + 3].upper() in CYS_CODONS for c in later):
         return None
-    return len(gapped[:309].replace(GAP, "")), codon
+    return len(gapped[:IMGT_CODON_104].replace(GAP, "")), codon
 
 
 def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> ReferenceSet:
@@ -292,7 +295,7 @@ def anchor_report(reference: ReferenceSet) -> AnchorReport:
             missing[gene] = {status: tuple(names) for status, names in by_status.items()}
         if gene == "V":
             odd = tuple(name for name, sequence in zip(alleles.names, alleles.sequences) if name in anchors
-                        and sequence[anchors[name]:anchors[name] + 3].upper() not in CYS)
+                        and sequence[anchors[name]:anchors[name] + 3].upper() not in CYS_CODONS)
             if odd:
                 noncanonical[gene] = odd
     return AnchorReport(anchored, total, missing, noncanonical)

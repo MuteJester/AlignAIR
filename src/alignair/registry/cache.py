@@ -14,6 +14,7 @@ import hashlib
 import os
 from pathlib import Path
 
+from ..io.files import sha256_file
 from . import sources as registry_sources
 
 
@@ -34,14 +35,6 @@ def cache_root() -> Path:
 
 def cache_path(model_id: str, version: str) -> Path:
     return cache_root() / "models" / model_id / f"{version}.alignair"
-
-
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _sidecar(path: Path) -> Path:
@@ -67,7 +60,7 @@ def _sidecar_ok(path: Path):
         expected = sc.read_text().strip()
     except OSError:
         return None
-    return _sha256_file(path) == expected
+    return sha256_file(path) == expected
 
 
 @contextlib.contextmanager
@@ -167,7 +160,7 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
     dest = Path(dest)
     part = dest.with_name(dest.name + ".part")
     with _lock(dest.with_name(dest.name + ".lock")):
-        if dest.exists() and (expected_sha256 is None or _sha256_file(dest) == expected_sha256):
+        if dest.exists() and (expected_sha256 is None or sha256_file(dest) == expected_sha256):
             _write_sidecar(dest, expected_sha256)                 # record hash for later offline checks
             return dest
         h = hashlib.sha256()
@@ -266,7 +259,7 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
     src, ver, entry, _ = found
     dest = cache_path(model_id, ver)
     sha = entry.get("artifact_sha256")
-    if dest.exists() and (sha is None or _sha256_file(dest) == sha):
+    if dest.exists() and (sha is None or sha256_file(dest) == sha):
         return dest
     return download_verified(src, entry["file"], dest, sha, offline=offline)
 
@@ -319,7 +312,7 @@ def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | 
                 out.append((mid, ver, None))
                 continue
             sha = found[2].get("artifact_sha256")
-            ok = sha is None or _sha256_file(cache_path(mid, ver)) == sha
+            ok = sha is None or sha256_file(cache_path(mid, ver)) == sha
             out.append((mid, ver, ok))
     return out
 

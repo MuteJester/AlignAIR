@@ -8,6 +8,7 @@ from typing import Literal
 from ..errors import ConfigurationError, error_context
 from ..reference.reference_set import ReferenceSet
 from .config import AlignAIRConfig
+from .tokens import DEFAULT_WINDOW, VOCAB_SIZE
 from .model import AlignAIR
 
 InputSpace = Literal['nucleotide']
@@ -35,10 +36,9 @@ def _count(value, field, minimum=1):
 
 
 def _input_config(config):
-    from ..data.tokenizer import TOKEN_DICT
-    if config.vocab_size != len(TOKEN_DICT):
+    if config.vocab_size != VOCAB_SIZE:
         raise ConfigurationError('model vocabulary disagrees with the nucleotide tokenizer',
-                                 context={'field': 'vocab_size', 'expected': len(TOKEN_DICT)})
+                                 context={'field': 'vocab_size', 'expected': VOCAB_SIZE})
 
 
 def build_model_config(v_label_count: int, j_label_count: int, d_label_count: int = 0, *,
@@ -50,7 +50,6 @@ def build_model_config(v_label_count: int, j_label_count: int, d_label_count: in
     Count-only construction cannot establish label identity. Prefer prepare_model when a reference
     is available.
     """
-    from ..data.tokenizer import TOKEN_DICT
     _spaces(input_space, label_space)
     if type(has_d) is not bool:
         raise ConfigurationError('has_d must be a boolean', context={'field': 'has_d'})
@@ -58,14 +57,14 @@ def build_model_config(v_label_count: int, j_label_count: int, d_label_count: in
     j = _count(j_label_count, 'j_label_count')
     d = _count(d_label_count, 'd_label_count', int(has_d))
     chains = _count(num_chain_types, 'num_chain_types')
-    length = _count(576 if max_seq_length is None else max_seq_length, 'max_seq_length')
+    length = _count(DEFAULT_WINDOW if max_seq_length is None else max_seq_length, 'max_seq_length')
     protected = {'v_allele_count', 'j_allele_count', 'd_allele_count'}
     invalid = ((set(config_options) & protected)
                | (set(config_options) - {field.name for field in fields(AlignAIRConfig)}))
     if invalid:
         raise ConfigurationError('invalid model configuration options', context={'fields': sorted(invalid)})
     config = AlignAIRConfig(v, j, d if has_d else 0, has_d=has_d, num_chain_types=chains, max_seq_length=length,
-                            vocab_size=len(TOKEN_DICT))
+                            vocab_size=VOCAB_SIZE)
     config = replace(config, input_space=input_space, label_space=label_space, **config_options)
     _input_config(config)
     return config
@@ -84,8 +83,7 @@ class ModelSetup:
 
     @property
     def label_counts(self) -> dict[str, int]:
-        genes = ('v', 'd', 'j') if self.config.has_d else ('v', 'j')
-        return {gene: len(self.reference.gene(gene)) for gene in genes}
+        return {gene: len(self.reference.gene(gene)) for gene in self.config.genes}
 
     def validate(self) -> None:
         """Check label sizes and input semantics before allocating a model."""

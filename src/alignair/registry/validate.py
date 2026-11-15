@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 import os
 
-from ..model_file import container, read_metadata, serialize
+from ..io.files import sha256_file
+from ..model_file import container, pickle_sections, read_metadata, serialize
 
 REQUIRED_CARD_FIELDS = ("model_id", "model_version", "model_format_version", "created_by_alignair")
 
@@ -46,12 +47,12 @@ def _validate_version(problems, mid, ver, entry, artifact_path) -> None:
         cpath = artifact_path(companion.get("file")) if companion.get("file") else None
         if not cpath or not os.path.exists(cpath):
             problems.append(f"{mid}@{ver}: {name} missing ({companion.get('file')})")
-        elif companion.get("sha256") and companion["sha256"] != hashlib.sha256(open(cpath, "rb").read()).hexdigest():
+        elif companion.get("sha256") and companion["sha256"] != sha256_file(cpath):
             problems.append(f"{mid}@{ver}: {name} sha256 mismatch")
 
     md = read_metadata(path)
     secs = md.get("sections", {})
-    if any(k.startswith("dataconfig/") or k == "train_state" for k in secs):
+    if pickle_sections(md):
         problems.append(f"{mid}@{ver}: contains a pickle section (dataconfig/train_state) — not distributable")
     if "reference_json" not in secs:
         problems.append(f"{mid}@{ver}: missing safe reference_json section")

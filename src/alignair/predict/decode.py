@@ -46,16 +46,5 @@ def boundary_slots(outputs: Mapping) -> tuple[torch.Tensor, torch.Tensor]:
     return _bool(outputs["start_mask"]), _bool(outputs["end_mask"])
 
 
-def decoded_boundaries(outputs: Mapping, gene: str) -> tuple[torch.Tensor, torch.Tensor] | None:
-    """One gene's reported ``(start, end)`` from a model's outputs (tensors or arrays), or None when the outputs
-    carry no logits or masks to decode (the caller keeps the model's expectations)."""
-    keys = (f"{gene}_start_logits", f"{gene}_end_logits")
-    if not all(key in outputs for key in keys) or not {"start_mask", "end_mask"} <= outputs.keys():
-        return None
-    start_slots, end_slots = boundary_slots(outputs)
-    return decode_boundaries(torch.as_tensor(outputs[keys[0]]), torch.as_tensor(outputs[keys[1]]),
-                             start_slots, end_slots)
-
-
 def _bool(mask) -> torch.Tensor:
     return torch.as_tensor(mask).bool()

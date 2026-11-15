@@ -2,6 +2,8 @@
 gene's equivalence set (``*_call_set``), the read's orientation and input, and the assembly's outcome."""
 from __future__ import annotations
 
+from alignair.reference.genes import GENES
+from alignair.core.orientations import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
 from alignair.errors import DataContractError
 from alignair.reference.reference_set import FALLBACK_LOCUS
 
@@ -9,7 +11,6 @@ import csv
 import os
 from typing import List
 
-GENES = ("v", "d", "j")
 # The full AIRR rearrangement schema we emit (a superset of what predict()+build_airr produce), then
 # our extensions (each gene's equivalence set, orientation, input read, assembly outcome). Per the
 # AIRR `rev_comp` contract: a reverse-complement row (id 1) emits the ORIGINAL post-crop query as
@@ -41,9 +42,6 @@ _MISC = ["mutation_rate", "orientation", "input_sequence", "segmentation_low_qua
          "length_cropped", "airr_assembly_status", "airr_assembly_reason", "airr_assembly_error"]
 COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
            + _REGIONS + _PERGENE_ALN + _EXT + _MISC)
-
-# orientation id -> AIRR-honest label (only id 1 is a reverse-complement; see _build_row)
-_ORIENT_LABEL = {0: "forward", 1: "reverse_complement", 2: "complement", 3: "reverse"}
 
 # model/scientific fields that per-read metadata must never overwrite: every produced
 # AIRR column. Metadata may only add new columns or fill blanks; a collision keeps the model's value.
@@ -194,7 +192,7 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
         row["rev_comp"] = "F"
         if original != canonical:                  # complement/reverse (or cropped): keep the original read
             row["input_sequence"] = original
-    row["orientation"] = _ORIENT_LABEL.get(oid, "forward")
+    row["orientation"] = ORIENTATIONS[oid if oid in range(NUM_ORIENTATIONS) else FORWARD]
     # normalize AIRR logical fields to T/F (standards-compliant; passes official `airr` validation).
     # None/blank stays empty (unknown); the extensions are normalized too.
     for _lf in ("productive", "vj_in_frame", "stop_codon", "productive_prediction",

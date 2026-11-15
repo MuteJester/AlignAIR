@@ -19,6 +19,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
+from ..core.tokens import DEFAULT_WINDOW
 from ..errors import ConfigurationError
 
 READ_COORDINATES: tuple[str, ...] = tuple(f"{g}_{kind}_{edge}" for g in "vdj" for kind in ("sequence", "alignment")
@@ -84,7 +85,7 @@ class FlankPolicy:
     mask_extra: tuple[int, int] = (0, 12)
     p_suffix: float = 0.3
     suffix: tuple[int, int] = (1, 100)
-    max_length: int = 576
+    max_length: int = DEFAULT_WINDOW
     p_flank_n: float = 0.3
     flank_n_rate: tuple[float, float] = (0.0, 0.15)
 

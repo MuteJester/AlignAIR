@@ -9,7 +9,8 @@ import pytest
 
 from alignair.reference import annotate
 from alignair.reference.reference_set import GeneReference, ReferenceSet
-from alignair.reference.variants import (NovelAllele, STOP_CODONS, eligible_bases, novel_name, snp_variant)
+from alignair.reference.codons import STOP_CODONS
+from alignair.reference.variants import NovelAllele, eligible_bases, novel_name, snp_variant
 
 pytestmark = pytest.mark.component
 

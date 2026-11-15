@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..reference.genes import GENES
 from .state import Segments
 
 
 def correct_segments(start: dict, end: dict, seq_lens: np.ndarray, min_span: int = 1) -> Segments:
     """The read-frame ``Segments`` of the float ``start``/``end`` boundaries ({gene: [N]}) of reads of ``seq_lens``."""
     seq_lens = np.asarray(seq_lens).astype(int)
-    genes = [g for g in ("v", "d", "j") if g in start]
+    genes = [g for g in GENES if g in start]
 
     # 1) per-segment: floor, clip into [0, L], and a *bounded* min-span preference that can
     #    never exceed L (so it is overridden, not enforced, by the ordering projection below).

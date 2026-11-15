@@ -40,8 +40,7 @@ from operator import index
 
 from ..core.anchors import ANCHOR_KEYS, CODON
 from ..errors import InputError
-
-STOP_CODONS = frozenset({"TAA", "TAG", "TGA"})
+from ..reference.codons import STOP_CODONS
 
 
 @dataclass(frozen=True)

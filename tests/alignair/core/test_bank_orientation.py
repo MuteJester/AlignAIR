@@ -9,7 +9,7 @@ from alignair.core import AlignAIR, build_model_config
 from alignair.errors import ConfigurationError
 from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import ReferenceSet
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 
 pytestmark = pytest.mark.component
 

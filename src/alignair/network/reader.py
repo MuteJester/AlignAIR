@@ -34,7 +34,7 @@ class ReaderOutput:
         return self.edit_logits.softmax(-1)[..., 2]
 
 
-def top_coordinates(coord_logits: torch.Tensor, k: int = 3) -> tuple[torch.Tensor, torch.Tensor]:
+def top_coordinates(coord_logits: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
     """Each base's ``k`` most probable columns (B, L, k) and their softmax probabilities, not renormalized: the mass
     the reader puts elsewhere stays out of the scan."""
     probs, columns = coord_logits.softmax(-1).topk(k, dim=-1)
@@ -55,7 +55,7 @@ class ShmReader(nn.Module):
                             else {})
 
     def top_columns(self, features: torch.Tensor, gene: str, support: torch.Tensor,
-                    k: int = 3) -> tuple[torch.Tensor, torch.Tensor]:
+                    k: int) -> tuple[torch.Tensor, torch.Tensor]:
         """``top_coordinates`` of ``gene`` (B, L, k) read only over each read's window from its first to its last
         ``support``ed base (B, L): the columns there are the whole read's; outside the window, and in a read with no
         supported base, the probabilities are 0. A gene's bases are a small part of a read (D and J most of all), so

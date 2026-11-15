@@ -14,10 +14,10 @@ from __future__ import annotations
 import hashlib
 from dataclasses import asdict, dataclass
 
+from .codons import CONSERVED_CODONS, STOP_CODONS
+
 NOVEL_FIELD = "novel_alleles"
-STOP_CODONS = frozenset({"TAA", "TAG", "TGA"})
 MAX_ATTEMPTS = 50
-_CONSERVED = {"V": ("TGT", "TGC"), "J": ("TGG", "TTT", "TTC")}
 _GENES = ("V", "D", "J")
 
 
@@ -66,7 +66,7 @@ def eligible_bases(reference, gene: str = "V") -> dict[str, tuple[str, ...]]:
         anchor = anchors.get(name)
         evidence = info[name].anchor_evidence if name in info else None
         if (anchor is None or evidence is None or evidence.status != "supplied"
-                or sequence[anchor:anchor + 3] not in _CONSERVED[gene]
+                or sequence[anchor:anchor + 3] not in CONSERVED_CODONS[gene]
                 or gapped.get(name, "").replace(".", "").upper() != sequence
                 or _stop_in_frame(sequence, anchor, gene)):
             continue

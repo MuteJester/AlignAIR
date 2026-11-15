@@ -10,7 +10,7 @@ The row carries the class (``d_presence``). The stub wraps the test chip, whose 
 import pytest
 import torch
 
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 
 from tests.alignair.predict.golden_rows import FIXTURE, golden_model
 

@@ -181,6 +181,12 @@ _UNEDITABLE_CARD_KEYS = {"format_version", "model_format_version", "model_class"
                          "sections", "_formats", "_sections_base", "model", "reference"}
 
 
+def pickle_sections(metadata: dict) -> list[str]:
+    """The sections of a model file's ``metadata`` (``read_metadata``) that hold pickles: the dataconfigs and the
+    training state a resumable checkpoint carries. A file with one is not distributable."""
+    return [name for name in metadata.get("sections", {}) if name.startswith("dataconfig/") or name == "train_state"]
+
+
 def update_card(src_path, dst_path, updates: dict) -> dict:
     """Maintainer utility: rewrite an .alignair with patched header/card fields (e.g. set
     ``model_id``/``model_version``/``locus``/``species`` on an inference artifact before publishing),

@@ -5,11 +5,13 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..core.boundaries import read_window
+from ..reference.genes import model_genes
+from ..core.tokens import DEFAULT_WINDOW
 
 
 @dataclass
 class PredictConfig:
-    max_seq_length: int = 576
+    max_seq_length: int = DEFAULT_WINDOW
     has_d: bool = True
     threshold: float = 0.5            # the called set keeps the alleles scoring at least this (relative to the best)
     cap: int = 3                      # max alleles per gene
@@ -25,7 +27,7 @@ class PredictConfig:
     @property
     def genes(self) -> tuple[str, ...]:
         """The genes the model calls: V, D and J, or V and J without a D."""
-        return ("v", "d", "j") if self.has_d else ("v", "j")
+        return model_genes(self.has_d)
 
     @classmethod
     def for_model(cls, model, reference, *, batch_size: int, **overrides) -> "PredictConfig":

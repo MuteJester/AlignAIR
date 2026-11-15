@@ -52,7 +52,8 @@ def parse_hf_spec(spec: str) -> tuple[str, str | None, str | None]:
     return repo_id, (rev or None), filename
 
 
-def _token(explicit: str | None) -> str | None:
+def hf_token(explicit: str | None) -> str | None:
+    """The Hugging Face token: ``explicit``, else ``$HF_TOKEN``, else ``$HUGGING_FACE_HUB_TOKEN``."""
     return explicit or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
 
 
@@ -90,7 +91,7 @@ def download_from_hub(spec: str, *, revision: str | None = None, filename: str |
             if isinstance(cached, str) and Path(cached).is_file():
                 return Path(cached)
             raise FileNotFoundError(f"{repo_id}@{rev or 'main'}:{fname} is not in the local HF cache")
-        path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=_token(token),
+        path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=hf_token(token),
                                library_name="alignair", library_version=__version__)
     except Exception as e:                               # normalize hub errors to an actionable message
         hint = " (offline: not in the local HF cache)" if offline else ""

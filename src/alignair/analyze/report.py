@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import csv
-import re
 import statistics
 from collections import Counter
 
+from ..reference.genes import GENES
+from ..predict.cigar import cigar_ops
 from .validate import validate_airr
 
-_CIG = re.compile(r"\d+([MIDNSX=])")
 
 
 def _truthy(v) -> bool:
@@ -31,7 +31,7 @@ def _first(v) -> str:
 
 
 def _has_indel(cigar) -> bool:
-    return any(op in "ID" for op in _CIG.findall(cigar or ""))
+    return any(op in "ID" for _, op in cigar_ops(cigar))
 
 
 def _stat(vals: list[float]) -> dict:
@@ -62,7 +62,7 @@ def repertoire(rows: list[dict]) -> dict:
     inframe = sum(_truthy(r.get("vj_in_frame")) for r in rows)
     stop = sum(_truthy(r.get("stop_codon")) for r in rows)
     usage = {g: Counter(_first(r.get(f"{g}_call")) for r in rows if _first(r.get(f"{g}_call"))).most_common(10)
-             for g in ("v", "d", "j")}
+             for g in GENES}
     jlens = [int(x) for x in (_num(r.get("junction_length")) for r in rows) if x]
     junctions_aa = {r.get("junction_aa") for r in rows if r.get("junction_aa")}
     return {"n_reads": n, "productive": {"n": prod, "pct": pct(prod)},
@@ -83,7 +83,7 @@ def _orientation(row: dict) -> str:
 def qc(rows: list[dict]) -> dict:
     n = len(rows)
     orient = Counter(_orientation(r) for r in rows)
-    indel = sum(1 for r in rows if any(_has_indel(r.get(f"{g}_cigar")) for g in ("v", "d", "j")))
+    indel = sum(1 for r in rows if any(_has_indel(r.get(f"{g}_cigar")) for g in GENES))
     ident = [x for x in (_num(r.get("v_identity")) for r in rows) if x is not None]
     fields = ["v_call", "j_call", "junction", "cdr3", "sequence_alignment"]
     comp = {f: (round(100.0 * sum(1 for r in rows if r.get(f)) / n, 1) if n else 0.0) for f in fields}
@@ -113,7 +113,7 @@ def format_text(report: dict) -> str:
          f"  vj_in_frame:      {rep['vj_in_frame']['n']} ({rep['vj_in_frame']['pct']}%)",
          f"  stop_codon:       {rep['stop_codon']['n']} ({rep['stop_codon']['pct']}%)",
          f"  unique junctions: {rep['unique_junctions_aa']}"]
-    for g in ("v", "d", "j"):
+    for g in GENES:
         top = ", ".join(f"{name} ({c})" for name, c in rep["gene_usage"][g][:5]) or "-"
         L.append(f"  {g.upper()} usage:         {top}")
     cl = rep["cdr3_length"]

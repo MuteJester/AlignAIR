@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from ..errors import ConfigurationError
+from ..reference.genes import model_genes
+from .tokens import DEFAULT_WINDOW, VOCAB_SIZE
 
 
 @dataclass(eq=True)
@@ -19,8 +21,8 @@ class AlignAIRConfig:
     d_allele_count: int = 0
     has_d: bool = True
     num_chain_types: int = 1       # the loci of the reference's locus schema
-    max_seq_length: int = 576
-    vocab_size: int = 6            # tokens P=0, A=1, T=2, G=3, C=4, N=5 (data.tokenizer.TOKEN_DICT; P pads)
+    max_seq_length: int = DEFAULT_WINDOW
+    vocab_size: int = VOCAB_SIZE   # the tokens of core.tokens.TOKEN_DICT
     embed_dim: int = 32
     # The serialized network name; it resolves through core.components, and loading never imports code from a file.
     architecture: str = "chip-v1"
@@ -47,7 +49,7 @@ class AlignAIRConfig:
     @property
     def genes(self) -> tuple[str, ...]:
         """The model's genes in order: ("v", "d", "j"), or ("v", "j") without a D."""
-        return ("v", "d", "j") if self.has_d else ("v", "j")
+        return model_genes(self.has_d)
 
     def allele_count(self, gene: str) -> int:
         """The width of ``gene``'s allele output (``gene`` one of ``genes``)."""
@@ -55,7 +57,7 @@ class AlignAIRConfig:
 
     # ------------------------------------------------------------------ constructors
     @classmethod
-    def from_dataconfigs(cls, *dataconfigs, max_seq_length: int = 576, **kwargs) -> "AlignAIRConfig":
+    def from_dataconfigs(cls, *dataconfigs, max_seq_length: int = DEFAULT_WINDOW, **kwargs) -> "AlignAIRConfig":
         """Build straight from GenAIRR dataconfigs — derives union allele counts, ``has_d`` and the number of
         distinct chain types."""
         from ..reference.reference_set import ReferenceSet
@@ -71,7 +73,7 @@ class AlignAIRConfig:
 
     @classmethod
     def from_reference(cls, reference_set, *, num_chain_types: int = 1,
-                       max_seq_length: int = 576, **kwargs) -> "AlignAIRConfig":
+                       max_seq_length: int = DEFAULT_WINDOW, **kwargs) -> "AlignAIRConfig":
         """Build from an already-constructed :class:`ReferenceSet` (allele counts come from it)."""
         return cls(
             v_allele_count=len(reference_set.gene("V")),

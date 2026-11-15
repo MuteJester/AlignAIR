@@ -117,9 +117,8 @@ class Aligner:
         first."""
         if not self.model_path:
             raise ModelError("needs an aligner loaded from a file (model_path is unset)")
-        from .model_file import read_metadata
-        secs = read_metadata(self.model_path).get("sections", {})
-        pickle_secs = [k for k in secs if str(k).startswith("dataconfig/") or k == "train_state"]
+        from .model_file import pickle_sections, read_metadata
+        pickle_secs = pickle_sections(read_metadata(self.model_path))
         if pickle_secs:
             raise ModelError(
                 f"{self.model_path} is a resumable checkpoint with pickle sections {pickle_secs}; it is "
@@ -149,7 +148,8 @@ class Aligner:
             import huggingface_hub
         except ImportError as e:                    # pragma: no cover - optional dep
             raise MissingDependencyError("push_to_hub needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
-        api = huggingface_hub.HfApi(token=token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+        from .registry.hf import hf_token
+        api = huggingface_hub.HfApi(token=hf_token(token))
         if create:
             api.create_repo(repo_id, private=private, exist_ok=True, repo_type="model")
         folder = os.path.dirname(os.path.abspath(self.model_path))

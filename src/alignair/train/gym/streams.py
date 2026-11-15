@@ -6,15 +6,13 @@ from fractions import Fraction
 import hashlib
 from itertools import chain
 import json
-import math
-from numbers import Real
-from operator import index
 from typing import Literal, Protocol
 from collections.abc import Iterable, Iterator, Mapping
 
 from ...errors import ConfigurationError, error_context
 from ...data.flanks import FlankPolicy, flank_records
 from ...reference.reference_set import is_tcr
+from ..checks import integer, probability
 from .curriculum import Curriculum
 from .curriculum.base import INDEL_FRACTION, indel_form_name, indel_fraction_range
 from .experiment import build_experiment
@@ -51,28 +49,10 @@ def seed_block(seed: int, purpose: str, start_step: int, panel: int, component: 
     return _FIRST_BLOCK_SEED + (STREAM_PURPOSES.index(purpose) * _BLOCKS_PER_PURPOSE + position) * SEED_BLOCK_RECORDS
 
 
-def _integer(value, field, minimum):
-    try:
-        if isinstance(value, bool):
-            raise ValueError
-        value = index(value)
-        if value < minimum:
-            raise ValueError
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError(f'{field} must be an integer >= {minimum}', context={'field': field}) from exc
-    return value
-
-
-def _probability(value, field):
-    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or not 0 <= value <= 1:
-        raise ConfigurationError(f'{field} must be a finite number in [0, 1]', context={'field': field})
-    return float(value)
-
-
 def inverted_d_share(value) -> float:
     """``value`` as the share of records with an inverted D (``CurriculumStreamPolicy.inverted_d``): a finite number in
     [0, 1], else a ConfigurationError for the field ``inverted_d``."""
-    return _probability(value, 'inverted_d')
+    return probability(value, 'inverted_d')
 
 
 def mutation_cap_for(dataconfig, mutation_cap):
@@ -129,7 +109,7 @@ _AMPLICONS = (((0, 15), (150, 350)),               # V-anchored: the 3' end is l
 
 
 def _selected_fraction(value) -> float:
-    value = _probability(value, 'selected_fraction')
+    value = probability(value, 'selected_fraction')
     if abs(Fraction(value).limit_denominator(MAX_SELECTION_PERIOD) - Fraction(value)) > 1e-9:
         raise ConfigurationError(f'selected_fraction must be a fraction k/n with n <= {MAX_SELECTION_PERIOD}, '
                                  'such as 0.75', context={'field': 'selected_fraction'})
@@ -172,11 +152,11 @@ class CurriculumStreamPolicy:
             raise ConfigurationError('progresses must be an iterable of curriculum values', context={'field': 'progresses'}) from exc
         if not progresses and self.mode == 'auto':
             raise ConfigurationError('auto source mode requires at least one progress value', context={'field': 'progresses'})
-        object.__setattr__(self, 'progresses', tuple(_probability(value, 'progresses') for value in progresses))
-        object.__setattr__(self, 'heavy_shm', _probability(self.heavy_shm, 'heavy_shm'))
-        object.__setattr__(self, 'short_boost', _integer(self.short_boost, 'short_boost', 1))
+        object.__setattr__(self, 'progresses', tuple(probability(value, 'progresses') for value in progresses))
+        object.__setattr__(self, 'heavy_shm', probability(self.heavy_shm, 'heavy_shm'))
+        object.__setattr__(self, 'short_boost', integer(self.short_boost, 'short_boost', 1))
         if self.mutation_cap is not None:
-            object.__setattr__(self, 'mutation_cap', _probability(self.mutation_cap, 'mutation_cap'))
+            object.__setattr__(self, 'mutation_cap', probability(self.mutation_cap, 'mutation_cap'))
         object.__setattr__(self, 'indel_fraction', indel_fraction_range(self.indel_fraction))
         indel_form_name(self.indel_form)
         object.__setattr__(self, 'selected_fraction', _selected_fraction(self.selected_fraction))
@@ -318,8 +298,8 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
     """
     if not isinstance(policy, CurriculumStreamPolicy):
         raise ConfigurationError('supply a CurriculumStreamPolicy')
-    seed = _integer(seed, 'seed', 0)
-    start_step = _integer(start_step, 'start_step', 0)
+    seed = integer(seed, 'seed', 0)
+    start_step = integer(start_step, 'start_step', 0)
     if not isinstance(purpose, str) or purpose not in STREAM_PURPOSES:
         raise ConfigurationError(f'purpose must be one of {STREAM_PURPOSES}', context={'field': 'purpose'})
     if record_source is not None and not callable(record_source):

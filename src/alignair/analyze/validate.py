@@ -1,6 +1,8 @@
 """Lightweight AIRR rearrangement validation for an emitted TSV."""
 from __future__ import annotations
 
+from ..reference.genes import GENES
+
 _REQUIRED = ["sequence_id", "sequence", "v_call", "j_call", "junction", "junction_aa",
              "productive", "vj_in_frame", "stop_codon", "v_cigar", "j_cigar"]
 
@@ -19,7 +21,7 @@ def validate_airr(rows: list[dict], columns: list[str]) -> dict:
     missing = [f for f in _REQUIRED if f not in (columns or [])]
     coord_bad = length_bad = 0
     for r in rows:
-        for g in ("v", "d", "j"):
+        for g in GENES:
             ss, se = _num(r.get(f"{g}_sequence_start")), _num(r.get(f"{g}_sequence_end"))
             if ss is not None and se is not None and se < ss:
                 coord_bad += 1

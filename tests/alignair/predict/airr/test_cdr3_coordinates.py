@@ -8,11 +8,11 @@ import pytest
 
 from alignair.io.airr import _build_row
 from alignair.predict.airr import build_airr
-from alignair.predict.airr.constants import IMGT_REGIONS
+from alignair.reference.codons import IMGT_CODON_104
 
 pytestmark = pytest.mark.component
 
-CYS_COLUMN = IMGT_REGIONS["junction"][0]                       # 309
+CYS_COLUMN = IMGT_CODON_104                                    # 309
 GAPS = 6                                                       # IMGT gap dots at columns 30..35
 CYS = CYS_COLUMN - GAPS                                        # ungapped Cys position: 303
 V_GERM = ("GCA" * 101)[:CYS] + "TGT" + "GCGAGAGAC"[:315 - CYS - 3]   # 315 germline bases, the Cys at 303

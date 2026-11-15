@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from itertools import islice
-from operator import index
 from typing import NamedTuple
 
 from ..data.batching import BatchAdapter
 from ..errors import ConfigurationError, error_context
+from .checks import integer
 from .engine import StepResult, TrainingEngine
 
 
@@ -16,19 +16,6 @@ class TrainingIteration(NamedTuple):
     step: int
     result: StepResult
     records: tuple
-
-
-def _count(value, field, minimum):
-    try:
-        if isinstance(value, bool):
-            raise ValueError
-        value = index(value)
-        if value < minimum:
-            raise ValueError
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError(f"{field} must be an integer >= {minimum}",
-                                 context={"stage": "training_iteration_preflight", "field": field}) from exc
-    return value
 
 
 def training_iterations(engine: TrainingEngine, records: Iterable, batch_adapter: BatchAdapter, *,
@@ -42,9 +29,10 @@ def training_iterations(engine: TrainingEngine, records: Iterable, batch_adapter
     This function does not resume source/RNG state or save checkpoints. Runners own those policies,
     and can use each result to log, evaluate, checkpoint, or stop before requesting another update.
     """
-    start_step = _count(start_step, "start_step", 0)
-    stop_step = _count(stop_step, "stop_step", 0)
-    batch_size = _count(batch_size, "batch_size", 1)
+    with error_context(stage="training_iteration_preflight"):
+        start_step = integer(start_step, "start_step", 0)
+        stop_step = integer(stop_step, "stop_step", 0)
+        batch_size = integer(batch_size, "batch_size")
     if stop_step < start_step:
         raise ConfigurationError("stop_step must be at least start_step",
                                  context={"stage": "training_iteration_preflight",

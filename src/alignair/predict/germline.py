@@ -7,6 +7,7 @@ The anchored :class:`HeuristicGermlineMatcher` locates the segment within the ge
 """
 from __future__ import annotations
 
+from .cigar import matched_bases
 from .state import GermlineAlignment
 
 
@@ -113,19 +114,7 @@ def align_germline(sequences, segments, calls, reference, *, indel_counts=None, 
 
 def _matched(sequence: str, aln: GermlineAlignment, germ: str) -> int:
     """How many read bases ``aln`` puts on an equal germline base (its CIGAR's M columns)."""
-    import re
-    matched, r, g = 0, aln.seq_start, aln.germ_start
-    read = sequence.upper()
-    for count, op in re.findall(r"(\d+)([MIDNSHP=X])", aln.cigar or ""):
-        count = int(count)
-        if op in "M=X":
-            matched += sum(a == b for a, b in zip(read[r:r + count], germ[g:g + count]))
-            r, g = r + count, g + count
-        elif op == "I":
-            r += count
-        elif op == "D":
-            g += count
-    return matched
+    return matched_bases(sequence.upper(), germ, aln.cigar, aln.seq_start, aln.germ_start)
 
 
 def realign_v(sequences, segments, alignments, alleles, reference, *, indel_counts=None) -> list:

@@ -22,6 +22,8 @@ from .alignment import (build_germline_alignment, build_sequence_alignment,
                         compute_alignment_positions, compute_np_regions,
                         extract_segment_alignments, translate_alignment)
 from ...core.d_presence import ABSENT, D_CLASSES, SHORT
+from ...reference.genes import GENES
+from ...reference.reference_set import FALLBACK_LOCUS
 from .constants import SHORT_D_SENTINEL
 from ..results import ReadResult, light_record
 from .regions import anchor_junction_fields, extract_regions
@@ -30,8 +32,6 @@ from .regions import anchor_junction_fields, extract_regions
 # out-of-range slices). These are tagged as per-record assembly failures and tracked; anything else is
 # treated as a programming defect and re-raised loudly (see build_airr).
 _EXPECTED_ASSEMBLY_ERRORS = (ValueError, IndexError, KeyError)
-# A row's locus when its read carries none.
-DEFAULT_LOCUS = "IGH"
 
 
 class AirrAssemblyError(InferenceError):
@@ -69,7 +69,7 @@ def _partial(out: dict, reason: str) -> dict:
 def _build_one(read: ReadResult, light: dict, v_gapped, j_ung, d_ung, chain) -> dict:
     seq = read.sequence
     out = dict(light)                  # preserve the light record (calls/coords/cigar/orientation/likelihoods)
-    out.setdefault("locus", DEFAULT_LOCUS)
+    out.setdefault("locus", FALLBACK_LOCUS)          # a read that carries no locus
     # a D the D presence head gated (predict.results): an absent one is assembled as a read without a D (the
     # light-chain path: one NP region between V and J); a short one keeps its span and takes the Short-D path for its
     # germline alignment (the read's bases between V and J), as it has no call
@@ -129,7 +129,7 @@ def _build_one(read: ReadResult, light: dict, v_gapped, j_ung, d_ung, chain) -> 
     out.update(positions)
     out.update(seg)
     out.update(regions)
-    for g in ("v", "d", "j"):                          # per-segment identity (was V-only)
+    for g in GENES:                                    # per-segment identity
         ident = quality.segment_identity(seg.get(f"{g}_sequence_alignment"),
                                          seg.get(f"{g}_germline_alignment"))
         if ident is not None:

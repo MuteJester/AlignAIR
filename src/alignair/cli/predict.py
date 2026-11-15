@@ -7,7 +7,6 @@ model is available (suppressed for a pinned id / a path / ``--offline`` / ``--qu
 from __future__ import annotations
 
 from contextlib import closing
-import hashlib
 import json
 import os
 import sys
@@ -18,6 +17,7 @@ from ..aligner import Aligner
 from ..errors import (AlignAIRError, ConfigurationError, DataContractError, InputError, ModelError,
                       RegistryError, report_error)
 from ..genotype.lean import EXPLAIN, MIN_READS
+from ..io.files import sha256_file
 from ..reference.reference_set import FALLBACK_LOCUS
 from ._errors import fail
 
@@ -227,14 +227,6 @@ def _load_reporting_locus(model_path: str, *, device: str, reference):
     return aligner
 
 
-def _sha256_file(path: str) -> str:
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def _write_run_metadata(out: str, model_path: str, args, device: str, counts: dict, *,
                         loci=None, fail_reasons: dict | None = None, partial_reasons: dict | None = None,
                         genotype_pass: dict | None = None, bound_reference=None, genotype_bank=None) -> None:
@@ -249,17 +241,17 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
     prov = {
         "model_spec": args.model, "model_path": os.path.abspath(model_path),
         "model_id": md.get("model_id"), "model_version": md.get("model_version"),
-        "artifact_sha256": _sha256_file(model_path),
+        "artifact_sha256": sha256_file(model_path),
         "reference_fasta_sha256": (serialize.reference_fasta_sha256(bound_reference) if given
                                    else ref.get("reference_fasta_sha256")),
         "allele_order_sha256": (serialize.allele_order_sha256(bound_reference) if given
                                 else ref.get("allele_order_sha256")),
         "reference": {"source": "--reference" if given else "embedded",
                       "path": args.reference if given else None,
-                      "file_sha256": _sha256_file(args.reference) if given else None,
+                      "file_sha256": sha256_file(args.reference) if given else None,
                       "embedded_reference_fasta_sha256": ref.get("reference_fasta_sha256"),
                       "embedded_allele_order_sha256": ref.get("allele_order_sha256")},
-        "genotype": ({"path": args.genotype, "file_sha256": _sha256_file(args.genotype),
+        "genotype": ({"path": args.genotype, "file_sha256": sha256_file(args.genotype),
                       "allele_order_sha256": serialize.allele_order_sha256(genotype_bank)}
                      if args.genotype and genotype_bank is not None else None),
         "alignair_version": __version__, "model_created_by_alignair": md.get("created_by_alignair"),

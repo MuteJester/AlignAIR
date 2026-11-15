@@ -12,15 +12,14 @@ A read holds no V when both hold:
 from __future__ import annotations
 
 import functools
-import re
+
+from .cigar import ALIGNED, cigar_ops, matched_bases
 
 V_KMER = 15
 V_MIN_SPAN = 20
 V_MIN_IDENTITY = 0.7
 V_PRESENCE = "v_presence"                         # the record field a gated read carries
 V_ABSENT = "absent"                               # its value
-
-_CIGAR = re.compile(r"(\d+)([MIDNSHP=X])")
 
 
 @functools.lru_cache(maxsize=8)
@@ -37,17 +36,8 @@ def _identity(sequence: str, germline: str, aln) -> float | None:
     """The share of the alignment's columns (aligned bases, insertions and deletions) whose read and germline bases
     are equal; None for an alignment without a column."""
     read, germ = sequence[aln.seq_start:aln.seq_end].upper(), germline[aln.germ_start:aln.germ_end]
-    r = g = matches = columns = 0
-    for count, op in _CIGAR.findall(aln.cigar or ""):
-        count = int(count)
-        if op in "M=X":
-            matches += sum(a == b for a, b in zip(read[r:r + count], germ[g:g + count]))
-            r, g, columns = r + count, g + count, columns + count
-        elif op == "I":
-            r, columns = r + count, columns + count
-        elif op == "D":
-            g, columns = g + count, columns + count
-    return matches / columns if columns else None
+    columns = sum(count for count, op in cigar_ops(aln.cigar) if op in ALIGNED or op in "ID")
+    return matched_bases(read, germ, aln.cigar) / columns if columns else None
 
 
 def _credible(sequence: str, aln, germlines: dict) -> bool:

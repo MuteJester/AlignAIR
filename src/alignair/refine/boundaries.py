@@ -24,12 +24,12 @@ from __future__ import annotations
 import torch
 
 from ..core.anchors import ANCHOR_LOGITS
+from ..core.tokens import is_base
 
-from ..network.parser import IMPOSSIBLE
+from ..network.parser import expected_slot
+from .ratios import OUTSIDE, RATE, pair_ratios
 
 WINDOW = 24               # bases from the anchor whose evidence counts
-OUTSIDE = -8.0            # the ratio of a base the allele does not have
-RATE = (0.01, 0.25)       # the mutation rate the ratios use, clamped
 BAND = 3                  # the most net indels the alignment follows between the anchor and a boundary
 # The ratio of a base inserted into the read or deleted from it. On the lab's dev suites (chip flank screen, 20k steps)
 # the V end lands in the assay's interval for 91.15% of reads ungapped and 91.03%, 91.50%, 91.62% and 91.53% at -2, -3,
@@ -53,9 +53,10 @@ def _path_scores(read: torch.Tensor, germline: torch.Tensor, m: torch.Tensor) ->
     """(N, K + 1) the best score of the first k = 0..K read bases walked from the anchor against the germline walked
     from its anchor base, indels within ``BAND`` diagonals, the germline's far end free. ``read`` (N, K) the walked read
     bases, ``germline`` (N, K, 2 * BAND + 1) the germline base each diagonal pairs with each read base (0: none)."""
-    ratio = torch.where(read[:, :, None] == germline, torch.log(4 * (1 - m))[:, :, None], torch.log(4 * m / 3)[:, :, None])
+    match, mismatch = pair_ratios(m)
+    ratio = torch.where(read[:, :, None] == germline, match[:, :, None], mismatch[:, :, None])
     ratio = torch.where(germline == 0, OUTSIDE, ratio)
-    ratio = torch.where(((read >= 1) & (read <= 4))[:, :, None], ratio, 0.)               # an N base says nothing
+    ratio = torch.where(is_base(read)[:, :, None], ratio, 0.)  # an N base says nothing
     # an inserted read base costs GAP while the germline goes on, OUTSIDE once it has ended (none off the band's edge)
     inserted = torch.where(germline[:, :, 1:] != 0, GAP, OUTSIDE)
     inserted = torch.cat([inserted, torch.zeros_like(inserted[:, :, :1])], 2)
@@ -115,6 +116,4 @@ def refine_boundaries(out: dict, tokens: torch.Tensor, mask: torch.Tensor, end_m
         evidence, refinable = evidences[gene]
         slots = end_mask if key.endswith("end_logits") else mask                # a slot no read has stays as it is
         out[key] = torch.where(refinable[:, None] & slots, out[key] + EVIDENCE_WEIGHT * evidence, out[key])
-        probs = out[key].masked_fill(~slots, IMPOSSIBLE).softmax(-1)
-        out[key.removesuffix("_logits")] = (probs * torch.arange(probs.shape[-1], device=probs.device)).sum(
-            -1, keepdim=True)
+        out[key.removesuffix("_logits")] = expected_slot(out[key], slots)

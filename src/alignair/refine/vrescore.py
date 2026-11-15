@@ -6,10 +6,11 @@ which a read's columns cannot always follow. Here the read's V span (the V start
 each of the chip's ``TOP`` V alleles semi-globally (the span in full, the germline's ends free) in a band of ``BAND``
 bases around the diagonal the conserved Cys fixes (read anchor a against the row's anchor base), base by base: a
 match scores ``log(4(1-m))``, a mismatch ``log(4m/3)`` (m the read's mutation rate), a base inserted or deleted
-``-GAP``, a read base past the row's germline ``OUTSIDE``. The scores, relative to the best, are added to those alleles'
-log posterior; every other allele falls ``BEHIND`` (the candidates are the top ``TOP``). A read without its V anchor,
-with a V span shorter than ``MIN_SPAN``, or whose candidates lack an annotated anchor keeps the scan's posterior. The
-chip takes the product at inference only (the scan trains on its own posterior). No weights; no gradient.
+``-GAP_COST``, a read base past the row's germline ``OUTSIDE``. The scores, relative to the best, are added to those
+alleles' log posterior; every other allele falls ``BEHIND`` (the candidates are the top ``TOP``). A read without its V
+anchor, with a V span shorter than ``MIN_SPAN``, or whose candidates lack an annotated anchor keeps the scan's
+posterior. The chip takes the product at inference only (the scan trains on its own posterior). No weights; no
+gradient.
 
 On the lab's dev suites (chip-v1b, 20k steps; refiner, local D and bank orientation on) a parasail spike of the same
 re-score took the V call from 98.9% to 99.3% (S5, V polymerase indels: 96.2% to 98.6%; S12, noise: 97.1% to 99.5%);
@@ -24,14 +25,14 @@ import numpy as np
 import torch
 
 from ..core.anchors import ANCHOR_LOGITS
+from ..core.tokens import is_base
+from .ratios import OUTSIDE, RATE, pair_ratios
 
 BAND = 8                    # bases of net insertion or deletion the band holds
-GAP = 4.0                   # the cost of a base inserted or deleted (about log(1 / 0.02))
-OUTSIDE = -8.0              # a read base past the row's germline
+GAP_COST = 4.0              # the cost of a base inserted or deleted (about log(1 / 0.02))
 TOP = 5                     # the candidates: the scan's top V alleles
 MIN_SPAN = 20               # the shortest V span re-scored
 BEHIND = -1e4               # how far behind the candidates every other allele falls
-RATE = (0.01, 0.25)         # the mutation rate the ratios use, clamped
 _NEG = -1e9
 
 try:                                                        # optional compiled band (the torch band's scores)
@@ -40,11 +41,6 @@ try:                                                        # optional compiled 
 except (ImportError, OSError):                              # pragma: no cover - optional compiled kernel
     _compiled_band = None
     VBAND_BACKEND = "python"
-
-
-def _pair_scores(m: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-    """(B, 1) each: a matched and a mismatched base's score at the read's mutation rate ``m``."""
-    return torch.log(4 * (1 - m)), torch.log(4 * m / 3)
 
 
 def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor, anchors: torch.Tensor,
@@ -59,7 +55,7 @@ def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor
     """
     if _compiled_band is None or m.dtype != torch.float32 or rows.shape[0] == 0:
         return _torch_banded_scores(tokens, starts, ends, anchors, rows, row_anchors, m)
-    match, mismatch = _pair_scores(m)
+    match, mismatch = pair_ratios(m)
 
     def host(x, dtype):
         return x.detach().to("cpu", dtype).contiguous().numpy()
@@ -70,7 +66,7 @@ def banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch.Tensor
     out = np.empty(rows.shape[:2], dtype=np.float32)
     _compiled_band(host(tokens, torch.int64), starts_, ends_, host(anchors, torch.int64), host(rows, torch.int64),
                    host(row_anchors, torch.int64), host(match.reshape(-1), torch.float32),
-                   host(mismatch.reshape(-1), torch.float32), BAND, GAP, OUTSIDE, _NEG, out)
+                   host(mismatch.reshape(-1), torch.float32), BAND, GAP_COST, OUTSIDE, _NEG, out)
     return torch.from_numpy(out).to(tokens.device)
 
 
@@ -88,10 +84,10 @@ def _torch_banded_scores(tokens: torch.Tensor, starts: torch.Tensor, ends: torch
     germline = rows.gather(-1, partner.clamp(0, rows.shape[-1] - 1).reshape(batch, candidates, -1)).view(
         partner.shape)
     base = tokens[:, positions][:, None, :, None]
-    match, mismatch = _pair_scores(m)
+    match, mismatch = pair_ratios(m)
     pair = torch.where(germline == base, match[..., None, None], mismatch[..., None, None])
     pair = torch.where(inside & (germline > 0), pair, torch.full_like(pair, OUTSIDE))
-    pair = torch.where((base >= 1) & (base <= 4), pair, torch.zeros_like(pair))          # an N base: no evidence
+    pair = torch.where(is_base(base), pair, torch.zeros_like(pair))  # an N base: no evidence
     active = ((positions >= starts[:, None]) & (positions < ends[:, None]))[:, None, :, None]   # (B, 1, T, 1)
     return band_dp(pair, active)
 
@@ -100,14 +96,14 @@ def band_dp(pair: torch.Tensor, active: torch.Tensor) -> torch.Tensor:
     """(B, K) the band's best score from its pair scores ``pair`` (B, K, T, W) over the read bases ``active``
     (B, 1, T, 1) take part in. ``best`` (B, K, W) over the band's diagonals starts at 0 (a free germline start) and
     ends at its max (a free end); at each base, diagonal w takes the best of a diagonal at or left of it (germline
-    bases skipped, ``GAP`` each) plus the pair score, or diagonal w + 1 less ``GAP`` (the base unaligned). Kept as
-    ``best + GAP * w``, the deletion is a plain running max and the insertion ``2 * GAP`` down, so each base is a few
-    ops on (B, K, W) tensors (a base's cost on a CPU is mostly its ops' fixed overhead)."""
-    ramp = GAP * torch.arange(pair.shape[-1], dtype=pair.dtype, device=pair.device)
+    bases skipped, ``GAP_COST`` each) plus the pair score, or diagonal w + 1 less ``GAP_COST`` (the base unaligned).
+    Kept as ``best + GAP_COST * w``, the deletion is a plain running max and the insertion ``2 * GAP_COST`` down, so
+    each base is a few ops on (B, K, W) tensors (a base's cost on a CPU is mostly its ops' fixed overhead)."""
+    ramp = GAP_COST * torch.arange(pair.shape[-1], dtype=pair.dtype, device=pair.device)
     ramped = ramp.expand(*pair.shape[:2], -1).clone()
     inserted = torch.full_like(ramped, _NEG)
     for pair_t, active_t in zip(pair.unbind(2), active.unbind(2)):
-        inserted[..., :-1] = ramped[..., 1:] - 2 * GAP
+        inserted[..., :-1] = ramped[..., 1:] - 2 * GAP_COST
         ramped = torch.where(active_t, torch.maximum(torch.cummax(ramped, -1).values + pair_t, inserted), ramped)
     return (ramped - ramp).amax(-1)
 

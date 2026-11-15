@@ -11,7 +11,7 @@ from __future__ import annotations
 import csv
 from typing import Dict, List
 
-GENES = ("v", "d", "j")
+from .reference.genes import GENES
 
 
 def read_airr(path: str) -> Dict[str, dict]:

@@ -11,7 +11,7 @@ import pytest
 import torch
 
 from alignair.data.projection import translate_nt
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 from alignair.predict.decode import decode_anchors
 from alignair.predict.junction import derive_junction
 

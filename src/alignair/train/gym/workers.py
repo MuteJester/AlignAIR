@@ -33,7 +33,6 @@ from itertools import islice, repeat
 import multiprocessing
 from multiprocessing import util as process_util
 from multiprocessing.connection import wait as wait_for
-from operator import index
 import os
 import pickle
 import queue as queues
@@ -45,6 +44,7 @@ import traceback
 
 from ...errors import AlignAIRError, ConfigurationError, TrainingError, current_error_context, error_context
 from ...errors.base import rescoped
+from ..checks import integer
 from .streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
 
 # Measured on the 1.0.0 recipe's mix before selection (7 streams, batch 64): the data side delivers
@@ -61,18 +61,6 @@ _REAP_SECONDS = 1.0      # join timeout for a process whose sentinel is ready: i
 _EXIT_HINT = ('A worker exits early when it runs out of memory or crashes natively, or when the training '
               'script has no `if __name__ == "__main__":` guard: workers are spawned and import the main '
               'module. data_workers=0 generates training data in the training process.')
-
-
-def _count(value, field, minimum=1):
-    try:
-        if isinstance(value, bool):
-            raise ValueError
-        value = index(value)
-        if value < minimum:
-            raise ValueError
-    except (TypeError, ValueError) as exc:
-        raise ConfigurationError(f'{field} must be an integer >= {minimum}', context={'field': field}) from exc
-    return value
 
 
 @dataclass(frozen=True)
@@ -281,7 +269,7 @@ class WorkerGroup:
     def channel(self, depth: int) -> Channel:
         """A one-way pipe whose writer may hold back ``depth`` messages."""
         receiver, sender = self._context.Pipe(duplex=False)
-        channel = Channel(receiver, sender, _count(depth, 'depth'))
+        channel = Channel(receiver, sender, integer(depth, 'depth'))
         self._channels.append(channel)
         return channel
 
@@ -376,8 +364,8 @@ def worker_options(*, workers, provider, chunk_size, queue_chunks) -> dict:
     except Exception as exc:
         raise ConfigurationError('a worker process cannot receive this provider', context={'field': 'provider'},
                                  hint='Worker processes are spawned: pass a module-level function.') from exc
-    return {'workers': _count(workers, 'workers'), 'provider': provider,
-            'chunk_size': _count(chunk_size, 'chunk_size'), 'queue_chunks': _count(queue_chunks, 'queue_chunks')}
+    return {'workers': integer(workers, 'workers'), 'provider': provider,
+            'chunk_size': integer(chunk_size, 'chunk_size'), 'queue_chunks': integer(queue_chunks, 'queue_chunks')}
 
 
 def worker_slots(plan, workers: int) -> tuple[tuple[int, ...], ...]:

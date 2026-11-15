@@ -25,7 +25,15 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .cigar import cigar_ops
 
+
+# The CIGAR's banded alignment: a mismatch costs MISMATCH_COST and an indel GAP_COST, so substitutions (SHM) are
+# favoured over indels; the band is the net length difference plus the indel allowance plus BAND_MARGIN. The compiled
+# kernel's defaults are these (tests/alignair/predict/test_heuristic_matcher.py holds them equal).
+MISMATCH_COST, GAP_COST, BAND_MARGIN = 1, 2, 2
+_CLEAN_END = 10         # bases compared at each end of an equal-length placement
+_CLEAN_END_MISMATCHES = 3   # the most mismatches either end may hold and still be clean
 _ACCEL = 0.05          # per-step velocity increment that amplifies same-state (match/mismatch) runs
 _START_CHECK = 30      # segment bases compared at the placement's start when checking it for a mis-anchor
 _INDEL_REACH = 3       # fewest indels the end and start searches allow for, whatever the predicted count
@@ -45,26 +53,25 @@ def _run_length_encode(ops: str) -> str:
     return "".join(out)
 
 
-def _derive_cigar_py(read: str, germ: str, indels: int, *,
-                     mismatch: int = 1, gap: int = 2, margin: int = 2) -> str:
+def _derive_cigar_py(read: str, germ: str, indels: int) -> str:
     """Pure-Python banded global alignment of a *pinned* read/germline window -> M/I/D CIGAR string.
 
     An equal-length window whose mismatches cost less than an insertion-deletion pair is a single ``M``
     run (no DP): every gapped path through it costs at least that pair, so it is the DP's own optimum,
     whatever the predicted indel count. Otherwise a global alignment restricted to a narrow band
-    (width = net length difference + predicted indel count + margin) places the I/D ops;
-    ``mismatch``/``gap`` favour substitutions (SHM) over indels. This is the reference implementation
+    (width = net length difference + predicted indel count + ``BAND_MARGIN``) places the I/D ops;
+    ``MISMATCH_COST``/``GAP_COST`` favour substitutions (SHM) over indels. This is the reference implementation
     and the fallback when the compiled :mod:`_derive_cy` kernel is unavailable — byte-identical output.
     """
     m, n = len(read), len(germ)
-    if m == n and sum(a != b for a, b in zip(read, germ)) * mismatch < 2 * gap:
+    if m == n and sum(a != b for a, b in zip(read, germ)) * MISMATCH_COST < 2 * GAP_COST:
         return f"{m}M" if m else ""
     if m == 0:
         return f"{n}D" if n else ""
     if n == 0:
         return f"{m}I" if m else ""
 
-    band = abs(m - n) + indels + margin
+    band = abs(m - n) + indels + BAND_MARGIN
     lo_off, hi_off = min(0, m - n) - band, max(0, m - n) + band   # allowed range of (i - j)
     INF = float("inf")
     cost = {(0, 0): 0.0}
@@ -77,15 +84,15 @@ def _derive_cigar_py(read: str, germ: str, indels: int, *,
                 continue
             best, op = INF, None
             if i and j:                                     # M (diagonal): match or mismatch
-                c = cost.get((i - 1, j - 1), INF) + (0 if read[i - 1] == germ[j - 1] else mismatch)
+                c = cost.get((i - 1, j - 1), INF) + (0 if read[i - 1] == germ[j - 1] else MISMATCH_COST)
                 if c < best:
                     best, op = c, "M"
             if i:                                           # I (read-only base)
-                c = cost.get((i - 1, j), INF) + gap
+                c = cost.get((i - 1, j), INF) + GAP_COST
                 if c < best:
                     best, op = c, "I"
             if j:                                           # D (germline-only base)
-                c = cost.get((i, j - 1), INF) + gap
+                c = cost.get((i, j - 1), INF) + GAP_COST
                 if c < best:
                     best, op = c, "D"
             if op is not None:
@@ -110,7 +117,8 @@ try:                                                        # optional C-speed k
     from ._derive_cy import derive_cigar as _cy_derive_cigar
 
     def _derive_cigar(read: str, germ: str, indels: int) -> str:
-        return _cy_derive_cigar(read.encode("ascii"), germ.encode("ascii"), indels)
+        return _cy_derive_cigar(read.encode("ascii"), germ.encode("ascii"), indels, MISMATCH_COST, GAP_COST,
+                                BAND_MARGIN)
 
     DERIVE_BACKEND = "cython"
 except (ImportError, OSError):                              # pragma: no cover - optional compiled kernel
@@ -135,11 +143,6 @@ _SETTLE_MIN_LENGTH = 15  # shortest segment searched (the matcher's anchor lengt
 _SETTLE_PREFIX = 96    # read bases of the alignment re-derived for each start searched
 
 
-def _cigar_ops(cigar: str) -> list[tuple[int, str]]:
-    import re
-    return [(int(n), op) for n, op in re.findall(r"(\d+)([MID])", cigar)]
-
-
 def _alignment_score(read: str, germ: str, cigar: str) -> int:
     """Matches minus mismatches minus 2 per gap column of ``read`` against ``germ`` (the window the CIGAR spans).
     Read bases before the first germline-aligned one (a leading insertion) cost 1 each, as a mismatch: moving a start
@@ -147,7 +150,7 @@ def _alignment_score(read: str, germ: str, cigar: str) -> int:
     base by moving back (its leading bases then match). Germline bases before the first aligned read base (a leading
     deletion) cost 2 each, so a window that starts too early never gains."""
     score, r, g, leading = 0, 0, 0, True
-    for n, op in _cigar_ops(cigar):
+    for n, op in cigar_ops(cigar):
         if op == "M":
             same = sum(a == b for a, b in zip(read[r:r + n], germ[g:g + n]))
             score += same - (n - same)
@@ -165,7 +168,7 @@ def _start_is_doubtful(read: str, germ: str, cigar: str) -> bool:
     """Whether the alignment's first ``_SETTLE_CHECK`` read bases hold a gap or two mismatches (else its start stands:
     one mismatch cannot be moved away for a gain, a leading insertion costing as much)."""
     r, g, mismatches = 0, 0, 0
-    for n, op in _cigar_ops(cigar):
+    for n, op in cigar_ops(cigar):
         if op != "M":
             return True
         take = min(n, _SETTLE_CHECK - r)
@@ -222,7 +225,7 @@ def settle_start(read: str, germ: str, ref_start: int, ref_end: int, indel_count
     if (ref_end <= 0 or len(read) < _SETTLE_MIN_LENGTH or abs(len(read) - (ref_end - ref_start)) > _SETTLE_MAX_REACH
             or not _start_is_doubtful(read, germ[ref_start:ref_end], cigar)):
         return ref_start, cigar
-    ops = _cigar_ops(cigar)
+    ops = cigar_ops(cigar)
     lead = ops[0][0] if ops and ops[0][1] != "M" else 0
     reach = min(max(_SETTLE_REACH, lead + 2), _SETTLE_MAX_REACH)
     # only the alignment's first _SETTLE_PREFIX read bases are re-derived per start: past them it is the same for
@@ -242,7 +245,7 @@ def settle_start(read: str, germ: str, ref_start: int, ref_end: int, indel_count
                 best_score, best = score, (start, candidate)
     if best is None:
         return ref_start, cigar
-    return best[0], _joined(_cigar_ops(best[1]), tail)
+    return best[0], _joined(cigar_ops(best[1]), tail)
 
 
 @dataclass(frozen=True)
@@ -294,11 +297,12 @@ class HeuristicGermlineMatcher:
         return score
 
     @staticmethod
-    def _ends_are_clean(segment: str, germline: str, k: int = 10, max_mismatch: int = 3) -> bool:
-        """True iff the first and last ``k`` bases each match the germline within ``max_mismatch``."""
+    def _ends_are_clean(segment: str, germline: str) -> bool:
+        """True iff the first and last ``_CLEAN_END`` bases each hold at most ``_CLEAN_END_MISMATCHES`` mismatches."""
+        k = _CLEAN_END
         head = sum(a != b for a, b in zip(segment[:k], germline[:k]))
         tail = sum(a != b for a, b in zip(segment[-k:], germline[-k:]))
-        return head <= max_mismatch and tail <= max_mismatch
+        return head <= _CLEAN_END_MISMATCHES and tail <= _CLEAN_END_MISMATCHES
 
     @staticmethod
     def _trim_symmetric_overhang(seq_start: int, seq_end: int, germline_len: int) -> tuple[int, int]:
@@ -455,7 +459,7 @@ def _end_is_doubtful(read: str, germ: str, seq_end: int, ref_end: int, cigar: st
     ``_END_GATE_MATCHES`` of the ``_END_ANCHOR`` read bases after the end match the germline after it, in place or up
     to 3 bases either way (else no search: its alignment cannot gain ``_END_GAIN``, as measured on the dev suites)."""
     r, g, seen, mismatches = seq_end, ref_end, 0, 0
-    for n, op in reversed(_cigar_ops(cigar)):
+    for n, op in reversed(cigar_ops(cigar)):
         if op != "M":
             return True
         take = min(n, _END_ANCHOR - seen)
@@ -478,7 +482,7 @@ def _tail_anchor(seq_start: int, seq_end: int, ref_start: int, cigar: str, back:
     start when it is shorter)."""
     target = seq_end - back
     r, g = seq_start, ref_start
-    for n, op in _cigar_ops(cigar):
+    for n, op in cigar_ops(cigar):
         if op == "M":
             if r + n > target:
                 k = max(0, target - r)

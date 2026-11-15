@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import numpy as np
 
+from ..core.orientations import NUM_ORIENTATIONS, orient
 from ..data.inputs import prepare_nucleotide_inputs
 from ..errors import InputError
 from .clean import clean
@@ -34,13 +35,13 @@ def prepare_reads(state: PredictionState) -> PredictionState:
 def run_forward(state: PredictionState) -> PredictionState:
     """``forward``: the model's batched forward pass over the reads, with the given orientations teacher-forced, each
     batch's outputs typed (``ModelOutputs``).
-    InputError for orientations that are not one per read, or an id that is not one of ``ORIENTATION_IDS``."""
+    InputError for orientations that are not one per read, or an id that is not an index of ``ORIENTATIONS``."""
     context, given = state.context, state.orientation_given
     if given is not None:
         if len(given) != len(state.reads):
             raise InputError(f"{len(given)} orientations for {len(state.reads)} reads",
                              context={"field": "orientation"})
-        bad = next((i for i, o in enumerate(given) if o is not None and int(o) not in ORIENTATION_IDS), None)
+        bad = next((i for i, o in enumerate(given) if o is not None and int(o) not in range(NUM_ORIENTATIONS)), None)
         if bad is not None:
             raise InputError(f"orientation id {given[bad]} of read {bad} is not one of 0, 1, 2, 3",
                              context={"field": "orientation", "read": bad})
@@ -63,8 +64,8 @@ def decode_outputs(state: PredictionState) -> PredictionState:
 def canonicalize_reads(state: PredictionState) -> PredictionState:
     """``canonicalize``: each read in the model's forward frame (its predicted orientation), so the coordinates, the
     germline and the AIRR assembly all agree."""
-    orient = state.predictions.orientation
-    canonical = [canonicalize(s, int(orient[i])) for i, s in enumerate(state.reads)]
+    orientation = state.predictions.orientation
+    canonical = [orient(s, int(orientation[i])) for i, s in enumerate(state.reads)]
     return replace(state, canonical=canonical)
 
 
@@ -177,19 +178,3 @@ def record_loci(v_alignments, reference, no_v, chain_types, read_locus=None) -> 
     return [one] * len(v_alignments)
 
 
-_COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
-ORIENTATION_IDS = range(4)          # canonicalize's transforms: identity, reverse complement, complement, reverse
-
-
-def canonicalize(seq: str, orientation_id: int) -> str:
-    """Re-orient a read into the model's forward frame using the predicted orientation (the transforms
-    are involutions, so re-applying recovers forward): 0=identity, 1=revcomp, 2=complement, 3=reverse.
-    The model predicts coordinates in the forward frame, so the germline reader, coords, and AIRR
-    assembly must all operate on this canonical sequence."""
-    if orientation_id == 1:
-        return seq.translate(_COMPLEMENT)[::-1]
-    if orientation_id == 2:
-        return seq.translate(_COMPLEMENT)
-    if orientation_id == 3:
-        return seq[::-1]
-    return seq

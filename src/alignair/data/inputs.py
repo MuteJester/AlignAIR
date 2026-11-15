@@ -5,8 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+import torch
+
+from ..core.tokens import encode
 from ..errors import InputError, error_context
-from .batching import _width
+from .batching import _width, pad_vectors
 
 BASES = frozenset("ACGTN")
 # The IUPAC ambiguity codes: read as N, and not counted as unusable characters.
@@ -80,6 +83,12 @@ def prepare_nucleotide_inputs(sequences, max_length: int) -> tuple[list[str], li
     if not reads:
         raise InputError("cannot predict an empty nucleotide batch", context={"reason": "empty_batch"})
     return reads, cropped
+
+
+def tokenize_batch(reads, width: int, device="cpu") -> dict[str, torch.Tensor]:
+    """The model input of ``reads`` (``prepare_nucleotide_inputs``'s): ``tokenized_sequence``, each read's tokens
+    right-padded to ``width``, on ``device``."""
+    return {"tokenized_sequence": pad_vectors([encode(read) for read in reads], width=width).to(device)}
 
 
 def sequence_batch_iterator(sequences):

@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("GenAIRR")
 
 from alignair.model_file import load_model  # noqa: E402
-from alignair.predict.decode import decoded_boundaries  # noqa: E402
+from tests.support.boundaries import decoded_boundaries  # noqa: E402
 from alignair_assay.diagnostics.perturb import zero_module  # noqa: E402
 from alignair_assay.workflow.audit.base import POSITIVE_METRIC, POSITIVE_MODULE  # noqa: E402
 

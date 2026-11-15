@@ -5,9 +5,9 @@ import math
 import pytest
 import torch
 
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 
-from alignair.refine.vrescore import GAP, banded_scores
+from alignair.refine.vrescore import GAP_COST, banded_scores
 
 pytestmark = pytest.mark.component
 
@@ -38,14 +38,14 @@ def test_a_clean_read_scores_every_base_as_a_match_of_its_allele():
 def test_a_deletion_costs_one_gap_and_keeps_the_allele():
     read = V1[10:35] + V1[36:]                            # germline base 35 deleted, upstream of the anchor
     scores = _score(read, 0, ANCHOR - 11)
-    assert scores[0, 0].item() == pytest.approx(len(read) * MATCH - GAP, rel=1e-4)
+    assert scores[0, 0].item() == pytest.approx(len(read) * MATCH - GAP_COST, rel=1e-4)
     assert scores[0, 0] > scores[0, 1]
 
 
 def test_an_insertion_costs_one_gap_and_keeps_the_allele():
     read = V1[10:35] + "G" + V1[35:]                      # one base inserted upstream of the anchor
     scores = _score(read, 0, ANCHOR - 9)
-    assert scores[0, 0].item() == pytest.approx((len(read) - 1) * MATCH - GAP, rel=1e-4)
+    assert scores[0, 0].item() == pytest.approx((len(read) - 1) * MATCH - GAP_COST, rel=1e-4)
     assert scores[0, 0] > scores[0, 1]
 
 
@@ -58,11 +58,11 @@ def _reference_band_dp(pair, active):
     """The band's recursion as written first: ``best`` (B, K, W) over the band's diagonals, base by base."""
     from torch.nn import functional as F
     width = pair.shape[-1]
-    ramp = GAP * torch.arange(width, dtype=pair.dtype)
+    ramp = GAP_COST * torch.arange(width, dtype=pair.dtype)
     best = torch.zeros(*pair.shape[:2], width, dtype=pair.dtype)
     for t in range(pair.shape[2]):
         deleted = torch.cummax(best + ramp, -1).values - ramp
-        inserted = F.pad(best[..., 1:], (0, 1), value=-1e9) - GAP
+        inserted = F.pad(best[..., 1:], (0, 1), value=-1e9) - GAP_COST
         best = torch.where(active[:, :, t], torch.maximum(deleted + pair[:, :, t], inserted), best)
     return best.amax(-1)
 
@@ -70,7 +70,8 @@ def _reference_band_dp(pair, active):
 def test_the_band_recursion_is_the_base_by_base_definition():
     """Pair scores from matches to the outside penalty and bases outside the span (inactive steps) included: the
     recursion's scores are the definition's."""
-    from alignair.refine.vrescore import OUTSIDE, band_dp
+    from alignair.refine.ratios import OUTSIDE
+    from alignair.refine.vrescore import band_dp
     torch.manual_seed(0)
     pair = torch.randn(3, 2, 40, 17) * 2
     pair[0, :, :5] = OUTSIDE

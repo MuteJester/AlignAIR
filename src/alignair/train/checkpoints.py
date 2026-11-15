@@ -4,13 +4,13 @@ from __future__ import annotations
 import dataclasses
 import glob
 import logging
-from operator import index
 import os
 import re
 import shutil
 
 from ..errors import ConfigurationError, error_context
 from ..io.atomic import atomic_write
+from .checks import integer
 from .random_state import capture_rng_state
 
 
@@ -89,12 +89,7 @@ def _step_of(path) -> int:
 def save_rotating(base_path, model, step, opt, keep=3, *, dataconfigs=None, train_args=None, label_schema=None,
                   scheduler=None):
     """Keep numbered checkpoints and atomically refresh the convenient base-path copy."""
-    try:
-        if isinstance(keep, bool) or index(keep) <= 0:
-            raise ValueError
-        keep = index(keep)
-    except (ValueError, TypeError) as exc:
-        raise ConfigurationError("checkpoint retention must be a positive integer") from exc
+    keep = integer(keep, "keep")
     stem, extension = _stem(base_path), _ext(base_path)
     path = f"{stem}.step{step}{extension}"
     save_checkpoint(path, model, step, opt, dataconfigs=dataconfigs, train_args=train_args,

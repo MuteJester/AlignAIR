@@ -4,10 +4,11 @@ distribution weighing in."""
 import pytest
 import torch
 
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
-from alignair.network.bank import BankCompiler, reverse_complement
+from alignair.core.orientations import reverse_complement
+from alignair.network.bank import BankCompiler
 from alignair.refine.drefine import refine_d_boundaries
 
 pytestmark = pytest.mark.component

@@ -73,7 +73,7 @@ def test_prediction_reports_an_end_at_the_read_length_when_the_logits_say_so():
 
 
 def test_a_logit_peak_on_slot_n_is_reported_as_the_end():
-    from alignair.predict.decode import decoded_boundaries
+    from tests.support.boundaries import decoded_boundaries
     n = len(READ)
     logits = torch.full((1, 64), -5.0)
     logits[0, n] = 5.0

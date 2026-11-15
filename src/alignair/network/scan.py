@@ -20,7 +20,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .bank import BASES
+from ..core.tokens import BASES, is_base
 
 OUT = -1e9          # a row or allele out of the bank: finite, so the softmax's gradients stay finite
 _M_MIN = 1e-4
@@ -35,7 +35,7 @@ class BankScan(nn.Module):
     def forward(self, weights, m, tokens, columns, probs, table, cover, row_mask) -> torch.Tensor:
         """(B, L), (B, L), (B, L), (B, L, k), (B, L, k), (R, W·4), (R, W), (B, R) bool -> row logits (B, R)."""
         width = cover.shape[1]
-        valid = (tokens >= 1) & (tokens <= len(BASES))
+        valid = is_base(tokens)
         base = (tokens - 1).clamp(0, len(BASES) - 1)
         m = m.clamp(_M_MIN, 1 - _M_MIN)
         match, mismatch = torch.log1p(-m), torch.log(m / 3)

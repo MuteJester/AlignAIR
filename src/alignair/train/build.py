@@ -8,6 +8,8 @@ import json
 import os
 from typing import Optional
 
+from ..io.files import sha256_file
+
 
 # chain types that carry a D gene (require --d-fasta); the rest must NOT be given one
 _HAS_D_CHAINS = {"BCR_HEAVY", "TCR_BETA", "TCR_DELTA"}
@@ -121,15 +123,6 @@ def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_s
     return {k: round(sum(vs) / len(vs), 4) for k, vs in agg.items() if vs}
 
 
-def _sha256(path: str) -> str:
-    import hashlib
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def _reference_manifest(ref, sources, report, model_path) -> dict:
     """A standalone reference fingerprint: allele order hash, per-gene anchor coverage, source FASTA
     hashes, tool versions, and the exported model artifact hash — enough to identify the exact reference
@@ -156,10 +149,10 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
         "versions": {"alignair": __version__, "genairr": genairr["genairr_version"],
                      "genairr_determinism_version": genairr["genairr_determinism_version"],
                      "genairr_source_sha256": genairr["genairr_source_sha256"]},
-        "model_artifact_sha256": _sha256(model_path),
+        "model_artifact_sha256": sha256_file(model_path),
     }
     if sources:
-        manifest["sources"] = {k: {"path": v, "sha256": _sha256(v)} for k, v in sources.items() if v}
+        manifest["sources"] = {k: {"path": v, "sha256": sha256_file(v)} for k, v in sources.items() if v}
     if report is not None:
         manifest["reference_build"] = {"warnings": list(report.warnings), "rejected": len(report.rejected)}
     return manifest

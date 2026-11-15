@@ -8,6 +8,7 @@ from typing import Protocol
 
 import torch
 
+from ..core.tokens import IGNORE_INDEX
 from ..errors import ConfigurationError, DataContractError, TrainingDataError, error_context
 
 
@@ -15,7 +16,7 @@ from ..errors import ConfigurationError, DataContractError, TrainingDataError, e
 class PositionLabels:
     """A variable-length, per-position target and its padding/ignore value."""
     values: object
-    padding: int | float = -100
+    padding: int | float = IGNORE_INDEX
 
 
 @dataclass(frozen=True)

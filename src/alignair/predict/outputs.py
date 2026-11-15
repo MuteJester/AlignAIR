@@ -19,9 +19,9 @@ import numpy as np
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
 from ..core.d_presence import D_PRESENCE_LOGITS
+from ..reference.genes import GENES
 from ..errors import InferenceError
 
-PARSED_GENES = ("v", "d", "j")      # the genes a parser may give boundary logits for
 _READ_KEYS = ("mutation_rate", "indel_count", "orientation", "orientation_logits", "start_mask", "end_mask",
               "read_locus")
 
@@ -55,7 +55,7 @@ class ModelOutputs:
     def from_network(cls, outputs: Mapping[str, np.ndarray], genes: Sequence[str]) -> "ModelOutputs":
         """The typed outputs of one batch of ``run_model`` for a model calling ``genes`` (see the module docstring)."""
         known = {*(f"{g}_{part}" for g in genes for part in ("allele", "start", "end", "log_posterior")),
-                 *(f"{g}_{side}_logits" for g in PARSED_GENES for side in ("start", "end")),
+                 *(f"{g}_{side}_logits" for g in GENES for side in ("start", "end")),
                  *_READ_KEYS, *ANCHOR_LOGITS.values(), D_PRESENCE_LOGITS}
         unknown = sorted(set(outputs) - known)
         if unknown:
@@ -65,7 +65,7 @@ class ModelOutputs:
                     "indel_count"):
             if key not in outputs:
                 raise InferenceError(f"model output {key} is missing", context={"field": key})
-        pairs = [(f"{g}_start_logits", f"{g}_end_logits") for g in PARSED_GENES]
+        pairs = [(f"{g}_start_logits", f"{g}_end_logits") for g in GENES]
         pairs.append(tuple(ANCHOR_LOGITS[g] for g in ANCHOR_GENES))
         for a, b in pairs:
             if (a in outputs) != (b in outputs):
@@ -80,7 +80,7 @@ class ModelOutputs:
         return cls(
             genes={g: GeneHeads(outputs[f"{g}_allele"], outputs[f"{g}_start"], outputs[f"{g}_end"],
                                 outputs.get(f"{g}_log_posterior")) for g in genes},
-            boundary_logits={g: (outputs[f"{g}_start_logits"], outputs[f"{g}_end_logits"]) for g in PARSED_GENES
+            boundary_logits={g: (outputs[f"{g}_start_logits"], outputs[f"{g}_end_logits"]) for g in GENES
                              if f"{g}_start_logits" in outputs},
             mutation_rate=outputs["mutation_rate"], indel_count=outputs["indel_count"],
             orientation=outputs.get("orientation"), orientation_logits=outputs.get("orientation_logits"),

@@ -3,7 +3,7 @@ import pytest
 import torch
 
 from alignair.data.batching import pad_vectors
-from alignair.data.tokenizer import TOKEN_DICT
+from alignair.core.tokens import TOKEN_DICT
 from alignair.network.orientation import (NUM_ORIENTATIONS, EmbeddingOrientationHead, apply_orientation, complement,
                                           reverse_valid)
 
