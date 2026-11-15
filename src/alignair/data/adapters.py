@@ -17,7 +17,7 @@ from ..reference.frames import gene_frames
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .chip_inputs import chip_batch_inputs, chip_record_targets
 from .novel_bank import batch_bank
-from .targets import UNSCORABLE, build_targets, read_anchors, read_d_presence
+from .targets import UNSCORABLE, TargetBundle, anchor_positions, build_targets, d_presence_class
 
 if TYPE_CHECKING:
     from ..core.config import AlignAIRConfig
@@ -98,11 +98,11 @@ def _anchor_targets(anchors, config) -> dict:
     return targets
 
 
-def _d_presence_targets(record, config) -> dict:
+def _d_presence_targets(bundle: TargetBundle, config) -> dict:
     """``d_presence``: the class of the D the model's window shows (the crop cuts the read to it); and
     ``d_presence_supervise``, False for an unscorable D (its alignment cannot be mapped), which the loss leaves out
     (its target is absent, never read)."""
-    klass = read_d_presence(record, read_window(config.max_seq_length))
+    klass = d_presence_class(bundle.alignment, read_window(config.max_seq_length))
     return {D_PRESENCE: torch.tensor(ABSENT if klass == UNSCORABLE else klass, dtype=torch.long),
             f"{D_PRESENCE}_supervise": torch.tensor(klass != UNSCORABLE)}
 
@@ -112,58 +112,62 @@ class NucleotideBatchAdapter:
     reference: object
     config: AlignAIRConfig
     device: str = "cpu"
-    augment_orientation: bool | None = None
+    augment_orientation: bool = True
     overflow: str = "prefix"
 
     def __call__(self, records) -> TrainingBatch:
-        samples = []
-        genes = self.config.genes
         records = list(records)
         bank = batch_bank(self.reference, records)       # None unless a read comes from a novel allele
         reference = self.reference if bank is None else bank.reference
         frames = gene_frames(reference)
+        samples = []
         for i, record in enumerate(records):
             with _record_context(i, record):
                 if bank is not None:
                     record = bank.resolve(record)
-                bundle = build_targets(record, reference, self.config.has_d)
-                if bank is not None:                     # a novel allele the read cannot tell from its family
-                    for gene, (start, end) in bundle["germline_spans"].items():
-                        calls = bundle["calls"].get(gene.upper())
-                        if calls:
-                            calls.update(*(bank.ties(gene, call, (start, end)) for call in list(calls)))
-                targets = {}
-                for gene in genes:
-                    present = gene in bundle["germline_spans"]
-                    supervise = present and not (gene == "d" and bundle["d_inverted"])
-                    start, end = bundle["query_spans"].get(gene, (0, 0))
-                    targets[f"{gene}_start"] = torch.tensor([float(start)], dtype=torch.float32)
-                    targets[f"{gene}_end"] = torch.tensor([float(end)], dtype=torch.float32)
-                    targets[f"{gene}_supervise"] = torch.tensor(supervise)
-                    targets[f"{gene}_allele"] = _alleles(
-                        reference, gene, bundle["calls"].get(gene.upper(), ()) if supervise else ())
-                for key in ("mutation_rate", "indel_count"):
-                    targets[key] = torch.tensor([bundle[key]], dtype=torch.float32)
-                targets["state_labels"] = PositionLabels(bundle["state_labels"])
-                targets.update(_anchor_targets(read_anchors(record, reference), self.config))   # forward frame
-                if self.config.has_d:
-                    targets.update(_d_presence_targets(record, self.config))
-                targets.update(chip_record_targets(record, reference, frames, bundle["region_labels"]))
-                sample = TrainingSample(bundle["tokens"], targets, record.get("sequence_id"))
-                samples.append(_limit(sample, self.config, genes, self.overflow))
+                sample = self._record_sample(record, reference, frames, bank)
+                samples.append(_limit(sample, self.config, self.config.genes, self.overflow))
         batch = collate_samples(samples, max_length=self.config.max_seq_length, reserve_terminal_slot=True)
         batch.inputs.update(chip_batch_inputs(batch.targets, reference,     # forward frame, like the targets
                                               paired=None if bank is None else bank.paired()))
         if bank is not None:
             batch.inputs.update({key: value.to(self.device) for key, value in bank.inputs(frames).items()})
-        augment = True if self.augment_orientation is None else self.augment_orientation
-        labels = (torch.randint(0, NUM_ORIENTATIONS, (len(samples),)) if augment
-                  else torch.zeros(len(samples), dtype=torch.long))
+        self._orient(batch, len(samples))
+        return batch.to(self.device)
+
+    def _record_sample(self, record, reference, frames, bank) -> TrainingSample:
+        """One record's sample: its tokens and every target the model trains on (forward frame)."""
+        bundle = build_targets(record, reference, self.config.has_d)
+        if bank is not None:                     # a novel allele the read cannot tell from its family
+            for gene, (start, end) in bundle.germline_spans.items():
+                calls = bundle.calls.get(gene.upper())
+                if calls:
+                    calls.update(*(bank.ties(gene, call, (start, end)) for call in list(calls)))
+        targets = {}
+        for gene in self.config.genes:
+            present = gene in bundle.germline_spans
+            supervise = present and not (gene == "d" and bundle.d_inverted)
+            start, end = bundle.query_spans.get(gene, (0, 0))
+            targets[f"{gene}_start"] = torch.tensor([float(start)], dtype=torch.float32)
+            targets[f"{gene}_end"] = torch.tensor([float(end)], dtype=torch.float32)
+            targets[f"{gene}_supervise"] = torch.tensor(supervise)
+            targets[f"{gene}_allele"] = _alleles(
+                reference, gene, bundle.calls.get(gene.upper(), ()) if supervise else ())
+        targets["mutation_rate"] = torch.tensor([bundle.mutation_rate], dtype=torch.float32)
+        targets["indel_count"] = torch.tensor([bundle.indel_count], dtype=torch.float32)
+        targets["state_labels"] = PositionLabels(bundle.state_labels)
+        targets.update(_anchor_targets(anchor_positions(bundle.alignment, reference), self.config))
+        if self.config.has_d:
+            targets.update(_d_presence_targets(bundle, self.config))
+        targets.update(chip_record_targets(bundle.alignment, reference, frames, bundle.region_labels))
+        return TrainingSample(bundle.tokens, targets, record.get("sequence_id"))
+
+    def _orient(self, batch: TrainingBatch, rows: int) -> None:
+        """Each read in a random orientation (``augment_orientation``; else forward), its label the orientation
+        target and input."""
+        labels = (torch.randint(0, NUM_ORIENTATIONS, (rows,)) if self.augment_orientation
+                  else torch.zeros(rows, dtype=torch.long))
         batch.inputs["tokenized_sequence"] = apply_orientation(
             batch.inputs["tokenized_sequence"], batch.token_mask, labels)
         batch.inputs["orientation"] = labels
         batch.targets["orientation"] = labels
-        return batch.to(self.device)
-
-
-

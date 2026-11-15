@@ -75,10 +75,9 @@ def _columns(gapped: str | None) -> list:
     return [i for i, column in enumerate(gapped or "") if column == "."]
 
 
-def batch_bank(reference: ReferenceSet, records) -> BatchBank | None:
-    """The bank of a batch whose reads carry novel alleles; None when none does. TrainingDataError for one name with
-    two sequences, a base the reference lacks, a gene other than V or J, or an allele whose annotated anchor or gap
-    columns are not its base's (GenAIRR simulates its reads on its base's)."""
+def _novel_alleles(records) -> dict[str, dict[str, NovelAllele]]:
+    """The batch's novel alleles, per gene by name (each record's ``NOVEL_FIELD``); TrainingDataError for a gene other
+    than V or J, or one name with two sequences."""
     found: dict[str, dict[str, NovelAllele]] = {}
     for record in records:
         if not isinstance(record, Mapping):          # the adapter refuses it, with its record's context
@@ -93,19 +92,35 @@ def batch_bank(reference: ReferenceSet, records) -> BatchBank | None:
                 raise TrainingDataError(f"the batch names the novel allele {allele.name} with two sequences",
                                         context={"alleles": [allele.name]})
             held[allele.name] = allele
+    return found
+
+
+def _known_or_novel(reference: ReferenceSet, gene: str, alleles: dict[str, NovelAllele]
+                    ) -> tuple[dict[str, str], tuple[NovelAllele, ...]]:
+    """``(aliases, rows)`` of a gene's novel alleles: each one whose sequence a reference allele has, by name to that
+    allele's (the first of that sequence), and the others, the bank's new rows. TrainingDataError for an allele whose
+    base the reference lacks."""
+    known = reference.gene(gene)
+    lost = [a.name for a in alleles.values() if a.base not in known.index]
+    if lost:
+        raise TrainingDataError("novel alleles of a base the training reference lacks", context={"alleles": lost})
+    by_sequence = {}
+    for name, sequence in zip(known.names, known.sequences):
+        by_sequence.setdefault(sequence, name)
+    aliases = {a.name: by_sequence[a.sequence] for a in alleles.values() if a.sequence in by_sequence}
+    return aliases, tuple(a for a in alleles.values() if a.name not in aliases)
+
+
+def batch_bank(reference: ReferenceSet, records) -> BatchBank | None:
+    """The bank of a batch whose reads carry novel alleles; None when none does. TrainingDataError for one name with
+    two sequences, a base the reference lacks, a gene other than V or J, or an allele whose annotated anchor or gap
+    columns are not its base's (GenAIRR simulates its reads on its base's)."""
+    found = _novel_alleles(records)
     if not found:
         return None
     novel, aliases, genotype = {}, {}, {}
     for gene, alleles in found.items():
-        known = reference.gene(gene)
-        lost = [a.name for a in alleles.values() if a.base not in known.index]
-        if lost:
-            raise TrainingDataError("novel alleles of a base the training reference lacks", context={"alleles": lost})
-        by_sequence = {}
-        for name, sequence in zip(known.names, known.sequences):
-            by_sequence.setdefault(sequence, name)
-        aliases[gene] = {a.name: by_sequence[a.sequence] for a in alleles.values() if a.sequence in by_sequence}
-        rows = tuple(a for a in alleles.values() if a.name not in aliases[gene])
+        aliases[gene], rows = _known_or_novel(reference, gene, alleles)
         if rows:
             novel[gene] = rows
             genotype[gene] = {a.name: a.sequence for a in rows}

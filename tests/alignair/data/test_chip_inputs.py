@@ -9,6 +9,7 @@ import GenAIRR.data as gd
 
 from alignair.core import AlignAIRConfig
 from alignair.data import NucleotideBatchAdapter
+from alignair.data.alignment import RecordAlignment
 from alignair.data.chip_inputs import chip_batch_inputs, chip_record_targets
 from alignair.core.regions import REGION_INDEX, REGIONS as REGION_NAMES
 from alignair.reference.frames import gene_frames
@@ -51,7 +52,8 @@ def _bits(*names):
 
 def _targets(record=None):
     reference = _reference()
-    return chip_record_targets(record or _record(), reference, gene_frames(reference), _region_labels())
+    return chip_record_targets(RecordAlignment.of(record or _record()), reference, gene_frames(reference),
+                               _region_labels())
 
 
 def test_coordinates_are_frame_columns_of_the_aligned_bases():
@@ -114,7 +116,7 @@ def test_a_gene_keeps_at_least_one_aligned_base():
 def _outer_targets(record, regions):
     reference = _reference()
     labels = np.array([REGION_INDEX[name] for name in regions], dtype=np.int64)
-    return chip_record_targets(record, reference, gene_frames(reference), labels)["region_allowed"].values
+    return chip_record_targets(RecordAlignment.of(record), reference, gene_frames(reference), labels)["region_allowed"].values
 
 
 def test_v_start_and_j_end_shrink_over_their_mismatching_edge_bases_into_the_flanks():

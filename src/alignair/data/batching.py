@@ -95,47 +95,56 @@ def collate_samples(samples: Sequence[TrainingSample], *, max_length=None, devic
     if not samples:
         raise TrainingDataError("cannot collate an empty training batch")
     width = positive_width(max_length) if max_length is not None else None
-    rows = []
     fields = set(samples[0].targets)
+    rows = []
     for i, sample in enumerate(samples):
         with error_context(record_index=i, record_id=sample.record_id):
-            tokens = torch.as_tensor(sample.tokens)
-            if tokens.ndim != 1 or tokens.dtype == torch.bool or tokens.is_floating_point() or tokens.is_complex():
-                raise TrainingDataError("tokens must be a one-dimensional integer vector", context={"field": "tokens"})
-            if (tokens < 0).any():
-                raise TrainingDataError("training tokens must be nonnegative", context={"field": "tokens"})
-            if set(sample.targets) != fields:
-                raise TrainingDataError("training samples have different target fields",
-                                        context={"missing": sorted(fields - set(sample.targets)),
-                                                 "extra": sorted(set(sample.targets) - fields)})
-            if width is not None and tokens.numel() > width - int(reserve_terminal_slot):
-                raise TrainingDataError("encoded read exceeds the available model slots",
-                                        context={"field": "tokens", "length": tokens.numel(),
-                                                 "max_length": width, "reserved_endpoint": reserve_terminal_slot})
-            rows.append(tokens)
+            rows.append(_checked_tokens(sample, fields, width, reserve_terminal_slot))
     if width is None and reserve_terminal_slot:
         width = max(row.numel() for row in rows) + 1
     tokens = pad_vectors(rows, width=width)
     targets = {}
     for key in samples[0].targets:
         with error_context(field=key):
-            values = [sample.targets[key] for sample in samples]
-            positional = isinstance(values[0], PositionLabels)
-            if any(isinstance(value, PositionLabels) != positional for value in values):
-                raise TrainingDataError("target mixes positional and dense values")
-            tensors = [torch.as_tensor(value.values if positional else value) for value in values]
-            if any(value.dtype != tensors[0].dtype for value in tensors):
-                raise TrainingDataError("target dtypes differ between samples")
-            if positional:
-                if any(value.padding != values[0].padding for value in values):
-                    raise TrainingDataError("positional targets use different padding values")
-                if any(value.ndim != 1 or value.numel() != row.numel() for value, row in zip(tensors, rows)):
-                    raise TrainingDataError("positional labels must align with their encoded tokens")
-                targets[key] = pad_vectors(tensors, width=tokens.shape[1], dtype=tensors[0].dtype,
-                                           padding=values[0].padding)
-            else:
-                try:
-                    targets[key] = torch.stack(tensors)
-                except RuntimeError as exc:
-                    raise TrainingDataError("target shapes differ between samples") from exc
+            targets[key] = _collate_target([sample.targets[key] for sample in samples], rows, tokens.shape[1])
     return TrainingBatch({"tokenized_sequence": tokens}, targets).to(device)
+
+
+def _checked_tokens(sample: TrainingSample, fields: set, width: int | None, reserve_terminal_slot: bool):
+    """A sample's tokens as a tensor; TrainingDataError for tokens that are not a nonnegative integer vector, target
+    fields other than the batch's, or a read longer than the slots the window leaves it."""
+    tokens = torch.as_tensor(sample.tokens)
+    if tokens.ndim != 1 or tokens.dtype == torch.bool or tokens.is_floating_point() or tokens.is_complex():
+        raise TrainingDataError("tokens must be a one-dimensional integer vector", context={"field": "tokens"})
+    if (tokens < 0).any():
+        raise TrainingDataError("training tokens must be nonnegative", context={"field": "tokens"})
+    if set(sample.targets) != fields:
+        raise TrainingDataError("training samples have different target fields",
+                                context={"missing": sorted(fields - set(sample.targets)),
+                                         "extra": sorted(set(sample.targets) - fields)})
+    if width is not None and tokens.numel() > width - int(reserve_terminal_slot):
+        raise TrainingDataError("encoded read exceeds the available model slots",
+                                context={"field": "tokens", "length": tokens.numel(),
+                                         "max_length": width, "reserved_endpoint": reserve_terminal_slot})
+    return tokens
+
+
+def _collate_target(values: list, rows: list, width: int):
+    """One target over the batch: positional labels padded to ``width`` (each aligned with its read's tokens,
+    ``rows``), dense values stacked; TrainingDataError for values that do not collate."""
+    positional = isinstance(values[0], PositionLabels)
+    if any(isinstance(value, PositionLabels) != positional for value in values):
+        raise TrainingDataError("target mixes positional and dense values")
+    tensors = [torch.as_tensor(value.values if positional else value) for value in values]
+    if any(value.dtype != tensors[0].dtype for value in tensors):
+        raise TrainingDataError("target dtypes differ between samples")
+    if not positional:
+        try:
+            return torch.stack(tensors)
+        except RuntimeError as exc:
+            raise TrainingDataError("target shapes differ between samples") from exc
+    if any(value.padding != values[0].padding for value in values):
+        raise TrainingDataError("positional targets use different padding values")
+    if any(value.ndim != 1 or value.numel() != row.numel() for value, row in zip(tensors, rows)):
+        raise TrainingDataError("positional labels must align with their encoded tokens")
+    return pad_vectors(tensors, width=width, dtype=tensors[0].dtype, padding=values[0].padding)

@@ -1,11 +1,12 @@
 """Validated segment-local CIGAR paths shared by training target and residue projection code."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 import re
 
 from ..errors import TrainingDataError
-from .coordinates import parse_coordinate
+from .coordinates import parse_coordinate, segment_spans
 
 _CIGAR = re.compile(r"([1-9][0-9]*)([MIDNSHP=X])")
 
@@ -66,3 +67,37 @@ def query_reference_map(cigar, query_span, reference_span) -> QueryReferenceMap:
         elif op in "DN":
             reference += count
     return QueryReferenceMap(qs, tuple(positions))
+
+
+@dataclass(frozen=True)
+class RecordAlignment:
+    """A training record's alignment, read once: its read (uppercase) and each gene's read and germline spans
+    (``segment_spans``, the genes the read shows); each gene's read-to-germline map (``query_reference_map`` of its
+    CIGAR) is computed on first use and kept."""
+    record: Mapping
+    sequence: str
+    query_spans: dict[str, tuple[int, int]]
+    germline_spans: dict[str, tuple[int, int]]
+    _paths: dict[str, QueryReferenceMap] = field(default_factory=dict, init=False, repr=False, compare=False)
+
+    @classmethod
+    def of(cls, record: Mapping) -> "RecordAlignment":
+        sequence = str(record["sequence"]).upper()
+        query, germline = segment_spans(record)
+        return cls(record, sequence, query, germline)
+
+    @property
+    def d_inverted(self) -> bool:
+        """Whether the read's D is inverted (it reads as the reverse-complemented germline)."""
+        return bool(self.record.get("d_inverted", False))
+
+    def primary(self, gene: str) -> str:
+        """The allele ``gene``'s germline coordinates belong to (GenAIRR lists it first in the call)."""
+        return str(self.record[f"{gene}_call"]).split(",")[0]
+
+    def path(self, gene: str) -> QueryReferenceMap:
+        """``gene``'s read-to-germline map (a gene the read shows)."""
+        if gene not in self._paths:
+            self._paths[gene] = query_reference_map(self.record.get(f"{gene}_cigar"), self.query_spans[gene],
+                                                    self.germline_spans[gene])
+        return self._paths[gene]

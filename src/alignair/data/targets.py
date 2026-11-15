@@ -1,5 +1,9 @@
-"""Derive the per-sample ground-truth bundle from a GenAIRR stream_records dict
+"""Derive the per-sample ground-truth bundle (``TargetBundle``) from a GenAIRR stream_records dict
 plus the ReferenceSet germline sequences (forward-orientation frame)."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
 import numpy as np
 
 from ..errors import AlignAIRError, TrainingDataError, error_context
@@ -10,8 +14,7 @@ from ..core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
 from ..core.regions import REGION_INDEX
 from ..core.tokens import encode
 from ..core.edit_states import EDIT_INDEX
-from .coordinates import segment_spans
-from .alignment import parse_cigar, query_reference_map
+from .alignment import RecordAlignment, parse_cigar
 
 # What ``read_d_presence`` and ``read_anchors`` give for a segment the record places in the read whose alignment cannot
 # be mapped (no CIGAR, or one that disagrees with the segment's read and germline spans): the assay's truth calls such a
@@ -20,17 +23,22 @@ UNSCORABLE = -1
 
 
 def read_d_presence(record: dict, width: int | None = None) -> int:
+    """The read's D class (``d_presence_class``) from the record alone."""
+    with error_context(stage="build_targets", record_id=record.get("sequence_id")):
+        return d_presence_class(RecordAlignment.of(record), width)
+
+
+def d_presence_class(alignment: RecordAlignment, width: int | None = None) -> int:
     """The read's D class (``core.d_presence``): ``ABSENT`` when no D base inside the first ``width`` read bases (the
     window the model sees; the whole read for None) is aligned to the D germline, else ``SHORT`` or ``CALLABLE`` by
     its observed germline length: from the first to the last aligned germline base, so an internal deletion counts
     and an edge gap or an insertion does not, as the AlignAIR assay's truth measures a segment's observed length. An
     inverted D is a D like any other (its alignment spans the reverse-complemented germline). ``UNSCORABLE`` when the
     record places a D in the read but its alignment cannot be mapped. Only a model with a D presence head needs it."""
-    with error_context(stage="build_targets", record_id=record.get("sequence_id")):
-        coords, germ = segment_spans(record)
-        if "d" not in coords:
+    with error_context(stage="build_targets", record_id=alignment.record.get("sequence_id")):
+        if "d" not in alignment.query_spans:
             return ABSENT
-        path = query_reference_map(record.get("d_cigar"), coords["d"], germ["d"])
+        path = alignment.path("d")
         if path.reason is not None:
             return UNSCORABLE
         aligned = [germline for offset, germline in enumerate(path.positions)
@@ -41,16 +49,20 @@ def read_d_presence(record: dict, width: int | None = None) -> int:
 
 
 def read_anchors(record: dict, reference_set) -> dict[str, int | None]:
+    """Each anchor's read position (``anchor_positions``) from the record alone."""
+    with error_context(stage="build_targets", record_id=record.get("sequence_id")):
+        return anchor_positions(RecordAlignment.of(record), reference_set)
+
+
+def anchor_positions(alignment: RecordAlignment, reference_set) -> dict[str, int | None]:
     """``{"v": ..., "j": ...}``: the read position of each anchor codon's first base, None when the read does not show
     it, ``UNSCORABLE`` when the segment's alignment cannot be mapped (``_anchor``). Only a model with anchor heads needs
     them, so ``build_targets`` does not compute them."""
-    with error_context(stage="build_targets", record_id=record.get("sequence_id")):
-        coords, germ = segment_spans(record)
-        length = len(str(record["sequence"]))
-        return {gene: _anchor(record, gene, reference_set, coords, germ, length) for gene in ANCHOR_GENES}
+    with error_context(stage="build_targets", record_id=alignment.record.get("sequence_id")):
+        return {gene: _anchor(alignment, gene, reference_set) for gene in ANCHOR_GENES}
 
 
-def _anchor(record, gene: str, reference_set, coords, germ, length: int) -> int | None:
+def _anchor(alignment: RecordAlignment, gene: str, reference_set) -> int | None:
     """The read position of the first base of ``gene``'s conserved anchor codon (V Cys, J Trp/Phe), or None when the
     read does not show it.
 
@@ -62,20 +74,19 @@ def _anchor(record, gene: str, reference_set, coords, germ, length: int) -> int 
     the junction (``[V anchor, J codon's last base + 1)``), so a codon a recombination trim cut keeps its anchor where
     GenAIRR places the junction. Each anchor is found whether or not the other is. ``UNSCORABLE`` when the segment is
     in the read but its alignment cannot be mapped."""
-    if gene not in coords:
+    if gene not in alignment.query_spans:
         return None
-    allele = str(record[f"{gene}_call"]).split(",")[0]          # the allele the germline coordinates belong to
-    anchor = (reference_set.gene(gene.upper()).anchors or {}).get(allele)
+    anchor = (reference_set.gene(gene.upper()).anchors or {}).get(alignment.primary(gene))
     if anchor is None:
         return None
-    path = query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene])
+    path = alignment.path(gene)
     if path.reason is not None:
         return UNSCORABLE
     defining = anchor if gene == "v" else anchor + CODON - 1
     for offset, germline in enumerate(path.positions):
         if germline == defining:
             position = path.query_start + offset - (0 if gene == "v" else CODON - 1)
-            return position if 0 <= position and position + CODON <= length else None
+            return position if 0 <= position and position + CODON <= len(alignment.sequence) else None
     return None
 
 
@@ -146,7 +157,33 @@ def observed_mutation_rate(record: dict, germline: dict) -> float:
     return float(record["n_observable_mutations"]) / observed if observed > 0 else 0.0
 
 
-def build_targets(record: dict, reference_set, has_d: bool) -> dict:
+@dataclass(frozen=True)
+class TargetBundle:
+    """One training record's targets (``build_targets``) and the alignment they come from (``RecordAlignment``)."""
+    alignment: RecordAlignment
+    tokens: np.ndarray                     # the read's tokens
+    region_labels: np.ndarray              # per read base, its region (``REGION_INDEX``)
+    state_labels: np.ndarray               # per read base, its edit state (``EDIT_INDEX``)
+    calls: dict[str, set[str]]             # gene (upper case) -> its allele-set target (``allele_set``)
+    mutation_rate: float                   # ``observed_mutation_rate``
+    indel_count: float
+
+    @property
+    def query_spans(self) -> dict[str, tuple[int, int]]:
+        """Each gene the read shows -> its (start, end) in the read."""
+        return self.alignment.query_spans
+
+    @property
+    def germline_spans(self) -> dict[str, tuple[int, int]]:
+        """Each gene the read shows -> its (start, end) in its germline."""
+        return self.alignment.germline_spans
+
+    @property
+    def d_inverted(self) -> bool:
+        return self.alignment.d_inverted
+
+
+def build_targets(record: dict, reference_set, has_d: bool) -> TargetBundle:
     with error_context(stage="build_targets", record_id=record.get("sequence_id")):
         try:
             return _build_targets(record, reference_set, has_d)
@@ -158,18 +195,25 @@ def build_targets(record: dict, reference_set, has_d: bool) -> dict:
                                     hint="Check simulator annotations and training-record coordinate fields.") from exc
 
 
-def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
-    seq = str(record["sequence"]).upper()
-    L = len(seq)
-    coords, germ = segment_spans(record)
+def _build_targets(record: dict, reference_set, has_d: bool) -> TargetBundle:
+    alignment = RecordAlignment.of(record)
+    region = _region_labels(len(alignment.sequence), alignment.query_spans, has_d)
+    state = _edit_states(alignment, reference_set)
+    calls = {g.upper(): allele_set(record, g, reference_set) for g in GENES if record.get(f"{g}_call")}
+    return TargetBundle(alignment=alignment, tokens=encode(alignment.sequence), region_labels=region,
+                        state_labels=state, calls=calls,
+                        mutation_rate=observed_mutation_rate(record, alignment.germline_spans),
+                        indel_count=float(record["n_indels"]))
 
-    # ---- region labels (presence-aware: one-sided/adaptive crops can drop V and/or D) ----
-    region = np.full(L, REGION_INDEX["pre"], dtype=np.int64)
+
+def _region_labels(length: int, coords: dict[str, tuple[int, int]], has_d: bool) -> np.ndarray:
+    """Each read base's region (presence-aware: one-sided or adaptive crops can drop V and/or D)."""
+    region = np.full(length, REGION_INDEX["pre"], dtype=np.int64)
     has_v = "v" in coords
     if has_v:
         vs, ve = coords["v"]
         region[vs:ve] = REGION_INDEX["V"]
-    js, je = coords.get("j", (L, L))
+    js, je = coords.get("j", (length, length))
     left = ve if has_v else 0                       # start of the inter-segment (np/D) region
     if has_d and "d" in coords:
         ds, de = coords["d"]
@@ -179,32 +223,23 @@ def _build_targets(record: dict, reference_set, has_d: bool) -> dict:
     else:
         region[left:js] = REGION_INDEX["N1"]
     region[js:je] = REGION_INDEX["J"]
-    region[je:L] = REGION_INDEX["post"]
+    region[je:length] = REGION_INDEX["post"]
+    return region
 
-    # ---- per-position edit state from each segment's CIGAR (exact, indel-aware) ----
-    state = np.zeros(L, dtype=np.int64)  # germline = 0
+
+def _edit_states(alignment: RecordAlignment, reference_set) -> np.ndarray:
+    """Each read base's edit state from its segment's CIGAR (exact, indel-aware; germline where no segment's primary
+    allele is in the reference)."""
+    seq, coords, germ = alignment.sequence, alignment.query_spans, alignment.germline_spans
+    state = np.zeros(len(seq), dtype=np.int64)  # germline = 0
     for g in GENES:
         if g not in coords:
             continue
-        call = str(record[f"{g}_call"]).split(",")[0]
+        allele = alignment.primary(g)
         ref = reference_set.gene(g.upper())
-        idx = ref.index.get(call)
+        idx = ref.index.get(allele)
         if idx is None:
             continue
-        ss, _ = coords[g]
-        gs, _ = germ[g]
-        cigar = record.get(f"{g}_cigar")
-        _label_segment_states(state, seq, ss, ref.sequences[idx], gs, cigar)
-
-    calls = {g.upper(): allele_set(record, g, reference_set) for g in GENES if record.get(f"{g}_call")}
-    return {
-        "tokens": encode(seq),
-        "region_labels": region,
-        "state_labels": state,
-        "germline_spans": germ,
-        "query_spans": coords,
-        "calls": calls,
-        "d_inverted": bool(record.get("d_inverted", False)),   # an inverted D is RC(germline) in the read
-        "mutation_rate": observed_mutation_rate(record, germ),
-        "indel_count": float(record["n_indels"]),
-    }
+        _label_segment_states(state, seq, coords[g][0], ref.sequences[idx], germ[g][0],
+                              alignment.record.get(f"{g}_cigar"))
+    return state

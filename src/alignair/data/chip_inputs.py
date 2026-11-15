@@ -1,7 +1,7 @@
 """The chip's training inputs: per-base targets from a GenAIRR record, and per-batch
 bank masks and teacher inputs.
 
-Per record (``chip_record_targets``):
+Per record (``chip_record_targets``, over its ``data.alignment.RecordAlignment``):
 
 - ``coord_{gene}``: each base's column in its gene's frame (``reference.frames``), for the bases the gene's CIGAR maps
   to its primary allele; ``IGNORE_INDEX`` for every other base (insertions, other regions, an alignment that cannot
@@ -32,9 +32,8 @@ import torch
 from ..reference.genes import GENES
 from ..core.regions import REGIONS
 from ..core.tokens import IGNORE_INDEX
-from .alignment import query_reference_map
+from .alignment import RecordAlignment
 from .batching import PositionLabels
-from .coordinates import segment_spans
 
 _BIT = {gene: 1 << REGIONS.index(gene.upper()) for gene in GENES}
 # The region a gene's edge base may be read as once its boundary moves inward: the N region or flank after its end,
@@ -45,48 +44,42 @@ _NP_BEFORE = {"v": 1 << REGIONS.index("pre"), "d": 1 << REGIONS.index("N1"),
               "j": 1 << REGIONS.index("N2")}
 
 
-def _primary(record, gene: str) -> str:
-    """The allele the record's germline coordinates belong to (GenAIRR lists it first)."""
-    return str(record[f"{gene}_call"]).split(",")[0]
-
-
 def _germline(reference, gene: str, allele: str) -> str | None:
     alleles = reference.gene(gene.upper())
     index = alleles.index.get(allele)
     return None if index is None else alleles.sequences[index]
 
 
-def chip_record_targets(record, reference, frames, region_labels) -> dict:
+def chip_record_targets(alignment: RecordAlignment, reference, frames, region_labels) -> dict:
     """The chip's per-base targets of one record; ``region_labels`` are ``data.targets``' (``REGIONS`` indices)."""
-    sequence = str(record["sequence"]).upper()
-    coords, germ = segment_spans(record)
-    inverted_d = bool(record.get("d_inverted", False))
+    sequence, coords = alignment.sequence, alignment.query_spans
     region = np.asarray(region_labels, dtype=np.int64)
     targets = {}
     for gene in frames:
         column = np.full(len(sequence), IGNORE_INDEX, dtype=np.int64)
-        if gene in coords and not (gene == "d" and inverted_d):
-            columns = frames[gene].columns.get(_primary(record, gene))
-            path = query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene])
+        if gene in coords and not (gene == "d" and alignment.d_inverted):
+            columns = frames[gene].columns.get(alignment.primary(gene))
+            path = alignment.path(gene)
             if columns is not None and path.reason is None:
                 for offset, base in enumerate(path.positions):
                     if base is not None and base < len(columns) and columns[base] >= 0:
                         column[path.query_start + offset] = columns[base]
         targets[f"coord_{gene}"] = PositionLabels(column, IGNORE_INDEX)
     allowed = np.left_shift(1, region).astype(np.int64)
-    _movable_boundaries(allowed, sequence, record, reference, coords, germ, inverted_d)
+    _movable_boundaries(allowed, alignment, reference)
     targets["region"] = PositionLabels(region, IGNORE_INDEX)
     targets["region_allowed"] = PositionLabels(allowed, 0)
     return targets
 
 
-def _movable_boundaries(allowed, sequence, record, reference, coords, germ, inverted_d) -> None:
+def _movable_boundaries(allowed, alignment: RecordAlignment, reference) -> None:
     """Add each gene's bit on the bases its boundary may move over (see the module docstring)."""
+    sequence, coords, germ = alignment.sequence, alignment.query_spans, alignment.germline_spans
     order = [gene for gene in GENES if gene in coords]
     for i, gene in enumerate(order):
-        if gene == "d" and inverted_d:
+        if gene == "d" and alignment.d_inverted:
             continue
-        germline = _germline(reference, gene, _primary(record, gene))
+        germline = _germline(reference, gene, alignment.primary(gene))
         if germline is None:
             continue
         (start, end), (g_start, g_end) = coords[gene], germ[gene]
@@ -100,8 +93,7 @@ def _movable_boundaries(allowed, sequence, record, reference, coords, germ, inve
         while start - t >= preceding and g_start - t >= 0 and sequence[start - t] == germline[g_start - t]:
             allowed[start - t] |= _BIT[gene]
             t += 1
-        _shrinkable_edges(allowed, sequence, germline, gene,
-                          query_reference_map(record.get(f"{gene}_cigar"), coords[gene], germ[gene]))
+        _shrinkable_edges(allowed, sequence, germline, gene, alignment.path(gene))
 
 
 def _mismatch_run(pairs, sequence, germline) -> int:

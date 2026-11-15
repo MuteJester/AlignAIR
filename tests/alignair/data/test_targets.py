@@ -36,10 +36,10 @@ def test_removed_gene_has_no_alignment_supervision(gene):
                    f"{gene}_germline_start": None, f"{gene}_germline_end": None,
                    f"{gene}_cigar": ""})
     bundle = build_targets(record, _reference(), has_d=True)
-    assert gene not in bundle["germline_spans"]
-    assert gene not in bundle["query_spans"]
-    assert np.isfinite(bundle["state_labels"]).all()
-    assert len(bundle["tokens"]) == len(record["sequence"])
+    assert gene not in bundle.germline_spans
+    assert gene not in bundle.query_spans
+    assert np.isfinite(bundle.state_labels).all()
+    assert len(bundle.tokens) == len(record["sequence"])
 
 
 @pytest.mark.parametrize("gene", ["v", "d", "j"])
@@ -117,7 +117,7 @@ def test_a_record_without_recalled_alleles_targets_its_call():
 
 def test_the_recalled_alleles_join_the_records_targets():
     record = {**_record(), "recalled_v_call": "V*02", "recalled_j_call": "J*01"}
-    calls = build_targets(record, _two_alleles(), True)["calls"]
+    calls = build_targets(record, _two_alleles(), True).calls
     assert calls == {"V": {"V*01", "V*02"}, "D": {"D*01"}, "J": {"J*01"}}
 
 
@@ -137,4 +137,4 @@ def test_a_record_with_no_observed_germline_has_a_rate_of_zero():
 
 def test_the_records_targets_carry_its_observed_mutation_rate():
     record = {**_record(), "n_observable_mutations": 3, "mutation_rate": 0.5}    # 3 of its 12 germline bases
-    assert build_targets(record, _reference(), True)["mutation_rate"] == pytest.approx(0.25)
+    assert build_targets(record, _reference(), True).mutation_rate == pytest.approx(0.25)
