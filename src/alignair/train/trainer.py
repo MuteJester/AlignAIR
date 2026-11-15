@@ -17,8 +17,8 @@ from .records.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, effecti
                           selection_supported, training_records)
 from .setup import build_training_engine
 from .loop import training_iterations
-from .checkpoints import (save_checkpoint, save_rotating, latest_checkpoint, load_training_checkpoint,
-                          validate_continuation, _stem, _ext)
+from .checkpoints import (best_checkpoint_path, save_checkpoint, save_rotating, latest_checkpoint,
+                          load_training_checkpoint, validate_continuation)
 from .random_state import restore_rng_state as _restore_rng
 from .schedules import CosineSchedule
 
@@ -89,31 +89,11 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
     ``source_checkpoint_sha256``) and the ``genairr_source_sha256`` of the GenAIRR it imports
     (``genairr_source_sha256``; None when a file of the package cannot be read).
     """
-    from .guards import validate_data_workers, validate_training_request
-    model_config = getattr(model, 'cfg', cfg)
-    if model_config != cfg:
-        raise ConfigurationError('training configuration differs from the constructed model',
-                                 context={'field': 'config'},
-                                 hint='Construct a new model with the intended configuration before training.')
-    validate_data_workers(data_workers)
-    if record_source is not None and not callable(record_source):
-        raise ConfigurationError('record_source must be callable or None', context={'field': 'record_source'})
-    tasks = build_tasks(model_config) if tasks is None else tasks
-    dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
-    # preflight: fail fast on a bad request rather than after a long run
-    validate_training_request(steps=steps, batch_size=batch_size, lr=lr,
-                              max_seq_length=cfg.max_seq_length, reference=reference_set,
-                              progresses=progresses, heavy_shm=heavy_shm, short_boost=short_boost,
-                              grad_clip=grad_clip)
-    if on_iteration is not None and not callable(on_iteration):
-        raise ConfigurationError('on_iteration must be callable or None')
-    if init_from and resume_path:
-        raise ConfigurationError('choose resume_path or init_from')
-    if schedule is not None:
-        if not isinstance(schedule, CosineSchedule):
-            raise ConfigurationError('schedule must be a CosineSchedule or None')
-        schedule.validate(lr)
-
+    tasks, dataconfigs = _preflight(model, cfg, reference_set, dataconfigs, tasks=tasks, steps=steps,
+                                    batch_size=batch_size, lr=lr, progresses=progresses, heavy_shm=heavy_shm,
+                                    short_boost=short_boost, grad_clip=grad_clip, data_workers=data_workers,
+                                    record_source=record_source, on_iteration=on_iteration, init_from=init_from,
+                                    resume_path=resume_path, schedule=schedule)
     setup = model_setup or ModelSetup(reference_set, cfg)
     if setup.reference is not reference_set or setup.config != cfg:
         raise ConfigurationError('training setup must bind this model configuration and reference')
@@ -126,25 +106,100 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                                               novel_alleles=novel_alleles, inverted_d=inverted_d)
     if novel_alleles is not None:        # before any record is drawn: an eligible V, one species, GenAIRR's consent
         _check_novel_alleles(dataconfigs, reference_set, novel_alleles)
-    # A reference GenAIRR cannot draw productive records from (an incompletely annotated custom reference) trains
-    # unselected: the whole run then draws no selected records, says so, and records it in train_args.
+    source_policy, unselectable = _record_policy(requested_policy, dataconfigs)
+    engine = build_training_engine(model, tasks=tasks, device=device, lr=lr, grad_clip=grad_clip,
+                                   scheduler_factory=schedule.build if schedule is not None else None)
+    # the order that matters: the RNG restore (a resume), then the validation batches, then the training stream
+    start, resume_from = _restore_or_warm_start(model, engine, reference_set, cfg, resume_path=resume_path,
+                                                init_from=init_from, steps=steps, lr=lr, schedule=schedule,
+                                                schedule_metadata=schedule_metadata, short_boost=short_boost,
+                                                device=device)
+    train_args = _train_args(
+        dataconfigs, requested_policy, source_policy, unselectable, lr=lr, batch_size=batch_size,
+        progresses=progresses, heavy_shm=heavy_shm, short_boost=short_boost, seed=seed, steps=steps,
+        mutation_cap=mutation_cap, flanks=flanks, schedule_metadata=schedule_metadata, data_workers=data_workers,
+        init_seed=init_seed, grad_clip=grad_clip, started_from="resume" if resume_from else
+        "init_from" if init_from else None, novel_alleles=novel_alleles, source_checkpoint=resume_from or init_from)
+    val_set = _validation_batches(dataconfigs, source_policy, data, seed=seed, record_source=record_source,
+                                  batch_size=batch_size, val_every=val_every, val_batches=val_batches)
+    stream, batch_adapter, workers = _training_source(dataconfigs, source_policy, setup, data, seed=seed, start=start,
+                                                      batch_size=batch_size, data_workers=data_workers,
+                                                      device=device, record_source=record_source)
+    best_score, best_path = float("-inf"), None
+    completed = start                              # last successful update, including early exhaustion
+    try:
+        for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
+                                             stop_step=steps, batch_size=batch_size):
+            step = completed = iteration.step
+            if on_iteration is not None:
+                on_iteration(iteration)
+            if log_every and step % log_every == 0:
+                _log_iteration(iteration, steps)
+            if val_set and step % val_every == 0:  # validation + best-checkpoint selection
+                vscore = _validate(engine, val_set, step, steps)
+                if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
+                    best_score, best_path = vscore, best_checkpoint_path(save_path)
+                    save_checkpoint(best_path, model, reference_set, step, engine.optimizer, dataconfigs=dataconfigs,
+                                    train_args={**train_args, "val_score": vscore}, scheduler=engine.scheduler)
+            if save_path and save_every and step % save_every == 0:
+                save_rotating(save_path, model, reference_set, step, engine.optimizer, dataconfigs=dataconfigs,
+                              train_args=train_args, scheduler=engine.scheduler)
+    finally:
+        if workers is not None:                    # finished, failed or interrupted: no worker outlives the run
+            workers.close()
+    if save_path:                                  # save the ACTUAL completed step, not the requested one
+        save_rotating(save_path, model, reference_set, completed, engine.optimizer, dataconfigs=dataconfigs,
+                      train_args=train_args, scheduler=engine.scheduler)
+    return TrainingOutcome(model, completed, best_path)
+
+
+def _preflight(model, cfg, reference_set, dataconfigs, *, tasks, steps, batch_size, lr, progresses, heavy_shm,
+               short_boost, grad_clip, data_workers, record_source, on_iteration, init_from, resume_path, schedule):
+    """``(tasks, dataconfigs)``: the run's tasks (the model's own unless given) and its dataconfigs as a list, after
+    refusing a bad request up front rather than after a long run (ConfigurationError, TrainingConfigError)."""
+    from .guards import validate_data_workers, validate_training_request
+    model_config = getattr(model, 'cfg', cfg)
+    if model_config != cfg:
+        raise ConfigurationError('training configuration differs from the constructed model',
+                                 context={'field': 'config'},
+                                 hint='Construct a new model with the intended configuration before training.')
+    validate_data_workers(data_workers)
+    if record_source is not None and not callable(record_source):
+        raise ConfigurationError('record_source must be callable or None', context={'field': 'record_source'})
+    tasks = build_tasks(model_config) if tasks is None else tasks
+    dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
+    validate_training_request(steps=steps, batch_size=batch_size, lr=lr,
+                              max_seq_length=cfg.max_seq_length, reference=reference_set,
+                              progresses=progresses, heavy_shm=heavy_shm, short_boost=short_boost,
+                              grad_clip=grad_clip)
+    if on_iteration is not None and not callable(on_iteration):
+        raise ConfigurationError('on_iteration must be callable or None')
+    if init_from and resume_path:
+        raise ConfigurationError('choose resume_path or init_from')
+    if schedule is not None:
+        if not isinstance(schedule, CosineSchedule):
+            raise ConfigurationError('schedule must be a CosineSchedule or None')
+        schedule.validate(lr)
+    return tasks, dataconfigs
+
+
+def _record_policy(requested, dataconfigs) -> tuple[CurriculumStreamPolicy, list[str]]:
+    """``(policy, unselectable)``: the policy the run draws its records with, and the dataconfigs GenAIRR cannot draw
+    productive records from (an incompletely annotated custom reference). With any, the whole run draws no selected
+    records, says so, and records them in train_args."""
     unselectable = ([dataconfig_name(dataconfig) for dataconfig in dataconfigs if not selection_supported(dataconfig)]
-                    if requested_policy.selected_fraction else [])
-    source_policy = replace(requested_policy, selected_fraction=0) if unselectable else requested_policy
+                    if requested.selected_fraction else [])
     if unselectable:
         print(f"selection unavailable for {', '.join(unselectable)}: GenAIRR cannot draw productive records from "
               "it, so the run draws no selected records", flush=True)
+    return (replace(requested, selected_fraction=0) if unselectable else requested), unselectable
 
-    def _build_stream(purpose, *, start_step=0):
-        # every stream draws its own seed blocks: training (a resume from (seed, step)) and validation
-        return training_records(dataconfigs, policy=source_policy, seed=seed, purpose=purpose,
-                                start_step=start_step, record_source=record_source)
 
-    engine = build_training_engine(model, tasks=tasks, device=device, lr=lr, grad_clip=grad_clip,
-                                   scheduler_factory=schedule.build if schedule is not None else None)
-    opt = engine.optimizer
-
-    start = 0
+def _restore_or_warm_start(model, engine, reference_set, cfg, *, resume_path, init_from, steps, lr, schedule,
+                           schedule_metadata, short_boost, device) -> tuple[int, str | None]:
+    """``(start, resume_from)``: a resume restores the latest checkpoint at ``resume_path`` (weights, optimizer,
+    scheduler and the process RNG) and starts at its step; a warm start (``init_from``) copies the shape-compatible
+    weights and starts at 0."""
     resume_from = latest_checkpoint(resume_path) if resume_path else None
     if resume_path and resume_from is None:
         raise ConfigurationError('resume checkpoint does not exist', context={'path': str(resume_path)})
@@ -153,112 +208,107 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
         validate_continuation(state, cfg, reference_set, schedule=schedule_metadata, lr=lr)
         restore_model_state(model, state.model_state, source=resume_from)
         if state.optimizer_state is not None:
-            opt.load_state_dict(state.optimizer_state)
+            engine.optimizer.load_state_dict(state.optimizer_state)
             if schedule is None:
-                for group in opt.param_groups:     # scheduled runs retain their decayed rate
+                for group in engine.optimizer.param_groups:     # scheduled runs retain their decayed rate
                     group["lr"] = lr
         if engine.scheduler is not None:
             engine.scheduler.load_state_dict(state.scheduler_state)
         with error_context(path=str(resume_from)):
             _restore_rng(state.rng)
-        start = state.step
-        if steps <= start:  # nothing to do -> refuse rather than mis-save
-            raise ValueError(f"resume target steps={steps} is not beyond the checkpoint step {start}; "
-                             f"pass steps > {start} to continue training.")
-        print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
-    elif init_from:                                # warm-start: copy the shape-compatible backbone
+        if steps <= state.step:  # nothing to do -> refuse rather than mis-save
+            raise ConfigurationError(f"resume target steps={steps} is not beyond the checkpoint step {state.step}; "
+                                     f"pass steps > {state.step} to continue training.", context={"field": "steps"})
+        print(f"RESUMED from {resume_from} at step {state.step} (lr={lr}, short_boost={short_boost})", flush=True)
+        return state.step, resume_from
+    if init_from:                                  # warm-start: copy the shape-compatible backbone
         from .transfer import load_source_state_dict, summarize, transfer_compatible_weights
         src_sd = load_source_state_dict(init_from, device=device)
         transferred, skipped = transfer_compatible_weights(model, src_sd)
         print(f"WARM-START from {init_from}\n{summarize(transferred, skipped)}", flush=True)
+    return 0, None
 
-    _train_args = {"lr": lr, "batch_size": batch_size, "progresses": list(progresses),
-                   "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps,
-                   # `mutation_cap` is the run-level REQUEST; `effective_mutation_caps` is what each
-                   # locus actually got (TCR -> 0). Without the latter the card misstates the training
-                   # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
-                   "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
-                   "recipe": RECIPE,
-                   "indel_form": source_policy.indel_form, "indel_fraction": list(source_policy.indel_fraction),
-                   "selected_fraction": requested_policy.selected_fraction,
-                   "selected_shares": list(source_policy.selected_shares(force_mixture=len(dataconfigs) > 1)),
-                   "selection_unavailable": unselectable,
-                   "flanks": flanks.to_dict() if flanks is not None else None,
-                   "schedule": schedule_metadata,
-                   "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
-                   # provenance only: worker processes reproduce the serial batches exactly
-                   "data_workers": data_workers,
-                   "init_seed": init_seed, "grad_clip": grad_clip,
-                   "started_from": "resume" if resume_from else "init_from" if init_from else None,
-                   "genairr_source_sha256": recorded_genairr_source()}
+
+def _train_args(dataconfigs, requested_policy, source_policy, unselectable, *, lr, batch_size, progresses, heavy_shm,
+                short_boost, seed, steps, mutation_cap, flanks, schedule_metadata, data_workers, init_seed, grad_clip,
+                started_from, novel_alleles, source_checkpoint) -> dict:
+    """The run's ``train_args``: its request, its recipe and its provenance (see ``train``)."""
+    args = {"lr": lr, "batch_size": batch_size, "progresses": list(progresses),
+            "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps,
+            # `mutation_cap` is the run-level REQUEST; `effective_mutation_caps` is what each
+            # locus actually got (TCR -> 0). Without the latter the card misstates the training
+            # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
+            "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
+            "recipe": RECIPE,
+            "indel_form": source_policy.indel_form, "indel_fraction": list(source_policy.indel_fraction),
+            "selected_fraction": requested_policy.selected_fraction,
+            "selected_shares": list(source_policy.selected_shares(force_mixture=len(dataconfigs) > 1)),
+            "selection_unavailable": unselectable,
+            "flanks": flanks.to_dict() if flanks is not None else None,
+            "schedule": schedule_metadata,
+            "effective_mutation_caps": effective_mutation_caps(dataconfigs, mutation_cap),
+            # provenance only: worker processes reproduce the serial batches exactly
+            "data_workers": data_workers,
+            "init_seed": init_seed, "grad_clip": grad_clip,
+            "started_from": started_from,
+            "genairr_source_sha256": recorded_genairr_source()}
     if novel_alleles is not None:
-        _train_args["novel_alleles"] = novel_alleles.to_dict()
+        args["novel_alleles"] = novel_alleles.to_dict()
     if requested_policy.inverted_d:
-        _train_args["inverted_d"] = requested_policy.inverted_d
-    _dcs = dataconfigs
-    source_checkpoint = resume_from or init_from
+        args["inverted_d"] = requested_policy.inverted_d
     if source_checkpoint:
         with open(source_checkpoint, 'rb') as source:
-            _train_args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
+            args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
+    return args
 
-    def _checkpoint(path, step, **extra):
-        save_checkpoint(path, model, reference_set, step, opt, dataconfigs=_dcs,
-                        train_args={**_train_args, **extra}, scheduler=engine.scheduler)
 
-    # fixed-seed, immutable validation batches for best-checkpoint selection
+def _records(dataconfigs, policy, purpose: str, *, seed, record_source, start_step: int = 0):
+    """A curriculum record stream: each draws its own seed blocks (training resumes from (seed, step);
+    validation's are held out, disjoint from training's)."""
+    return training_records(dataconfigs, policy=policy, seed=seed, purpose=purpose,
+                            start_step=start_step, record_source=record_source)
+
+
+def _validation_batches(dataconfigs, policy, data, *, seed, record_source, batch_size, val_every, val_batches) -> list:
+    """The fixed-seed, immutable validation batches best-checkpoint selection scores (none without ``val_every``);
+    fewer when the stream runs out."""
     val_set = []
     if val_every and val_every > 0:
-        vstream = _build_stream('validation')          # held-out seed blocks, disjoint from training
+        vstream = _records(dataconfigs, policy, 'validation', seed=seed, record_source=record_source)
         for _ in range(max(1, int(val_batches))):
             vr = list(itertools.islice(vstream, batch_size))
             if len(vr) < batch_size:
                 break
             with error_context(stage="training_validation", validation_batch=len(val_set)):
                 val_set.append(data.validation_adapter(vr))
-    best_score = float("-inf")
-    best_path = None
+    return val_set
 
-    completed = start                              # last successful update, including early exhaustion
-    workers = None
-    if data_workers:                               # the same batches, generated in worker processes
-        from .assembly import TrainingStream, parallel_training_data
-        from .records.streams import stream_records
-        workers = parallel_training_data(
-            TrainingStream(tuple(dataconfigs), source_policy, seed,
-                           prepare_training_data(setup, device='cpu'), start_step=start),
-            batch_size=batch_size, workers=data_workers, device=device,
-            provider=stream_records if record_source is None else record_source)
-        stream, batch_adapter = workers.records, workers.batch_adapter
-    else:
-        stream = _build_stream('training', start_step=start)
-        batch_adapter = data.batch_adapter
-    try:
-        for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
-                                             stop_step=steps, batch_size=batch_size):
-            step = completed = iteration.step
-            total, parts, grad_norm = iteration.result
-            if on_iteration is not None:
-                on_iteration(iteration)
-            if log_every and step % log_every == 0:
-                line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
-                        + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
-                print(line, flush=True)
-            if val_set and step % val_every == 0:  # validation + best-checkpoint selection
-                vmetrics, vscore = engine.validate(val_set)
-                print(f"[{step}/{steps}] VAL score {vscore:.4f}  "
-                      + " ".join(f"{k}={v:.3f}" for k, v in vmetrics.items()), flush=True)
-                if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
-                    best_score = vscore
-                    stem, ext = _stem(save_path), _ext(save_path)
-                    best_path = f"{stem}.best{ext}"
-                    _checkpoint(best_path, step, val_score=vscore)
-            if save_path and save_every and step % save_every == 0:
-                save_rotating(save_path, model, reference_set, step, opt, dataconfigs=_dcs, train_args=_train_args,
-                              scheduler=engine.scheduler)
-    finally:
-        if workers is not None:                    # finished, failed or interrupted: no worker outlives the run
-            workers.close()
-    if save_path:                                  # save the ACTUAL completed step, not the requested one
-        save_rotating(save_path, model, reference_set, completed, opt, dataconfigs=_dcs, train_args=_train_args,
-                      scheduler=engine.scheduler)
-    return TrainingOutcome(model, completed, best_path)
+
+def _training_source(dataconfigs, policy, setup, data, *, seed, start, batch_size, data_workers, device,
+                     record_source):
+    """``(records, batch_adapter, workers)``: the training stream and its adapter, built serially or, with
+    ``data_workers``, the same batches in worker processes (``workers``, to close; None when serial)."""
+    if not data_workers:
+        return _records(dataconfigs, policy, 'training', seed=seed, record_source=record_source,
+                        start_step=start), data.batch_adapter, None
+    from .assembly import TrainingStream, parallel_training_data
+    from .records.streams import stream_records
+    workers = parallel_training_data(
+        TrainingStream(tuple(dataconfigs), policy, seed, prepare_training_data(setup, device='cpu'), start_step=start),
+        batch_size=batch_size, workers=data_workers, device=device,
+        provider=stream_records if record_source is None else record_source)
+    return workers.records, workers.batch_adapter, workers
+
+
+def _log_iteration(iteration, steps: int) -> None:
+    total, parts, grad_norm = iteration.result
+    print(f"[{iteration.step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
+          + " ".join(f"{k}={v:.2f}" for k, v in parts.items()), flush=True)
+
+
+def _validate(engine, val_set: list, step: int, steps: int) -> float:
+    """The validation score of the model now (printed with its metrics)."""
+    vmetrics, vscore = engine.validate(val_set)
+    print(f"[{step}/{steps}] VAL score {vscore:.4f}  "
+          + " ".join(f"{k}={v:.3f}" for k, v in vmetrics.items()), flush=True)
+    return vscore

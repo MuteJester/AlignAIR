@@ -9,7 +9,7 @@ MOUSE_IGL_IMGT each name two alleles twice) the first of a name is kept, as Alig
 from __future__ import annotations
 
 import dataclasses
-from typing import Dict, List
+from dataclasses import dataclass, field
 
 from ..errors import ConfigurationError
 from ..reference import AlleleInfo, AnchorEvidence, SourceProvenance, annotate
@@ -31,69 +31,97 @@ def _functional(allele) -> str | None:
     return None if status is None else _FUNCTIONAL.get(str(status).lower())
 
 
+@dataclass
+class _GeneUnion:
+    """One gene's alleles across the dataconfigs, in the order they come: the first allele of a name is kept, a name
+    given another sequence is a collision, and an allele a second locus also lists is recorded as shared with it."""
+    gene: str
+    names: list[str] = field(default_factory=list)
+    sequences: list[str] = field(default_factory=list)
+    index: dict[str, int] = field(default_factory=dict)
+    anchors: dict[str, int] = field(default_factory=dict)
+    gapped: dict[str, str] = field(default_factory=dict)
+    info: dict[str, AlleleInfo] = field(default_factory=dict)
+    membership: list[str] = field(default_factory=list)      # per allele, the locus that first contributed it
+    collisions: list[str] = field(default_factory=list)      # names given two sequences
+    shared: dict[str, list[str]] = field(default_factory=dict)   # locus -> alleles of another locus's block it lists
+
+    def add(self, allele, locus: str, source: str, species: str | None) -> None:
+        """``allele`` of ``locus``'s dataconfig (``source``, its locator; ``species``, its species when the locus's
+        dataconfigs are of several, else None)."""
+        sequence = allele.ungapped_seq.upper()
+        if allele.name in self.index:
+            if self.sequences[self.index[allele.name]] != sequence and allele.name not in self.collisions:
+                self.collisions.append(allele.name)
+            elif self.membership[self.index[allele.name]] != locus:     # one allele, two loci (TRAV/DV): both
+                names = self.shared.setdefault(locus, [])
+                if allele.name not in names:
+                    names.append(allele.name)
+            return
+        self.index[allele.name] = len(self.names)
+        self.names.append(allele.name)
+        self.membership.append(locus)
+        self.sequences.append(sequence)
+        anchor, evidence = _stored_anchor(allele, self.gene, source)
+        if anchor is not None:
+            self.anchors[allele.name] = anchor
+        gap = getattr(allele, "gapped_seq", None)
+        if gap:
+            self.gapped[allele.name] = gap.upper()
+        entry = AlleleInfo(_functional(allele), _text(getattr(allele, "species", None)) or species,
+                           _text(getattr(allele, "source", None)), evidence)
+        if entry != AlleleInfo():
+            self.info[allele.name] = entry
+
+    def gene_reference(self) -> GeneReference:
+        return GeneReference(self.names, self.sequences, self.index, anchors=self.anchors or None,
+                             gapped=self.gapped or None, info=self.info or None)
+
+
+def _stored_anchor(allele, gene: str, source: str) -> tuple[int | None, AnchorEvidence | None]:
+    """The anchor the dataconfig stores for ``allele`` and its evidence: a V or J anchor of 0 is GenAIRR's legacy "no
+    anchor" (``annotate`` resolves it), any other is supplied by ``source``; a D's is kept as it is."""
+    stored = getattr(allele, "anchor", None)
+    if gene in ("V", "J"):
+        return (int(stored), AnchorEvidence("supplied", "supplied", None, source)) if stored else (None, None)
+    return (None if stored is None else int(stored)), None
+
+
 def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
     """The annotated union of ``dataconfigs``' alleles (see the module docstring)."""
     has_d = any(dc.metadata.has_d for dc in dataconfigs)
     wanted = ["v", "j"] + (["d"] if has_d else [])
     locator = {id(dc): name_of(dc) or _text(dc.metadata.reference_set) for dc in dataconfigs}
     species_of = {id(dc): _text(dc.metadata.species) for dc in dataconfigs}
-    locus_order: List[str] = []
-    locus_chain: Dict[str, str] = {}
-    locus_species: Dict[str, set] = {}
+    locus_order: list[str] = []
+    locus_chain: dict[str, str] = {}
+    locus_species: dict[str, set] = {}
     for dc in dataconfigs:
         locus = locus_of_chain(dc.metadata.chain_type)
         if locus not in locus_order:
             locus_order.append(locus)
             locus_chain[locus] = str(getattr(dc.metadata.chain_type, "value", dc.metadata.chain_type))
         locus_species.setdefault(locus, set()).add(species_of[id(dc)])
-    genes: Dict[str, GeneReference] = {}
-    per_index: Dict[str, list] = {}
-    shared: Dict[str, Dict[str, list]] = {}           # locus -> gene -> alleles of another locus's block it lists
-    collisions: List[str] = []
+    genes: dict[str, GeneReference] = {}
+    per_index: dict[str, list] = {}
+    shared: dict[str, dict[str, list]] = {}           # locus -> gene -> alleles of another locus's block it lists
+    collisions: list[str] = []
     for g in wanted:
-        gene = g.upper()
-        names, sequences, index, anchors, gapped, info, membership = [], [], {}, {}, {}, {}, []
+        union = _GeneUnion(g.upper())
         for dc in dataconfigs:
             if g == "d" and not dc.metadata.has_d:
                 continue
             locus = locus_of_chain(dc.metadata.chain_type)
+            species = species_of[id(dc)] if len(locus_species[locus]) > 1 else None
             own = set()                               # within one dataconfig the first of a name is kept
             for allele in dc.allele_list(g):
-                if allele.name in own:
-                    continue
-                own.add(allele.name)
-                sequence = allele.ungapped_seq.upper()
-                if allele.name in index:
-                    if sequences[index[allele.name]] != sequence and allele.name not in collisions:
-                        collisions.append(allele.name)
-                    elif membership[index[allele.name]] != locus:     # one allele, two loci (TRAV/DV): both
-                        names_of = shared.setdefault(locus, {}).setdefault(gene, [])
-                        if allele.name not in names_of:
-                            names_of.append(allele.name)
-                    continue
-                index[allele.name] = len(names)
-                names.append(allele.name)
-                membership.append(locus)              # which locus first contributed this allele
-                sequences.append(sequence)
-                stored = getattr(allele, "anchor", None)
-                evidence = None
-                if gene in ("V", "J"):
-                    if stored:                        # GenAIRR's legacy 0 is no anchor: annotate resolves it
-                        anchors[allele.name] = int(stored)
-                        evidence = AnchorEvidence("supplied", "supplied", None, locator[id(dc)])
-                elif stored is not None:
-                    anchors[allele.name] = int(stored)
-                gap = getattr(allele, "gapped_seq", None)
-                if gap:
-                    gapped[allele.name] = gap.upper()
-                species = _text(getattr(allele, "species", None)) or (
-                    species_of[id(dc)] if len(locus_species[locus]) > 1 else None)
-                entry = AlleleInfo(_functional(allele), species, _text(getattr(allele, "source", None)), evidence)
-                if entry != AlleleInfo():
-                    info[allele.name] = entry
-        genes[gene] = GeneReference(names, sequences, index, anchors=anchors or None, gapped=gapped or None,
-                                    info=info or None)
-        per_index[gene] = membership
+                if allele.name not in own:
+                    own.add(allele.name)
+                    union.add(allele, locus, locator[id(dc)], species)
+        genes[union.gene], per_index[union.gene] = union.gene_reference(), union.membership
+        collisions += [name for name in union.collisions if name not in collisions]
+        for locus, names in union.shared.items():
+            shared.setdefault(locus, {})[union.gene] = names
     if collisions:
         sources = [locator[id(dc)] for dc in dataconfigs]
         raise ConfigurationError(f"the dataconfigs name {len(collisions)} alleles with two sequences: "

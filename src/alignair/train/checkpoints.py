@@ -84,6 +84,11 @@ def _stem(path) -> str:
     return path[:-len(extension)] if path.endswith(extension) else path
 
 
+def best_checkpoint_path(save_path) -> str:
+    """Where a run saving to ``save_path`` keeps its best checkpoint: ``<stem>.best<extension>``."""
+    return f"{_stem(save_path)}.best{_ext(save_path)}"
+
+
 def _step_of(path) -> int:
     match = re.search(r"\.step(\d+)\.(?:alignair|pt)$", os.fspath(path))
     return int(match.group(1)) if match else -1
