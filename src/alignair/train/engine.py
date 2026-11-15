@@ -8,7 +8,7 @@ import torch
 
 from ..errors import ConfigurationError, TrainingError, error_context
 from ..core.runtime import evaluation_mode
-from ..tasks import MetricAccumulator, TrainingTasks, build_tasks
+from ..tasks import MetricReport, TrainingTasks, build_tasks
 from .guards import NonFiniteLossError, check_finite_loss, validate_grad_clip
 
 
@@ -97,9 +97,9 @@ class TrainingEngine:
 
 def validate(model, val_batches, *, tasks: TrainingTasks) -> ValidationResult:
     """Aggregate supervised totals/counts and restore mode on both success and failure."""
-    accumulator = MetricAccumulator()
+    report = MetricReport()
     with evaluation_mode(model):
         for inputs, targets in val_batches:
-            accumulator.update(tasks.metric_report(model(inputs), targets))
-    metrics = accumulator.means()
+            report.merge(tasks.metric_report(model(inputs), targets))
+    metrics = report.means()
     return ValidationResult(metrics, tasks.selection_score(metrics))

@@ -13,7 +13,7 @@ import itertools
 import GenAIRR.data as gd
 import pytest
 
-from alignair.train.build import required_segments
+from alignair.train.bundle import required_segments
 from alignair.genairr.experiment import build_experiment
 from alignair.train.records import Curriculum
 from alignair.genairr.catalog import dataconfig_name

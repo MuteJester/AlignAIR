@@ -241,3 +241,10 @@ def test_a_model_is_identified_by_its_reference_alone():
     assert not hasattr(model_file, "v3_checkpoint_error")
     assert list(inspect.signature(model_file.save_model).parameters)[:3] == ["path", "model", "reference"]
     assert "label_schema" not in inspect.signature(model_file.save_model).parameters
+
+
+def test_the_bundle_export_reads_its_provenance_from_the_checkpoint_only():
+    from alignair.train import bundle
+    assert _gone("alignair.train.build")
+    assert "training" not in inspect.signature(bundle.export_bundle).parameters
+    assert not hasattr(bundle, "build_dataconfigs") and not hasattr(bundle, "training_plan")

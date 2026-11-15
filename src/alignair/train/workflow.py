@@ -35,7 +35,7 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``record_source`` replaces the
     GenAIRR provider of the run's curriculum records (see ``trainer.train``).
     """
-    from ..aligner import resolve_device
+    from ..core.runtime import resolve_device
     from ..core import prepare_model
     from ..data.training import prepare_training_data
     from ..reference.reference_set import ReferenceSet

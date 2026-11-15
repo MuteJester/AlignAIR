@@ -6,7 +6,7 @@ It is not a product model. It was trained by the lab recipe (``alignair_lab.reci
 its defaults (64-channel trunk, anchor and D-presence heads, bank orientation): HUMAN_IGH_OGRDB on GenAIRR 2.4.0, batch
 64, library flanks, seed 1, 28,000 steps under the cosine schedule from 3e-4 to 3e-6 (``Notes and Plans/Architecture/
 2026-11-06-test-chip-plan.md``). The training checkpoint (SHA-256 ``SOURCE_SHA256``) is exported by the product's
-``alignair.train.build.export_bundle``: pickle-free, and naming neither the host nor the user it was made on. A
+``alignair.train.bundle.export_bundle``: pickle-free, and naming neither the host nor the user it was made on. A
 briefly trained tiny chip was tried before the trained product chip served as the fixture: at 1,500 steps it tied
 dozens of V alleles per read and assembled most rows only partially, too weak for tests of the AIRR assembly.
 
@@ -35,7 +35,7 @@ TIE_COMPONENTS, TIE_SEED, TIE_DRAW, TIE_COUNT = (4, 5, 6, 1), 41, 80, 6
 def build_test_chip(source: str, path: Path = TEST_CHIP) -> Path:
     """Export the training checkpoint ``source`` (checked against ``SOURCE_SHA256``) as the pickle-free ``path``."""
     from alignair.genairr import resolve_dataconfigs
-    from alignair.train.build import export_bundle
+    from alignair.train.bundle import export_bundle
     digest = hashlib.sha256(Path(source).read_bytes()).hexdigest()
     if digest != SOURCE_SHA256:
         raise ValueError(f"{source} is not the test chip's source model (SHA-256 {digest}, expected {SOURCE_SHA256})")

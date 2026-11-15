@@ -33,3 +33,23 @@ def evaluation_mode(model):
     finally:
         for module, training in modes:
             module.training = training
+
+
+def resolve_device(device: str | None = "auto") -> str:
+    """Resolve a device request to a concrete backend. ``"auto"`` picks CUDA, else Apple MPS, else CPU.
+    An explicit ``"cuda"``/``"mps"`` that is unavailable falls back to CPU (reported by the caller)."""
+    if device in (None, "auto"):
+        if torch.cuda.is_available():
+            return "cuda"
+        mps = getattr(torch.backends, "mps", None)
+        if mps is not None and mps.is_available():
+            return "mps"
+        return "cpu"
+    d = str(device)
+    if d.startswith("cuda") and not torch.cuda.is_available():
+        return "cpu"
+    if d.startswith("mps"):
+        mps = getattr(torch.backends, "mps", None)
+        if mps is None or not mps.is_available():
+            return "cpu"
+    return d

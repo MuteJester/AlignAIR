@@ -10,7 +10,7 @@ from alignair.core import components
 from alignair.errors import ConfigurationError
 from alignair.core.orientation import apply_orientation
 from alignair.reference.reference_set import ReferenceSet
-from alignair.tasks.alignment import build_tasks
+from alignair.tasks.objective import build_tasks
 
 pytestmark = pytest.mark.component
 

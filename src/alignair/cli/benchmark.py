@@ -51,7 +51,7 @@ def run(args) -> int:
     from ..genairr import resolve_dataconfig
     from ..evaluate import format_text, run_benchmark
     from ..registry import resolve_model, sources as _sources
-    from ..aligner import resolve_device
+    from ..core.runtime import resolve_device
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     try:
         model_path = str(resolve_model(args.model, sources=_sources.resolve_sources(args.registry),

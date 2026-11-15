@@ -38,7 +38,7 @@
     "src/alignair/train/checkpoints.py": {"statements": 95, "branches": 90},
     "src/alignair/train/random_state.py": {"statements": 98, "branches": 90},
     "src/alignair/train/records/streams.py": {"statements": 98, "branches": 95},
-    "src/alignair/tasks/alignment.py": {"statements": 95, "branches": 90},
+    "src/alignair/tasks/objective.py": {"statements": 95, "branches": 90},
     "src/alignair/tasks/metrics.py": {"statements": 95, "branches": 90},
     "src/alignair/tasks/supervision.py": {"statements": 95, "branches": 90},
     "src/alignair/reference/anchors.py": {"statements": 98, "branches": 93},

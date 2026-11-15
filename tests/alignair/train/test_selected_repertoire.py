@@ -86,7 +86,7 @@ def test_a_run_draws_its_selected_fraction_and_records_its_recipe(tmp_path, opti
 @pytest.mark.skipif(not all(os.path.exists(path) for path in CUSTOM.values()), reason='example FASTAs not present')
 def test_a_reference_genairr_cannot_select_from_trains_unselected_and_the_run_says_so(tmp_path, capsys):
     import GenAIRR.data as gd
-    from alignair.train.build import build_dataconfigs
+    from alignair.genairr.custom import build_dataconfigs
     (custom,), _ = build_dataconfigs(chain_type='BCR_HEAVY', **CUSTOM)
     assert selection_supported(gd.HUMAN_IGH_OGRDB) and not selection_supported(custom)
     seen, train_args = watched_run(tmp_path, custom)

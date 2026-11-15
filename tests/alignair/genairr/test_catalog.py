@@ -39,7 +39,7 @@ def test_an_unknown_name_is_refused_with_the_list_hint(spec):
 @pytest.mark.component
 @pytest.mark.skipif(not all(os.path.exists(p) for p in (_V, _D, _J)), reason="example FASTAs absent")
 def test_name_of_names_builtins_and_their_copies_but_not_custom_ones():
-    from alignair.train.build import build_dataconfigs
+    from alignair.genairr.custom import build_dataconfigs
     assert name_of(gd.HUMAN_TCRB_IMGT) == "HUMAN_TCRB_IMGT"
     assert name_of(copy.deepcopy(gd.HUMAN_IGH_OGRDB)) == "HUMAN_IGH_OGRDB"
     (custom,), _ = build_dataconfigs(v_fasta=_V, j_fasta=_J, d_fasta=_D, chain_type="BCR_HEAVY")

@@ -9,7 +9,7 @@ from alignair import model_file as mf
 from alignair.core import prepare_model
 from alignair.genairr import resolve_dataconfigs
 from alignair.reference import ReferenceSet
-from alignair.train.build import _write_card, export_bundle
+from alignair.train.bundle import _write_card, export_bundle
 
 pytestmark = pytest.mark.integration
 

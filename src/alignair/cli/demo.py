@@ -40,7 +40,7 @@ def run(args) -> int:
     from ..genairr import resolve_dataconfig
     from ..io.airr import write_airr
 
-    from ..aligner import resolve_device
+    from ..core.runtime import resolve_device
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     out = args.out or __import__("tempfile").mkdtemp(prefix="alignair_demo_")  # zero-arg `alignair demo`
     os.makedirs(out, exist_ok=True)

@@ -2,7 +2,7 @@
 import pytest
 import torch
 
-from alignair.tasks import MetricAccumulator
+from alignair.tasks import MetricReport
 from alignair.tasks.metrics import alignment_metrics
 from alignair.train.engine import validate
 
@@ -47,13 +47,15 @@ def test_validation_weights_by_supervised_counts_instead_of_batch_means(task_bat
     assert model.training
 
 
-def test_metric_accumulator_keeps_each_genes_own_denominator(task_batch):
+def test_merged_reports_keep_each_genes_own_denominator(task_batch):
     first, targets = task_batch()
     targets["v_supervise"] = torch.tensor([True, False])
-    accumulator = MetricAccumulator()
-    accumulator.update(alignment_metrics(first, targets, ("v", "j")))
-    assert accumulator.counts["v_allele_top1"] == 1
-    assert accumulator.counts["j_allele_top1"] == 2
+    merged = MetricReport()
+    for _ in range(2):
+        merged.merge(alignment_metrics(first, targets, ("v", "j")))
+    assert (merged.counts["v_allele_top1"], merged.counts["j_allele_top1"]) == (2, 4)
+    one = alignment_metrics(first, targets, ("v", "j"))
+    assert merged.means() == pytest.approx(one.means())
 
 
 def test_validation_restores_model_mode_after_task_failure(task_batch):

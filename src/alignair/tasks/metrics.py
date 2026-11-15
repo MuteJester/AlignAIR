@@ -24,24 +24,16 @@ class MetricReport:
             self.totals[name] = float(values.sum())
             self.counts[name] = count
 
+    def merge(self, other: "MetricReport") -> None:
+        """Add ``other``'s numerators and counts to this report's, so that across batches small batches and sparse
+        genes keep their correct weight."""
+        for name, total in other.totals.items():
+            self.totals[name] = self.totals.get(name, 0.0) + total
+            self.counts[name] = self.counts.get(name, 0) + other.counts[name]
+
     def means(self) -> dict[str, float]:
         return {key: total / self.counts[key] if self.counts[key] else math.nan
                 for key, total in self.totals.items()}
-
-
-class MetricAccumulator:
-    """Combine numerators and counts, so small batches and sparse genes get their correct weight."""
-    def __init__(self):
-        self.totals: dict[str, float] = {}
-        self.counts: dict[str, int] = {}
-
-    def update(self, report: MetricReport) -> None:
-        for name, total in report.totals.items():
-            self.totals[name] = self.totals.get(name, 0.0) + total
-            self.counts[name] = self.counts.get(name, 0) + report.counts[name]
-
-    def means(self) -> dict[str, float]:
-        return MetricReport(self.totals, self.counts).means()
 
 
 @torch.no_grad()

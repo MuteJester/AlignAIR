@@ -1,6 +1,6 @@
 """``alignair export`` - a resumable training checkpoint becomes a pickle-free, distributable bundle.
 
-``alignair export CHECKPOINT OUT_DIR`` wraps ``alignair.train.build.export_bundle``: ``OUT_DIR`` gets
+``alignair export CHECKPOINT OUT_DIR`` wraps ``alignair.train.bundle.export_bundle``: ``OUT_DIR`` gets
 ``model.alignair`` (no pickle sections), ``model_card.md``, ``reference_manifest.json`` and, unless ``--no-validate``,
 ``validation_report.json``. ``--model-id`` and ``--model-version`` go into the model file's card, so the catalog's
 ``publish_local`` accepts the file as it is. The dataconfigs come from the checkpoint (``checkpoint_dataconfigs``).
@@ -28,7 +28,7 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    from ..train.build import checkpoint_dataconfigs, export_bundle
+    from ..train.bundle import checkpoint_dataconfigs, export_bundle
     try:
         dcs, notes = checkpoint_dataconfigs(args.checkpoint)
     except ValueError as e:

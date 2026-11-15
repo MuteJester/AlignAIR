@@ -4,7 +4,7 @@ import math
 import pytest
 import torch
 
-from alignair.tasks.alignment import build_tasks
+from alignair.tasks.objective import build_tasks
 
 from alignair.network.objective import (
     LOSS_WEIGHTS, ChipObjective, parse_loss, scan_loss, shm_labels)

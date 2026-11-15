@@ -280,7 +280,7 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
 def run(args) -> int:
     import torch
     from ..registry import maybe_notify_updates, resolve_model, sources as _sources
-    from ..aligner import resolve_device
+    from ..core.runtime import resolve_device
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
 
     if args.chunk_size <= 0 or (args.batch_size is not None and args.batch_size <= 0):

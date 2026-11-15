@@ -1,7 +1,6 @@
-"""Custom-reference training support: build a GenAIRR DataConfig from user V/D/J
-FASTAs, produce a pre-training plan (validate-only), and export a safe **pickle-free** model bundle
-(model + model card + reference manifest + validation report) after training.
-"""
+"""A trained model as a distributable bundle: ``export_bundle`` writes a **pickle-free** model file, its model card,
+its reference manifest and a validation report from a training checkpoint, whose dataconfigs
+``checkpoint_dataconfigs`` recovers."""
 from __future__ import annotations
 
 import json
@@ -9,62 +8,6 @@ import os
 from typing import Optional
 
 from ..io.files import sha256_file
-
-
-# chain types that carry a D gene (require --d-fasta); the rest must NOT be given one
-_HAS_D_CHAINS = {"BCR_HEAVY", "TCR_BETA", "TCR_DELTA"}
-
-
-def build_dataconfigs(*, dataconfig: Optional[list] = None, v_fasta: Optional[str] = None,
-                      d_fasta: Optional[str] = None, j_fasta: Optional[str] = None,
-                      chain_type: Optional[str] = None):
-    """Resolve the training reference to a list of GenAIRR DataConfigs, from built-in names OR a custom
-    V/D/J FASTA set (exactly one mode). Returns ``(dataconfigs, cartridge_report_or_None)``."""
-    custom = any((v_fasta, d_fasta, j_fasta, chain_type))
-    if dataconfig and custom:
-        raise ValueError("choose ONE reference mode: --dataconfig (built-in) OR a custom "
-                         "--v-fasta/--j-fasta/--chain-type — not both")
-    if dataconfig:
-        from ..errors import ConfigurationError
-        from ..genairr import resolve_dataconfigs
-        try:
-            return resolve_dataconfigs(dataconfig), None
-        except ConfigurationError as e:
-            raise ValueError(f"unknown built-in dataconfig: {e.context.get('dataconfig')}. "
-                             "Run `alignair reference list`.") from e
-    if not (v_fasta and j_fasta and chain_type):
-        raise ValueError("custom training needs --v-fasta, --j-fasta and --chain-type "
-                         "(plus --d-fasta for heavy / D-bearing loci)")
-    ct = str(chain_type).upper()
-    has_d = ct in _HAS_D_CHAINS
-    if has_d and not d_fasta:
-        raise ValueError(f"chain type {ct} carries a D gene — provide --d-fasta")
-    if not has_d and d_fasta:
-        raise ValueError(f"chain type {ct} has no D gene — do not pass --d-fasta")
-    for label, path in (("--v-fasta", v_fasta), ("--j-fasta", j_fasta), ("--d-fasta", d_fasta)):
-        if path and not os.path.exists(path):
-            raise ValueError(f"{label} file not found: {path}")
-    from GenAIRR.cartridge_builder import ReferenceCartridgeBuilder
-    builder = ReferenceCartridgeBuilder.from_fasta(v_fasta=v_fasta, j_fasta=j_fasta, d_fasta=d_fasta,
-                                                   chain_type=chain_type)
-    return [builder.build()], builder.report()
-
-
-def training_plan(dcs, *, steps: int, batch_size: int) -> dict:
-    """A pre-flight plan (no training): reference composition, model parameter count, and the resolved
-    schedule — so a user can sanity-check a custom reference / preset before committing GPU time."""
-    from ..core import prepare_model
-    from ..reference.reference_set import ReferenceSet
-    ref = ReferenceSet.from_dataconfigs(*dcs)
-    setup = prepare_model(ref)
-    cfg = setup.config
-    params = sum(p.numel() for p in setup.build_model().parameters())
-    return {
-        "loci": list(ref.locus_names()),
-        "alleles": {G: len(ref.gene(G)) for G in ("V", "D", "J") if G in ref.genes},
-        "has_d": ref.has_d, "max_seq_length": cfg.max_seq_length,
-        "model_parameters": params, "steps": steps, "batch_size": batch_size,
-    }
 
 
 def _checkpoint_training(checkpoint_path: str) -> dict:
@@ -90,27 +33,21 @@ def required_segments(dataconfig) -> tuple:
     return ("v", "d", "j") if bool(getattr(dataconfig.metadata, "has_d", False)) else ("v", "j")
 
 
-def _validation_report(checkpoint_path: str, dcs, *, n_batches: int = 2, batch_size: int = 32,
-                       seed: int = 424242) -> dict:
-    """Evaluate the trained model on a fixed held-out stream and return per-task metrics."""
+def _validation_report(model, ref, dcs, *, n_batches: int = 2, batch_size: int = 32, seed: int = 424242) -> dict:
+    """The per-task metrics of ``model`` (bound to ``ref``) on a fixed held-out stream of each of ``dcs``."""
     import itertools
 
     import torch
 
-    from ..api import load_model
     from ..genairr.experiment import GENAIRR_INVERT_D_PROB, build_experiment
     from .records import Curriculum
     from ..data.adapters import NucleotideBatchAdapter
     from ..tasks import build_tasks
-    from ..reference.reference_set import is_tcr
-    model, ref = load_model(checkpoint_path, device="cpu")
     tasks = build_tasks(model.cfg)
     agg: dict = {}
     for i, dc in enumerate(dcs):
         params = {**Curriculum(indel_form="uniform").params(0.3),    # pinned: the eval data never drifts
-                  "invert_d_prob": GENAIRR_INVERT_D_PROB}
-        if is_tcr(dc):                            # TCR loci do not undergo SHM (GenAIRR forbids mutate())
-            params["mutation_rate"] = 0.0
+                  "invert_d_prob": GENAIRR_INVERT_D_PROB}           # (a TCR read is never mutated: build_experiment)
         exp = build_experiment(dc, params, allow_curatable=True)
         segs = required_segments(dc)               # per-locus, not the union reference (see the helper)
         recs = [r for r in itertools.islice(exp.stream_records(n=None, seed=seed + i), batch_size * n_batches * 3)
@@ -158,8 +95,7 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
     return manifest
 
 
-def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optional[dict] = None,
-                  model_id: Optional[str] = None, model_version: Optional[str] = None, description: str = "",
+def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: Optional[str] = None, model_version: Optional[str] = None, description: str = "",
                   validate: bool = True, sources: Optional[dict] = None, report=None, overwrite: bool = False) -> str:
     """Export a **pickle-free**, distributable model bundle from a (resumable) training checkpoint:
     ``model.alignair`` (no trusted pickle) + ``model_card.md`` + ``reference_manifest.json`` + (unless
@@ -168,9 +104,7 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optio
 
     Training provenance is read FROM ``checkpoint_path`` (:func:`_checkpoint_training`) so the
     distributable bundle carries the same record as the resumable checkpoint — actual steps, curriculum
-    progresses, heavy_shm, seed, and the effective per-locus SHM caps. ``training`` is an optional
-    override merged on top; callers must not have to restate the schema (a hand-built dict silently
-    dropped ``train_args``, and with it the effective caps, from every published bundle).
+    progresses, heavy_shm, seed, and the effective per-locus SHM caps.
 
     Interruption-safe: built in a sibling temp directory and renamed onto ``bundle_dir``
     only after every file succeeds and the model reloads. **Fails closed** — if ``bundle_dir`` already
@@ -191,13 +125,12 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optio
         raise FileExistsError(
             f"bundle directory already exists: {bundle_dir}. Refusing to overwrite a possibly-published "
             f"bundle — choose a new output directory or pass overwrite=True (--overwrite).")
-    # the checkpoint is the source of truth for provenance; explicit overrides win
-    training = {**_checkpoint_training(checkpoint_path), **(training or {})}
+    training = _checkpoint_training(checkpoint_path)             # the checkpoint's own provenance
     # build in a secure sibling temp dir on the SAME filesystem (so the final rename is atomic)
     tmp = tempfile.mkdtemp(dir=parent, prefix=os.path.basename(bundle_dir) + ".building.")
     try:
         model, ref = load_model(checkpoint_path, device="cpu")   # safe inference load (no pickle needed)
-        metrics = _validation_report(checkpoint_path, dcs) if validate else {}
+        metrics = _validation_report(model, ref, dcs) if validate else {}
         if validate and not metrics:                             # empty report is NOT success
             raise ValueError("validation produced no metrics (too few held-out records for a full "
                              "batch); lower the validation batch size or disable validation")

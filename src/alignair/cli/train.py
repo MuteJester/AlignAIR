@@ -42,14 +42,41 @@ def register(sub) -> None:
     p.set_defaults(func=run)
 
 
+# The flag that sets each field of the training reference (``genairr.custom.build_dataconfigs``).
+_REFERENCE_FLAGS = {"dataconfig": "--dataconfig", "v_fasta": "--v-fasta", "d_fasta": "--d-fasta",
+                    "j_fasta": "--j-fasta", "chain_type": "--chain-type"}
+
+
+def training_plan(dcs, *, steps: int, batch_size: int) -> dict:
+    """A pre-flight plan (no training): reference composition, model parameter count, and the resolved
+    schedule — so a user can sanity-check a custom reference / preset before committing GPU time."""
+    from ..core import prepare_model
+    from ..reference.reference_set import ReferenceSet
+    ref = ReferenceSet.from_dataconfigs(*dcs)
+    setup = prepare_model(ref)
+    cfg = setup.config
+    params = sum(p.numel() for p in setup.build_model().parameters())
+    return {
+        "loci": list(ref.locus_names()),
+        "alleles": {G: len(ref.gene(G)) for G in ("V", "D", "J") if G in ref.genes},
+        "has_d": ref.has_d, "max_seq_length": cfg.max_seq_length,
+        "model_parameters": params, "steps": steps, "batch_size": batch_size,
+    }
+
+
 def run(args) -> int:
-    from ..train.build import build_dataconfigs, export_bundle, training_plan
+    from ..genairr.custom import build_dataconfigs
+    from ..train.bundle import export_bundle
 
     try:
         dcs, report = build_dataconfigs(dataconfig=args.dataconfig, v_fasta=args.v_fasta,
                                         d_fasta=args.d_fasta, j_fasta=args.j_fasta,
                                         chain_type=args.chain_type)
-    except ValueError as e:
+    except ValueError as e:                    # ours (a ConfigurationError), or GenAIRR's on a FASTA it cannot build
+        flag = _REFERENCE_FLAGS.get(e.context.get("field")) if isinstance(e, ConfigurationError) else None
+        if flag and e.hint is None:
+            e.hint = (f"{flag} sets it. Name built-in references with --dataconfig, or a custom one with --v-fasta, "
+                      "--j-fasta and --chain-type (and --d-fasta for a locus with a D gene).")
         return fail(e, error_type=ConfigurationError, context={"stage": "training_reference"})
 
     from ..train.config import TrainingConfig

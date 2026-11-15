@@ -28,7 +28,7 @@ def test_a_saved_model_records_the_genairr_identity(tmp_path):
 
 
 def test_a_bundle_manifest_records_the_genairr_identity(tmp_path):
-    from alignair.train.build import _reference_manifest
+    from alignair.train.bundle import _reference_manifest
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     model = tmp_path / "model.alignair"
     model.write_bytes(b"x")

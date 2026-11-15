@@ -44,7 +44,7 @@ def diagnostics() -> dict:
     for mod in tuple(m for m in _CRITICAL if m != "torch") + _OPTIONAL:
         info[mod] = _module_version(mod)
     try:                                               # the device "auto" resolves to
-        from ..aligner import resolve_device
+        from ..core.runtime import resolve_device
         info["device_auto"] = resolve_device("auto")
     except Exception:                                  # noqa: BLE001
         pass

@@ -10,6 +10,7 @@ Training is ``alignair.run_training`` (``alignair.train``).
 """
 from __future__ import annotations
 
+from .core.runtime import resolve_device
 from .errors import MissingDependencyError, ModelError
 from .reference.reference_set import FALLBACK_LOCUS
 
@@ -17,27 +18,6 @@ from dataclasses import dataclass
 from typing import Iterator, Optional, Sequence
 
 __all__ = ["Aligner", "PredictionResult", "resolve_device"]
-
-
-def resolve_device(device: str | None = "auto") -> str:
-    """Resolve a device request to a concrete backend. ``"auto"`` picks CUDA, else Apple MPS, else CPU.
-    An explicit ``"cuda"``/``"mps"`` that is unavailable falls back to CPU (reported by the caller)."""
-    import torch
-    if device in (None, "auto"):
-        if torch.cuda.is_available():
-            return "cuda"
-        mps = getattr(torch.backends, "mps", None)
-        if mps is not None and mps.is_available():
-            return "mps"
-        return "cpu"
-    d = str(device)
-    if d.startswith("cuda") and not torch.cuda.is_available():
-        return "cpu"
-    if d.startswith("mps"):
-        mps = getattr(torch.backends, "mps", None)
-        if mps is None or not mps.is_available():
-            return "cpu"
-    return d
 
 
 def auto_batch_size(device: str, workers: int = 1) -> int:
@@ -123,7 +103,7 @@ class Aligner:
             raise ModelError(
                 f"{self.model_path} is a resumable checkpoint with pickle sections {pickle_secs}; it is "
                 f"not distributable. Export a pickle-free bundle first: `alignair export {self.model_path} "
-                f"<out_dir>` (alignair.train.build.export_bundle), then share <out_dir>/model.alignair.")
+                f"<out_dir>` (alignair.train.bundle.export_bundle), then share <out_dir>/model.alignair.")
 
     def save_pretrained(self, directory: str, *, filename: str = "model.alignair") -> str:
         """Copy the loaded model artifact into ``directory`` (for local distribution or a later
