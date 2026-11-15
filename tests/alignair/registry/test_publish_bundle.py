@@ -44,7 +44,7 @@ def bundle(tmp_path):
                           trunk_channels=8)
     ckpt = tmp_path / "run" / "model.alignair"
     ckpt.parent.mkdir()
-    mf.save_model(str(ckpt), setup.build_model().eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(ckpt), setup.build_model().eval(), setup.reference, dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 3, "batch_size": 2})
     out = tmp_path / "bundle"
     assert main(["export", str(ckpt), str(out), "--model-id", ID, "--model-version", VERSION, "--no-validate"]) == 0

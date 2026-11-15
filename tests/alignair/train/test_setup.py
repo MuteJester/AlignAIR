@@ -154,7 +154,7 @@ def test_custom_scheduler_must_bind_the_same_optimizer(kind):
 
 def test_default_tasks_are_selected_from_the_shared_model_configuration():
     from alignair.core import AlignAIR,AlignAIRConfig
-    cfg=AlignAIRConfig(2,2,has_d=False,max_seq_length=128,embed_dim=4,trunk_channels=8)
+    cfg=AlignAIRConfig(has_d=False,max_seq_length=128,embed_dim=4,trunk_channels=8)
     model=AlignAIR(cfg)
     engine=build_training_engine(model)
     assert engine.tasks.config is model.cfg and engine.tasks.config == cfg

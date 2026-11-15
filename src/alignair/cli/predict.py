@@ -279,7 +279,6 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
 
 def run(args) -> int:
     import torch
-    from ..model_file import container
     from ..registry import maybe_notify_updates, resolve_model, sources as _sources
     from ..aligner import resolve_device
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
@@ -313,9 +312,6 @@ def run(args) -> int:
     except (AlignAIRError, OSError, ValueError) as e:
         return fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
                     context={"model_id": args.model})
-    if not container.is_alignair_file(model_path):      # an AlignAIR 3 checkpoint: refused with the version that runs it
-        from ..model_file import v3_checkpoint_error
-        return report_error(v3_checkpoint_error(model_path))
     bound = None
     if args.reference:      # the FASTA's alleles become the model's bank, annotated against its own reference
         from ..reference.reference_set import ReferenceSet

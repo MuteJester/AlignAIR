@@ -26,8 +26,7 @@ def _setup():
     import GenAIRR.data as gd
     from alignair.core import prepare_model
     from alignair.reference.reference_set import ReferenceSet
-    return prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), input_space="nucleotide",
-                         label_space="alleles", **SMALL)
+    return prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), **SMALL)
 
 
 def pinned_records() -> list[dict]:

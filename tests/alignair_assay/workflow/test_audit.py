@@ -901,7 +901,7 @@ def test_diagnose_of_a_small_model_file_against_itself_in_memory(tmp_path, make_
     from alignair.network.orientation import EmbeddingOrientationHead
     from alignair.model_file import save_model
 
-    model, _ = make_small_model(REFERENCE_NAME, seed=3)
+    model, reference_set = make_small_model(REFERENCE_NAME, seed=3)
     # random weights misorient every read, and a misoriented read's boundaries are not scored: the orientation head
     # keeps every read as given (S0's with_d reads are forward), so each boundary metric pairs reads
     assert isinstance(model.orientation_head, EmbeddingOrientationHead)
@@ -909,7 +909,8 @@ def test_diagnose_of_a_small_model_file_against_itself_in_memory(tmp_path, make_
         model.orientation_head.fc.weight.zero_()
         model.orientation_head.fc.bias.copy_(torch.tensor([1.0, 0.0, 0.0, 0.0]))  # IDENTITY first
     checkpoint = tmp_path / "small.alignair"
-    save_model(str(checkpoint), model, dataconfigs=[REFERENCE_NAME], training={"steps": 0, "batch_size": 0},
+    save_model(str(checkpoint), model, reference_set,
+               dataconfigs=[REFERENCE_NAME], training={"steps": 0, "batch_size": 0},
                include_trusted_pickle=False)
     cfg = _config(tmp_path, checkpoint=str(checkpoint))
     found = audit.diagnose_null(cfg, RunLayout(tmp_path / "null_diagnose"))

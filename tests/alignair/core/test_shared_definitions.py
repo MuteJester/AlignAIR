@@ -26,8 +26,8 @@ def test_the_vocabulary_pads_with_0_reads_the_four_bases_as_1_to_4_and_anything_
 
 def test_the_label_sentinel_and_the_window_are_the_ones_every_config_uses():
     assert IGNORE_INDEX == torch.nn.CrossEntropyLoss().ignore_index
-    assert AlignAIRConfig(1, 1).max_seq_length == PredictConfig().max_seq_length == DEFAULT_WINDOW == 576
-    assert AlignAIRConfig(1, 1).vocab_size == VOCAB_SIZE
+    assert AlignAIRConfig().max_seq_length == PredictConfig().max_seq_length == DEFAULT_WINDOW == 576
+    assert AlignAIRConfig().vocab_size == VOCAB_SIZE
 
 
 def test_the_four_orientations_are_named_in_the_order_of_the_orientation_head():
@@ -54,4 +54,4 @@ def test_the_model_orients_tokens_as_the_pipeline_orients_strings():
 def test_a_model_calls_v_d_and_j_or_v_and_j_without_a_d():
     assert GENES == ("v", "d", "j") and model_genes(True) == GENES and model_genes(False) == ("v", "j")
     for has_d in (True, False):
-        assert AlignAIRConfig(1, 1, has_d=has_d).genes == PredictConfig(has_d=has_d).genes == model_genes(has_d)
+        assert AlignAIRConfig(has_d=has_d).genes == PredictConfig(has_d=has_d).genes == model_genes(has_d)

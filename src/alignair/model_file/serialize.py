@@ -12,7 +12,7 @@ import torch
 from safetensors.torch import load as st_load, save as st_save
 
 from ..core.config import AlignAIRConfig
-from ..errors import ModelError
+from ..errors import ConfigurationError, ModelError, ModelIntegrityError
 
 _GENES = ("V", "D", "J")
 
@@ -41,23 +41,28 @@ def _v3_refusal(architecture: str) -> ModelError:
                       hint="pip install 'alignair<4' runs it.")
 
 
-# Settings AlignAIR 4 models once stored, retired at the value every trained model held. A file that stores one
-# describes the model this version builds only at that value (d_presence_head: the model's has_d, or None, which meant
-# has_d).
-RETIRED_V4_SETTINGS = ("use_orientation", "anchor_heads", "reject_empty_sequences", "d_presence_head")
+# Settings AlignAIR 4 models once stored, dropped on reading. Most were retired at the value every trained model held:
+# a file that stores one describes the model this version builds only at that value (d_presence_head: the model's
+# has_d, or None, which meant has_d; the input and label spaces: nucleotide reads, allele labels). The allele counts
+# are the bound reference's now, so a file's are dropped whatever they hold.
+RETIRED_V4_SETTINGS = ("use_orientation", "anchor_heads", "reject_empty_sequences", "d_presence_head", "input_space",
+                       "label_space", "v_allele_count", "j_allele_count", "d_allele_count")
+_ANY_VALUE = None
 
 
 def _retired_values(raw: dict) -> dict:
     has_d = raw.get("has_d", True)
     return {"use_orientation": {True}, "anchor_heads": {True}, "reject_empty_sequences": {False},
-            "d_presence_head": {has_d, None}}
+            "d_presence_head": {has_d, None}, "input_space": {"nucleotide"}, "label_space": {"alleles"},
+            "v_allele_count": _ANY_VALUE, "j_allele_count": _ANY_VALUE, "d_allele_count": _ANY_VALUE}
 
 
 def _without_retired_v4_settings(raw: dict, architecture: str) -> dict:
     """``raw`` without the retired AlignAIR 4 settings it stores at their one value; ModelError naming those it stores
     at another (a model this version does not build)."""
     allowed = _retired_values(raw)
-    other = {key: raw[key] for key in RETIRED_V4_SETTINGS if key in raw and raw[key] not in allowed[key]}
+    other = {key: raw[key] for key in RETIRED_V4_SETTINGS
+             if key in raw and allowed[key] is not _ANY_VALUE and raw[key] not in allowed[key]}
     if other:
         raise ModelError(f"this model file was built with settings this AlignAIR no longer builds: {other}",
                          context={"architecture": architecture, "settings": sorted(other)},
@@ -85,7 +90,11 @@ def config_from_bytes(b: bytes) -> AlignAIRConfig:
         raise ModelError(f"the model file's configuration has settings this AlignAIR does not know: {unknown}",
                          context={"architecture": architecture, "settings": unknown},
                          hint="It was written by a newer AlignAIR: upgrade alignair to read it.")
-    return AlignAIRConfig(**raw)
+    try:
+        return AlignAIRConfig(**raw)
+    except ConfigurationError as exc:              # a fault in the file's own configuration is the file's
+        raise ModelIntegrityError(f"the model file's configuration is invalid: {exc}", context=exc.context,
+                                  hint=exc.hint) from exc
 
 
 def state_dict_to_bytes(sd: dict) -> bytes:

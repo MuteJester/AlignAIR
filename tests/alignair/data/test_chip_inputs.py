@@ -180,7 +180,7 @@ def test_unsupervised_rows_add_no_true_allele():
 
 
 def _config(**options):
-    return AlignAIRConfig(v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True, max_seq_length=32, **options)
+    return AlignAIRConfig(has_d=True, max_seq_length=32, **options)
 
 
 def test_the_adapter_adds_the_chip_inputs():

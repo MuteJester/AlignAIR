@@ -68,14 +68,14 @@ def _path(args) -> int:
 
 
 def _info(args) -> int:
-    from ..model_file import read_metadata
+    from ..model_file import embedded_allele_counts, read_metadata
     p = cache.resolve_model(args.model, sources=_srcs(args), offline=args.offline)
     md = read_metadata(str(p))
     print(f"{md.get('model_id') or '(local)'} {md.get('model_version') or ''}  "
           f"(format v{md.get('model_format_version')}, alignair {md.get('created_by_alignair')})")
     print(f"  created:  {md.get('created')}")
     print(f"  species/locus: {md.get('species')} / {md.get('locus')}")
-    ac = md.get("model", {}).get("allele_counts", {})
+    ac = embedded_allele_counts(str(p))
     print(f"  alleles:  V={ac.get('v')} D={ac.get('d')} J={ac.get('j')}")
     print(f"  reference: allele_order_sha256={md.get('reference', {}).get('allele_order_sha256', '')[:12]}…")
     dcs = [dc.get("name") for dc in md.get("reference", {}).get("dataconfigs", []) if dc.get("name")]

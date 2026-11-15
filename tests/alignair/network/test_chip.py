@@ -151,7 +151,7 @@ def test_any_reference_binds_and_the_calls_follow_its_alleles(chip):
     model, batch, _ = chip
     model.eval()
     model.bind_reference(with_a_novel_v())
-    assert model.cfg.v_allele_count == 3
+    assert model.core.counts["v"] == 3
     inputs = {key: value for key, value in batch.inputs.items() if not key.startswith(("bank_mask", "teacher"))}
     out = model(inputs)
     assert model.core.bank.rows("v") == 3

@@ -2,12 +2,13 @@
 predicts against it (no post-hoc mask), then binds the reference back."""
 import GenAIRR.data as gd
 import pytest
+
+from alignair.core import prepare_model
 from torch import nn
 
 from alignair import api
 from alignair.core import AlignAIR, ModelComponents, register_architecture
 from alignair.core import components
-from alignair.core.config import AlignAIRConfig
 from alignair.errors import InputError
 from alignair.reference.reference_set import ReferenceSet
 
@@ -40,8 +41,8 @@ def make(monkeypatch):
 
     def build():
         reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-        model = AlignAIR(AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576,
-                                                         architecture="test-bank-v1"))
+        model = AlignAIR(prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576,
+                                       architecture="test-bank-v1").config)
         model.bind_reference(reference)
         return model, reference
     return build, calls
@@ -57,7 +58,7 @@ def test_a_genotype_is_the_models_bank(make):
     assert set(call["reference"].gene("V").names) == genotype["v"]
     assert set(call["reference"].gene("J").names) == genotype["j"]
     assert call["reference"].gene("D").names == reference.gene("D").names         # a gene it does not name: all
-    assert model.core.reference is reference and model.cfg.v_allele_count == len(reference.gene("V"))
+    assert model.core.reference is reference
 
 
 def test_a_genotype_naming_an_allele_the_reference_lacks_is_refused(make):

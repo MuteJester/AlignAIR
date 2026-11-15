@@ -61,7 +61,6 @@ TOP_K = 3
 # is in no region).
 _REGION_FLOOR = 1e-6
 SUPPORT = 1e-8            # at inference, the region marginal over which a base's columns are read for the gene's scan
-_COUNT = {"v": "v_allele_count", "d": "d_allele_count", "j": "j_allele_count"}
 
 
 class _Valve(torch.autograd.Function):
@@ -95,7 +94,7 @@ class ChipCore(nn.Module):
         super().__init__()
         channels = cfg.trunk_channels
         self.genes = cfg.genes
-        self.counts = {gene: getattr(cfg, _COUNT[gene]) for gene in self.genes}
+        self.counts = {}                                 # the bound reference's, per gene
         self.trunk = DilatedTrunk(cfg.embed_dim, channels)
         self.parser = Parser(channels)
         self.anchors = nn.ModuleDict({gene: AnchorHead(channels) for gene in ANCHOR_GENES})

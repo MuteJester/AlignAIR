@@ -123,7 +123,7 @@ def _two_locus_novel_batch():
     allele = NovelAllele(novel_name(call, sequence), call, sequence)
     first["v_call"], first[NOVEL_FIELD] = allele.name, {"V": allele.to_dict()}
     first["recalled_v_call"] = allele.name            # GenAIRR re-calls a novel read as its novel allele alone
-    setup = prepare_model(reference, input_space="nucleotide", label_space="alleles", embed_dim=4, trunk_channels=8)
+    setup = prepare_model(reference, embed_dim=4, trunk_channels=8)
     return setup, NucleotideBatchAdapter(reference, setup.config, augment_orientation=False)(records)
 
 

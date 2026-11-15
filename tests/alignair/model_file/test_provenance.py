@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 import alignair
-from alignair.model_file import _provenance
+from alignair.model_file.io import _provenance
 
 pytestmark = pytest.mark.component
 
@@ -30,5 +30,5 @@ def test_the_commit_is_alignairs_own_not_the_working_directorys(tmp_path, monkey
 
 def test_an_alignair_outside_any_checkout_records_no_commit(tmp_path, monkeypatch):
     _git("init", "-q", cwd=tmp_path)          # a repository that holds the package's directory but not its files
-    monkeypatch.setattr("alignair.model_file._package_dir", lambda: tmp_path)
+    monkeypatch.setattr("alignair.model_file.io._package_dir", lambda: tmp_path)
     assert _provenance(publish=True)["git_commit"] is None

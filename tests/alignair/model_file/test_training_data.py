@@ -15,11 +15,9 @@ from alignair.train.random_state import capture_rng_state
 pytestmark = pytest.mark.integration
 
 
-@pytest.fixture(params=[('nucleotide', 'alleles')])
-def checkpoint(request, tmp_path):
-    space, labels = request.param
-    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
-                          input_space=space, label_space=labels, max_seq_length=128,
+@pytest.fixture
+def checkpoint(tmp_path):
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128,
                           embed_dim=4, trunk_channels=8)
     model = setup.build_model()
     optimizer = torch.optim.AdamW(model.parameters(), lr=.001)
@@ -32,10 +30,9 @@ def checkpoint(request, tmp_path):
     rng = capture_rng_state(include_cuda=False)
     arguments = {'lr': .001, 'schedule': {'total_steps': 9, 'min_lr': .00001}}
     path = tmp_path / 'resume.alignair'
-    model_file.save_model(path, model, dataconfigs=[gd.HUMAN_IGH_OGRDB],
+    model_file.save_model(path, model, setup.reference, dataconfigs=[gd.HUMAN_IGH_OGRDB],
                           training={'steps': 1, 'batch_size': 2, 'train_args': arguments},
-                          optimizer=optimizer, scheduler=scheduler, rng=rng,
-                          label_schema=setup.label_schema())
+                          optimizer=optimizer, scheduler=scheduler, rng=rng)
     return path, setup, model, optimizer, scheduler, rng, arguments
 
 
@@ -83,7 +80,7 @@ def test_decode_preserves_all_state_without_model_construction_or_rng_consumptio
     decoded = model_file.read_training_state(path)
     assert isinstance(decoded, model_file.TrainingStateData)
     assert decoded.train_args == arguments
-    assert decoded.metadata['model']['label_schema'] == setup.label_schema()
+    assert decoded.metadata['reference']['allele_order_sha256'] == serialize.allele_order_sha256(setup.reference)
     assert decoded.reference.to_serializable() == setup.reference.to_serializable()
     _equal(capture_rng_state(include_cuda=False), before)
 
@@ -102,14 +99,11 @@ def test_existing_model_bearing_api_still_restores_an_evaluation_model(checkpoin
     assert restored.train_args == arguments
 
 
-@pytest.mark.parametrize('problem', ['reference_hash', 'label_schema'])
-def test_decode_keeps_reference_and_label_integrity_checks(checkpoint, problem, monkeypatch):
+@pytest.mark.parametrize('digest', ['allele_order_sha256', 'reference_fasta_sha256'])
+def test_decode_keeps_the_reference_integrity_checks(checkpoint, digest, monkeypatch):
     path = checkpoint[0]
     def alter(header, sections):
-        if problem == 'reference_hash':
-            header['reference']['allele_order_sha256'] = '0' * 64
-        else:
-            header['model']['label_schema']['genes'].pop('v')
+        header['reference'][digest] = '0' * 64
     _rewrite(path, alter)
     def forbidden(*args, **kwargs):
         raise AssertionError('invalid checkpoint caused model construction')

@@ -56,7 +56,7 @@ def test_a_candidate_trains_reloads_and_resumes(name, tmp_path):
     raw = predictor.predict_raw(['ACGTN', 'AC'], batch_size=1)
     cfg = predictor.model.cfg
     for gene in cfg.genes:
-        assert raw[f"{gene}_allele"].shape == (2, cfg.allele_count(gene))
+        assert raw[f"{gene}_allele"].shape == (2, len(predictor.reference.gene(gene.upper())))
     steps = []
     resumed = run_training(request.with_(steps=3, resume_path=run.model_path), output_dir=tmp_path / 'resumed',
                            on_iteration=lambda item: steps.append(item.step))

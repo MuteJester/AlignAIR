@@ -5,7 +5,7 @@ import hashlib
 import json
 import struct
 
-from ..errors import (MissingDependencyError, ModelFormatError, ModelIntegrityError,
+from ..errors import (MissingDependencyError, ModelError, ModelFormatError, ModelIntegrityError,
                       ModelSectionError, error_context)
 
 MAGIC = b"ALGNAIR\x01"          # 7-char tag + 1-byte MAJOR format version
@@ -70,15 +70,35 @@ def is_alignair_file(path: str) -> bool:
         return False
 
 
+# The first bytes of a torch checkpoint (an AlignAIR 3 ``.pt``): a zip archive, or a pickle stream (protocol >= 2).
+_TORCH_MAGIC = (b"PK\x03\x04", b"\x80")
+
+
+def _not_a_model_file(path, head: bytes) -> ModelError:
+    """The refusal of a file whose first bytes ``head`` are not a model file's: an AlignAIR 3 checkpoint (a torch
+    ``.pt``, refused with the version that runs it), or a file that is no model at all."""
+    if head.startswith(_TORCH_MAGIC):
+        return ModelFormatError(f"{path} is an AlignAIR 3 checkpoint (not an .alignair model file); AlignAIR 4 reads "
+                                "chip models only — use alignair<4 to run it", context={"path": str(path)},
+                                hint="pip install 'alignair<4' runs it.")
+    return ModelFormatError(f"{path} is not an AlignAIR model file (.alignair)", context={"path": str(path)},
+                            hint="An empty or truncated file is an interrupted download: fetch the model again.")
+
+
 def read_header(path: str) -> dict:
+    """The model file's JSON header. A ModelError for a missing file and for a file that is not a model file (an
+    AlignAIR 3 checkpoint named as such), a ModelFormatError for a damaged or newer one."""
     import os
 
+    if not os.path.isfile(path):
+        raise ModelError(f"no such model file: {path}", context={"path": str(path)},
+                         hint="Check the path, or name a shipped model by its id (alignair models list).")
     with error_context(path=path, stage="model_header"), open(path, "rb") as f:
         magic = f.read(8)
+        if magic[:7] != MAGIC[:7]:
+            raise _not_a_model_file(path, magic)
         if len(magic) != 8:
             raise ModelFormatError("truncated AlignAIR model header")
-        if magic[:7] != MAGIC[:7]:
-            raise ModelFormatError("not an AlignAIR model file (bad magic)")
         if magic[7] > MAJOR_VERSION:
             raise ModelFormatError(f"model written by a newer AlignAIR (format v{magic[7]} > {MAJOR_VERSION})",
                                    hint="Upgrade AlignAIR to a version supporting this model format.")

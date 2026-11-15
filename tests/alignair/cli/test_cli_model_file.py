@@ -1,6 +1,8 @@
 import pytest
+
+from alignair.core import prepare_model
+from alignair.reference.reference_set import ReferenceSet
 import GenAIRR.data as gd
-from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair import model_file as mf
 from alignair.cli.main import main
@@ -9,9 +11,10 @@ pytestmark = pytest.mark.integration
 
 
 def _save(tmp_path):
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576).config
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), AlignAIR(cfg), dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(p), AlignAIR(cfg), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 2, "batch_size": 3})
     return str(p)
 

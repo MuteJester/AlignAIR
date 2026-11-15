@@ -41,7 +41,7 @@ def save_toy_lab_chip(path, lab_name: str, *, chip_copy=None) -> str:
     from alignair.reference.reference_set import ReferenceSet
     torch.manual_seed(0)
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), trunk_channels=LAB_CHIPS[lab_name])
-    save_model(str(path), setup.build_model().eval(), dataconfigs=[gd.HUMAN_IGH_OGRDB],
+    save_model(str(path), setup.build_model().eval(), setup.reference, dataconfigs=[gd.HUMAN_IGH_OGRDB],
                training={"steps": 7, "batch_size": 2}, include_trusted_pickle=True)
     if chip_copy is not None:
         shutil.copyfile(path, chip_copy)
@@ -80,11 +80,13 @@ def reads() -> list[str]:
     return [record["sequence"] for record in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, component, 21), 3)]
 
 
-def _model():
+def _reference():
     import GenAIRR.data as gd
-    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128, embed_dim=4,
-                          trunk_channels=8)
-    return setup.build_model().eval()
+    return ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+
+
+def _model():
+    return prepare_model(_reference(), max_seq_length=128, embed_dim=4, trunk_channels=8).build_model().eval()
 
 
 def _v3_pt(tmp_path):
@@ -137,7 +139,7 @@ def test_convert_refuses_a_pt_checkpoint(tmp_path, capsys):
 
 def test_convert_refuses_a_model_file_that_is_not_a_lab_chip(tmp_path, capsys):
     p = str(tmp_path / "m.alignair")
-    mf.save_model(p, _model(), dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, _model(), _reference(), dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
     rc = run_convert(Namespace(src=p, dst=str(tmp_path / "out.alignair")))
     assert rc != 0 and "not a lab chip model file" in capsys.readouterr().err

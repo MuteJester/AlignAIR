@@ -18,9 +18,9 @@ REFERENCE = "HUMAN_IGH_OGRDB"
 
 @pytest.fixture
 def checkpoint(tmp_path, make_small_model):
-    model, _ = make_small_model(REFERENCE, seed=2)
+    model, reference_set = make_small_model(REFERENCE, seed=2)
     path = tmp_path / "base.alignair"
-    save_model(str(path), model, dataconfigs=[REFERENCE], training={"steps": 0, "batch_size": 0},
+    save_model(str(path), model, reference_set, dataconfigs=[REFERENCE], training={"steps": 0, "batch_size": 0},
                include_trusted_pickle=False)
     return path
 

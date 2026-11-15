@@ -33,7 +33,7 @@ def _reference():
 
 
 def _config(**kwargs):
-    return AlignAIRConfig(v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True, max_seq_length=128,
+    return AlignAIRConfig(has_d=True, max_seq_length=128,
                           embed_dim=4, trunk_channels=8, **kwargs)
 
 

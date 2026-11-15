@@ -32,7 +32,7 @@ def test_a_novel_allele_run_trains_on_their_reads_and_saves_the_dataconfigs_refe
     assert any(NOVEL_FIELD in record for _, batch in records for record in batch)
     assert v1_digest(load_model(run.model_path).reference) == PIN["dataconfigs"]["HUMAN_IGH_OGRDB"]
     header = read_metadata(run.model_path)
-    assert len(header["model"]["label_schema"]["genes"]["v"]) == 198
+    assert len(load_model(run.model_path).reference.gene("V")) == 198
     assert header["training"]["train_args"]["novel_alleles"] == {"generator": 1, "gene_fraction": 0.4,
                                                                  "snps": [1, 6], "epoch_records": 16}
 

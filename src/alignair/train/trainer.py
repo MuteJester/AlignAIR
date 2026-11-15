@@ -113,12 +113,11 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
             raise ConfigurationError('schedule must be a CosineSchedule or None')
         schedule.validate(lr)
 
-    setup = model_setup or ModelSetup(reference_set, cfg, cfg.input_space, cfg.label_space)
+    setup = model_setup or ModelSetup(reference_set, cfg)
     if setup.reference is not reference_set or setup.config != cfg:
         raise ConfigurationError('training setup must bind this model configuration and reference')
     data = prepare_training_data(setup, device=device)
     schedule_metadata = schedule.to_dict() if schedule is not None else None
-    schema = setup.label_schema()
     requested_policy = CurriculumStreamPolicy(progresses, heavy_shm, short_boost, mutation_cap,
                                               mode='auto',
                                               indel_fraction=indel_fraction, indel_form=indel_form,
@@ -150,7 +149,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
         raise ConfigurationError('resume checkpoint does not exist', context={'path': str(resume_path)})
     if resume_from:
         state = load_training_checkpoint(resume_from, device=device)
-        validate_continuation(state, cfg, schema, schedule=schedule_metadata, lr=lr)
+        validate_continuation(state, cfg, reference_set, schedule=schedule_metadata, lr=lr)
         restore_model_state(model, state.model_state, source=resume_from)
         if state.optimizer_state is not None:
             opt.load_state_dict(state.optimizer_state)
@@ -177,7 +176,6 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                    # `mutation_cap` is the run-level REQUEST; `effective_mutation_caps` is what each
                    # locus actually got (TCR -> 0). Without the latter the card misstates the training
                    # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
-                   "input_space": cfg.input_space, "label_space": cfg.label_space,
                    "source_mode": source_policy.mode, "mutation_cap": mutation_cap,
                    "recipe": RECIPE,
                    "indel_form": source_policy.indel_form, "indel_fraction": list(source_policy.indel_fraction),
@@ -203,8 +201,8 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
             _train_args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
 
     def _checkpoint(path, step, **extra):
-        save_checkpoint(path, model, step, opt, dataconfigs=_dcs,
-                        train_args={**_train_args, **extra}, label_schema=schema, scheduler=engine.scheduler)
+        save_checkpoint(path, model, reference_set, step, opt, dataconfigs=_dcs,
+                        train_args={**_train_args, **extra}, scheduler=engine.scheduler)
 
     # fixed-seed, immutable validation batches for best-checkpoint selection
     val_set = []
@@ -254,12 +252,12 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                     best_path = f"{stem}.best{ext}"
                     _checkpoint(best_path, step, val_score=vscore)
             if save_path and save_every and step % save_every == 0:
-                save_rotating(save_path, model, step, opt, dataconfigs=_dcs, train_args=_train_args,
-                              label_schema=schema, scheduler=engine.scheduler)
+                save_rotating(save_path, model, reference_set, step, opt, dataconfigs=_dcs, train_args=_train_args,
+                              scheduler=engine.scheduler)
     finally:
         if workers is not None:                    # finished, failed or interrupted: no worker outlives the run
             workers.close()
     if save_path:                                  # save the ACTUAL completed step, not the requested one
-        save_rotating(save_path, model, completed, opt, dataconfigs=_dcs, train_args=_train_args,
-                      label_schema=schema, scheduler=engine.scheduler)
+        save_rotating(save_path, model, reference_set, completed, opt, dataconfigs=_dcs, train_args=_train_args,
+                      scheduler=engine.scheduler)
     return TrainingOutcome(model, completed, best_path)

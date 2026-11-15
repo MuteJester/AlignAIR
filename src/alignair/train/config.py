@@ -55,8 +55,6 @@ class TrainingConfig:
     val_every: int = 0
     seed: int = 0
     init_seed: int | None = None
-    input_space: str = 'nucleotide'
-    label_space: str = 'alleles'
     max_seq_length: int | None = None
     has_d: bool | None = None
     model_options: Mapping = field(default_factory=dict)
@@ -81,8 +79,6 @@ class TrainingConfig:
             if not isinstance(self.schedule, CosineSchedule):
                 raise ConfigurationError('schedule must be a CosineSchedule or None')
             self.schedule.validate(self.lr)
-        if self.input_space != 'nucleotide' or self.label_space != 'alleles':
-            raise ConfigurationError('AlignAIR trains on nucleotide reads with allele labels')
         if isinstance(self.dataconfigs, (str, bytes)):
             raise ConfigurationError('dataconfigs must be a nonempty collection of reference sources')
         try:
@@ -98,10 +94,9 @@ class TrainingConfig:
             raise ConfigurationError('model_options must be a mapping of model configuration fields')
         object.__setattr__(self, 'dataconfigs', sources)
         object.__setattr__(self, 'model_options', deepcopy(dict(self.model_options)))
-        protected = {'input_space', 'label_space', 'max_seq_length', 'has_d', 'v_allele_count',
-                     'j_allele_count', 'd_allele_count', 'v_label_count', 'j_label_count', 'd_label_count', 'num_chain_types'}
+        protected = {'max_seq_length', 'has_d', 'num_chain_types'}
         if protected.intersection(self.model_options):
-            raise ConfigurationError('model_options cannot override reference/input/label choices',
+            raise ConfigurationError('model_options cannot set the window, the D gene or the locus count',
                                      context={'fields': sorted(protected.intersection(self.model_options))})
 
     @classmethod

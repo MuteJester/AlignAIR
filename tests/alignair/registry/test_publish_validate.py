@@ -1,5 +1,8 @@
 """Publish into a local registry + validator gate."""
 import pytest
+
+from alignair.core import prepare_model
+from alignair.reference.reference_set import ReferenceSet
 import hashlib
 import json
 import shutil
@@ -8,7 +11,6 @@ import GenAIRR.data as gd
 
 from alignair import model_file as mf
 from alignair.core import AlignAIR
-from alignair.core.config import AlignAIRConfig
 from alignair.registry.publish import publish_local
 from alignair.registry.validate import validate_registry
 
@@ -16,8 +18,8 @@ pytestmark = pytest.mark.integration
 
 
 def _save(path, **kw):
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
-    mf.save_model(str(path), AlignAIR(cfg).eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576)
+    mf.save_model(str(path), AlignAIR(setup.config).eval(), setup.reference, dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 1, "batch_size": 1}, **kw)
 
 

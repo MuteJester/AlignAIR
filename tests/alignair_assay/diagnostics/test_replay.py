@@ -432,7 +432,8 @@ def test_reference_mismatch_refused_naming_allele(small_model, reference, tmp_pa
 
     # A model file is loaded with alignair's load_model and checked the same way.
     path = tmp_path / "small.alignair"
-    save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
+    save_model(str(path), model, reference_set, dataconfigs=["HUMAN_IGH_OGRDB"], training={},
+               include_trusted_pickle=False)
     loaded, loaded_reference_set = load_model_checked(path, reference, device="cpu")
     assert not loaded.training
     assert all(torch.equal(a, b) for a, b in zip(loaded.state_dict().values(), model.state_dict().values()))

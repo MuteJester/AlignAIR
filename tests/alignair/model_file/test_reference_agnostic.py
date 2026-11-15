@@ -2,13 +2,14 @@
 trained on included."""
 import GenAIRR.data as gd
 import pytest
+
+from alignair.core import prepare_model
 from torch import nn
 
 from alignair import api
 from alignair import model_file as mf
 from alignair.core import AlignAIR, ModelComponents, register_architecture
 from alignair.core import components
-from alignair.core.config import AlignAIRConfig
 from alignair.reference.reference_set import ReferenceSet
 
 pytestmark = pytest.mark.integration
@@ -36,9 +37,11 @@ def saved(tmp_path, monkeypatch):
     register_architecture("test-bank-v1", ModelComponents(core=BankCore, objective=lambda cfg: None))
 
     def save(architecture):
-        cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, architecture=architecture)
+        cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576,
+                            architecture=architecture).config
         path = tmp_path / f"{architecture}.alignair"
-        mf.save_model(str(path), AlignAIR(cfg), dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+        mf.save_model(str(path), AlignAIR(cfg), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                      dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
         return str(path)
     return save
 
@@ -61,7 +64,7 @@ def test_a_model_loads_with_another_reference(saved):
     loaded = mf.load_model(path, reference=other)
     assert loaded.reference.gene("V").names == other.gene("V").names
     assert loaded.model.core.reference is loaded.reference
-    assert loaded.config.v_allele_count == 11 and loaded.model.cfg.v_allele_count == 11
+    assert len(loaded.reference.gene("V")) == 11
     model, reference = api.load_model(path, reference=other)
     assert reference.gene("V").names == other.gene("V").names and model.core.reference is reference
 

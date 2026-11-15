@@ -120,7 +120,8 @@ def toy_chip_file(tmp_path_factory):
     torch.manual_seed(0)
     model = prepare_model(reference).build_model().eval()
     path = tmp_path_factory.mktemp("golden") / "toy_chip.alignair"
-    save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
+    save_model(str(path), model, reference, dataconfigs=["HUMAN_IGH_OGRDB"], training={},
+               include_trusted_pickle=False)
     return str(path)
 
 

@@ -159,7 +159,6 @@ def test_bound_to_binds_a_copy_and_leaves_the_aligner_as_it_was():
     bound = aligner.bound_to(bank)
     assert bound.reference.gene("V").names == names[:3]
     assert bound.model is not aligner.model and bound.model_path is None
-    assert bound.model.cfg.v_allele_count == 3 and aligner.model.cfg.v_allele_count == len(names)
     assert bound.label_schema["genes"]["v"] == names[:3] and aligner.label_schema["genes"]["v"] == list(names)
 
 

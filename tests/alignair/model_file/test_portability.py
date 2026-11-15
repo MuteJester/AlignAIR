@@ -1,10 +1,12 @@
 import pytest
+
+from alignair.core import prepare_model
+from alignair.reference.reference_set import ReferenceSet
 import json
 
 import GenAIRR.data as gd
 from safetensors.torch import load as st_load
 
-from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair import model_file as mf
 from alignair.model_file import container as C
@@ -13,9 +15,10 @@ pytestmark = pytest.mark.integration
 
 
 def _save(tmp_path):
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576).config
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), AlignAIR(cfg), dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+    mf.save_model(str(p), AlignAIR(cfg), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
     return str(p)
 
 

@@ -11,8 +11,8 @@ pytestmark = pytest.mark.component
     ({"init_from": "a.alignair", "resume_path": "b.alignair"}, "choose init_from or resume_path"),
     ({"flanks": "default"}, "flanks must be a FlankPolicy"),
     ({"schedule": {"total_steps": 10}}, "schedule must be a CosineSchedule"),
-    ({"input_space": "protein"}, "nucleotide reads with allele labels"),
-], ids=["init_and_resume", "flanks", "schedule", "spaces"])
+    ({"model_options": {"has_d": False}}, "cannot set the window, the D gene or the locus count"),
+], ids=["init_and_resume", "flanks", "schedule", "reference_fields"])
 def test_an_unusable_request_is_refused(options, message):
     with pytest.raises(ConfigurationError, match=message):
         TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", **options)

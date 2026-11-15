@@ -5,7 +5,7 @@ from torch import nn
 
 import GenAIRR.data as gd
 
-from alignair.core import AlignAIR, ModelComponents, build_model_config, prepare_model, register_architecture
+from alignair.core import AlignAIR, AlignAIRConfig, ModelComponents, prepare_model, register_architecture
 from alignair.core import components
 from alignair.errors import ConfigurationError
 from alignair.network.orientation import apply_orientation
@@ -49,7 +49,7 @@ def architecture(monkeypatch):
 
 def config(**options):
     options.setdefault("bank_orientation", False)        # the toy core binds no bank
-    return build_model_config(3, 2, 2, has_d=True, max_seq_length=128, embed_dim=4, **options)
+    return AlignAIRConfig(has_d=True, max_seq_length=128, embed_dim=4, **options)
 
 
 def batch(orientation=0):
@@ -115,11 +115,10 @@ def test_a_prepared_model_binds_its_reference_to_the_core(architecture):
     assert model.core.reference is reference
 
 
-def test_a_model_takes_the_bound_references_allele_counts(architecture):
-    """The alleles are an input: binding another reference makes the config's allele counts that reference's."""
+def test_binding_a_reference_leaves_the_configuration_as_it_is(architecture):
+    """The alleles are an input, not configuration: binding a reference gives the core its bank only."""
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     model = AlignAIR(config(architecture=architecture(core=ToyCore)))
+    before = model.cfg
     model.bind_reference(reference)
-    assert model.core.reference is reference
-    assert (model.cfg.v_allele_count, model.cfg.j_allele_count, model.cfg.d_allele_count) == (
-        len(reference.gene("V")), len(reference.gene("J")), len(reference.gene("D")))
+    assert model.core.reference is reference and model.cfg is before

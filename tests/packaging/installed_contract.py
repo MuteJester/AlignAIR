@@ -22,8 +22,8 @@ def main():
     import torch
     from alignair import Aligner, load_model
     from alignair.cli.main import build_parser
-    from alignair.core import AlignAIR
-    from alignair.core.config import AlignAIRConfig
+    from alignair.core import prepare_model
+    from alignair.reference.reference_set import ReferenceSet
     from alignair.errors import ModelFormatError, RegistryError
     from alignair import model_file
 
@@ -33,12 +33,12 @@ def main():
     assert any(origin.is_relative_to(root) for root in installed_roots), origin
     torch.set_num_threads(2)
     torch.manual_seed(0)
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=128)
-    model = AlignAIR(cfg).eval()
+    reference_set = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    model = prepare_model(reference_set, max_seq_length=128).build_model().eval()
     with tempfile.TemporaryDirectory(prefix="alignair-installed-") as directory:
         root = Path(directory)
         artifact = root / "model.alignair"
-        model_file.save_model(str(artifact), model, dataconfigs=["HUMAN_IGH_OGRDB"],
+        model_file.save_model(str(artifact), model, reference_set, dataconfigs=["HUMAN_IGH_OGRDB"],
                               training={"steps": 0}, include_trusted_pickle=False)
         header = model_file.read_metadata(artifact)
         assert "reference_json" in header["sections"]

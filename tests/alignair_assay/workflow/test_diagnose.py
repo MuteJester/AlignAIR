@@ -64,8 +64,8 @@ def _copy(layout: RunLayout, tmp_path) -> RunLayout:
 def save_checkpoint(make_small_model):
     """``save(path, seed=0) -> path``: a small random-init model written as an ``.alignair`` model file."""
     def save(path, seed=0):
-        model, _ = make_small_model(REFERENCE, seed=seed)
-        save_model(str(path), model, dataconfigs=[REFERENCE], training={"steps": 0, "batch_size": 0},
+        model, reference_set = make_small_model(REFERENCE, seed=seed)
+        save_model(str(path), model, reference_set, dataconfigs=[REFERENCE], training={"steps": 0, "batch_size": 0},
                    include_trusted_pickle=False)
         return path
 

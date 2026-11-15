@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from ..model_file import read_metadata
+from ..model_file import embedded_allele_counts, read_metadata
 
 
 def register(sub) -> None:
@@ -19,7 +19,7 @@ def run(args) -> int:
         print(json.dumps(md, indent=2, default=str))
         return 0
     m, t = md.get("model", {}), md.get("training", {})
-    ac = m.get("allele_counts", {})
+    ac = embedded_allele_counts(args.model)
     print(f"AlignAIR model  (format v{md.get('format_version')}, alignair {md.get('alignair_version')})")
     print(f"  created:   {md.get('created')}")
     if md.get("description"):

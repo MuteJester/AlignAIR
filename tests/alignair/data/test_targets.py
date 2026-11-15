@@ -81,7 +81,7 @@ def test_batch_masks_removed_genes_in_training_and_metrics():
 
     reference = ReferenceSet({gene: GeneReference([gene + "*01"], ["ACGTACGTACGT"], {gene + "*01": 0})
                               for gene in ("V", "D", "J")}, has_d=True)
-    cfg = AlignAIRConfig(max_seq_length=128, v_allele_count=1, j_allele_count=1, d_allele_count=1, has_d=True)
+    cfg = AlignAIRConfig(max_seq_length=128, has_d=True)
     removed = _record()
     removed.update(j_sequence_start=12, j_sequence_end=12,
                    j_germline_start=None, j_germline_end=None, j_cigar="")

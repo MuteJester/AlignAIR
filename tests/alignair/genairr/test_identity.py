@@ -21,7 +21,8 @@ def test_a_saved_model_records_the_genairr_identity(tmp_path):
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128, embed_dim=4,
                           trunk_channels=8)
     path = tmp_path / "model.alignair"
-    save_model(path, setup.build_model(), dataconfigs=[gd.HUMAN_IGH_OGRDB], training={"steps": 0, "batch_size": 0},
+    save_model(path, setup.build_model(), setup.reference,
+               dataconfigs=[gd.HUMAN_IGH_OGRDB], training={"steps": 0, "batch_size": 0},
                include_trusted_pickle=False)
     assert _identity_ok(read_metadata(path))     # beside alignair_version and torch_version
 

@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch import nn
 
-from alignair.core import AlignAIR, AlignAIRConfig, ModelComponents, build_model_config, register_architecture
+from alignair.core import AlignAIR, AlignAIRConfig, ModelComponents, register_architecture
 from alignair.core import components
 from alignair.errors import ConfigurationError
 
@@ -35,7 +35,7 @@ def scratch(monkeypatch):
 
 
 def _config(**options):
-    return build_model_config(3, 2, 2, has_d=True, max_seq_length=32, embed_dim=4, **options)
+    return AlignAIRConfig(has_d=True, max_seq_length=32, embed_dim=4, **options)
 
 
 @pytest.mark.parametrize("name", ["", "  ", " test-padded-v1", None, 7])
@@ -68,7 +68,7 @@ def test_an_unimportable_architecture_module_is_named(monkeypatch):
     assert caught.value.context["module"] == "no_such_module_for_alignair"
 
 
-@pytest.mark.parametrize("config", [None, {"v_allele_count": 3}, "chip-v1"])
+@pytest.mark.parametrize("config", [None, {"has_d": True}, "chip-v1"])
 def test_the_model_takes_only_an_alignair_config(config):
     with pytest.raises(ConfigurationError, match="requires an AlignAIRConfig"):
         AlignAIR(config)
@@ -82,21 +82,18 @@ def test_an_all_pad_read_reaches_the_core(scratch):
     assert model({"tokenized_sequence": tokens})["tokens"].shape == (2, 32)
 
 
-def test_every_model_orients_its_reads_and_binding_a_reference_counts_its_alleles(scratch):
+def test_every_model_orients_its_reads(scratch):
     register_architecture("test-echo-v1", ModelComponents(core=EchoCore, objective=_objective))
     model = AlignAIR(_config(architecture="test-echo-v1", bank_orientation=False)).eval()
     assert set(model.component_modules()) == {"embedding", "orientation_head", "core"}
     out = model({"tokenized_sequence": torch.randint(1, 5, (2, 32))})
     assert out["orientation_logits"].shape == (2, 4) and out["orientation"].shape == (2,)
     assert out["start_mask"].all() and not out["end_mask"][:, 0].any()
-    from alignair.reference import ReferenceSet
-    model.bind_reference(ReferenceSet.from_genotype({"V": {"V*01": "ACGT"}, "D": {"D*01": "GG"}, "J": {"J*01": "TT"}}))
-    assert (model.cfg.v_allele_count, model.cfg.j_allele_count, model.cfg.d_allele_count) == (1, 1, 1)
 
 
 def test_the_configurations_own_checks_name_their_field():
     for options, field in (({"trunk_channels": 0}, "trunk_channels"), ({"bank_orientation": 1}, "bank_orientation"),
-                           ({"input_space": "protein"}, "input_space")):
+                           ({"num_chain_types": 0}, "num_chain_types"), ({"vocab_size": 7}, "vocab_size")):
         with pytest.raises(ConfigurationError) as caught:
-            AlignAIRConfig(2, 2, 2, **options)
+            AlignAIRConfig(**options)
         assert caught.value.context["field"] == field, options

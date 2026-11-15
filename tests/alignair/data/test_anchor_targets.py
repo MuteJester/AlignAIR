@@ -55,7 +55,7 @@ def _reference(v_germline=None, j_germline=None, anchors=ANCHORS):
 
 
 def _config(length=NULL, **options):
-    return AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=length,
+    return AlignAIRConfig(has_d=True, max_seq_length=length,
                           **options)
 
 

@@ -16,7 +16,7 @@ import json
 import os
 
 from alignair.core.config import AlignAIRConfig
-from alignair.errors import ConfigurationError, report_error
+from alignair.errors import ConfigurationError, ModelError, report_error
 from alignair.model_file import container, read_model_state, serialize
 
 LAB_CHIPS = {"lab-chip-v1": 128, "lab-chipw64-v1": 64}
@@ -89,9 +89,10 @@ def _v3_architecture(path) -> str | None:
 def run_convert(args) -> int:
     """``convert SRC DST``: refuse an AlignAIR 3 file (with the version that runs it) and any file that is not a lab
     chip, else convert it."""
-    from alignair.model_file import v3_checkpoint_error
-    if not container.is_alignair_file(args.src):
-        return report_error(v3_checkpoint_error(args.src))
+    try:
+        container.read_header(args.src)
+    except ModelError as error:                      # a missing file, an AlignAIR 3 checkpoint, no model file
+        return report_error(error)
     v3 = _v3_architecture(args.src)
     if v3 is not None:
         return report_error(serialize._v3_refusal(v3))

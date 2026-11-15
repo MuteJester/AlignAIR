@@ -28,8 +28,7 @@ def igh():
     from alignair.core import prepare_model
     from alignair.data.training import prepare_training_data
     from alignair.reference.reference_set import ReferenceSet
-    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), input_space='nucleotide',
-                          label_space='alleles')
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))
     return gd.HUMAN_IGH_OGRDB, prepare_training_data(setup, device='cpu')
 
 

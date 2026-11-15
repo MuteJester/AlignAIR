@@ -1,9 +1,11 @@
 """Pickle-free publish artifacts + safe (no-pickle) inference load."""
 import GenAIRR.data as gd
 import pytest
+
+from alignair.core import prepare_model
+from alignair.reference.reference_set import ReferenceSet
 import torch
 
-from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair import model_file as mf
 from alignair.model_file import container as C
@@ -13,7 +15,8 @@ pytestmark = pytest.mark.integration
 
 def _model():
     from alignair.reference import ReferenceSet
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=128, embed_dim=4, trunk_channels=8)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128, embed_dim=4,
+                        trunk_channels=8).config
     model = AlignAIR(cfg).eval()
     model.bind_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))   # the chip reads its bank from it
     return model, cfg
@@ -22,7 +25,8 @@ def _model():
 def test_publish_artifact_has_no_pickle_sections(tmp_path):
     model, _ = _model()
     p = str(tmp_path / "pub.alignair")
-    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False, model_id="human-igh", model_version="1.0.0")
     secs = mf.read_metadata(p)["sections"]
     assert "reference_json" in secs and secs["reference_json"]["format"] == "json"
@@ -37,7 +41,8 @@ def test_a_publish_artifact_records_no_host_or_user_and_a_checkpoint_does(tmp_pa
     model, _ = _model()
     published, checkpoint = str(tmp_path / "pub.alignair"), str(tmp_path / "ckpt.alignair")
     for path, trusted in ((published, False), (checkpoint, True)):
-        mf.save_model(path, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+        mf.save_model(path, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                      dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                       include_trusted_pickle=trusted)
     assert {"host", "user"}.isdisjoint(mf.read_metadata(published)["provenance"])
     assert {"host", "user"} <= set(mf.read_metadata(checkpoint)["provenance"])
@@ -45,7 +50,8 @@ def test_a_publish_artifact_records_no_host_or_user_and_a_checkpoint_does(tmp_pa
 def test_inference_loads_no_pickle_artifact_with_gapped_and_anchors(tmp_path):
     model, cfg = _model()
     p = str(tmp_path / "pub.alignair")
-    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
     lm = mf.load_model(p)
     assert lm.reference.gene("V").gapped and lm.reference.gene("V").anchors
@@ -57,7 +63,8 @@ def test_inference_loads_no_pickle_artifact_with_gapped_and_anchors(tmp_path):
 def test_identity_fields_roundtrip(tmp_path):
     model, _ = _model()
     p = str(tmp_path / "pub.alignair")
-    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   model_id="human-igh", model_version="2.1.0",
                   card={"species": "homo_sapiens", "locus": "IGH", "min_alignair": "0.3.0"})
     md = mf.read_metadata(p)
@@ -73,7 +80,8 @@ def test_update_card_patches_metadata_and_preserves_model(tmp_path):
     identical, so a re-carded artifact is safe to publish."""
     model, cfg = _model()
     src = str(tmp_path / "src.alignair")
-    mf.save_model(src, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(src, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)                    # no model_id/version yet
     assert mf.read_metadata(src).get("model_id") is None
     dst = str(tmp_path / "carded.alignair")
@@ -95,7 +103,8 @@ def test_update_card_patches_metadata_and_preserves_model(tmp_path):
 def test_update_card_rejects_structural_fields(tmp_path):
     model, _ = _model()
     src = str(tmp_path / "src.alignair")
-    mf.save_model(src, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(src, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
     with pytest.raises(ValueError, match="structural/integrity"):
         mf.update_card(src, str(tmp_path / "x.alignair"), {"reference": {"allele_order_sha256": "deadbeef"}})
@@ -120,24 +129,24 @@ def test_load_refuses_legacy_without_reference_json(tmp_path):
 
 def test_allele_order_mismatch_is_a_hard_error():
     # the verify guard: a reference whose order != the card hash must be rejected
-    from alignair.model_file import serialize
+    from alignair.model_file import io as model_file_io, serialize
     from alignair.reference.reference_set import ReferenceSet
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     md = {"reference": {"allele_order_sha256": serialize.allele_order_sha256(ref),
                         "reference_fasta_sha256": serialize.reference_fasta_sha256(ref)}}
-    mf._verify_reference_integrity(ref, md)                     # matching -> ok
+    model_file_io._verify_reference_integrity(ref, md)                     # matching -> ok
     d = ref.to_serializable()
     d["genes"]["V"]["names"] = list(reversed(d["genes"]["V"]["names"]))
     d["genes"]["V"]["sequences"] = list(reversed(d["genes"]["V"]["sequences"]))
     with pytest.raises(ValueError, match="allele_order"):
-        mf._verify_reference_integrity(ReferenceSet.from_serializable(d), md)
+        model_file_io._verify_reference_integrity(ReferenceSet.from_serializable(d), md)
 
 
 def test_resumable_checkpoint_still_has_pickle_and_resumes(tmp_path):
     model, _ = _model()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3); opt.step()
     p = str(tmp_path / "ckpt.alignair")
-    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(p, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 5, "batch_size": 2}, optimizer=opt)   # default include_trusted_pickle=True
     secs = mf.read_metadata(p)["sections"]
     assert "dataconfig/0" in secs and "train_state" in secs and "reference_json" in secs
@@ -150,7 +159,8 @@ def test_a_model_files_reference_it_cannot_read_is_an_integrity_error(tmp_path, 
     from alignair.errors import DataContractError, ModelIntegrityError
     model, _ = _model()
     p = str(tmp_path / "pub.alignair")
-    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
 
     def unreadable(data):

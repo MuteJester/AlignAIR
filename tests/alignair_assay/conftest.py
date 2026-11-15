@@ -101,18 +101,14 @@ def make_small_model(genairr):
     reference reads is in its V's frame as a trained orientation head puts it, and keeps its V call
     (``predict.v_presence``); the random-init head orients the rest."""
     import torch
-    from alignair.core import AlignAIR
-    from alignair.core.config import AlignAIRConfig
+    from alignair.core import prepare_model
     from alignair.reference.reference_set import ReferenceSet
 
     def make(*names: str, seed: int = 0, bank_orientation: bool = True):
-        configs = [dataconfig(name) for name in names]
-        cfg = AlignAIRConfig.from_dataconfigs(*configs, embed_dim=8, trunk_channels=8,
-                                              bank_orientation=bank_orientation)
+        reference_set = ReferenceSet.from_dataconfigs(*(dataconfig(name) for name in names))
+        setup = prepare_model(reference_set, embed_dim=8, trunk_channels=8, bank_orientation=bank_orientation)
         torch.manual_seed(seed)
-        model, reference_set = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(*configs)
-        model.bind_reference(reference_set)
-        return model, reference_set
+        return setup.build_model().eval(), reference_set
 
     return make
 

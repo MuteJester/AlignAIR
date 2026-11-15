@@ -1,4 +1,4 @@
-"""One public training/checkpoint/reload/raw-prediction workflow across supported input/label spaces."""
+"""One public training/checkpoint/reload/raw-prediction workflow."""
 from dataclasses import FrozenInstanceError
 
 import numpy as np
@@ -12,37 +12,32 @@ from alignair.model_file import container, load_model, read_metadata
 pytestmark = pytest.mark.integration
 
 
-def request(input_space='nucleotide', label_space='alleles', **options):
-    return TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', input_space=input_space, label_space=label_space,
+def request(**options):
+    return TrainingConfig.from_genairr('HUMAN_IGH_OGRDB',
         **{'steps': 2, 'batch_size': 2, 'device': 'cpu', 'grad_clip': 1.,
            'model_options': {'embed_dim': 4, 'trunk_channels': 8}, **options})
 
 
 @pytest.mark.parametrize('has_d', [True, False])
 def test_public_train_validate_reload_predict_path_is_shared(has_d, tmp_path):
-    space, labels = 'nucleotide', 'alleles'
     observations = []
-    run = run_training(request(space, labels, has_d=has_d, val_every=1), output_dir=tmp_path,
+    run = run_training(request(has_d=has_d, val_every=1), output_dir=tmp_path,
                        on_iteration=lambda iteration: observations.append(iteration.result.total))
     assert isinstance(run, TrainingRun) and run.steps == 2 and run.best_model_path
     assert len(observations) == 2 and np.isfinite(observations).all()
     predictor = run.best_aligner(device='cpu')
     assert type(predictor) is Aligner
-    assert predictor.model.cfg.input_space == space and predictor.model.cfg.label_space == labels
     assert predictor.model.cfg.has_d is has_d
     schema = predictor.label_schema
-    assert schema['input_space'] == space and schema['label_space'] == labels
     assert set(schema['genes']) == ({'v', 'd', 'j'} if has_d else {'v', 'j'})
     outputs = predictor.predict_raw(iter(['ACGTN', 'AC']))
-    cfg = predictor.model.cfg
-    for gene in cfg.genes:
-        assert len(schema['genes'][gene]) == cfg.allele_count(gene)
-        assert outputs[f"{gene}_allele"].shape == (2, cfg.allele_count(gene))
+    for gene in predictor.model.cfg.genes:
+        count = len(predictor.reference.gene(gene.upper()))
+        assert len(schema['genes'][gene]) == count and outputs[f"{gene}_allele"].shape == (2, count)
     assert 'orientation' in outputs
     final = read_metadata(run.model_path)
     assert final['training']['steps'] == 2
-    assert final['training']['train_args']['input_space'] == space
-    assert load_model(run.model_path).config.input_space == space
+    assert load_model(run.model_path).config == predictor.model.cfg
 
 
 def test_public_resume_retains_profile_label_identity_and_optimizer_state(tmp_path):
@@ -80,9 +75,8 @@ def test_training_config_has_one_owner_and_snapshots_model_options():
     assert TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', preset='full').steps == 300_000
 
 
-@pytest.mark.parametrize('options', [{'input_space': 'aa'}, {'label_space': 'classes'},
-                                    {'input_space': 'nucleotide', 'label_space': 'protein_classes'},
-                                    {'model_options': []}, {'model_options': {'v_allele_count': 2}},
+@pytest.mark.parametrize('options', [{'model_options': []}, {'model_options': {'num_chain_types': 2}},
+                                    {'model_options': {'max_seq_length': 64}},
                                     {'steps': True}, {'batch_size': 0}, {'short_boost': False}])
 def test_bad_public_requests_fail_at_construction(options):
     with pytest.raises(ConfigurationError):
@@ -229,7 +223,7 @@ def test_explicit_checkpoint_path_reloads_schema_even_with_legacy_filename_suffi
     path = tmp_path / 'checkpoint.pt'
     run = run_training(request(steps=1), out_path=path)
     assert run.model_path == str(path) and run.steps == 1
-    assert run.best_aligner(device='cpu').label_schema['label_space'] == 'alleles'
+    assert set(run.best_aligner(device='cpu').label_schema['genes']) == {'v', 'd', 'j'}
 
 
 @pytest.mark.parametrize('empty_source', [False, True])
@@ -242,7 +236,7 @@ def test_training_run_never_adopts_a_stale_best_checkpoint(tmp_path, monkeypatch
     run = run_training(request(val_every=1 if empty_source else 0), output_dir=tmp_path)
     assert run.best_model_path is None and run.steps == (0 if empty_source else 2)
     assert stale.read_text() == 'an earlier run with different semantics'
-    assert run.best_aligner(device='cpu').model.cfg.input_space == 'nucleotide'
+    assert run.best_aligner(device='cpu').model.cfg.has_d
 
 
 def test_shared_raw_prediction_reserves_half_open_endpoint_for_nucleotide_models(tmp_path):
@@ -253,15 +247,15 @@ def test_shared_raw_prediction_reserves_half_open_endpoint_for_nucleotide_models
     assert len(predictor.predict(['A' * 600, 'ACGT'] )) == 2   # AIRR prediction crops to the same window
 
 
-def test_label_schema_is_checked_during_load_instead_of_silently_reinterpreted(tmp_path):
+def test_the_reference_identity_is_checked_during_load_instead_of_silently_reinterpreted(tmp_path):
     run = run_training(request(), output_dir=tmp_path / 'run')
     header = container.read_header(run.model_path)
     payloads = {name: (container.read_section(run.model_path, name), info['codec'])
                 for name, info in header['sections'].items()}
-    header['model']['label_schema']['genes']['v'][0] = 'UNRECOGNIZED_ALLELE'
+    header['reference']['allele_order_sha256'] = '0' * 64
     bad = tmp_path / 'bad.alignair'
     container.write_container(bad, header, payloads)
-    with pytest.raises(ModelIntegrityError, match='label schema'):
+    with pytest.raises(ModelIntegrityError, match='allele_order_sha256'):
         load_model(bad)
 
 

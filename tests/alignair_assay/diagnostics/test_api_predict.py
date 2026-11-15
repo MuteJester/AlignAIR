@@ -21,9 +21,10 @@ pytestmark = pytest.mark.component
 @pytest.fixture(scope="module")
 def checkpoint(tmp_path_factory, make_shaped_model):
     """The shaped IGH model (real-sized V, D and J spans, so the germline reader and the AIRR assembly run)."""
-    model, _ = make_shaped_model("igh")
+    model, reference_set = make_shaped_model("igh")
     path = tmp_path_factory.mktemp("api_predict") / "shaped.alignair"
-    save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
+    save_model(str(path), model, reference_set, dataconfigs=["HUMAN_IGH_OGRDB"], training={},
+               include_trusted_pickle=False)
     return path
 
 

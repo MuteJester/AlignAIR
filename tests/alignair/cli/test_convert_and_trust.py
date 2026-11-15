@@ -33,7 +33,8 @@ def test_api_load_refuses_a_pt_checkpoint(tmp_path):
 
 def test_api_load_no_pickle_alignair_needs_no_trust(tmp_path):
     p = str(tmp_path / "m.alignair")
-    mf.save_model(p, _model(), dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, _model(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
     m, ref = api.load_model(p)                                       # no trust, no dataconfig needed
     assert m is not None and ref.gene("V").gapped

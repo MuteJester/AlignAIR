@@ -29,9 +29,7 @@ def load_model(checkpoint_path: str, *, reference: ReferenceSet | None = None,
     embedded one (``alignair.reference.annotate``). An
     AlignAIR 3 checkpoint (a ``.pt``, or a conv-v1 model file) is refused with the version that reads it.
     """
-    from .model_file import container, load_model as _load_alignair, v3_checkpoint_error
-    if not container.is_alignair_file(checkpoint_path):
-        raise v3_checkpoint_error(checkpoint_path)
+    from .model_file import load_model as _load_alignair
     lm = _load_alignair(checkpoint_path, device=device, reference=reference)
     return lm.model, lm.reference
 

@@ -219,3 +219,20 @@ def test_reads_are_tokenized_by_the_one_vocabulary():
 def test_the_boundary_decoder_keeps_no_test_only_helper():
     from alignair.predict import decode
     assert not hasattr(decode, "decoded_boundaries")
+
+
+def test_a_model_is_identified_by_its_reference_alone():
+    import alignair.core as core
+    import alignair.model_file as model_file
+    from alignair.core.config import AlignAIRConfig
+    from alignair.core.setup import ModelSetup
+    from alignair.train.config import TrainingConfig
+    gone = {"v_allele_count", "j_allele_count", "d_allele_count", "input_space", "label_space"}
+    assert not gone & {field.name for field in dataclasses.fields(AlignAIRConfig)}
+    assert not gone & {field.name for field in dataclasses.fields(TrainingConfig)}
+    assert not any(hasattr(AlignAIRConfig, name) for name in ("allele_count", "from_dataconfigs", "from_reference"))
+    assert not any(hasattr(core, name) for name in ("build_model_config", "setup_from_schema"))
+    assert not any(hasattr(ModelSetup, name) for name in ("label_schema", "label_counts", "validate"))
+    assert not hasattr(model_file, "v3_checkpoint_error")
+    assert list(inspect.signature(model_file.save_model).parameters)[:3] == ["path", "model", "reference"]
+    assert "label_schema" not in inspect.signature(model_file.save_model).parameters

@@ -339,8 +339,7 @@ def prepare_candidate(config) -> None:
     from alignair.reference.reference_set import ReferenceSet
     architecture_components(config.model_options.get("architecture", BASELINE_ARCHITECTURE))
     sources = resolve_dataconfigs(config.dataconfigs)
-    prepare_model(ReferenceSet.from_dataconfigs(*sources), input_space=config.input_space,
-                  label_space=config.label_space, **config.model_options)
+    prepare_model(ReferenceSet.from_dataconfigs(*sources), **config.model_options)
 
 
 def assay_layout(root: Path, dev_build: Path, suites: Sequence[str]):

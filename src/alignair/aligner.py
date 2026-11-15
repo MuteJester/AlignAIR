@@ -184,9 +184,8 @@ class Aligner:
     @property
     def label_schema(self) -> dict:
         """The identity of ``predict_raw``'s allele columns: each gene's alleles in the bound reference's order."""
-        cfg = self.model.cfg
-        genes = {gene: list(self.reference.gene(gene.upper()).names) for gene in cfg.genes}
-        return {"schema_version": 1, "input_space": cfg.input_space, "label_space": cfg.label_space, "genes": genes}
+        genes = {gene: list(self.reference.gene(gene.upper()).names) for gene in self.model.cfg.genes}
+        return {"schema_version": 1, "genes": genes}
 
     @property
     def loci(self) -> tuple:
@@ -220,11 +219,9 @@ class Aligner:
         run_model``: reads batched by width bucket), so the arrays are the ones a read's row comes from.
         """
         import numpy as np
-        from .core.setup import _input_config
         from .predict import PredictConfig
         from .predict.forward import run_model
         cfg = self.model.cfg
-        _input_config(cfg)
         batches = run_model(self.model, sequences, PredictConfig(max_seq_length=cfg.max_seq_length,
                                                                  batch_size=batch_size), self.device)
         return {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}

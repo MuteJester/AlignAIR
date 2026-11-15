@@ -218,9 +218,10 @@ def small_checkpoint(tmp_path_factory, make_small_model):
     """A small random-init model on HUMAN_IGH_OGRDB, written as a ``.alignair`` model file."""
     from alignair.model_file import save_model
 
-    model, _ = make_small_model("HUMAN_IGH_OGRDB", seed=1)
+    model, reference_set = make_small_model("HUMAN_IGH_OGRDB", seed=1)
     path = tmp_path_factory.mktemp("model") / "small.alignair"
-    save_model(str(path), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={}, include_trusted_pickle=False)
+    save_model(str(path), model, reference_set, dataconfigs=["HUMAN_IGH_OGRDB"], training={},
+               include_trusted_pickle=False)
     return path
 
 

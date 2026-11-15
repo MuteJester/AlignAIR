@@ -58,3 +58,15 @@ def test_corrupt_section_fails_checksum(tmp_path):
     p.write_bytes(raw)
     with pytest.raises(ValueError, match="checksum|corrupt"):
         C.read_section(str(p), "a")
+
+
+@pytest.mark.parametrize("payload, message", [(None, "no such model file"), (b"", "not an AlignAIR model file"),
+                                              (b"PK\x03\x04rest", "AlignAIR 3 checkpoint"),
+                                              (b">read\nACGT\n", "not an AlignAIR model file")])
+def test_the_header_reader_names_what_a_file_that_is_no_model_file_is(tmp_path, payload, message):
+    from alignair.errors import ModelError
+    path = tmp_path / "model.alignair"
+    if payload is not None:
+        path.write_bytes(payload)
+    with pytest.raises(ModelError, match=message):
+        C.read_header(str(path))

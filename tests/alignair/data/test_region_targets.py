@@ -7,7 +7,7 @@ import itertools
 import pytest
 import torch
 
-from alignair.core import AlignAIRConfig
+from alignair.core import AlignAIRConfig, prepare_model
 from alignair.core.regions import REGIONS as REGION_NAMES
 from alignair.data import NucleotideBatchAdapter
 from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
@@ -38,7 +38,7 @@ def _reference():
 
 
 def _config(length=64):
-    return AlignAIRConfig(v_allele_count=2, j_allele_count=2, d_allele_count=2, has_d=True, max_seq_length=length)
+    return AlignAIRConfig(has_d=True, max_seq_length=length)
 
 
 @pytest.mark.component
@@ -94,7 +94,7 @@ def test_region_targets_agree_with_the_boundary_targets_on_genairr_reads():
     from alignair.train.gym import Curriculum
     from alignair.train.gym.streams import stream_records
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    config = AlignAIRConfig.from_reference(reference, max_seq_length=301)
+    config = prepare_model(reference, max_seq_length=301).config
     records = list(itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, dict(Curriculum().params(0.6)), 0), 12))
     batch = NucleotideBatchAdapter(reference, config, augment_orientation=False)(records)
     tokens, labels = batch.inputs["tokenized_sequence"], batch.targets["region"]

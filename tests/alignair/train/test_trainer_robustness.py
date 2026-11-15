@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from alignair.core.config import AlignAIRConfig
-from alignair.core import AlignAIR
+from alignair.core import AlignAIR, prepare_model
 from alignair.train.guards import TrainingConfigError
 from alignair.train.trainer import train
 
@@ -21,8 +21,7 @@ def _bound(cfg, reference):
 
 
 def _tiny_model():
-    cfg = AlignAIRConfig(max_seq_length=576, has_d=True,
-                         v_allele_count=4, d_allele_count=3, j_allele_count=2)
+    cfg = AlignAIRConfig(max_seq_length=576, has_d=True)
     return cfg, AlignAIR(cfg)
 
 
@@ -46,7 +45,7 @@ def test_resume_below_checkpoint_step_is_rejected(tmp_path):
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
+    cfg = prepare_model(ref, max_seq_length=576).config
     torch.manual_seed(0)
     out = str(tmp_path / "m.alignair")
     train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=4, batch_size=4,
@@ -61,7 +60,7 @@ def test_train_saves_best_and_resumes(tmp_path):
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
     ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    cfg = AlignAIRConfig.from_reference(ref, max_seq_length=576)
+    cfg = prepare_model(ref, max_seq_length=576).config
     torch.manual_seed(0)
     model = _bound(cfg, ref)
     out = str(tmp_path / "m.alignair")

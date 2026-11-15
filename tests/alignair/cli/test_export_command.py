@@ -22,7 +22,7 @@ def checkpoint(tmp_path):
                           trunk_channels=8)
     path = tmp_path / "run" / "model.alignair"
     path.parent.mkdir()
-    mf.save_model(str(path), setup.build_model().eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(path), setup.build_model().eval(), setup.reference, dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 3, "batch_size": 2})
     assert any(s.startswith("dataconfig/") for s in mf.read_metadata(str(path))["sections"])
     return str(path)

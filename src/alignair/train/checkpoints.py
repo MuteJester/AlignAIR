@@ -14,9 +14,8 @@ from .checks import integer
 from .random_state import capture_rng_state
 
 
-def save_checkpoint(path, model, step, opt=None, *, dataconfigs=None, train_args=None, label_schema=None,
-                    scheduler=None):
-    """Self-contained .alignair checkpoint, retaining embedded reference and trusted training state."""
+def save_checkpoint(path, model, reference, step, opt=None, *, dataconfigs=None, train_args=None, scheduler=None):
+    """A self-contained .alignair checkpoint of ``model`` bound to ``reference``, with its trusted training state."""
     from .. import model_file as mf
 
     arguments = dict(train_args or {})
@@ -25,8 +24,8 @@ def save_checkpoint(path, model, step, opt=None, *, dataconfigs=None, train_args
                 "short_boost": arguments.get("short_boost"), "seed": arguments.get("seed"), "train_args": arguments}
     rng = capture_rng_state()
     atomic_write(path, lambda temporary: mf.save_model(
-        temporary, model, dataconfigs=dataconfigs or [], training=training,
-        optimizer=opt, rng=rng, label_schema=label_schema, scheduler=scheduler), stage="training_checkpoint")
+        temporary, model, reference, dataconfigs=dataconfigs or [], training=training,
+        optimizer=opt, rng=rng, scheduler=scheduler), stage="training_checkpoint")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -36,18 +35,23 @@ class ResumeState:
     step: int
     rng: dict
     config: object = None
-    label_schema: dict | None = None
+    reference: dict | None = None          # the checkpoint's reference_identity
     scheduler_state: dict | None = None
     schedule: dict | None = None
     initial_lr: float | None = None
 
 
-def validate_continuation(state, config, label_schema, *, schedule=None, lr=None):
-    """Reject incompatible continuation before mutating model, optimizer or process RNG state."""
-    if (state.config is not None and state.config != config
-            or state.label_schema is not None and state.label_schema != label_schema):
-        raise ConfigurationError('resume configuration or label identity differs from the requested model setup',
-                                 hint='Use init_from for a weights-only warm start when changing model, label or loss settings.')
+def validate_continuation(state, config, reference, *, schedule=None, lr=None):
+    """Reject incompatible continuation before mutating model, optimizer or process RNG state: a checkpoint resumes
+    with its own configuration, onto the reference it was trained on (its ``reference_identity``)."""
+    from ..model_file import reference_identity
+    if state.config is not None and state.config != config:
+        raise ConfigurationError('resume configuration differs from the requested model setup',
+                                 hint='Use init_from for a weights-only warm start when changing model or loss '
+                                      'settings.')
+    if state.reference is not None and state.reference != reference_identity(reference):
+        raise ConfigurationError('resume reference differs from the one the checkpoint was trained on',
+                                 hint='Use init_from for a weights-only warm start onto another reference.')
     if state.schedule != schedule or schedule is not None and (state.scheduler_state is None or state.initial_lr != lr):
         raise ConfigurationError('resume learning-rate schedule differs or its continuation state is missing')
     if state.optimizer_state is None:
@@ -61,12 +65,11 @@ def load_training_checkpoint(path, *, device="cpu") -> ResumeState:
     from .. import model_file as mf
 
     with error_context(stage="training_checkpoint_load", path=str(path)):
-        if not mf.container.is_alignair_file(path):
-            raise mf.v3_checkpoint_error(path)
         state = mf.read_training_state(path, device=device)
-        return ResumeState(state.model_state, state.optimizer_state,
-                           state.step, state.rng, state.config, state.metadata.get('model', {}).get('label_schema'),
-                           state.scheduler_state,
+        recorded = state.metadata.get('reference', {})
+        identity = {key: recorded[key] for key in ('reference_fasta_sha256', 'allele_order_sha256') if key in recorded}
+        return ResumeState(state.model_state, state.optimizer_state, state.step, state.rng, state.config,
+                           identity or None, state.scheduler_state,
                            state.train_args.get('schedule'), state.train_args.get('lr'))
 
 
@@ -86,14 +89,14 @@ def _step_of(path) -> int:
     return int(match.group(1)) if match else -1
 
 
-def save_rotating(base_path, model, step, opt, keep=3, *, dataconfigs=None, train_args=None, label_schema=None,
+def save_rotating(base_path, model, reference, step, opt, keep=3, *, dataconfigs=None, train_args=None,
                   scheduler=None):
     """Keep numbered checkpoints and atomically refresh the convenient base-path copy."""
     keep = integer(keep, "keep")
     stem, extension = _stem(base_path), _ext(base_path)
     path = f"{stem}.step{step}{extension}"
-    save_checkpoint(path, model, step, opt, dataconfigs=dataconfigs, train_args=train_args,
-                    label_schema=label_schema, scheduler=scheduler)
+    save_checkpoint(path, model, reference, step, opt, dataconfigs=dataconfigs, train_args=train_args,
+                    scheduler=scheduler)
     atomic_write(base_path, lambda temporary: shutil.copyfile(path, temporary), stage="training_checkpoint")
     candidates = [candidate for candidate in glob.glob(f"{glob.escape(stem)}.step*{extension}")
                   if _step_of(candidate) >= 0]

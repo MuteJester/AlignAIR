@@ -1,7 +1,9 @@
 """In-package `alignair benchmark` — score + generate + end-to-end."""
-import math
 
 import pytest
+
+from alignair.core import prepare_model
+from alignair.reference.reference_set import ReferenceSet
 
 from alignair.evaluate import default_strata, format_text, score
 from alignair.errors import DataContractError
@@ -76,10 +78,10 @@ def test_format_text_renders_per_stratum():
 def test_run_benchmark_end_to_end_small():
     import GenAIRR.data as gd
     from alignair.core import AlignAIR
-    from alignair.core.config import AlignAIRConfig
     from alignair.evaluate import run_benchmark
     from alignair.reference.reference_set import ReferenceSet
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576, embed_dim=4, trunk_channels=8)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576, embed_dim=4,
+                        trunk_channels=8).config
     model, ref = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     model.bind_reference(ref)                              # the chip reads its bank from it
     results = run_benchmark(model, ref, gd.HUMAN_IGH_OGRDB, n=6, seed=0,
@@ -97,10 +99,10 @@ def test_cli_benchmark_uses_card_dataconfig(tmp_path):
     from alignair import model_file as mf
     from alignair.cli.main import build_parser
     from alignair.core import AlignAIR
-    from alignair.core.config import AlignAIRConfig
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576).config
     p = str(tmp_path / "m.alignair")
-    mf.save_model(p, AlignAIR(cfg).eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(p, AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 1, "batch_size": 1}, include_trusted_pickle=False,
                   model_id="m", model_version="1.0.0")           # no --dataconfig: read it from the card
     out = str(tmp_path / "bench.json")

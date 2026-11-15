@@ -4,7 +4,7 @@ from dataclasses import replace
 import pytest
 import torch
 
-from alignair.core import AlignAIR, build_model_config, restore_model_state
+from alignair.core import AlignAIR, AlignAIRConfig, restore_model_state
 from alignair.errors import ConfigurationError, ModelIntegrityError
 from alignair.reference import ReferenceSet
 
@@ -18,18 +18,13 @@ def _reference(has_d=True):
     return ReferenceSet.from_genotype(genes)
 
 
-def _config(input_space="nucleotide", label_space="alleles", has_d=True):
-    return build_model_config(3, 2, 2 if has_d else 0, has_d=has_d,
-                              input_space=input_space, label_space=label_space,
-                              max_seq_length=128, embed_dim=4, trunk_channels=8)
+def _config(has_d=True):
+    return AlignAIRConfig(has_d=has_d, max_seq_length=128, embed_dim=4, trunk_channels=8)
 
 
-@pytest.mark.parametrize("input_space,label_space", [
-    ("nucleotide", "alleles"),
-])
 @pytest.mark.parametrize("has_d", [False, True])
-def test_restoration_preserves_weights_and_outputs_across_model_policies(input_space, label_space, has_d):
-    cfg = _config(input_space, label_space, has_d)
+def test_restoration_preserves_weights_and_outputs_across_model_policies(has_d):
+    cfg = _config(has_d)
     original = AlignAIR(cfg).eval()
     restored = AlignAIR.from_state_dict(cfg, original.state_dict())
     assert restored.cfg == cfg and restored.cfg is not cfg

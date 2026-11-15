@@ -1,7 +1,8 @@
 import pytest
+
+from alignair.core import prepare_model
 import torch
 import GenAIRR.data as gd
-from alignair.core.config import AlignAIRConfig
 from alignair.reference.reference_set import ReferenceSet
 from alignair.model_file import serialize as S
 
@@ -9,7 +10,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_config_roundtrip_full_fields():
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576).config
     back = S.config_from_bytes(S.config_to_bytes(cfg))
     assert back.__dict__ == cfg.__dict__          # field-for-field
 

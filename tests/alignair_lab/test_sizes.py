@@ -60,7 +60,7 @@ def test_a_model_file_is_sized_as_its_model(reference, tmp_path):
     from alignair.train.checkpoints import save_checkpoint
     model = build(reference, embed_dim=4, trunk_channels=8)
     path = tmp_path / 'model.alignair'
-    save_checkpoint(path, model, 1, dataconfigs=[gd.HUMAN_IGH_OGRDB])
+    save_checkpoint(path, model, reference, 1, dataconfigs=[gd.HUMAN_IGH_OGRDB])
     assert checkpoint_size(path) == {**model_size(model), 'architecture': 'chip-v1'}
 
 

@@ -5,7 +5,7 @@ import torch
 
 import GenAIRR.data as gd
 
-from alignair.core import AlignAIR, build_model_config
+from alignair.core import AlignAIR, AlignAIRConfig
 from alignair.errors import ConfigurationError
 from alignair.network.orientation import NUM_ORIENTATIONS, apply_orientation
 from alignair.reference.reference_set import ReferenceSet
@@ -23,7 +23,7 @@ def reference():
 
 def _model(reference, *, bind=True, **options):
     torch.manual_seed(0)
-    cfg = build_model_config(3, 2, 2, has_d=True, max_seq_length=LENGTH, embed_dim=4, trunk_channels=8, **options)
+    cfg = AlignAIRConfig(has_d=True, max_seq_length=LENGTH, embed_dim=4, trunk_channels=8, **options)
     model = AlignAIR(cfg).eval()
     if bind:
         model.bind_reference(reference)
@@ -102,5 +102,5 @@ def test_the_bank_index_is_not_saved_with_the_weights(reference):
 
 def test_the_option_is_a_boolean():
     with pytest.raises(ConfigurationError) as caught:
-        build_model_config(3, 2, 2, has_d=True, max_seq_length=LENGTH, bank_orientation=1)
+        AlignAIRConfig(has_d=True, max_seq_length=LENGTH, bank_orientation=1)
     assert caught.value.context["field"] == "bank_orientation"

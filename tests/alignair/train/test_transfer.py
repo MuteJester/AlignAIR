@@ -53,8 +53,8 @@ def test_safe_warm_start_decodes_weights_without_source_factories_or_rng_use(tmp
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), embed_dim=4, trunk_channels=8)
     model = setup.build_model()
     path = tmp_path / 'source.alignair'
-    model_file.save_model(path, model, dataconfigs=[gd.HUMAN_IGH_OGRDB], training={},
-                          label_schema=setup.label_schema(), include_trusted_pickle=False)
+    model_file.save_model(path, model, setup.reference, dataconfigs=[gd.HUMAN_IGH_OGRDB], training={},
+                          include_trusted_pickle=False)
     expected = {key: value.clone() for key, value in model.state_dict().items()}
     monkeypatch.setattr(components, '_ARCHITECTURES', {})
     def forbidden(*args, **kwargs):

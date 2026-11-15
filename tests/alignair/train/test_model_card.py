@@ -19,7 +19,7 @@ def card(tmp_path):
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128, embed_dim=4,
                           trunk_channels=8)
     ckpt = tmp_path / "model.alignair"
-    mf.save_model(str(ckpt), setup.build_model().eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(ckpt), setup.build_model().eval(), setup.reference, dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 3, "batch_size": 2})
     export_bundle(str(ckpt), resolve_dataconfigs(["HUMAN_IGH_OGRDB"]), str(tmp_path / "bundle"),
                   model_id="alignair4-igh-human", model_version="0.1.0", validate=False)

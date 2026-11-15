@@ -202,11 +202,10 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, training: Optio
             raise ValueError("validation produced no metrics (too few held-out records for a full "
                              "batch); lower the validation batch size or disable validation")
         model_path = os.path.join(tmp, "model.alignair")
-        mf.save_model(model_path, model, dataconfigs=dcs, training=training,
+        mf.save_model(model_path, model, ref, dataconfigs=dcs, training=training,
                       include_trusted_pickle=False, model_id=model_id, model_version=model_version,
                       description=description,
-                      card={"training": training, "validation": metrics},
-                      label_schema=mf.read_metadata(checkpoint_path).get('model', {}).get('label_schema'))
+                      card={"training": training, "validation": metrics})
         load_model(model_path, device="cpu")                     # verify the export reloads
 
         manifest = _reference_manifest(ref, sources, report, model_path)

@@ -1,7 +1,8 @@
 import pytest
+
+from alignair.core import prepare_model
 import GenAIRR.data as gd
 import torch
-from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR
 from alignair.reference.reference_set import ReferenceSet
 from alignair import model_file as mf
@@ -10,7 +11,8 @@ pytestmark = pytest.mark.integration
 
 
 def _fresh_model():
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=128, embed_dim=4, trunk_channels=8)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128, embed_dim=4,
+                        trunk_channels=8).config
     model = AlignAIR(cfg)
     model.bind_reference(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))   # the chip reads its bank from it
     return model, cfg
@@ -19,11 +21,11 @@ def _fresh_model():
 def test_save_and_read_metadata(tmp_path):
     model, cfg = _fresh_model()
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(p), model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 10, "batch_size": 4, "lr": 1e-4}, description="test")
     md = mf.read_metadata(str(p))
     assert md["model_class"] == "AlignAIR"
-    assert md["model"]["allele_counts"]["v"] == cfg.v_allele_count
+    assert mf.embedded_allele_counts(str(p))["v"] == len(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB).gene("V"))
     assert md["training"]["total_sequences_seen"] == 40
     assert md["reference"]["dataconfigs"][0]["name"] == "HUMAN_IGH_OGRDB"
     assert "config" in md["sections"] and md["sections"]["config"]["format"] == "json"
@@ -35,7 +37,8 @@ def test_load_model_rebuilds_and_matches(tmp_path):
     model, cfg = _fresh_model()
     model.eval()
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+    mf.save_model(str(p), model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
     lm = mf.load_model(str(p))
     assert lm.config.__dict__ == cfg.__dict__            # full config, no external hints
     ref0 = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
@@ -51,7 +54,7 @@ def test_inference_load_still_works_with_optimizer_present(tmp_path):
     model, cfg = _fresh_model()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(p), model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 1, "batch_size": 1}, optimizer=opt)
     assert "train_state" in mf.read_metadata(str(p))["sections"]
     lm = mf.load_model(str(p))
@@ -64,7 +67,7 @@ def test_load_training_state_restores_optimizer_and_step(tmp_path):
     opt.step()  # create optimizer state
     rng = {"torch": torch.get_rng_state()}
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(p), model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 5, "batch_size": 2, "train_args": {"lr": 1e-3}},
                   optimizer=opt, rng=rng)
     ts = mf.load_training_state(str(p))
@@ -74,7 +77,8 @@ def test_load_training_state_restores_optimizer_and_step(tmp_path):
 def test_load_training_state_errors_without_train_state(tmp_path):
     model, cfg = _fresh_model()
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+    mf.save_model(str(p), model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
     import pytest
     with pytest.raises(ValueError, match="resume"):
         mf.load_training_state(str(p))
@@ -83,7 +87,8 @@ def test_load_training_state_errors_without_train_state(tmp_path):
 def test_read_dataconfig_and_reference(tmp_path):
     model, cfg = _fresh_model()
     p = tmp_path / "m.alignair"
-    mf.save_model(str(p), model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
+    mf.save_model(str(p), model, ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1})
     dc = mf.read_dataconfig(str(p), index=0)
     assert dc.metadata.has_d is True
     fasta = mf.read_reference(str(p))

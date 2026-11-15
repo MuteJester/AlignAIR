@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import replace
 
 import torch
 import torch.nn as nn
@@ -76,12 +75,10 @@ class AlignAIR(nn.Module):
 
     def bind_reference(self, reference) -> None:
         """Give the parts that read the reference their bank (an input, not weights): the bank orientation's k-mer
-        index and the core's bank. The config then counts the bound reference's alleles."""
+        index and the core's bank. The model's allele outputs are then the bound reference's alleles, in its order."""
         if self.bank_orientation is not None:
             self.bank_orientation.bind(reference)
         bind = getattr(self.core, "bind_reference", None)
         if bind is not None:
             bind(reference)
-        genes = ("V", "J", "D") if self.cfg.has_d else ("V", "J")
-        self.cfg = replace(self.cfg, **{f"{gene.lower()}_allele_count": len(reference.gene(gene)) for gene in genes})
 
