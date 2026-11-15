@@ -9,6 +9,7 @@ compact inference-only model.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from datetime import datetime, timezone
 
 from ..errors import ConfigurationError, DataContractError, ModelError, ModelIntegrityError, error_context
@@ -48,31 +49,41 @@ def _resolve_dataconfigs(dataconfigs):
 
 def _versions():
     import torch
+    from .. import __version__
     from ..genairr import genairr_identity
+    return {"alignair_version": __version__, **genairr_identity(), "torch_version": torch.__version__}
+
+
+def _package_dir() -> Path:
+    """The directory of the ``alignair`` package that is running."""
+    return Path(__file__).resolve().parent.parent
+
+
+def _source_commit() -> str | None:
+    """The commit of the AlignAIR checkout this package runs from; None for an installed package (its files are not
+    tracked by any repository), whatever repository the working directory is in."""
+    import subprocess
+    package = str(_package_dir())
     try:
-        from importlib.metadata import version
-        av = version("AlignAIR")
-    except Exception:
-        av = "0+unknown"
-    return {"alignair_version": av, **genairr_identity(), "torch_version": torch.__version__}
+        subprocess.check_output(["git", "-C", package, "ls-files", "--error-unmatch", "__init__.py"],
+                                stderr=subprocess.DEVNULL)
+        return subprocess.check_output(["git", "-C", package, "rev-parse", "HEAD"],
+                                       stderr=subprocess.DEVNULL).decode().strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 def _provenance(*, publish: bool = False):
-    """The source commit, and for a file that stays with its run (a resumable checkpoint) the machine and login it
-    was written on; a file made to be shared (``publish``) names neither."""
+    """The AlignAIR source commit, and for a file that stays with its run (a resumable checkpoint) the machine and
+    login it was written on; a file made to be shared (``publish``) names neither."""
     import getpass
     import platform
-    import subprocess
-    try:
-        commit = subprocess.check_output(["git", "rev-parse", "HEAD"],
-                                         stderr=subprocess.DEVNULL).decode().strip()
-    except Exception:
-        commit = None
+    commit = _source_commit()
     if publish:
         return {"git_commit": commit}
     try:
         user = getpass.getuser()
-    except Exception:
+    except (OSError, KeyError):
         user = None
     return {"git_commit": commit, "host": platform.node(), "user": user}
 
@@ -128,14 +139,15 @@ def save_model(path, model, *, dataconfigs, training, inference=None,
     if inference:
         inf.update(inference)
 
+    versions = _versions()
     header = {
         "format_version": container.MAJOR_VERSION, "model_format_version": container.MAJOR_VERSION,
         "model_class": "AlignAIR", "config_schema_version": 1,
         "model_id": model_id, "model_version": model_version,
         "created": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-        "created_by_alignair": _versions()["alignair_version"],
+        "created_by_alignair": versions["alignair_version"],
         "description": description, "license": "GPL-3.0-or-later", "citation": "AlignAIR",
-        **_versions(),
+        **versions,
         "model": {"embed_dim": cfg.embed_dim, "max_seq_length": cfg.max_seq_length,
                   "input_space": cfg.input_space, "label_space": cfg.label_space,
                   "label_schema": label_schema,

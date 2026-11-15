@@ -112,6 +112,9 @@ class LocusInfo:
     shared: Dict[str, tuple] = field(default_factory=dict)   # {"V": (name, ...)}: other loci's alleles it lists too
 
 
+FALLBACK_LOCUS = "IGH"   # the locus of a reference that declares none, or several
+
+
 class ReferenceSet:
     """Per-gene union allele references built from one or more GenAIRR DataConfigs."""
 
@@ -143,6 +146,12 @@ class ReferenceSet:
     def locus_names(self) -> tuple:
         """Ordered AIRR locus codes, in the order the union was built (empty if unknown)."""
         return tuple(l.locus for l in self.loci)
+
+    @property
+    def default_locus(self) -> str:
+        """The locus a record without its own is labelled with: the reference's one locus, else ``FALLBACK_LOCUS``."""
+        loci = self.locus_names()
+        return loci[0] if len(loci) == 1 else FALLBACK_LOCUS
 
     def locus_mask(self, locus: str, gene: str) -> np.ndarray:
         """Boolean mask over the ``gene`` head selecting exactly the alleles that belong to ``locus``.
@@ -289,9 +298,9 @@ class ReferenceSet:
 
     def subset(self, allowed: Dict[str, Iterable[str]]) -> "ReferenceSet":
         """Return a new ReferenceSet keeping only the named alleles per gene (a donor's
-        reduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {gene: names}; a gene
-        it does not name keeps all its alleles. The kept alleles are in this reference's order, each once, whatever
-        order (or set) they are named in: the chip's scores depend on its bank's row order."""
+        reduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {V|D|J: allele
+        names}; a segment it does not name keeps all its alleles. The kept alleles are in this reference's order, each
+        once, whatever order (or set) they are named in: the chip's scores depend on its bank's row order."""
         want = {g.upper(): set(v) for g, v in allowed.items()}
         out: Dict[str, GeneReference] = {}
         for G, ref in self.genes.items():
@@ -406,28 +415,33 @@ class ReferenceSet:
 
     @staticmethod
     def _infer_segment(name: str) -> str | None:
-        """Infer V/D/J from an AIRR/IMGT allele name (IGHV1-2*01 -> V, TRBJ2-1 -> J)."""
-        import re
+        """V, D or J for an allele name: the segment after its IG/TR locus code (IGHV1-2*01 -> V, TRBJ2-1 -> J), else
+        the one segment letter the name holds (myV1 -> V); None when it holds none of V/D/J, or several."""
         m = re.search(r"(?:IG[HKL]|TR[ABGD])([VDJ])", name.upper())
         if m:
             return m.group(1)
-        return next((c for c in name.upper() if c in "VDJ"), None)
+        letters = {c for c in name.upper() if c in "VDJ"}
+        return letters.pop() if len(letters) == 1 else None
 
     @classmethod
     def from_fasta(cls, path: str) -> "ReferenceSet":
-        """Load a genotype FASTA (``>allele_name`` headers + DNA). Gene type (V/D/J) is
-        inferred from each allele name; alleles whose segment can't be inferred are skipped.
+        """Load a genotype FASTA (``>allele_name`` headers + DNA). Each allele's segment (V/D/J) is read from its name
+        (``_infer_segment``); an InputError names the alleles it cannot be read from, and those named twice with two
+        sequences.
 
         Like :meth:`from_genotype`, the result can be bound to a model or trained against."""
         genes: Dict[str, Dict[str, str]] = {"V": {}, "D": {}, "J": {}}
         name = None
         chunks: List[str] = []
         twice: List[str] = []
+        unplaced: List[str] = []
 
         def _flush():
             if name is not None:
                 seg = cls._infer_segment(name)
-                if seg is not None:
+                if seg is None:
+                    unplaced.append(name)
+                else:
                     sequence = "".join(chunks)
                     if name in genes[seg] and genes[seg][name].upper() != sequence.upper():
                         twice.append(name)
@@ -445,6 +459,11 @@ class ReferenceSet:
                 else:
                     chunks.append(line)
         _flush()
+        if unplaced:
+            raise InputError(f"{path}: the segment (V, D or J) of {len(unplaced)} alleles cannot be read from their "
+                             f"names: {', '.join(unplaced[:5])}", context={"path": path, "alleles": unplaced},
+                             hint="Name each allele with its locus and segment (IGHV1-2*02, TRBJ2-1*01), or with "
+                                  "exactly one of the letters V, D, J.")
         if twice:
             raise InputError(f"{path} names {len(twice)} alleles twice with two sequences: {', '.join(twice[:5])}",
                              context={"path": path, "alleles": twice}, hint="Give each allele one name.")

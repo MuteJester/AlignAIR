@@ -42,6 +42,9 @@ def isolated_test_environment(request, monkeypatch, tmp_path):
     threads = torch.get_num_threads()        # a test may set it (predict --threads 1 does, in-process)
     deterministic = torch.are_deterministic_algorithms_enabled()
     warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
+    # The restore below imports torch._inductor the first time it runs in a process; do that import now, before the
+    # test can patch builtins.open (the same monkeypatch is still active while this fixture tears down).
+    torch.use_deterministic_algorithms(deterministic, warn_only=warn_only)
     seed = int.from_bytes(hashlib.sha256(request.node.nodeid.encode()).digest()[:4], "big")
     random.seed(seed)
     np.random.seed(seed)

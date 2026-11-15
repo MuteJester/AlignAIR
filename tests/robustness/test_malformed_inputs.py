@@ -2,7 +2,6 @@
 never an uncaught crash or silent garbage."""
 import numpy as np
 import pytest
-import yaml
 
 from alignair.errors import ModelFormatError
 
@@ -10,11 +9,13 @@ pytestmark = pytest.mark.component
 
 
 def test_malformed_genotype_yaml_errors(tmp_path):
+    from alignair.errors import ConfigurationError
     from alignair.genotype.files import load_genotype
     p = tmp_path / "bad.yaml"
     p.write_text("v: [IGHV1-2*01\n  : : broken")            # not valid YAML/JSON
-    with pytest.raises(yaml.YAMLError):
+    with pytest.raises(ConfigurationError, match="is not a YAML or JSON genotype") as caught:
         load_genotype(str(p))
+    assert caught.value.context["path"] == str(p)
 
 
 def test_container_detection_on_garbage(tmp_path):

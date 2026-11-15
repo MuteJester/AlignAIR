@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import csv
 
-from ..errors import InputError, report_error
+from ..errors import ConfigurationError, InputError, report_error
 from ..genotype.lean import EXPLAIN, MIN_READS
 
 
@@ -29,7 +29,7 @@ def run(args) -> int:
     from ..genotype.lean import GenotypeEvidence
     from .genotype_pass import write_genotype
     if not (0.0 < args.explain <= 1.0) or args.min_reads < 1:
-        return report_error(InputError("--explain must be in (0, 1] and --min-reads at least 1",
+        return report_error(ConfigurationError("--explain must be in (0, 1] and --min-reads at least 1",
                                        context={"explain": args.explain, "min_reads": args.min_reads}))
     evidence = GenotypeEvidence()
     with open(args.airr, newline="") as handle:

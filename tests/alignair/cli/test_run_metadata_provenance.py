@@ -59,3 +59,10 @@ def test_a_bound_reference_and_a_genotype_are_recorded_with_the_fingerprints_of_
     bank = genotype_bank(bound, {"V": [v.names[5], f"{v.names[0].split('*')[0]}*99"]})
     assert run["genotype"] == {"path": str(genotype), "file_sha256": _sha(genotype),
                                "allele_order_sha256": serialize.allele_order_sha256(bank)}
+
+
+def test_the_run_records_the_alignair_that_predicted_and_the_one_that_made_the_model(tmp_path):
+    import alignair
+    run, _ = _run(tmp_path)
+    assert run["alignair_version"] == alignair.__version__
+    assert run["model_created_by_alignair"] == read_metadata(str(TEST_CHIP))["created_by_alignair"]

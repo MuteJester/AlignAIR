@@ -157,3 +157,19 @@ def test_stream_memory_is_bounded(tmp_path):
         tracemalloc.stop()
     assert counts["written"] == n
     assert peak < 20_000_000                              # << the ~32 MB an eager (all-records) run needs
+
+
+class _BrokenAligner(_FakeAligner):
+    def predict(self, seqs, **kw):
+        raise RuntimeError("the model failed mid-run")
+
+
+def test_a_failed_pass_publishes_neither_the_output_nor_the_rejects(tmp_path):
+    """A pass that raises leaves no output and no rejects file (and no temp file behind): a rejects file alone would
+    look like the record of a finished run."""
+    _fasta(tmp_path / "in.fasta", 4, bad_at=True)
+    with pytest.raises(RuntimeError):
+        _stream_predict(_BrokenAligner(), input_path=str(tmp_path / "in.fasta"), out_path=str(tmp_path / "out.tsv"),
+                        columns="minimal", chunk_size=2, seq_column=None, id_column=None, meta_by_id=None,
+                        extra_cols=None, out_locus="IGH", batch_size=64, rejects_out=str(tmp_path / "rej.tsv"))
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["in.fasta"]

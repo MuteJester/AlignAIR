@@ -108,3 +108,30 @@ def test_cli_benchmark_uses_card_dataconfig(tmp_path):
                                       "--device", "cpu", "--format", "json", "--out", out])
     assert args.func(args) == 0
     assert json.load(open(out))["clean"]["n"] == 4
+
+
+def test_an_unknown_stratum_is_refused_before_any_read_is_generated():
+    from alignair.errors import ConfigurationError
+    from alignair.evaluate import run_benchmark
+    with pytest.raises(ConfigurationError, match="nope") as caught:
+        run_benchmark(None, None, None, strata_names=["clean", "nope"])
+    assert "clean" in caught.value.hint
+
+
+def test_the_benchmark_takes_one_dataconfig():
+    from alignair.cli.main import build_parser
+    with pytest.raises(SystemExit) as caught:
+        build_parser().parse_args(["benchmark", "--model", "m.alignair", "--dataconfig", "A", "B"])
+    assert caught.value.code == 2
+
+
+def test_without_a_dataconfig_the_benchmark_says_which_of_the_cards_it_generates_from(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    from alignair.cli import benchmark
+    monkeypatch.setattr("alignair.model_file.container.is_alignair_file", lambda path: True)
+    monkeypatch.setattr("alignair.model_file.read_metadata",
+                        lambda path: {"reference": {"dataconfigs": [{"name": "A"}, {"name": "B"}]}})
+    assert benchmark.dataconfig_name(SimpleNamespace(dataconfig=None), "m.alignair") == "A"
+    note = capsys.readouterr().err
+    assert "A" in note and "B" in note and "--dataconfig" in note

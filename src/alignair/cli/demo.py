@@ -33,7 +33,6 @@ def _simulate_reads(dataconfig, n: int, seed: int = 7) -> list:
 
 
 def run(args) -> int:
-    import torch
     from ..api import load_model, predict_sequences, train_model
     from ..genairr import resolve_dataconfig
     from ..io.airr import write_airr
@@ -55,14 +54,14 @@ def run(args) -> int:
     ids = [f"demo{i}" for i in range(len(reads))]
     model, ref = load_model(model_path, device=device)
     records = predict_sequences(model, ref, reads, device=device)
-    write_airr(os.path.join(out, "demo.tsv"), ids, reads, records, locus="IGH")
+    write_airr(os.path.join(out, "demo.tsv"), ids, reads, records, locus=ref.default_locus)
 
     print("[demo] predicting under a donor (genotype-subset) reference...")
     donor = {g: set(list(ref.gene(g.upper()).names)[: max(2, len(ref.gene(g.upper())) // 3)])
              for g in (("v", "d", "j") if ref.has_d else ("v", "j"))}
     donor_records = predict_sequences(model, ref, reads, device=device,
                                       genotype=donor)
-    write_airr(os.path.join(out, "demo_donor.tsv"), ids, reads, donor_records, locus="IGH")
+    write_airr(os.path.join(out, "demo_donor.tsv"), ids, reads, donor_records, locus=ref.default_locus)
 
     print(f"[demo] done -> {out}  (bundle/, demo.tsv, demo_donor.tsv)")
     return 0

@@ -73,9 +73,17 @@ def repertoire(rows: list[dict]) -> dict:
             "unique_junctions_aa": len(junctions_aa)}
 
 
+def _orientation(row: dict) -> str:
+    """The transform the read needed: AlignAIR's ``orientation`` column (forward, reverse_complement, complement,
+    reverse), else ``rev_comp`` (a table from another tool)."""
+    if row.get("orientation"):
+        return row["orientation"]
+    return "reverse_complement" if _truthy(row.get("rev_comp")) else "forward"
+
+
 def qc(rows: list[dict]) -> dict:
     n = len(rows)
-    orient = Counter("reoriented" if _truthy(r.get("rev_comp")) else "forward" for r in rows)
+    orient = Counter(_orientation(r) for r in rows)
     indel = sum(1 for r in rows if any(_has_indel(r.get(f"{g}_cigar")) for g in ("v", "d", "j")))
     confs = [x for x in (_num(r.get("v_set_confidence")) for r in rows) if x is not None]
     ident = [x for x in (_num(r.get("v_identity")) for r in rows) if x is not None]

@@ -88,7 +88,7 @@ class AccessPolicyError(AlignAIRError, RuntimeError):
     category = "access"
 
 
-class OperationIOError(AlignAIRError, RuntimeError):
+class OperationIOError(AlignAIRError, OSError):
     """An expected filesystem or operating-system operation failed."""
     code = "ALIGNAIR_IO_FAILED"
     category = "io"

@@ -18,6 +18,7 @@ training subpackage — a top-level ``train`` name would collide with it.)
 from __future__ import annotations
 
 from .errors import MissingDependencyError, ModelError
+from .reference.reference_set import FALLBACK_LOCUS
 
 from dataclasses import dataclass
 from typing import Iterator, Optional, Sequence
@@ -61,7 +62,7 @@ class PredictionResult:
     ``len()``-able over the per-read records; ``write_airr`` emits the TSV; ``to_dicts`` returns the raw
     list. The coordinates in each record refer to that record's canonical ``sequence``."""
     records: list
-    locus: str = "IGH"
+    locus: str = FALLBACK_LOCUS
     ids: Optional[list] = None
 
     def __iter__(self) -> Iterator[dict]:
@@ -94,12 +95,11 @@ class Aligner:
     inference entry point the CLI is a client of."""
 
     def __init__(self, model, reference, *, device: str = "cpu", model_path: Optional[str] = None,
-                 source_commit: Optional[str] = None, label_schema=None):
+                 source_commit: Optional[str] = None):
         self.model = model
         self.reference = reference
         self.device = device
         self.model_path = model_path
-        self.label_schema = label_schema
         self.source_commit = source_commit     # resolved HF commit SHA (provenance), else None
 
     # ------------------------------------------------------------------ constructors
@@ -117,9 +117,7 @@ class Aligner:
                                  offline=offline, token=token, revision=revision))
         dev = resolve_device(device)
         m, ref = load_model(path, reference=reference, device=dev)
-        from .model_file import read_metadata, container
-        schema = read_metadata(path).get('model', {}).get('label_schema') if container.is_alignair_file(path) else None
-        return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path), label_schema=schema)
+        return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
 
     def _assert_distributable(self) -> None:
         """Refuse to distribute a resumable checkpoint: those carry trusted **pickle** sections
@@ -188,27 +186,32 @@ class Aligner:
         reference = annotate(reference, known=self.reference)   # as a reference given at load is
         model = copy.deepcopy(self.model)
         model.bind_reference(reference)
-        schema = self.label_schema
-        if schema is not None:
-            schema = dict(schema, genes={gene: list(reference.gene(gene.upper()).names) for gene in schema["genes"]})
-        return Aligner(model, reference, device=self.device, source_commit=self.source_commit, label_schema=schema)
+        return Aligner(model, reference, device=self.device, source_commit=self.source_commit)
 
     # ------------------------------------------------------------------ properties
     @property
+    def label_schema(self) -> dict:
+        """The identity of ``predict_raw``'s allele columns: each gene's alleles in the bound reference's order."""
+        cfg = self.model.cfg
+        genes = {gene: list(self.reference.gene(gene.upper()).names) for gene in cfg.genes}
+        return {"schema_version": 1, "input_space": cfg.input_space, "label_space": cfg.label_space, "genes": genes}
+
+    @property
     def loci(self) -> tuple:
-        return self.reference.locus_names() if hasattr(self.reference, "locus_names") else ()
+        """The bound reference's AIRR locus codes, in order (empty if it declares none)."""
+        return self.reference.locus_names()
 
     @property
     def default_locus(self) -> str:
-        loci = self.loci
-        return loci[0] if len(loci) == 1 else "IGH"
+        """The locus written for a record that carries none: the reference's one locus, else IGH."""
+        return self.reference.default_locus
 
     # ------------------------------------------------------------------ inference
     def predict(self, sequences: Sequence[str], *, batch_size="auto", genotype=None, airr: bool = True,
                 **overrides) -> PredictionResult:
         """Eagerly align a list of nucleotide strings, returning a :class:`PredictionResult`.
-        ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{gene: names}`` dict) is the bank the
-        calls come from: a subset of the bound reference."""
+        ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{V|D|J: allele names}`` dict) is the
+        bank the calls come from: a subset of the bound reference."""
         from .api import predict_sequences
         bs = _auto_batch_size(self.device) if batch_size in (None, "auto") else int(batch_size)
         if genotype is not None:

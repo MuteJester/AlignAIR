@@ -45,11 +45,23 @@ def test_repertoire_section(tmp_path):
 
 def test_qc_section(tmp_path):
     qc = analyze_file(_write_tsv(tmp_path))["qc"]
-    assert qc["orientation"] == {"forward": 2, "reoriented": 1}
+    assert qc["orientation"] == {"forward": 2, "reverse_complement": 1}
     assert qc["indel_flagged_reads"] == 1                          # the 1I cigar
     assert qc["low_confidence_reads"]["n"] == 1                    # v_set_confidence 0.30 < 0.5
     assert qc["field_completeness_pct"]["v_call"] == 100.0
     assert abs(qc["v_set_confidence"]["mean"] - 0.6) < 0.01        # mean of 0.90, 0.30
+
+
+def test_qc_counts_each_orientation_by_the_transform_the_read_needed(tmp_path):
+    """Complement and reverse reads are not forward reads: the ``orientation`` column tells the four apart; a table
+    without it (another tool's) falls back to ``rev_comp``."""
+    recs = [dict(_records()[0], orientation_id=i) for i in range(4)]
+    out = str(tmp_path / "airr.tsv")
+    write_airr(out, [f"r{i}" for i in range(4)], ["ACGTACGTAC" * 6] * 4, recs)
+    assert analyze_file(out)["qc"]["orientation"] == {"forward": 1, "reverse_complement": 1, "complement": 1,
+                                                      "reverse": 1}
+    other_tool = analyze_rows([{"rev_comp": "T"}, {"rev_comp": "F"}, {"rev_comp": "F"}])
+    assert other_tool["qc"]["orientation"] == {"reverse_complement": 1, "forward": 2}
 
 
 def test_validation_section_flags_length_mismatch(tmp_path):

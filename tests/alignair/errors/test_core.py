@@ -148,3 +148,24 @@ def test_legacy_constructor_can_be_pickled():
     assert restored.ident == "read-1"
     assert isinstance(restored.original, KeyError)
     assert restored.to_dict() == error.to_dict()
+
+
+def test_an_io_failure_is_an_os_error_for_library_callers():
+    import pickle
+
+    from alignair.errors import OperationIOError
+    error = OperationIOError("cannot write", context={"path": "out.tsv"})
+    assert isinstance(error, OSError) and str(error) == "cannot write" and error.code == "ALIGNAIR_IO_FAILED"
+    again = pickle.loads(pickle.dumps(error))
+    assert type(again) is OperationIOError and again.context == {"path": "out.tsv"}
+
+
+def test_a_padding_failure_is_a_data_contract_error_not_a_training_one():
+    """``pad_vectors`` also pads the reads of a prediction, so its failure is not reported as a training error."""
+    import torch
+
+    from alignair.data.batching import pad_vectors
+    from alignair.errors import DataContractError, TrainingDataError
+    with pytest.raises(DataContractError) as caught:
+        pad_vectors([torch.zeros(5, dtype=torch.long)], width=3)
+    assert not isinstance(caught.value, TrainingDataError) and caught.value.code == "ALIGNAIR_DATA_CONTRACT"

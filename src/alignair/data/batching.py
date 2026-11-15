@@ -8,7 +8,7 @@ from typing import Protocol
 
 import torch
 
-from ..errors import ConfigurationError, TrainingDataError, error_context
+from ..errors import ConfigurationError, DataContractError, TrainingDataError, error_context
 
 
 @dataclass(frozen=True)
@@ -75,13 +75,13 @@ def pad_vectors(vectors, *, width=None, dtype=torch.long, padding=0) -> torch.Te
     values = [torch.as_tensor(value) for value in vectors]
     for i, value in enumerate(values):
         if value.ndim != 1 or value.device.type != "cpu":
-            raise TrainingDataError("batch vectors must be one-dimensional CPU tensors",
+            raise DataContractError("batch vectors must be one-dimensional CPU tensors",
                                     context={"record_index": i})
     length = max((value.numel() for value in values), default=0) if width is None else _width(width)
     result = torch.full((len(values), length), padding, dtype=dtype)
     for i, value in enumerate(values):
         if value.numel() > length:
-            raise TrainingDataError("encoded vector exceeds the batch window",
+            raise DataContractError("encoded vector exceeds the batch window",
                                     context={"record_index": i, "length": value.numel(), "max_length": length})
         result[i, :value.numel()] = value.to(dtype=dtype)
     return result

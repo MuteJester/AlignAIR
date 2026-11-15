@@ -9,8 +9,9 @@ import json
 import platform
 import sys
 
-_CRITICAL = ("torch", "numpy")
-_OPTIONAL = ("GenAIRR", "safetensors", "zstandard", "huggingface_hub")
+# import names of the core dependencies (pyproject `dependencies`) and of the optional extras (`zstd`, `hub`)
+_CRITICAL = ("torch", "numpy", "GenAIRR", "safetensors", "yaml", "platformdirs")
+_OPTIONAL = ("zstandard", "huggingface_hub")
 
 
 def register(sub) -> None:
@@ -40,16 +41,18 @@ def diagnostics() -> dict:
             info["mps_available"] = bool(torch.backends.mps.is_available())
     except Exception as e:                             # noqa: BLE001
         info["torch"] = f"MISSING ({e})"
-    for mod in _OPTIONAL + tuple(m for m in _CRITICAL if m != "torch"):
+    for mod in tuple(m for m in _CRITICAL if m != "torch") + _OPTIONAL:
         info[mod] = _module_version(mod)
-    try:                                               # resolved device + per-OS cache/config locations
+    try:                                               # the device "auto" resolves to
         from ..aligner import resolve_device
         info["device_auto"] = resolve_device("auto")
     except Exception:                                  # noqa: BLE001
         pass
-    try:    # germline-CIGAR kernel: the compiled Cython extension, or the pure-Python fallback
+    try:    # the two kernels: each compiled (Cython) when built, else its pure-Python / torch fallback
         from ..predict.heuristic_matcher import DERIVE_BACKEND
+        from ..refine.vrescore import VBAND_BACKEND
         info["derive_backend"] = DERIVE_BACKEND
+        info["vband_backend"] = VBAND_BACKEND
     except Exception:                                  # noqa: BLE001
         pass
     try:
@@ -72,5 +75,5 @@ def run(args) -> int:
             print(f"  {k:16s} {v}")
     missing = [m for m in _CRITICAL if str(info.get(m, "")).startswith("MISSING")]
     if missing:
-        print(f"WARNING: missing critical dependency: {missing} — install with `pip install alignair[cli]`")
+        print(f"WARNING: missing core dependency: {missing} — reinstall AlignAIR with `pip install alignair`")
     return 0                                            # doctor is a diagnostic: healthy exit is always 0

@@ -2,8 +2,7 @@
 
   * ``reference list``   — list the built-in GenAIRR dataconfigs you can train/predict against
                            (optionally filtered by species/chain), so users can discover valid names.
-  * ``reference export`` — export a model file's embedded germline FASTA / dataconfig (same as the
-                           standalone ``export-reference`` verb, grouped here for discoverability).
+  * ``reference export`` — write a model file's embedded germline FASTA.
 """
 from __future__ import annotations
 
@@ -20,12 +19,10 @@ def register(sub) -> None:
     lp.add_argument("--json", action="store_true", help="emit JSON instead of a table")
     lp.set_defaults(func=run_list)
 
-    ep = rsub.add_parser("export", help="export a model file's germline FASTA / dataconfig")
-    ep.add_argument("model")
-    ep.add_argument("--fasta", help="write the germline V/D/J FASTA here")
-    ep.add_argument("--dataconfig", help="write the pickled GenAIRR DataConfig here")
-    ep.add_argument("--index", type=int, default=0, help="which embedded dataconfig (multi-chain)")
-    ep.set_defaults(func=_run_export)
+    ep = rsub.add_parser("export", help="write a model file's germline FASTA")
+    ep.add_argument("model", help="a model file (.alignair)")
+    ep.add_argument("--fasta", required=True, help="write the germline V/D/J FASTA here")
+    ep.set_defaults(func=run_export)
 
 
 def _dataconfigs() -> list:
@@ -59,6 +56,9 @@ def _chain_matches(query: str, row: dict) -> bool:
     return query in {chain, locus, *chain.split("_"), *name.split("_")}
 
 
-def _run_export(args) -> int:
-    from .export_reference import run as _export_run
-    return _export_run(args)
+def run_export(args) -> int:
+    from ..model_file import read_reference
+    with open(args.fasta, "w") as f:
+        f.write(read_reference(args.model))
+    print(f"wrote {args.fasta}")
+    return 0

@@ -118,3 +118,9 @@ def test_the_shared_alleles_round_trip_through_the_reference_json():
     for locus in ("TRA", "TRD"):
         for gene in ("V", "J"):
             assert (again.locus_mask(locus, gene) == ref.locus_mask(locus, gene)).all()
+
+
+def test_the_default_locus_is_the_references_one_locus_else_igh():
+    trb = ReferenceSet.from_genotype({"V": {"TRBV10-1*01": "ACGT"}, "J": {"TRBJ1-1*01": "TTTT"}})
+    unnamed = ReferenceSet.from_genotype({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}})
+    assert (trb.default_locus, unnamed.default_locus) == ("TRB", "IGH")

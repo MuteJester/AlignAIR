@@ -293,7 +293,7 @@ def _reference_line(dc) -> str:
 def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=(), model_id=None,
                 model_version=None) -> None:
     """The bundle's ``model_card.md``: the model, its reference by name and version, allele counts, training, intended
-    use, usage (genotype and reference swap), the validation metrics (a ``PENDING-V4-NUMBERS`` marker without them) and
+    use, usage (genotype and reference swap), the validation metrics (a "pending" sentence without them) and
     where the licence and citation are."""
     loci = ", ".join(l["locus"] for l in manifest.get("loci", [])) or "n/a"
     title = " ".join(v for v in (model_id, model_version) if v)
@@ -331,8 +331,7 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=
     if report:
         lines += ["Fixed held-out stream:", ""] + [f"- {k}: {v}" for k, v in sorted(report.items())]
     else:
-        lines += ["<!-- PENDING-V4-NUMBERS -->",
-                  "Validation metrics are pending: this bundle was exported without validation."]
+        lines += ["Validation metrics are pending: this bundle was exported without validation."]
     lines += ["", "## License and citation", "",
               "GPL-3.0-or-later: see LICENSE, and cite AlignAIR as CITATION.cff gives, in the AlignAIR repository "
               "(https://github.com/MuteJester/AlignAIR)."]

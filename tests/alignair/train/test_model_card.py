@@ -1,6 +1,6 @@
 """The exported bundle's model_card.md: the model's id and version, its reference by name and version (the dataconfig
 metadata, e.g. OGRDB V8), allele counts, training steps, intended use, the genotype and reference-swap usage lines,
-the validation metrics (a PENDING-V4-NUMBERS marker when the export ran without validation) and pointers to the
+the validation metrics (a "pending" sentence when the export ran without validation) and pointers to the
 repository's LICENSE and CITATION.cff."""
 import GenAIRR.data as gd
 import pytest
@@ -38,8 +38,9 @@ def test_the_card_gives_intended_use_and_the_genotype_and_reference_swap_usage(c
         assert line in card
 
 
-def test_without_validation_the_metrics_are_a_pending_marker(card):
-    assert "PENDING-V4-NUMBERS" in card and "## Validation" in card
+def test_without_validation_the_card_says_the_metrics_are_pending_and_carries_no_internal_marker(card):
+    assert "## Validation" in card and "Validation metrics are pending" in card
+    assert "PENDING" not in card and "<!--" not in card
 
 
 def test_the_card_points_at_the_repositorys_license_and_citation(card):
@@ -52,4 +53,4 @@ def test_with_validation_the_metrics_are_listed_and_no_marker(tmp_path):
     _write_card(str(path), {"steps": 5}, manifest, {"v_allele_top1": 0.5},
                 dcs=resolve_dataconfigs(["HUMAN_IGH_OGRDB"]))
     text = path.read_text()
-    assert "- v_allele_top1: 0.5" in text and "PENDING-V4-NUMBERS" not in text
+    assert "- v_allele_top1: 0.5" in text and "pending" not in text

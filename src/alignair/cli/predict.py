@@ -13,10 +13,12 @@ import os
 import sys
 from datetime import datetime, timezone
 
+from .. import __version__
 from ..aligner import Aligner
 from ..errors import (AlignAIRError, ConfigurationError, DataContractError, InputError, ModelError,
                       RegistryError, report_error)
 from ..genotype.lean import EXPLAIN, MIN_READS
+from ..reference.reference_set import FALLBACK_LOCUS
 from ._errors import fail
 
 
@@ -53,8 +55,8 @@ def register(sub) -> None:
     p.add_argument("--chunk-size", type=int, default=20000,
                    help="stream the input in chunks of this many reads (default 20000)")
     p.add_argument("--genotype", default=None,
-                   help="genotype JSON/YAML {gene: [alleles]}: the bank the calls come from, a subset of the bound "
-                        "reference (--reference may add novel alleles)")
+                   help="genotype JSON/YAML {V|D|J: [allele names]}: the bank the calls come from, a subset of the "
+                        "bound reference (--reference may add novel alleles)")
     p.add_argument("--reference", default=None,
                    help="germline FASTA (V, D and J alleles) to call from, novel alleles included. Missing IMGT "
                         "gaps and anchors are taken from the model's own reference (the same allele, or a close "
@@ -75,7 +77,8 @@ def register(sub) -> None:
     p.add_argument("--revision", default=None,
                    help="pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version")
     p.add_argument("--hf-token", default=None,
-                   help="Hugging Face token for a private/gated repo (falls back to $HF_TOKEN)")
+                   help="Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then "
+                        "$HUGGING_FACE_HUB_TOKEN)")
     p.add_argument("--offline", action="store_true", help="never touch the network")
     p.add_argument("--quiet", action="store_true", help="suppress the update-available notice")
     p.add_argument("--no-run-metadata", action="store_true", help="do not write the <out>.run.json sidecar")
@@ -185,11 +188,27 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
     finally:
         if not committed:
             writer.close(commit=False)              # discard partial output if the pass raised
-        if rej_f:
+        if rej_f:                                   # the rejects are published with the output, or not at all
             rej_f.close()
-            os.replace(rej_tmp, rejects_out)
+            if committed:
+                os.replace(rej_tmp, rejects_out)
+            else:
+                os.remove(rej_tmp)
     counts["input"] = counts["accepted"] + counts["rejected"]
     return counts, dict(fail_reasons), dict(partial_reasons)
+
+
+def output_locus(requested: str | None, loci: tuple) -> str:
+    """The locus written on a record that carries none, and on an inferred genotype: ``requested`` (``--locus``) as
+    the model spells it, which must be one of the model's ``loci`` when it declares any; without it the model's one
+    locus, else IGH."""
+    if requested is None:
+        return loci[0] if len(loci) == 1 else FALLBACK_LOCUS
+    spelled = {locus.upper(): locus for locus in loci}
+    if spelled and requested.upper() not in spelled:
+        raise ConfigurationError(f"--locus {requested} is not one of this model's loci {loci}",
+                                 context={"locus": requested})
+    return spelled.get(requested.upper(), requested.upper())
 
 
 def _load_reporting_locus(model_path: str, *, device: str, reference):
@@ -243,7 +262,7 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
         "genotype": ({"path": args.genotype, "file_sha256": _sha256_file(args.genotype),
                       "allele_order_sha256": serialize.allele_order_sha256(genotype_bank)}
                      if args.genotype and genotype_bank is not None else None),
-        "alignair_version": md.get("created_by_alignair"),
+        "alignair_version": __version__, "model_created_by_alignair": md.get("created_by_alignair"),
         "loci": list(loci) if loci else [],  # the bound reference's locus mapping
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
                     "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size, "threads": args.threads,
@@ -330,11 +349,8 @@ def run(args) -> int:
     reference = aligner.reference
     bank = None
 
-    # locus: don't silently default to IGH when the model declares its locus
-    loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
-    if args.locus and loci and args.locus.upper() not in {l.upper() for l in loci}:
-        return report_error(ConfigurationError(f"--locus {args.locus} is not one of this model's loci {loci}"))
-    out_locus = args.locus or (loci[0] if len(loci) == 1 else "IGH")
+    loci = reference.locus_names()
+    out_locus = output_locus(args.locus, loci)
 
     if args.genotype:
         from ..genotype.bank import genotype_bank
@@ -346,11 +362,7 @@ def run(args) -> int:
         except ValueError as e:
             return fail(e, context={"stage": "genotype_validation"})
 
-    from ..io.metadata import DuplicateMetadataId
-    try:
-        meta_by_id, extra_cols = _load_metadata_table(args)  # disk-backed join index (bounded lookup)
-    except DuplicateMetadataId as e:
-        return fail(e)
+    meta_by_id, extra_cols = _load_metadata_table(args)  # disk-backed join index (bounded lookup)
 
     # threads: on the CPU, worker processes of one thread each (predict.parallel); elsewhere torch's CPU threads
     pool = None
@@ -364,7 +376,7 @@ def run(args) -> int:
     args.batch_size = args.batch_size or _auto_batch_size(device, pool.workers if pool is not None else 1)
 
     # 2) stream reader-chunk -> predict -> assemble -> join -> write, in bounded memory (~chunk_size)
-    from ..io.airr import PredictionCountMismatch, needs_assembly
+    from ..io.airr import needs_assembly
     from . import genotype_pass as gp
     observer = gp.Observer() if args.infer_genotype else None
     first = f"{args.out}.pass1.{os.getpid()}" if observer is not None else args.out
@@ -395,8 +407,6 @@ def run(args) -> int:
                                           v_names=reference.gene("V").names, extra_cols=extra_cols,
                                           out_locus=out_locus, meta_by_id=meta_by_id, counts=counts,
                                           fail_reasons=fail_reasons, partial_reasons=partial_reasons)
-    except PredictionCountMismatch as e:                  # a defect returned != 1 prediction per read
-        return fail(e)
     finally:
         if observer is not None and os.path.exists(first):
             os.remove(first)

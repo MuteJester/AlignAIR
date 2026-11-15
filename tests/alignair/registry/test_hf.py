@@ -110,3 +110,15 @@ def test_save_pretrained_refuses_pickle_checkpoint(monkeypatch, tmp_path):
     a = Aligner(model=None, reference=None, model_path=str(src))
     with pytest.raises(ValueError, match="pickle sections|not distributable"):
         a.save_pretrained(str(tmp_path / "out"))
+
+
+@pytest.mark.parametrize("spec", ["runs/igh/model.alignair", "runs/model.alignair", "model.alignair"])
+def test_a_missing_model_file_is_reported_missing_not_fetched_from_the_hub(spec, tmp_path, monkeypatch):
+    """A spec that names a model file (it ends in .alignair, or has a path below org/repo) and does not exist is a
+    missing file; only hf://... or a bare org/repo goes to the Hub."""
+    from alignair.errors import ModelError
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(hf, "download_from_hub", lambda *a, **k: pytest.fail(f"{spec} was fetched from the Hub"))
+    assert not hf.is_hf_repo_spec(spec)
+    with pytest.raises(ModelError, match="model file does not exist"):
+        resolve_model(spec)

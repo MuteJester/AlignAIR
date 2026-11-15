@@ -121,3 +121,22 @@ def test_a_subset_keeps_the_references_allele_order():
     sub = rs.subset({"V": ["V*04", "V*02", "V*02"]})
     assert sub.gene("V").names == ["V*02", "V*04"]
     assert sub.gene("V").index == {"V*02": 0, "V*04": 1} and sub.gene("V").sequences == ["ACGAAC", "TCGTAC"]
+
+
+@pytest.mark.parametrize("unplaced", ["mystery_allele", "DONOR_V1"])
+def test_a_fasta_allele_whose_segment_the_name_does_not_tell_is_refused_by_name(tmp_path, unplaced):
+    """An allele is placed by its IG/TR locus code (IGHV..., TRBJ...), else by the one V, D or J letter its name holds;
+    a name with none, or with several (``DONOR_V1``), is refused, never dropped or filed under a guessed segment."""
+    from alignair.errors import InputError
+    p = tmp_path / "genotype.fasta"
+    p.write_text(f">IGHV1-2*02\nACGTACGT\n>{unplaced}\nTTTTGGGG\n>IGHJ6*02\nCCCCAAAA\n")
+    with pytest.raises(InputError, match=unplaced) as caught:
+        ReferenceSet.from_fasta(str(p))
+    assert caught.value.context["alleles"] == [unplaced] and "IGHV" in caught.value.hint
+
+
+def test_a_fasta_name_with_one_segment_letter_is_placed_by_it(tmp_path):
+    p = tmp_path / "genotype.fasta"
+    p.write_text(">myV1\nACGTACGT\n>myJ1\nCCCCAAAA\n")
+    reference = ReferenceSet.from_fasta(str(p))
+    assert (reference.gene("V").names, reference.gene("J").names) == (["myV1"], ["myJ1"])

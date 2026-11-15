@@ -135,3 +135,20 @@ def test_tcr_train_api_end_to_end(tmp_path):
     assert rec_trb["j_call"].startswith("TRBJ")
     if rec_trb.get("d_call"):                            # D-bearing locus: any D call must be a TRBD
         assert rec_trb["d_call"].startswith("TRBD")
+
+
+def test_the_label_schema_names_the_alleles_of_the_bound_reference():
+    """``label_schema`` gives ``predict_raw``'s allele columns, however the aligner got its reference: a reference
+    given at load, or a model wrapped with ``from_model``."""
+    import json
+
+    from alignair.genotype import genotype_bank
+    from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP
+    read = json.loads(FIXTURE.read_text())["reads"][0]
+    full = Aligner.from_pretrained(str(TEST_CHIP), device="cpu", offline=True)
+    subset = genotype_bank(full.reference, {"V": full.reference.gene("V").names[:10]})
+    loaded = Aligner.from_pretrained(str(TEST_CHIP), device="cpu", offline=True, reference=subset)
+    wrapped = Aligner.from_model(loaded.model, loaded.reference, device="cpu")
+    for aligner in (loaded, wrapped):
+        assert aligner.label_schema["genes"]["v"] == list(subset.gene("V").names)
+        assert len(aligner.label_schema["genes"]["v"]) == aligner.predict_raw([read])["v_allele"].shape[1] == 10

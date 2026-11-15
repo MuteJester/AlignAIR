@@ -31,7 +31,8 @@ class ObservedModel(torch.nn.Module):
 
 
 def reference():
-    return SimpleNamespace(gene=lambda gene: SimpleNamespace(names=(f'{gene}1',)))
+    return SimpleNamespace(gene=lambda gene: SimpleNamespace(names=(f'{gene}1',)), locus_names=lambda: (),
+                           default_locus='IGH')
 
 
 @pytest.mark.parametrize('entry', ['functional', 'object', 'stream'])

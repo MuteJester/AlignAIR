@@ -7,7 +7,7 @@ import statistics
 from collections.abc import Mapping
 
 from ..api import predict_sequences
-from ..errors import DataContractError
+from ..errors import ConfigurationError, DataContractError
 
 
 def default_strata() -> dict:
@@ -91,7 +91,11 @@ def run_benchmark(model, reference, dataconfig, *, n: int = 200, seed: int = 0,
                   strata_names: list[str] | None = None, device: str = "cpu", batch_size: int = 64) -> dict:
     strata = default_strata()
     if strata_names:
-        strata = {k: strata[k] for k in strata_names if k in strata}
+        unknown = [name for name in strata_names if name not in strata]
+        if unknown:
+            raise ConfigurationError(f"unknown benchmark strata {unknown}", context={"strata": unknown},
+                                     hint=f"the strata are {sorted(strata)}")
+        strata = {k: strata[k] for k in strata_names}
     out: dict = {}
     for i, (name, params) in enumerate(strata.items()):
         truth = generate_labeled(dataconfig, params, n, seed + i)

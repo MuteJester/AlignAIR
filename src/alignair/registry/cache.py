@@ -221,10 +221,11 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
             raise ModelError("model path must be a file",
                              context={"stage": "model_resolution", "path": local})
         return local
-    if explicit_path or os.path.isabs(spec) or spec.startswith(("./", "../", "~")):
+    from . import hf
+    if (explicit_path or os.path.isabs(spec) or spec.startswith(("./", "../", "~"))
+            or not spec.startswith("hf://") and hf.names_model_file(spec)):
         raise ModelError("model file does not exist",
                          context={"stage": "model_resolution", "path": local})
-    from . import hf
     if hf.is_hf_repo_spec(spec):  # direct one-repo-per-model HF loading
         return hf.download_from_hub(spec, revision=revision, token=token, offline=offline)
     model_id, _, version = spec.partition("@")

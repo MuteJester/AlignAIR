@@ -18,7 +18,6 @@ from . import demo as _demo_cmd
 from . import doctor as _doctor_cmd
 from . import genotype as _genotype_cmd
 from . import export as _export_cmd
-from . import export_reference as _export_ref_cmd
 from . import info as _info_cmd
 from . import models as _models_cmd
 from . import predict as _predict_cmd
@@ -28,7 +27,7 @@ from . import validate_airr as _validate_airr_cmd
 
 # every subcommand registrar, in help order. Keep this the single source of truth for the surface.
 _COMMANDS = (_predict_cmd, _train_cmd, _demo_cmd, _doctor_cmd, _info_cmd, _models_cmd,
-             _reference_cmd, _export_ref_cmd, _export_cmd, _convert_cmd, _validate_airr_cmd, _compare_cmd,
+             _reference_cmd, _export_cmd, _convert_cmd, _validate_airr_cmd, _compare_cmd,
              _analyze_cmd, _benchmark_cmd, _genotype_cmd)
 
 

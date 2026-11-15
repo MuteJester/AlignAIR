@@ -13,7 +13,7 @@ pytestmark = pytest.mark.component
 # Dockerfile / tests/packaging/release_smoke.sh). Add here only alongside the wrapper that uses it.
 CONTRACT_COMMANDS = {
     "predict", "train", "demo", "doctor", "info", "models", "model", "reference",
-    "export-reference", "convert", "validate-airr", "compare", "analyze", "benchmark", "genotype",
+    "convert", "validate-airr", "compare", "analyze", "benchmark", "genotype",
 }
 
 

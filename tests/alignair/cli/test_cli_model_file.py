@@ -23,8 +23,29 @@ def test_cli_info(tmp_path, capsys):
     assert "AlignAIR" in out and "HUMAN_IGH_OGRDB" in out and "total_sequences_seen" in out
 
 
-def test_cli_export_reference(tmp_path, capsys):
+def test_cli_reference_export_writes_the_fasta(tmp_path, capsys):
     p = _save(tmp_path)
     fasta = tmp_path / "ref.fasta"
-    assert main(["export-reference", p, "--fasta", str(fasta)]) == 0
+    assert main(["reference", "export", p, "--fasta", str(fasta)]) == 0
     assert fasta.read_text().startswith(">")
+
+
+def test_reference_export_never_unpickles_a_dataconfig_section(tmp_path, capsys):
+    """A model file's pickled sections are never loaded by the CLI: the export takes no --dataconfig."""
+    p = _save(tmp_path)
+    out = tmp_path / "dc.pkl"
+    with pytest.raises(SystemExit) as caught:
+        main(["reference", "export", p, "--dataconfig", str(out)])
+    assert caught.value.code == 2 and not out.exists()
+
+
+def test_reference_export_needs_somewhere_to_write(tmp_path, capsys):
+    with pytest.raises(SystemExit) as caught:
+        main(["reference", "export", _save(tmp_path)])
+    assert caught.value.code == 2
+
+
+def test_the_duplicate_export_reference_verb_is_gone(tmp_path, capsys):
+    with pytest.raises(SystemExit) as caught:
+        main(["export-reference", _save(tmp_path), "--fasta", str(tmp_path / "ref.fasta")])
+    assert caught.value.code == 2

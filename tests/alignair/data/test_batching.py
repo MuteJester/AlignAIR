@@ -5,7 +5,7 @@ import torch
 
 from alignair.data import PositionLabels, TrainingSample, collate_samples
 from alignair.data.batching import pad_vectors
-from alignair.errors import ConfigurationError, TrainingDataError
+from alignair.errors import ConfigurationError, DataContractError, TrainingDataError
 
 pytestmark = pytest.mark.component
 
@@ -78,7 +78,7 @@ def test_fixed_windows_never_silently_truncate_and_reserve_endpoints_explicitly(
     assert collate_samples([sample], max_length=3).lengths.tolist() == [3]
     dynamic = collate_samples([sample], reserve_terminal_slot=True)
     assert dynamic.inputs["tokenized_sequence"].tolist() == [[1, 2, 3, 0]]
-    with pytest.raises(TrainingDataError, match="exceeds"):
+    with pytest.raises(DataContractError, match="exceeds"):     # padding also serves prediction: not a training error
         pad_vectors([[1, 2, 3]], width=2)
 
 
@@ -89,5 +89,5 @@ def test_invalid_window_configuration_is_rejected(width):
 
 
 def test_padding_rejects_nonvector_values():
-    with pytest.raises(TrainingDataError, match="one-dimensional"):
+    with pytest.raises(DataContractError, match="one-dimensional"):
         pad_vectors([[[1, 2]]])

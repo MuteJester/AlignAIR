@@ -44,7 +44,6 @@ def register(sub) -> None:
 
 def run(args) -> int:
     from ..train.build import build_dataconfigs, export_bundle, training_plan
-    from ..train.guards import TrainingConfigError
 
     try:
         dcs, report = build_dataconfigs(dataconfig=args.dataconfig, v_fasta=args.v_fasta,
@@ -81,10 +80,7 @@ def run(args) -> int:
             f"choose a new --out or pass --overwrite. (No training was run.)",
             context={"path": bundle_dir, "stage": "training_preflight"}))
 
-    try:
-        run = run_training(cfg, output_dir=args.out)
-    except TrainingConfigError as e:
-        return fail(e)
+    run = run_training(cfg, output_dir=args.out)
 
     checkpoint = run.best_model_path or run.model_path
     sources = {"v_fasta": args.v_fasta, "d_fasta": args.d_fasta, "j_fasta": args.j_fasta} if args.v_fasta else None

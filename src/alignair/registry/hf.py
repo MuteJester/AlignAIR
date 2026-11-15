@@ -18,15 +18,24 @@ DEFAULT_FILENAME = "model.alignair"
 
 
 def is_hf_repo_spec(spec: str) -> bool:
-    """True if ``spec`` names a HF model repo (``hf://org/repo`` or a bare ``org/repo``) rather than a
-    local path or a catalog id. A local path or a plain id (no ``/``) is not a HF repo spec."""
+    """True if ``spec`` names a HF model repo (``hf://org/repo[/file][@rev]`` or a bare ``org/repo[@rev]``) rather
+    than a local path or a catalog id. A bare spec with a file below the repo, or one naming a ``.alignair`` file, is
+    a path: only the ``hf://`` form reaches a file inside a repo."""
     if not spec or os.path.exists(spec):
         return False
     if spec.startswith("hf://"):
         return True
-    if "://" in spec:                                    # some other URL scheme (http/file)
+    if "://" in spec or names_model_file(spec):          # some other URL scheme (http/file), or a model file's path
         return False
-    return "/" in spec and not spec.startswith((".", "/", "~"))
+    body = spec.partition("@")[0]
+    return body.count("/") == 1 and not spec.startswith((".", "/", "~"))
+
+
+def names_model_file(spec: str) -> bool:
+    """True if a bare ``spec`` (no ``hf://``) names a model file: it ends in ``.alignair``, or has a path below
+    ``org/repo``."""
+    body = spec.partition("@")[0]
+    return body.endswith(".alignair") or body.count("/") > 1
 
 
 def parse_hf_spec(spec: str) -> tuple[str, str | None, str | None]:

@@ -25,6 +25,20 @@ def test_doctor_reports_core_env_and_exits_zero(capsys):
     assert "AlignAIR environment" in capsys.readouterr().out
 
 
+def test_doctor_checks_every_core_dependency_and_both_kernels():
+    info = doctor.diagnostics()
+    for module in ("torch", "numpy", "GenAIRR", "safetensors", "yaml", "platformdirs", "zstandard", "huggingface_hub"):
+        assert module in info
+    assert {"derive_backend", "vband_backend"} <= set(info)
+
+
+def test_a_missing_core_dependency_is_named_with_the_plain_install_hint(monkeypatch, capsys):
+    monkeypatch.setattr(doctor, "_module_version", lambda name: "MISSING" if name == "safetensors" else "1.0")
+    assert _run(doctor.register, ["doctor"]) == 0
+    warning = capsys.readouterr().out.splitlines()[-1]
+    assert "safetensors" in warning and "pip install alignair`" in warning and "[cli]" not in warning
+
+
 def test_reference_list_runs(capsys):
     assert _run(reference.register, ["reference", "list", "--species", "Human", "--chain", "IGH"]) == 0
     out = capsys.readouterr().out
