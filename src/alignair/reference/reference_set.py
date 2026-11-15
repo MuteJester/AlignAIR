@@ -177,25 +177,8 @@ class ReferenceSet:
         shown = list(dict.fromkeys(lc for g in ("V", "J", "D") if g in of for lc in of[g] if lc is not None))
         grouped = len(shown) > 1 and all(lc is not None for lcs in of.values() for lc in lcs)
         if grouped:                                   # several loci: each gene's alleles grouped by locus
-            alleles = {g: {n: alleles[g][n] for lc in shown for n, x in zip(list(alleles[g]), of[g]) if x == lc}
-                       for g in alleles}
-        out: Dict[str, GeneReference] = {}
-        for g in wanted:
-            names: List[str] = []
-            sequences: List[str] = []
-            index: Dict[str, int] = {}
-            ganc = {}
-            gapped = {}
-            for name, seq in alleles[g].items():
-                index[name] = len(names)
-                names.append(name)
-                written = str(seq).upper().replace("-", ".")
-                sequences.append(written.replace(".", ""))
-                if "." in written:                     # an IMGT-gapped sequence keeps its gapped form
-                    gapped[name] = written
-                if name in anc_in.get(g, {}):
-                    ganc[name] = int(anc_in[g][name])
-            out[g] = GeneReference(names, sequences, index, anchors=ganc or None, gapped=gapped or None)
+            alleles = {g: _grouped_by_locus(alleles[g], of[g], shown) for g in alleles}
+        out = {g: _gene_from_alleles(alleles[g], anc_in.get(g, {})) for g in wanted}
         if len(shown) == 1 or locus is not None:      # one locus over every allele
             only = locus or shown[0]
             loci = loci_from_membership({g: [only] * len(out[g]) for g in out}, [only], CHAIN_OF_LOCUS)
@@ -296,11 +279,11 @@ class ReferenceSet:
                 order.insert(self._insertion(order, locus, all_loci) if self.loci else len(order), (n, locus))
             source = {n: (self.genes[G] if n in mine.index else other.genes[G]) for n, _ in order}
             names = [n for n, _ in order]
-            pick = lambda attr: {n: getattr(source[n], attr)[n] for n in names
-                                 if getattr(source[n], attr) and n in getattr(source[n], attr)}
             genes[G] = GeneReference(names, [source[n].sequences[source[n].index[n]] for n in names],
-                                     {n: i for i, n in enumerate(names)}, anchors=pick("anchors") or None,
-                                     gapped=pick("gapped") or None, info=pick("info") or None)
+                                     {n: i for i, n in enumerate(names)},
+                                     anchors=_pick(source, names, "anchors") or None,
+                                     gapped=_pick(source, names, "gapped") or None,
+                                     info=_pick(source, names, "info") or None)
             per_index[G] = [x for _, x in order]
         extra = [next((dataclasses.replace(l, ranges={}) for l in other.loci if l.locus == loc), None)
                  or LocusInfo(loc, CHAIN_OF_LOCUS.get(loc, loc), False) for loc in new_loci]
@@ -312,7 +295,7 @@ class ReferenceSet:
     def _infer_segment(name: str) -> str | None:
         """V, D or J for an allele name: the segment after its IG/TR locus code (IGHV1-2*01 -> V, TRBJ2-1 -> J), else
         the one segment letter the name holds (myV1 -> V); None when it holds none of V/D/J, or several."""
-        m = re.search(r"(?:IG[HKL]|TR[ABGD])([VDJ])", name.upper())
+        m = _SEGMENT_RE.search(name.upper())
         if m:
             return m.group(1)
         letters = {c for c in name.upper() if c in "VDJ"}
@@ -363,3 +346,38 @@ class ReferenceSet:
             raise InputError(f"{path} names {len(twice)} alleles twice with two sequences: {', '.join(twice[:5])}",
                              context={"path": path, "alleles": twice}, hint="Give each allele one name.")
         return cls.from_genotype({g: m for g, m in genes.items() if m})
+
+
+# An IG/TR locus code and the segment letter after it, anywhere in an allele name (``_infer_segment``).
+_SEGMENT_RE = re.compile(r"(?:IG[HKL]|TR[ABGD])([VDJ])")
+
+
+def _grouped_by_locus(alleles: dict[str, str], loci: list, order: list) -> dict[str, str]:
+    """``alleles`` (name -> sequence, each with its locus in ``loci``) grouped by locus in ``order``, the given order
+    kept within a locus."""
+    return {n: alleles[n] for lc in order for n, x in zip(list(alleles), loci) if x == lc}
+
+
+def _gene_from_alleles(alleles: dict[str, str], anchors: dict) -> GeneReference:
+    """A gene's reference from its alleles (name -> sequence, ``-`` or ``.`` gaps allowed: an IMGT-gapped sequence
+    keeps its gapped form) and the anchors given for them."""
+    names: list[str] = []
+    sequences: list[str] = []
+    index: dict[str, int] = {}
+    kept_anchors, gapped = {}, {}
+    for name, seq in alleles.items():
+        index[name] = len(names)
+        names.append(name)
+        written = str(seq).upper().replace("-", ".")
+        sequences.append(written.replace(".", ""))
+        if "." in written:
+            gapped[name] = written
+        if name in anchors:
+            kept_anchors[name] = int(anchors[name])
+    return GeneReference(names, sequences, index, anchors=kept_anchors or None, gapped=gapped or None)
+
+
+def _pick(source: dict, names: list[str], attr: str) -> dict:
+    """``attr`` (``anchors``, ``gapped`` or ``info``) of each of ``names`` that its source reference has."""
+    return {n: getattr(source[n], attr)[n] for n in names if getattr(source[n], attr) and n in getattr(source[n], attr)}
+

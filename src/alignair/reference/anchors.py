@@ -117,56 +117,100 @@ def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> Refe
         if gene not in _GENES:
             genes[gene] = _copy(alleles)
             continue
-        target = known.genes.get(gene) if known is not None else None
-        donors = _Donors(target) if target is not None and gene == "V" else None
-        by_sequence = {}
-        for name, sequence in zip(target.names, target.sequences) if target is not None else ():
-            by_sequence.setdefault(sequence, name)
-        anchors, gapped, info = dict(alleles.anchors or {}), dict(alleles.gapped or {}), dict(alleles.info or {})
+        annotator = _GeneAnnotator(gene, alleles, known.genes.get(gene) if known is not None else None,
+                                   membership[gene], resolve_anchor)
         for i, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences)):
-            entry = info.get(name) or AlleleInfo()
-            evidence = entry.anchor_evidence if name in anchors else None
-            if name in anchors and evidence is None:
-                evidence = AnchorEvidence("supplied", "supplied")
-            needs_gap = gene == "V" and name not in gapped
-            if target is not None and (name not in anchors or needs_gap):
-                same = (name if name in target.index and target.sequences[target.index[name]] == sequence
-                        else by_sequence.get(sequence))
-                if same is not None:
-                    if needs_gap and target.gapped and same in target.gapped:
-                        gapped[name], needs_gap = target.gapped[same], False
-                    if name not in anchors and target.anchors and same in target.anchors:
-                        anchors[name] = target.anchors[same]
-                        evidence = AnchorEvidence("known_allele", "inferred", None, same)
-            carried_evidence = None
-            if needs_gap and donors is not None:      # before the resolver: it anchors a V from gaps only
-                carried = donors.nearest(sequence)
-                if carried is not None:
-                    carried_gaps, carried_anchor, carried_evidence = carried
-                    if carried_gaps is not None:
-                        gapped[name] = carried_gaps
-                    if name not in anchors and carried_anchor is not None:
-                        anchors[name], evidence = carried_anchor, carried_evidence
-            if name not in anchors:
-                resolved = resolve_anchor(sequence, gene, gapped=gapped.get(name) if gene == "V" else None,
-                                          locus=locus_from_name(name) or membership[gene][i] or "")
-                position = imgt_position(sequence, gapped.get(name)) if gene == "V" and resolved.status == "invalid" \
-                    else None
-                if resolved.status in ("inferred", "verified") and resolved.position is not None:
-                    anchors[name] = resolved.position
-                    evidence = AnchorEvidence(resolved.method, resolved.status, resolved.reason or None, None)
-                elif position is not None:
-                    anchors[name] = position[0]
-                    evidence = AnchorEvidence("imgt_position_104", "inferred",
-                                              f"codon 104 is {position[1]}, not Cys: anchored at its IMGT position", None)
-                else:                                 # the allele that lent gaps says more than "unresolved"
-                    evidence = carried_evidence or _verdict(resolved)
-            info[name] = dataclasses.replace(entry, anchor_evidence=evidence)
-        genes[gene] = GeneReference(list(alleles.names), list(alleles.sequences), dict(alleles.index),
-                                    anchors=anchors or None, gapped=gapped or None, info=info or None)
+            annotator.annotate(i, name, sequence)
+        genes[gene] = annotator.gene_reference(alleles)
     loci = [dataclasses.replace(info, ranges=dict(info.ranges)) for info in reference.loci]
     annotated = ReferenceSet(genes, reference.has_d, loci=loci, provenance=reference.provenance)
     return _on_the_models_loci(annotated, known) if known is not None and known.loci else annotated
+
+
+class _GeneAnnotator:
+    """One gene's annotation (``annotate``): its anchors, gapped forms and allele info as they fill, each allele's in
+    the module docstring's order: a supplied anchor stands; else its twin in the known reference (``_from_known``),
+    a V donor's gaps (``_from_donors``, before the resolver, which anchors a V from gaps only), then GenAIRR's
+    resolver or the V's IMGT position (``_from_resolver``)."""
+
+    def __init__(self, gene: str, alleles: GeneReference, target: GeneReference | None, membership, resolve_anchor):
+        self.gene, self.target, self.membership, self.resolve_anchor = gene, target, membership, resolve_anchor
+        self.donors = _Donors(target) if target is not None and gene == "V" else None
+        self.by_sequence = {}
+        for name, sequence in zip(target.names, target.sequences) if target is not None else ():
+            self.by_sequence.setdefault(sequence, name)
+        self.anchors, self.gapped = dict(alleles.anchors or {}), dict(alleles.gapped or {})
+        self.info = dict(alleles.info or {})
+
+    def annotate(self, i: int, name: str, sequence: str) -> None:
+        """Fill allele ``i`` (``name``, ``sequence``) and record its anchor's evidence."""
+        entry = self.info.get(name) or AlleleInfo()
+        evidence = entry.anchor_evidence if name in self.anchors else None
+        if name in self.anchors and evidence is None:
+            evidence = AnchorEvidence("supplied", "supplied")
+        needs_gap = self.gene == "V" and name not in self.gapped
+        if self.target is not None and (name not in self.anchors or needs_gap):
+            evidence, needs_gap = self._from_known(name, sequence, evidence, needs_gap)
+        carried = None
+        if needs_gap and self.donors is not None:
+            evidence, carried = self._from_donors(name, sequence, evidence)
+        if name not in self.anchors:
+            evidence = self._from_resolver(i, name, sequence, carried)
+        self.info[name] = dataclasses.replace(entry, anchor_evidence=evidence)
+
+    def _from_known(self, name: str, sequence: str, evidence, needs_gap: bool):
+        """``(evidence, needs_gap)`` after taking the gaps and the anchor of the allele's twin in the known reference
+        (the allele of its name and sequence, else the first of its sequence), when it has one."""
+        target = self.target
+        same = (name if name in target.index and target.sequences[target.index[name]] == sequence
+                else self.by_sequence.get(sequence))
+        if same is not None:
+            if needs_gap and target.gapped and same in target.gapped:
+                self.gapped[name], needs_gap = target.gapped[same], False
+            if name not in self.anchors and target.anchors and same in target.anchors:
+                self.anchors[name] = target.anchors[same]
+                evidence = AnchorEvidence("known_allele", "inferred", None, same)
+        return evidence, needs_gap
+
+    def _from_donors(self, name: str, sequence: str, evidence):
+        """``(evidence, carried)`` after taking the nearest donor V's gaps and, for an allele without one, its anchor;
+        ``carried`` is the donor's evidence (None without a donor)."""
+        carried = self.donors.nearest(sequence)
+        if carried is None:
+            return evidence, None
+        carried_gaps, carried_anchor, carried_evidence = carried
+        if carried_gaps is not None:
+            self.gapped[name] = carried_gaps
+        if name not in self.anchors and carried_anchor is not None:
+            self.anchors[name], evidence = carried_anchor, carried_evidence
+        return evidence, carried_evidence
+
+    def _from_resolver(self, i: int, name: str, sequence: str, carried):
+        """The evidence of the anchor GenAIRR's resolver finds (or, for a V it calls invalid, the V's IMGT codon 104);
+        without one, the donor's evidence (``carried``: it says more than "unresolved") or the resolver's verdict."""
+        gene = self.gene
+        resolved = self.resolve_anchor(sequence, gene, gapped=self.gapped.get(name) if gene == "V" else None,
+                                       locus=locus_from_name(name) or self.membership[i] or "")
+        position = (imgt_position(sequence, self.gapped.get(name)) if gene == "V" and resolved.status == "invalid"
+                    else None)
+        if resolved.status in ("inferred", "verified") and resolved.position is not None:
+            self.anchors[name] = resolved.position
+            return AnchorEvidence(resolved.method, resolved.status, resolved.reason or None, None)
+        if position is not None:
+            self.anchors[name] = position[0]
+            return AnchorEvidence("imgt_position_104", "inferred",
+                                  f"codon 104 is {position[1]}, not Cys: anchored at its IMGT position", None)
+        return carried or _verdict(resolved)
+
+    def gene_reference(self, alleles: GeneReference) -> GeneReference:
+        """``alleles`` with the filled anchors, gapped forms and info."""
+        return GeneReference(list(alleles.names), list(alleles.sequences), dict(alleles.index),
+                             anchors=self.anchors or None, gapped=self.gapped or None, info=self.info or None)
+
+
+def _in_order(values: dict | None, order: list[str]) -> dict | None:
+    """``values`` (by allele name) of the alleles in ``order``, in that order; None without values."""
+    return {n: values[n] for n in order if n in values} if values else None
 
 
 def _copy(alleles: GeneReference) -> GeneReference:
@@ -205,10 +249,11 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
             placed.append((name, locus))
         order = [name for locus in loci for name, x in placed if x == locus]
         source = {name: alleles.index[name] for name in alleles.names}
-        pick = lambda values: {n: values[n] for n in order if n in values} if values else None
         genes[gene] = GeneReference(order, [alleles.sequences[source[n]] for n in order],
-                                    {n: i for i, n in enumerate(order)}, anchors=pick(alleles.anchors) or None,
-                                    gapped=pick(alleles.gapped) or None, info=pick(alleles.info) or None)
+                                    {n: i for i, n in enumerate(order)},
+                                    anchors=_in_order(alleles.anchors, order) or None,
+                                    gapped=_in_order(alleles.gapped, order) or None,
+                                    info=_in_order(alleles.info, order) or None)
         per_index[gene] = [dict(placed)[n] for n in order]
     ranges = loci_from_membership(per_index, loci)
     schema = [dataclasses.replace(info, ranges=new.ranges) for info, new in zip(known.loci, ranges)]

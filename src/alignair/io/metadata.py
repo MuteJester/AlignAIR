@@ -12,6 +12,7 @@ import tempfile
 import zlib
 
 from ..errors import DataContractError, InputError, OperationIOError, error_context
+from .airr import metadata_column
 from .sequence_records import open_text
 
 _META_DEFAULTS = ("cell_id", "barcode", "sample_id", "umi_count", "umis", "reads",
@@ -92,9 +93,10 @@ def _metadata_rows(path, id_column, keep_columns, normalize_10x, rename=None):
 
 
 def load_metadata(path: str | os.PathLike[str], id_column: str | None = None,
-                  keep_columns=None, normalize_10x: bool = False):
-    """Return (unique-ID rows, output columns); duplicate keys are rejected in both loaders."""
-    with _metadata_rows(path, id_column, keep_columns, normalize_10x) as (columns, rows):
+                  keep_columns=None, normalize_10x: bool = False, rename=metadata_column):
+    """Return (unique-ID rows, output columns); duplicate keys are rejected in both loaders. ``rename`` names each
+    output column (by default ``io.airr.metadata_column``: a column AlignAIR writes becomes ``meta_<column>``)."""
+    with _metadata_rows(path, id_column, keep_columns, normalize_10x, rename) as (columns, rows):
         result = {}
         for key, row in rows:
             if key in result:
@@ -184,10 +186,10 @@ class MetadataIndex:
         self.close()
 
 
-def build_metadata_index(path, id_column=None, keep_columns=None, normalize_10x=False, rename=None):
+def build_metadata_index(path, id_column=None, keep_columns=None, normalize_10x=False, rename=metadata_column):
     """Return (owned index, output columns); close the index after joining source IDs.
 
-    ``rename`` is resolved once per output column. Colliding target columns fail before index
+    ``rename`` (as ``load_metadata``'s) is resolved once per output column. Colliding target columns fail before index
     creation. Reading and insertion use bounded batches; every failure closes and removes the index.
     """
     with _metadata_rows(path, id_column, keep_columns, normalize_10x, rename) as (columns, rows):

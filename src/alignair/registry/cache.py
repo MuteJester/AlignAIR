@@ -215,14 +215,10 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
         # a registry re-resolve instead of loading the wrong model.
         if cached.exists() and _sidecar_ok(cached) is not False:
             return cached
-    else:
-        # unpinned + offline -> fallback to latest cached version immediately
-        if offline:
-            inst = installed_models().get(model_id)
-            if inst:
-                cached = cache_path(model_id, inst[-1])
-                if cached.exists() and _sidecar_ok(cached) is not False:
-                    return cached
+    elif offline:                                     # unpinned + offline -> the latest cached version at once
+        cached = _latest_cached(model_id)
+        if cached is not None:
+            return cached
 
     lookup_error = None
     try:
@@ -232,12 +228,9 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
         found = None
 
     if not found:
-        if not version:
-            inst = installed_models().get(model_id)
-            if inst:
-                cached = cache_path(model_id, inst[-1])
-                if cached.exists() and _sidecar_ok(cached) is not False:
-                    return cached
+        cached = None if version else _latest_cached(model_id)
+        if cached is not None:
+            return cached
         if lookup_error is not None:
             raise lookup_error
         known = _known_ids(srcs, offline)
@@ -251,6 +244,17 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
     if dest.exists() and (sha is None or sha256_file(dest) == sha):
         return dest
     return download_verified(src, entry["file"], dest, sha, offline=offline)
+
+
+def _latest_cached(model_id: str) -> Path | None:
+    """The latest cached version of ``model_id`` when its integrity sidecar checks out (or it has none: a legacy
+    cache); else None."""
+    inst = installed_models().get(model_id)
+    if inst:
+        cached = cache_path(model_id, inst[-1])
+        if cached.exists() and _sidecar_ok(cached) is not False:
+            return cached
+    return None
 
 
 def installed_models() -> dict[str, list[str]]:
@@ -290,7 +294,8 @@ def prune(keep: int = 1) -> list[Path]:
 
 
 def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | None = None):
-    """Re-hash each installed artifact against the registry. Yields (id, version, ok|None-if-unknown)."""
+    """Re-hash each installed artifact against the registry: a list of (id, version, ok, or None when the registry
+    does not know it)."""
     out = []
     for mid, vers in installed_models().items():
         if model_id and mid != model_id:

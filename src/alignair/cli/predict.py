@@ -20,6 +20,7 @@ from ..genotype.infer import EXPLAIN, MIN_READS
 from ..io.files import sha256_file
 from ..reference.loci import FALLBACK_LOCUS
 from ._errors import fail
+from .predict_run import RunCounts, RunIO
 
 
 def register(sub) -> None:
@@ -94,48 +95,32 @@ def register(sub) -> None:
 
 
 def _load_metadata_table(args):
-    """Load the per-read metadata JOIN TABLE once (id -> {col: value}), returning
-    ``(meta_by_id, extra_columns)`` or ``(None, None)`` if no --metadata given. The per-chunk join looks
-    up by original source ID through a temporary disk-backed index.
-
-    Metadata may NEVER overwrite a model/scientific AIRR field: any metadata column colliding with a
-    produced field (sequence/v_call/productive/coords/…) is namespaced to ``meta_<col>`` so the aligner's
-    result is preserved. 10x column names are normalized to AIRR."""
+    """The per-read metadata join index (id -> {col: value}) and its output columns, or ``(None, None)`` without
+    ``--metadata``: a disk-backed index the per-chunk join looks up by original source ID. 10x column names are
+    normalized to AIRR, and metadata never overwrites a field AlignAIR writes: such a column is joined as
+    ``meta_<col>`` (``io.airr.metadata_column``)."""
     if not args.metadata:
         return None, None
-    from ..io.airr import COLUMNS, _METADATA_FILL_ONLY
     from ..io.metadata import build_metadata_index
     keep = [c.strip() for c in args.keep_columns.split(",")] if args.keep_columns else None
-    protected = frozenset(COLUMNS)
-
-    def _safe(col):                                # protect model fields from metadata clobbering
-        if col in _METADATA_FILL_ONLY:             # keep AIRR name (c_call); writer fills only when blank
-            return col
-        return f"meta_{col}" if col in protected else col
-    index, kept_safe = build_metadata_index(args.metadata, id_column=args.metadata_id_column,
-                                            keep_columns=keep, normalize_10x=True, rename=_safe)
-    return index, kept_safe
+    return build_metadata_index(args.metadata, id_column=args.metadata_id_column, keep_columns=keep,
+                                normalize_10x=True)
 
 
-def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_column, id_column,
-                    meta_by_id, extra_cols, out_locus, batch_size, rejects_out, pool=None,
-                    observe=None):
+def _stream_predict(aligner, io: RunIO, *, out_path, batch_size, rejects_out, pool=None, observe=None) -> RunCounts:
     """Stream reader-chunk -> predict -> AIRR assembly -> metadata join -> writer -> counters, in
     chunks of sequence/metadata payloads. ID reservations grow with distinct accepted output IDs.
-    Order and cross-chunk ID handling are preserved; rejects are written incrementally. Returns
-    ``(counts, fail_reasons, partial_reasons)``. The output is committed atomically on a clean pass.
+    Order and cross-chunk ID handling are preserved; rejects are written incrementally. Returns the run's counts. The
+    output is committed atomically on a clean pass, with the rejects (none on a failed pass).
     ``pool`` (a ``parallel.ProcessPool``), when given, predicts each chunk in its workers. ``observe``, when
     given, is called with each chunk's first row index and its records before they are counted."""
     import csv
-    from collections import Counter
 
     from ..io.airr import AirrWriter, needs_assembly
     from ..io.sequence_reader import iter_sequence_batches
     from ..io.metadata import lookup_metadata_rows
-    do_airr = needs_assembly(columns)
-    counts = dict(input=0, accepted=0, rejected=0, cropped=0, complete=0, partial=0, failed=0,
-                  written=0, nonstandard_orientation=0)
-    fail_reasons, partial_reasons = Counter(), Counter()
+    do_airr = needs_assembly(io.columns)
+    counts = RunCounts()
 
     rejects_buf = [] if rejects_out else None
     rej_f = rej_w = rej_tmp = None
@@ -146,15 +131,15 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
                                delimiter="\t")
         rej_w.writeheader()
 
-    writer = AirrWriter(out_path, locus=out_locus, columns=columns, extra_columns=extra_cols)
+    writer = AirrWriter(out_path, locus=io.out_locus, columns=io.columns, extra_columns=io.extra_cols)
     committed = False
     try:
-        with closing(iter_sequence_batches(input_path, chunk_size=chunk_size,
-                                            seq_column=seq_column, id_column=id_column,
+        with closing(iter_sequence_batches(io.input_path, chunk_size=io.chunk_size,
+                                            seq_column=io.seq_column, id_column=io.id_column,
                                             rejects=rejects_buf)) as batches:
             for batch in batches:
                 cids, cseqs, dropped = batch.ids, batch.sequences, batch.n_dropped
-                counts["rejected"] += dropped
+                counts.rejected += dropped
                 if rejects_buf is not None:              # drain this chunk's rejects to disk, keep memory flat
                     for rj in rejects_buf:
                         rej_w.writerow(rj)
@@ -164,25 +149,13 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
                 records = (pool.predict(cseqs, batch_size=batch_size, airr=do_airr) if pool is not None
                            else aligner.predict(cseqs, batch_size=batch_size, airr=do_airr).to_dicts())
                 if observe is not None:
-                    observe(counts["written"], records)
-                metas = lookup_metadata_rows(meta_by_id, batch.source_ids)  # Batched lookup by original source ID
+                    observe(counts.written, records)
+                metas = lookup_metadata_rows(io.meta_by_id, batch.source_ids)  # Batched lookup by original source ID
                 writer.write(cids, cseqs, records, metas=metas)
-                counts["accepted"] += len(cseqs)
-                counts["written"] += len(records)
-                for r in records:
-                    st = r.get("airr_assembly_status")
-                    if st == "complete":
-                        counts["complete"] += 1
-                    elif st == "partial":
-                        counts["partial"] += 1
-                        partial_reasons[r.get("airr_assembly_reason", "unknown")] += 1
-                    elif st == "failed":
-                        counts["failed"] += 1
-                        fail_reasons[r.get("airr_assembly_error", "?").split(":")[0]] += 1
-                    if r.get("length_cropped"):
-                        counts["cropped"] += 1
-                    if r.get("orientation_id") in (2, 3):   # complement/reverse-only: not AIRR-representable
-                        counts["nonstandard_orientation"] += 1
+                counts.accepted += len(cseqs)
+                counts.written += len(records)
+                for record in records:
+                    counts.add(record)
         writer.close(commit=True)
         committed = True
     finally:
@@ -194,8 +167,7 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
                 os.replace(rej_tmp, rejects_out)
             else:
                 os.remove(rej_tmp)
-    counts["input"] = counts["accepted"] + counts["rejected"]
-    return counts, dict(fail_reasons), dict(partial_reasons)
+    return counts
 
 
 def output_locus(requested: str | None, loci: tuple) -> str:
@@ -227,9 +199,9 @@ def _load_reporting_locus(model_path: str, *, device: str, reference):
     return aligner
 
 
-def _write_run_metadata(out: str, model_path: str, args, device: str, counts: dict, *,
-                        loci=None, fail_reasons: dict | None = None, partial_reasons: dict | None = None,
-                        genotype_pass: dict | None = None, bound_reference=None, genotype_bank=None) -> None:
+def _write_run_metadata(out: str, model_path: str, args, device: str, counts: RunCounts, *,
+                        loci=None, genotype_pass: dict | None = None, bound_reference=None,
+                        genotype_bank=None) -> None:
     """The run's provenance sidecar. ``reference_fasta_sha256`` / ``allele_order_sha256`` fingerprint the reference
     the calls were made from: ``bound_reference`` (the ``--reference`` FASTA as annotated and bound) when one was
     given, else the model's embedded one; ``reference`` names the source and keeps the embedded fingerprints, and
@@ -259,16 +231,8 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
                     "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size, "threads": args.threads,
                     "device": device, "reference": args.reference, "genotype": args.genotype},
-        "counts": {  # full record accounting
-            "input_records": counts["input"], "accepted_records": counts["accepted"],
-            "rejected_records": counts["rejected"], "cropped_records": counts["cropped"],
-            "complete_assemblies": counts["complete"], "partial_assemblies": counts["partial"],
-            "failed_assemblies": counts["failed"], "written_records": counts["written"],
-            # complement/reverse-only reads: `sequence` is transformed and rev_comp can't express it
-            # (see the `orientation` extension). A surprising rate is a useful QC signal.
-            "nonstandard_orientation_records": counts["nonstandard_orientation"],
-        },
-        "airr_assembly_fail_reasons": fail_reasons or {}, "airr_assembly_partial_reasons": partial_reasons or {},
+        "counts": counts.record(),
+        "airr_assembly_fail_reasons": counts.fail_reasons, "airr_assembly_partial_reasons": counts.partial_reasons,
         "offline": bool(args.offline),
         **({"genotype_pass": genotype_pass} if genotype_pass is not None else {}),
         "timestamp": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -277,124 +241,61 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: di
         json.dump(prov, f, indent=2)
 
 
+class _Refused(Exception):
+    """A step's refusal, already reported: ``code`` is the command's exit code."""
+
+    def __init__(self, code: int):
+        super().__init__(code)
+        self.code = code
+
+
 def run(args) -> int:
-    import torch
-    from ..registry import maybe_notify_updates, resolve_model, sources as _sources
+    try:
+        return _run(args)
+    except _Refused as refused:
+        return refused.code
+
+
+def _run(args) -> int:
+    from ..registry import maybe_notify_updates, sources as _sources
     from ..core.runtime import resolve_device
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
-
-    if args.chunk_size <= 0 or (args.batch_size is not None and args.batch_size <= 0):
-        return report_error(ConfigurationError("--chunk-size and --batch-size must be positive"))
-    if args.threads is not None and args.threads < 1:
-        return report_error(ConfigurationError(f"--threads must be at least 1 (got {args.threads})"))
+    _check_args(args)
     if device == "cpu" and args.threads is not None and args.threads > 1:
         from .. import parallel                     # the workers' forkserver imports while the model loads
         parallel.prestart()
-    for name, val in (("--max-assembly-failures", args.max_assembly_failures),
-                      ("--max-partial-assemblies", args.max_partial_assemblies)):
-        if not (0.0 <= val <= 1.0):
-            return report_error(ConfigurationError(f"{name} must be a fraction in [0, 1] (got {val})"))
-    if args.infer_genotype:
-        if args.genotype:
-            return report_error(ConfigurationError("--infer-genotype infers the genotype; it cannot take --genotype"))
-        if "-" in (args.input, args.out):
-            return report_error(ConfigurationError(
-                "--infer-genotype reads the input twice and rewrites the output: give files, not '-'"))
-        if not (0.0 < args.genotype_explain <= 1.0) or args.genotype_min_reads < 1:
-            return report_error(ConfigurationError("--genotype-explain must be in (0, 1] and --genotype-min-reads "
-                                                   "at least 1"))
 
     # 1) resolve + load the model ONCE (before reading, so a 1M-read input never sits in memory)
     srcs = _sources.resolve_sources(args.registry)
-    try:
-        model_path = str(resolve_model(args.model, sources=srcs, offline=args.offline,
-                                       token=args.hf_token, revision=args.revision))
-    except (AlignAIRError, OSError, ValueError) as e:
-        return fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
-                    context={"model_id": args.model})
-    bound = None
-    if args.reference:      # the FASTA's alleles become the model's bank, annotated against its own reference
-        from ..reference.reference_set import ReferenceSet
-        try:
-            bound = ReferenceSet.from_fasta(args.reference)
-        except (ValueError, OSError) as e:
-            return fail(e, context={"stage": "reference_binding", "path": args.reference})
-    try:  # the CLI is a thin client of the stable Aligner API
-        aligner = _load_reporting_locus(model_path, device=device, reference=bound)
-    except ValueError as e:                   # a ModelError is the file's; any other error with a reference, binding's
-        if bound is None or isinstance(e, ModelError):
-            return fail(e, error_type=ModelError, context={"path": model_path})
-        return fail(e, context={"stage": "reference_binding", "path": args.reference})
-    except DataContractError as e:
-        if bound is None:
-            raise
-        return fail(e, context={"stage": "reference_binding", "path": args.reference})
-    if bound is not None:
-        from ..reference import anchor_report
-        report = anchor_report(aligner.reference)
-        if not report.complete() or report.noncanonical:
-            print(f"warning: --reference {args.reference}: {report.summary()}", file=sys.stderr)
+    model_path, aligner = _load_aligner(args, srcs, device)
     reference = aligner.reference
-    bank = None
-
     loci = reference.locus_names()
     out_locus = output_locus(args.locus, loci)
-
-    if args.genotype:
-        from ..genotype.bank import genotype_bank
-        from ..genotype.files import load_genotype
-        try:                    # an allele the bound reference lacks is refused, not dropped
-            genotype = load_genotype(args.genotype)
-            bank = genotype_bank(reference, genotype)
-            aligner = aligner.bound_to(bank)                                    # the genotype is the bank: bound once
-        except ValueError as e:
-            return fail(e, context={"stage": "genotype_validation"})
-
+    aligner, bank = _bind_genotype(args, aligner, reference)
     meta_by_id, extra_cols = _load_metadata_table(args)  # disk-backed join index (bounded lookup)
-
-    # threads: on the CPU, worker processes of one thread each (alignair.parallel); elsewhere torch's CPU threads
-    pool = None
-    if args.threads is not None:
-        if device == "cpu" and args.threads > 1:
-            from ..parallel import ProcessPool
-            pool = ProcessPool(aligner, args.threads)
-        else:
-            torch.set_num_threads(args.threads)
+    io = RunIO(args.input, args.chunk_size, args.sequence_column, args.id_column, args.columns, extra_cols,
+               out_locus, meta_by_id)
+    pool = _open_pool(args, aligner, device)
     from ..aligner import auto_batch_size
     args.batch_size = args.batch_size or auto_batch_size(device, pool.workers if pool is not None else 1)
 
     # 2) stream reader-chunk -> predict -> assemble -> join -> write, in bounded memory (~chunk_size)
-    from ..io.airr import needs_assembly
     from . import genotype_pass as gp
     observer = gp.Observer() if args.infer_genotype else None
     first = f"{args.out}.pass1.{os.getpid()}" if observer is not None else args.out
     genotype_record = None
     try:
-        counts, fail_reasons, partial_reasons = _stream_predict(
-            aligner, input_path=args.input, out_path=first, columns=args.columns,
-            chunk_size=args.chunk_size, seq_column=args.sequence_column, id_column=args.id_column,
-            meta_by_id=meta_by_id, extra_cols=extra_cols, out_locus=out_locus,
-            batch_size=args.batch_size, rejects_out=args.rejects_out, pool=pool, observe=observer)
+        counts = _stream_predict(aligner, io, out_path=first, batch_size=args.batch_size,
+                                 rejects_out=args.rejects_out, pool=pool, observe=observer)
         if observer is not None:      # infer the genotype, re-call the reads it moves, swap their rows in
-            do_airr = needs_assembly(args.columns)
-
-            def bind(genotype):
-                """Pass 2's ``predict``: the aligner bound once to ``genotype``'s bank, its workers restarted on it."""
-                nonlocal pool
-                from ..genotype.bank import genotype_bank
-                bound = aligner.bound_to(genotype_bank(reference, genotype))
-                if pool is None:
-                    return lambda sequences: bound.predict(sequences, batch_size=args.batch_size,
-                                                           airr=do_airr).to_dicts()
-                from ..parallel import ProcessPool
-                pool.close()
-                pool = None
-                pool = workers = ProcessPool(bound, args.threads)
-                return lambda sequences: workers.predict(sequences, batch_size=args.batch_size, airr=do_airr)
-            genotype_record = gp.complete(observer, args, first=first, bind=bind,
-                                          v_names=reference.gene("V").names, extra_cols=extra_cols,
-                                          out_locus=out_locus, meta_by_id=meta_by_id, counts=counts,
-                                          fail_reasons=fail_reasons, partial_reasons=partial_reasons)
+            pass_two = _PassTwo(aligner, reference, pool, args)
+            try:
+                genotype_record = gp.complete(observer, io, counts, first=first, out=args.out,
+                                              explain=args.genotype_explain, min_reads=args.genotype_min_reads,
+                                              genotype_out=args.genotype_out, bind=pass_two.bind,
+                                              v_names=reference.gene("V").names)
+            finally:
+                pool = pass_two.pool
     finally:
         if observer is not None and os.path.exists(first):
             os.remove(first)
@@ -404,31 +305,16 @@ def run(args) -> int:
             meta_by_id.close()
 
     if not args.no_run_metadata:
-        _write_run_metadata(args.out, model_path, args, device, counts, loci=loci,
-                            fail_reasons=fail_reasons, partial_reasons=partial_reasons,
-                            genotype_pass=genotype_record, bound_reference=reference, genotype_bank=bank)
-    if counts["accepted"] == 0:
-        return report_error(InputError(f"no valid reads in {args.input} (wrote {counts['rejected']} to rejects)",
-                                       context={"path": args.input, "rejected_count": counts["rejected"]}))
+        _write_run_metadata(args.out, model_path, args, device, counts, loci=loci, genotype_pass=genotype_record,
+                            bound_reference=reference, genotype_bank=bank)
+    if counts.accepted == 0:
+        return report_error(InputError(f"no valid reads in {args.input} (wrote {counts.rejected} to rejects)",
+                                       context={"path": args.input, "rejected_count": counts.rejected}))
+    _assembly_gate(args, counts)     # 3) on the AGGREGATE rate (output is already written + tagged)
 
-    # 3) assembly gate on the AGGREGATE rate (output is already written + tagged, like the eager path)
-    n = counts["written"]
-    fail_rate = counts["failed"] / n if n else 0.0
-    partial_rate = counts["partial"] / n if n else 0.0
-    if not args.permissive and counts["failed"] and fail_rate > args.max_assembly_failures:
-        return report_error(InputError(f"AIRR assembly FAILED for {counts['failed']}/{n} reads ({fail_rate:.1%} > "
-              f"--max-assembly-failures {args.max_assembly_failures:.1%}); reasons {fail_reasons}. "
-              f"Wrote tagged output to {args.out}.",
-              context={"stage": "assembly_quality_gate", "path": args.out, "reasons": fail_reasons}))
-    if not args.permissive and counts["partial"] and partial_rate > args.max_partial_assemblies:
-        return report_error(InputError(f"AIRR assembly PARTIAL for {counts['partial']}/{n} reads ({partial_rate:.1%} > "
-              f"--max-partial-assemblies {args.max_partial_assemblies:.1%}); reasons {partial_reasons}. "
-              f"Wrote tagged output to {args.out}.",
-              context={"stage": "assembly_quality_gate", "path": args.out, "reasons": partial_reasons}))
-
-    msg = f"aligned {counts['accepted']} reads ({counts['rejected']} dropped) -> {args.out}"
-    if counts["failed"] or counts["partial"]:
-        msg += f"; {counts['failed']} failed / {counts['partial']} partial AIRR assemblies tagged"
+    msg = f"aligned {counts.accepted} reads ({counts.rejected} dropped) -> {args.out}"
+    if counts.failed or counts.partial:
+        msg += f"; {counts.failed} failed / {counts.partial} partial AIRR assemblies tagged"
     print(msg)
 
     # a path, a pinned id/revision, or a direct HF repo: no catalog-update noise
@@ -436,3 +322,129 @@ def run(args) -> int:
               or args.model.startswith("hf://"))
     maybe_notify_updates(sources_list=srcs, offline=args.offline, quiet=args.quiet, pinned=pinned)
     return 0
+
+
+def _check_args(args) -> None:
+    """Refuse (``_Refused``) option values the run cannot use, before anything loads."""
+    if args.chunk_size <= 0 or (args.batch_size is not None and args.batch_size <= 0):
+        raise _Refused(report_error(ConfigurationError("--chunk-size and --batch-size must be positive")))
+    if args.threads is not None and args.threads < 1:
+        raise _Refused(report_error(ConfigurationError(f"--threads must be at least 1 (got {args.threads})")))
+    for name, val in (("--max-assembly-failures", args.max_assembly_failures),
+                      ("--max-partial-assemblies", args.max_partial_assemblies)):
+        if not (0.0 <= val <= 1.0):
+            raise _Refused(report_error(ConfigurationError(f"{name} must be a fraction in [0, 1] (got {val})")))
+    if args.infer_genotype:
+        if args.genotype:
+            raise _Refused(report_error(ConfigurationError(
+                "--infer-genotype infers the genotype; it cannot take --genotype")))
+        if "-" in (args.input, args.out):
+            raise _Refused(report_error(ConfigurationError(
+                "--infer-genotype reads the input twice and rewrites the output: give files, not '-'")))
+        if not (0.0 < args.genotype_explain <= 1.0) or args.genotype_min_reads < 1:
+            raise _Refused(report_error(ConfigurationError(
+                "--genotype-explain must be in (0, 1] and --genotype-min-reads at least 1")))
+
+
+def _load_aligner(args, srcs, device: str) -> tuple[str, Aligner]:
+    """``(model_path, aligner)``: the model resolved (path, registry id or Hub repo) and loaded, bound to the
+    ``--reference`` FASTA when one is given (its anchor annotation's gaps reported on stderr)."""
+    from ..registry import resolve_model
+    try:
+        model_path = str(resolve_model(args.model, sources=srcs, offline=args.offline,
+                                       token=args.hf_token, revision=args.revision))
+    except (AlignAIRError, OSError, ValueError) as e:
+        raise _Refused(fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
+                            context={"model_id": args.model})) from e
+    bound = None
+    if args.reference:      # the FASTA's alleles become the model's bank, annotated against its own reference
+        from ..reference.reference_set import ReferenceSet
+        try:
+            bound = ReferenceSet.from_fasta(args.reference)
+        except (ValueError, OSError) as e:
+            raise _Refused(fail(e, context={"stage": "reference_binding", "path": args.reference})) from e
+    try:  # the CLI is a thin client of the stable Aligner API
+        aligner = _load_reporting_locus(model_path, device=device, reference=bound)
+    except ValueError as e:                   # a ModelError is the file's; any other error with a reference, binding's
+        if bound is None or isinstance(e, ModelError):
+            raise _Refused(fail(e, error_type=ModelError, context={"path": model_path})) from e
+        raise _Refused(fail(e, context={"stage": "reference_binding", "path": args.reference})) from e
+    except DataContractError as e:
+        if bound is None:
+            raise
+        raise _Refused(fail(e, context={"stage": "reference_binding", "path": args.reference})) from e
+    if bound is not None:
+        from ..reference import anchor_report
+        report = anchor_report(aligner.reference)
+        if not report.complete() or report.noncanonical:
+            print(f"warning: --reference {args.reference}: {report.summary()}", file=sys.stderr)
+    return model_path, aligner
+
+
+def _bind_genotype(args, aligner: Aligner, reference) -> tuple[Aligner, object]:
+    """``(aligner, bank)``: with ``--genotype``, the aligner bound once to the genotype's bank (an allele the bound
+    reference lacks is refused, not dropped); else the aligner as it is and no bank."""
+    if not args.genotype:
+        return aligner, None
+    from ..genotype.bank import genotype_bank
+    from ..genotype.files import load_genotype
+    try:
+        bank = genotype_bank(reference, load_genotype(args.genotype))
+        return aligner.bound_to(bank), bank
+    except ValueError as e:
+        raise _Refused(fail(e, context={"stage": "genotype_validation"})) from e
+
+
+def _open_pool(args, aligner: Aligner, device: str):
+    """``--threads``: on the CPU, worker processes of one thread each (``alignair.parallel``; the pool, to close);
+    elsewhere torch's CPU threads (None)."""
+    if args.threads is None:
+        return None
+    if device == "cpu" and args.threads > 1:
+        from ..parallel import ProcessPool
+        return ProcessPool(aligner, args.threads)
+    import torch
+    torch.set_num_threads(args.threads)
+    return None
+
+
+class _PassTwo:
+    """The genotype pass's ``bind``: pass 2's ``predict``, the aligner bound once to the inferred genotype's bank and,
+    with a worker pool, the workers restarted on it. ``pool`` is the run's pool after pass 2 (to close)."""
+
+    def __init__(self, aligner: Aligner, reference, pool, args):
+        self.aligner, self.reference, self.pool, self.args = aligner, reference, pool, args
+
+    def bind(self, genotype):
+        from ..genotype.bank import genotype_bank
+        from ..io.airr import needs_assembly
+        args, do_airr = self.args, needs_assembly(self.args.columns)
+        bound = self.aligner.bound_to(genotype_bank(self.reference, genotype))
+        if self.pool is None:
+            return lambda sequences: bound.predict(sequences, batch_size=args.batch_size, airr=do_airr).to_dicts()
+        from ..parallel import ProcessPool
+        self.pool.close()
+        # cleared before the restart, so a restart that fails is not closed a second time by the run
+        self.pool = None
+        self.pool = workers = ProcessPool(bound, args.threads)
+        return lambda sequences: workers.predict(sequences, batch_size=args.batch_size, airr=do_airr)
+
+
+def _assembly_gate(args, counts: RunCounts) -> None:
+    """Refuse (``_Refused``) a run whose failed or partial AIRR assembly rate is over its limit (unless
+    ``--permissive``); the output is written and tagged either way."""
+    n = counts.written
+    fail_rate = counts.failed / n if n else 0.0
+    partial_rate = counts.partial / n if n else 0.0
+    if not args.permissive and counts.failed and fail_rate > args.max_assembly_failures:
+        raise _Refused(report_error(InputError(
+            f"AIRR assembly FAILED for {counts.failed}/{n} reads ({fail_rate:.1%} > "
+            f"--max-assembly-failures {args.max_assembly_failures:.1%}); reasons {counts.fail_reasons}. "
+            f"Wrote tagged output to {args.out}.",
+            context={"stage": "assembly_quality_gate", "path": args.out, "reasons": counts.fail_reasons})))
+    if not args.permissive and counts.partial and partial_rate > args.max_partial_assemblies:
+        raise _Refused(report_error(InputError(
+            f"AIRR assembly PARTIAL for {counts.partial}/{n} reads ({partial_rate:.1%} > "
+            f"--max-partial-assemblies {args.max_partial_assemblies:.1%}); reasons {counts.partial_reasons}. "
+            f"Wrote tagged output to {args.out}.",
+            context={"stage": "assembly_quality_gate", "path": args.out, "reasons": counts.partial_reasons})))

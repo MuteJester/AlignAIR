@@ -18,15 +18,25 @@ def run(args) -> int:
     if args.json:
         print(json.dumps(md, indent=2, default=str))
         return 0
-    m, t = md.get("model", {}), md.get("training", {})
-    ac = embedded_allele_counts(args.model)
-    print(f"AlignAIR model  (format v{md.get('format_version')}, alignair {md.get('alignair_version')})")
+    print_card(args.model, md)
+    return 0
+
+
+def print_card(path, md: dict) -> None:
+    """Print the card of the model file at ``path`` (its metadata ``md``): what ``info`` and ``models info`` show."""
+    m, t, ref = md.get("model", {}), md.get("training", {}), md.get("reference", {})
+    name = " ".join(str(part) for part in (md.get("model_id"), md.get("model_version")) if part)
+    ac = embedded_allele_counts(path)
+    print(f"AlignAIR model {name or '(local)'}  (format v{md.get('format_version')}, "
+          f"alignair {md.get('created_by_alignair')})")
     print(f"  created:   {md.get('created')}")
     if md.get("description"):
         print(f"  note:      {md.get('description')}")
+    if md.get("species") or md.get("locus"):
+        print(f"  species/locus: {md.get('species')} / {md.get('locus')}")
     print(f"  alleles:   V={ac.get('v')} D={ac.get('d')} J={ac.get('j')}   params={m.get('param_count')}")
     print(f"  training:  steps={t.get('steps')} total_sequences_seen={t.get('total_sequences_seen')} lr={t.get('lr')}")
-    for dc in md.get("reference", {}).get("dataconfigs", []):
+    for dc in ref.get("dataconfigs", []):
         print(f"  reference: {dc['name']} ({dc.get('chain_type')}, {dc.get('species')})")
+    print(f"  allele order: {(ref.get('allele_order_sha256') or '')[:12]}…")
     print(f"  sections:  {', '.join(md.get('sections', {}))}")
-    return 0

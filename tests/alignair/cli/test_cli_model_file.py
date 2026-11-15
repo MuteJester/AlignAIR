@@ -26,6 +26,16 @@ def test_cli_info(tmp_path, capsys):
     assert "AlignAIR" in out and "HUMAN_IGH_OGRDB" in out and "total_sequences_seen" in out
 
 
+def test_models_info_prints_the_card_info_prints(tmp_path, capsys):
+    """One card printer: ``models info`` resolves the model, then prints what ``info`` prints for its file."""
+    p = _save(tmp_path)
+    assert main(["info", p]) == 0
+    card = capsys.readouterr().out
+    assert main(["models", "info", p, "--offline"]) == 0
+    assert capsys.readouterr().out == card
+    assert "alleles:   V=198 D=33 J=7" in card and "allele order:" in card
+
+
 def test_cli_reference_export_writes_the_fasta(tmp_path, capsys):
     p = _save(tmp_path)
     fasta = tmp_path / "ref.fasta"

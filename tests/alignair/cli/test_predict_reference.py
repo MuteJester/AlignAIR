@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from alignair.cli.predict_run import RunCounts
+
 from alignair.reference.reference_set import GeneReference, ReferenceSet
 
 pytestmark = pytest.mark.component
@@ -38,8 +40,8 @@ def _run(tmp_path, monkeypatch, *, bind=lambda reference: reference, patch_load=
     if patch_load:
         monkeypatch.setattr(predict_cli.Aligner, "from_pretrained", from_pretrained)
     streamed = []
-    monkeypatch.setattr(predict_cli, "_stream_predict", lambda aligner, **kwargs: streamed.append(aligner) or (
-        {"accepted": 1, "rejected": 0, "written": 1, "failed": 0, "partial": 0}, {}, {}))
+    monkeypatch.setattr(predict_cli, "_stream_predict", lambda aligner, io, **kwargs: streamed.append(aligner) or RunCounts(
+        accepted=1, written=1))
     args = build_parser().parse_args(["predict", "--model", str(model), "--reference", str(fasta), "--input",
                                       "unused.fasta", "--out", str(tmp_path / "out.tsv"), "--no-run-metadata",
                                       "--quiet"])

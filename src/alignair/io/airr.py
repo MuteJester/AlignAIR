@@ -53,6 +53,15 @@ _PROTECTED_FIELDS = frozenset(COLUMNS)
 _METADATA_FILL_ONLY = frozenset({"c_call"})
 
 
+def metadata_column(column: str) -> str:
+    """The name a metadata table's ``column`` is joined under: a column AlignAIR writes is namespaced
+    ``meta_<column>``, so metadata never overwrites a model field; an AIRR field metadata may fill (``c_call``) keeps
+    its name, and the writer fills it only where the record's value is blank."""
+    if column in _METADATA_FILL_ONLY:
+        return column
+    return f"meta_{column}" if column in _PROTECTED_FIELDS else column
+
+
 class PredictionCountMismatch(DataContractError):
     """The writer was given a different number of ids / sequences / predictions — a pipeline or model
     defect. Raised instead of silently truncating (and losing reads) via ``zip``."""

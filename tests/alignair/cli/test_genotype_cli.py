@@ -4,6 +4,8 @@ import json
 
 import pytest
 
+from alignair.cli.predict_run import RunCounts
+
 pytestmark = pytest.mark.integration
 
 
@@ -26,9 +28,9 @@ def test_predict_streams_with_the_genotypes_bank(tmp_path, monkeypatch):
     monkeypatch.setattr("alignair.model_file.container.is_alignair_file", lambda path: True)
     monkeypatch.setattr(predict_cli.Aligner, "from_pretrained", lambda *a, **k: loaded)
 
-    def stream(aligner, **kwargs):
+    def stream(aligner, io, **kwargs):
         streamed.append(aligner)
-        return {"accepted": 1, "rejected": 0, "written": 1, "failed": 0, "partial": 0}, {}, {}
+        return RunCounts(accepted=1, written=1)
 
     monkeypatch.setattr(predict_cli, "_stream_predict", stream)
     args = build_parser().parse_args([

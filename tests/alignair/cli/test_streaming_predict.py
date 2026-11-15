@@ -5,6 +5,7 @@ import pytest
 import csv
 
 from alignair.cli.predict import _stream_predict
+from alignair.cli.predict_run import RunCounts, RunIO
 
 pytestmark = pytest.mark.component
 
@@ -48,15 +49,11 @@ def _fasta(path, n, bad_at=None):
 def test_stream_preserves_order_counts_and_chunks(tmp_path):
     _fasta(tmp_path / "in.fasta", 10, bad_at=True)
     aligner = _FakeAligner()
-    counts, fr, pr = _stream_predict(
-        aligner, input_path=str(tmp_path / "in.fasta"), out_path=str(tmp_path / "out.tsv"),
-        columns="minimal", chunk_size=3, seq_column=None, id_column=None, meta_by_id=None,
-        extra_cols=None, out_locus="IGH", batch_size=64,
-        rejects_out=str(tmp_path / "rej.tsv"))
+    counts = _stream_predict(
+        aligner, RunIO(str(tmp_path / "in.fasta"), 3, None, None, "minimal", None, "IGH", None),
+        out_path=str(tmp_path / "out.tsv"), batch_size=64, rejects_out=str(tmp_path / "rej.tsv"))
     assert aligner.calls == 4                              # ceil(10/3) chunks -> streamed, not one shot
-    assert counts == {"input": 11, "accepted": 10, "rejected": 1, "cropped": 0,
-                      "complete": 10, "partial": 0, "failed": 0, "written": 10,
-                      "nonstandard_orientation": 0}
+    assert counts == RunCounts(accepted=10, rejected=1, complete=10, written=10) and counts.input == 11
     rows = _rows(tmp_path / "out.tsv")
     assert [r["sequence_id"] for r in rows] == [f"r{i}" for i in range(10)]   # order preserved
     rej = _rows(tmp_path / "rej.tsv")
@@ -65,13 +62,11 @@ def test_stream_preserves_order_counts_and_chunks(tmp_path):
 
 def test_stream_counts_partial_status(tmp_path):
     _fasta(tmp_path / "in.fasta", 4)
-    counts, fr, pr = _stream_predict(
-        _FakeAligner(status="partial"), input_path=str(tmp_path / "in.fasta"),
-        out_path=str(tmp_path / "out.tsv"), columns="minimal", chunk_size=2, seq_column=None,
-        id_column=None, meta_by_id=None, extra_cols=None, out_locus="IGH",
-        batch_size=64, rejects_out=None)
-    assert counts["partial"] == 4 and counts["complete"] == 0
-    assert pr == {"missing_calls_or_coordinates": 4}
+    counts = _stream_predict(
+        _FakeAligner(status="partial"), RunIO(str(tmp_path / "in.fasta"), 2, None, None, "minimal", None, "IGH", None),
+        out_path=str(tmp_path / "out.tsv"), batch_size=64, rejects_out=None)
+    assert counts.partial == 4 and counts.complete == 0
+    assert counts.partial_reasons == {"missing_calls_or_coordinates": 4}
 
 
 @pytest.mark.parametrize('indexed', [False, True])
@@ -83,12 +78,11 @@ def test_metadata_joins_original_source_ids_across_output_id_collisions(tmp_path
     metadata.write_text('sequence_id,cell_id\nread,first\nread_dup1,second\nseq3,third\n')
     lookup, columns = (build_metadata_index if indexed else load_metadata)(metadata)
     try:
-        counts, _, _ = _stream_predict(
-            _FakeAligner(), input_path=str(reads), out_path=str(tmp_path / 'out.tsv'),
-            columns='minimal', chunk_size=1, seq_column=None, id_column=None, meta_by_id=lookup,
-            extra_cols=columns, out_locus='IGH', batch_size=4, rejects_out=None)
+        counts = _stream_predict(
+        _FakeAligner(), RunIO(str(reads), 1, None, None, 'minimal', columns, 'IGH', lookup),
+        out_path=str(tmp_path / 'out.tsv'), batch_size=4, rejects_out=None)
         rows = _rows(tmp_path / 'out.tsv')
-        assert counts['written'] == 5
+        assert counts.written == 5
         assert [row['sequence_id'] for row in rows] == ['read', 'read_dup1', 'read_dup1_dup1', 'seq3', 'seq3_dup1']
         assert [row['cell_id'] for row in rows] == ['first', 'first', 'second', '', 'third']
     finally:
@@ -107,9 +101,9 @@ def test_stream_closes_input_and_discards_output_if_metadata_lookup_fails(tmp_pa
         def get_many(self, keys): raise RuntimeError('lookup failed')
     out = tmp_path / 'out.tsv'
     with pytest.raises(RuntimeError, match='lookup failed'):
-        _stream_predict(_FakeAligner(), input_path='reads.fa', out_path=str(out), columns='minimal',
-                        chunk_size=1, seq_column=None, id_column=None, meta_by_id=BrokenLookup(),
-                        extra_cols=['cell_id'], out_locus='IGH', batch_size=4, rejects_out=None)
+        _stream_predict(
+        _FakeAligner(), RunIO('reads.fa', 1, None, None, 'minimal', ['cell_id'], 'IGH', BrokenLookup()),
+        out_path=str(out), batch_size=4, rejects_out=None)
     assert source.closed and not out.exists()
 
 
@@ -148,14 +142,13 @@ def test_stream_memory_is_bounded(tmp_path):
     aligner = _FakeAligner(payload=800)                   # ~0.8 KB/record -> all-held ~32 MB
     tracemalloc.start()
     try:
-        counts, _, _ = _stream_predict(
-            aligner, input_path=str(tmp_path / "big.fasta"), out_path=str(tmp_path / "out.tsv"),
-            columns="minimal", chunk_size=1000, seq_column=None, id_column=None, meta_by_id=None,
-            extra_cols=None, out_locus="IGH", batch_size=64, rejects_out=None)
+        counts = _stream_predict(
+        aligner, RunIO(str(tmp_path / "big.fasta"), 1000, None, None, "minimal", None, "IGH", None),
+        out_path=str(tmp_path / "out.tsv"), batch_size=64, rejects_out=None)
         _, peak = tracemalloc.get_traced_memory()
     finally:
         tracemalloc.stop()
-    assert counts["written"] == n
+    assert counts.written == n
     assert peak < 20_000_000                              # << the ~32 MB an eager (all-records) run needs
 
 
@@ -169,7 +162,7 @@ def test_a_failed_pass_publishes_neither_the_output_nor_the_rejects(tmp_path):
     look like the record of a finished run."""
     _fasta(tmp_path / "in.fasta", 4, bad_at=True)
     with pytest.raises(RuntimeError):
-        _stream_predict(_BrokenAligner(), input_path=str(tmp_path / "in.fasta"), out_path=str(tmp_path / "out.tsv"),
-                        columns="minimal", chunk_size=2, seq_column=None, id_column=None, meta_by_id=None,
-                        extra_cols=None, out_locus="IGH", batch_size=64, rejects_out=str(tmp_path / "rej.tsv"))
+        _stream_predict(
+        _BrokenAligner(), RunIO(str(tmp_path / "in.fasta"), 2, None, None, "minimal", None, "IGH", None),
+        out_path=str(tmp_path / "out.tsv"), batch_size=64, rejects_out=str(tmp_path / "rej.tsv"))
     assert sorted(p.name for p in tmp_path.iterdir()) == ["in.fasta"]
