@@ -8,19 +8,17 @@ This turns "should I trust AlignAIR over my current tool?" into an evidence repo
 """
 from __future__ import annotations
 
-import csv
-from typing import Dict, List
+from typing import Dict
 
-from .reference.genes import GENES
+from ..reference.genes import GENES
+from .tables import read_airr_table, truthy
 
 
 def read_airr(path: str) -> Dict[str, dict]:
-    """Read an AIRR rearrangement TSV into {sequence_id: row}. Tolerates extra columns and the
-    AlignAIR equivalence-set extension columns."""
-    with open(path, newline="") as f:
-        delim = "\t" if "\t" in (f.readline()) else ","
-        f.seek(0)
-        return {r["sequence_id"]: r for r in csv.DictReader(f, delimiter=delim) if r.get("sequence_id")}
+    """An AIRR rearrangement table (``tables.read_airr_table``) as {sequence_id: row}; rows without an id are left
+    out."""
+    rows, _ = read_airr_table(path)
+    return {r["sequence_id"]: r for r in rows if r.get("sequence_id")}
 
 
 def _top1(row: dict, gene: str):
@@ -36,11 +34,6 @@ def _set(row: dict, gene: str) -> set:
 
 def _gene(call):
     return call.split("*")[0] if call else None
-
-
-def _norm_bool(v):
-    s = str(v).strip().lower()
-    return s in ("t", "true", "1", "yes")
 
 
 def compare_airr(a: Dict[str, dict], b: Dict[str, dict], a_name="model_a", b_name="model_b",
@@ -87,7 +80,7 @@ def compare_airr(a: Dict[str, dict], b: Dict[str, dict], a_name="model_a", b_nam
             jt += 1; jn += (ja == jb)
         pa, pb = a[sid].get("productive"), b[sid].get("productive")
         if pa not in (None, "") and pb not in (None, ""):
-            pt += 1; pn += (_norm_bool(pa) == _norm_bool(pb))
+            pt += 1; pn += (truthy(pa) == truthy(pb))
     out["junction_nt_agreement"] = round(jn / jt, 4) if jt else None
     out["productive_agreement"] = round(pn / pt, 4) if pt else None
     return out

@@ -50,7 +50,7 @@ def test_predict_starts_the_workers_forkserver_first_only_when_it_will_use_worke
                                                                                    monkeypatch, threads, starts):
     """Before the model loads, so the forkserver's imports run alongside the loading instead of after it."""
     from alignair.aligner import Aligner
-    from alignair.predict import parallel
+    from alignair import parallel
     events, load = [], Aligner.from_pretrained.__func__
     monkeypatch.setattr(parallel, "prestart", lambda: events.append("prestart"))
     monkeypatch.setattr(Aligner, "from_pretrained",

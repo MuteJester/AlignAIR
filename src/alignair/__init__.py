@@ -22,7 +22,7 @@ from .reference.reference_set import ReferenceSet
 from .io.sequence_reader import read_sequences, iter_sequences
 from .io.metadata import DuplicateMetadataId
 from .io.airr import write_airr, AirrWriter, PredictionCountMismatch
-from .compare import compare_airr
+from .analyze.compare import compare_airr
 from .api import load_model, predict_sequences, train_model
 from .aligner import Aligner, PredictionResult, resolve_device
 from .train.config import TrainingConfig

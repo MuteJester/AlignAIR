@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from alignair.genotype.lean import GenotypeEvidence, gene_of
+from alignair.genotype.infer import GenotypeEvidence, gene_of
 from alignair.model_file import load_model
 
 from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP, TIE_READS

@@ -1,5 +1,5 @@
 """``alignair genotype``: a donor's V genotype from an AIRR table by the frequency rule the predict pass uses
-(``genotype.lean``): per gene the most frequent alleles of its single-allele V calls until they explain
+(``genotype.infer``): per gene the most frequent alleles of its single-allele V calls until they explain
 ``--explain`` of them, a gene with fewer than ``--min-reads`` such calls left open; written as an AIRR GenotypeSet."""
 import csv
 import json

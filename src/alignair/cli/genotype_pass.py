@@ -1,4 +1,4 @@
-"""``predict --infer-genotype``: the lean genotype pass (``genotype.lean``) around the streaming predict.
+"""``predict --infer-genotype``: the genotype pass (``genotype.infer``) around the streaming predict.
 
 Pass 1, the plain streaming predict into a temporary TSV, hands each chunk's rows to an ``Observer`` (their V calls,
 and the assembly outcome of every row with tied alleles). The genotype is inferred from them; pass 2 reads the input
@@ -13,7 +13,7 @@ import json
 import os
 from contextlib import closing
 
-from ..genotype.lean import GenotypeEvidence, allowed_v
+from ..genotype.infer import GenotypeEvidence, allowed_v
 
 
 def _outcome(record: dict) -> tuple:

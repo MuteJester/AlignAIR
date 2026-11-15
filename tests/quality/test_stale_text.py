@@ -9,7 +9,7 @@ import pytest
 import alignair
 import alignair.aligner
 import alignair.core.config
-import alignair.genotype.lean
+import alignair.genotype.infer
 import alignair.train.gym.streams
 from alignair.core.tokens import TOKEN_DICT
 
@@ -25,7 +25,7 @@ def test_package_docstrings_load_an_alignair4_catalog_id(module):
 
 
 def test_the_genotype_rule_quotes_no_unlabelled_rates():
-    assert not re.search(r"\d+\.\d+%", alignair.genotype.lean.__doc__)
+    assert not re.search(r"\d+\.\d+%", alignair.genotype.infer.__doc__)
 
 
 def test_the_assay_allele_table_does_not_claim_calibrated_probabilities():

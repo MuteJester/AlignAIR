@@ -20,7 +20,7 @@ import os
 import pickle
 import tempfile
 
-from ..core.components import ARCHITECTURE_MODULES
+from .core.components import ARCHITECTURE_MODULES
 
 PRELOAD = ("torch", "alignair.aligner")      # what the forkserver imports once for every worker
 _ALIGNER = None                                   # a worker's aligner, set by _start
@@ -83,9 +83,9 @@ class ProcessPool:
         order. The workers run the batches one process runs (``forward.bucket_batches``): each part is whole
         batches dealt round-robin, so a bucket's batches keep their order in a part, its part-full one last, and the
         worker batches them the same way; the records are the ones one process gives."""
-        from ..core.boundaries import read_window
-        from ..data.inputs import prepare_nucleotide_inputs
-        from .forward import bucket_batches
+        from .core.boundaries import read_window
+        from .data.inputs import prepare_nucleotide_inputs
+        from .predict.forward import bucket_batches
         sequences = list(sequences)
         if not sequences:
             return []

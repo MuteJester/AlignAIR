@@ -1,4 +1,4 @@
-"""Prediction spread over CPU worker processes (``predict.parallel.ProcessPool``) gives the records one process gives:
+"""Prediction spread over CPU worker processes (``parallel.ProcessPool``) gives the records one process gives:
 the same rows in input order, whatever the number of workers or parts."""
 import json
 
@@ -32,7 +32,7 @@ def _one_process(aligner, reads, **kwargs):
 
 @pytest.mark.parametrize("workers", [2, 3])
 def test_workers_give_the_records_one_process_gives_in_input_order(aligner, workers):
-    from alignair.predict.parallel import ProcessPool
+    from alignair.parallel import ProcessPool
     reads = _reads() * 3                             # more reads than workers, unevenly split
     with ProcessPool(aligner, workers) as pool:
         records = pool.predict(reads, batch_size=4)
@@ -40,7 +40,7 @@ def test_workers_give_the_records_one_process_gives_in_input_order(aligner, work
 
 
 def test_workers_pass_the_prediction_options_on(aligner):
-    from alignair.predict.parallel import ProcessPool
+    from alignair.parallel import ProcessPool
     reads = _reads()
     with ProcessPool(aligner, 2) as pool:
         records = pool.predict(reads, batch_size=4, airr=False)
@@ -49,14 +49,14 @@ def test_workers_pass_the_prediction_options_on(aligner):
 
 
 def test_an_empty_chunk_gives_no_records(aligner):
-    from alignair.predict.parallel import ProcessPool
+    from alignair.parallel import ProcessPool
     with ProcessPool(aligner, 2) as pool:
         assert pool.predict([], batch_size=4) == []
 
 
 def test_the_workers_copy_of_the_aligner_is_removed_on_close_and_on_an_error(aligner):
     import os
-    from alignair.predict.parallel import ProcessPool
+    from alignair.parallel import ProcessPool
     with ProcessPool(aligner, 2) as pool:
         path = pool._path
         assert os.path.exists(path) and os.stat(path).st_mode & 0o077 == 0     # private to the user
@@ -73,7 +73,7 @@ def test_the_workers_are_forked_from_a_forkserver_and_stopped_on_close(aligner):
     (never from the parent, whose torch may have started threads); close stops the workers, whose predictions are
     all in by then, without waiting for each to tear torch down."""
     import multiprocessing
-    from alignair.predict.parallel import ProcessPool
+    from alignair.parallel import ProcessPool
     if "forkserver" not in multiprocessing.get_all_start_methods():
         pytest.skip("no forkserver on this platform: the workers are spawned")
     with ProcessPool(aligner, 2) as pool:
@@ -86,7 +86,7 @@ def test_the_workers_are_forked_from_a_forkserver_and_stopped_on_close(aligner):
 def test_prestart_starts_the_forkserver_and_a_pool_then_uses_it(aligner):
     import multiprocessing
     from multiprocessing import forkserver
-    from alignair.predict.parallel import ProcessPool, prestart
+    from alignair.parallel import ProcessPool, prestart
     if "forkserver" not in multiprocessing.get_all_start_methods():
         pytest.skip("no forkserver on this platform: the workers are spawned")
     prestart()

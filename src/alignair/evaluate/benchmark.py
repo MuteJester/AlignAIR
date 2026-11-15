@@ -6,6 +6,7 @@ import math
 import statistics
 from collections.abc import Mapping
 
+from ..analyze.tables import first_call, num
 from ..api import predict_sequences
 from ..reference.genes import GENES
 from ..errors import ConfigurationError, DataContractError
@@ -34,19 +35,8 @@ def generate_labeled(dataconfig, params: dict, n: int, seed: int) -> list[dict]:
     return list(itertools.islice(exp.stream_records(n=None, seed=seed), n))
 
 
-def _first(call) -> str:
-    return str(call).split(",")[0].strip() if call else ""
-
-
-def _num(v):
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
 def _call_correct(pred_call, truth_call) -> bool:
-    pf = _first(pred_call)
+    pf = first_call(pred_call)
     truth_set = {c.strip() for c in str(truth_call or "").split(",") if c.strip()}
     return bool(pf) and pf in truth_set
 
@@ -79,9 +69,9 @@ def score(truth: list[dict], preds: list[dict]) -> dict:
     m["junction_len_mae"] = _mean([abs(len(p.get("junction") or "") - len(str(t["junction"]))) for t, p in jt])
     for g in ("v", "j"):
         for b in ("sequence_start", "sequence_end"):
-            errs = [abs(_num(p.get(f"{g}_{b}")) - _num(t.get(f"{g}_{b}")))
+            errs = [abs(num(p.get(f"{g}_{b}")) - num(t.get(f"{g}_{b}")))
                     for t, p in zip(truth, preds)
-                    if _num(p.get(f"{g}_{b}")) is not None and _num(t.get(f"{g}_{b}")) is not None]
+                    if num(p.get(f"{g}_{b}")) is not None and num(t.get(f"{g}_{b}")) is not None]
             m[f"{g}_{b}_mae"] = _mean(errs)
     m["productive_acc"] = _mean([bool(p.get("productive")) == bool(t.get("productive"))
                                  for t, p in zip(truth, preds)])

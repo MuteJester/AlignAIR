@@ -2,18 +2,10 @@
 from __future__ import annotations
 
 from ..reference.genes import GENES
+from .tables import num
 
 _REQUIRED = ["sequence_id", "sequence", "v_call", "j_call", "junction", "junction_aa",
              "productive", "vj_in_frame", "stop_codon", "v_cigar", "j_cigar"]
-
-
-def _num(v):
-    if v is None or v == "":
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
 
 
 def validate_airr(rows: list[dict], columns: list[str]) -> dict:
@@ -22,10 +14,10 @@ def validate_airr(rows: list[dict], columns: list[str]) -> dict:
     coord_bad = length_bad = 0
     for r in rows:
         for g in GENES:
-            ss, se = _num(r.get(f"{g}_sequence_start")), _num(r.get(f"{g}_sequence_end"))
+            ss, se = num(r.get(f"{g}_sequence_start")), num(r.get(f"{g}_sequence_end"))
             if ss is not None and se is not None and se < ss:
                 coord_bad += 1
-        jl, jj = _num(r.get("junction_length")), r.get("junction")
+        jl, jj = num(r.get("junction_length")), r.get("junction")
         if jl is not None and jj and int(jl) != len(str(jj)):
             length_bad += 1
     return {"missing_required_columns": missing, "coord_violations": coord_bad,

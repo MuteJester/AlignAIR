@@ -1,5 +1,5 @@
 """``alignair genotype`` — a donor's V genotype from an AIRR rearrangement table, by the frequency rule
-``predict --infer-genotype`` uses (``genotype.lean``, TIgGER's rule): per V gene, the most frequent alleles among the
+``predict --infer-genotype`` uses (``genotype.infer``, TIgGER's rule): per V gene, the most frequent alleles among the
 rows whose ``v_call`` is a single allele, until they explain ``--explain`` of those rows; a gene with fewer than
 ``--min-reads`` such rows has no evidence and is left open. Any tool's table works (a ``v_call`` listing several
 alleles is a tie and counts for none). Writes the genotype as an AIRR GenotypeSet and prints it, gene by gene.
@@ -9,7 +9,7 @@ from __future__ import annotations
 import csv
 
 from ..errors import ConfigurationError, InputError, report_error
-from ..genotype.lean import EXPLAIN, MIN_READS
+from ..genotype.infer import EXPLAIN, MIN_READS
 
 
 def register(sub) -> None:
@@ -26,7 +26,7 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    from ..genotype.lean import GenotypeEvidence
+    from ..genotype.infer import GenotypeEvidence
     from .genotype_pass import write_genotype
     if not (0.0 < args.explain <= 1.0) or args.min_reads < 1:
         return report_error(ConfigurationError("--explain must be in (0, 1] and --min-reads at least 1",

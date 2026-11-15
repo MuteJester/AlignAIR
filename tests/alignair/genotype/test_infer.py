@@ -1,8 +1,8 @@
-"""The lean genotype pass: the donor's V genotype inferred from a repertoire's rows (TIgGER-like frequency rule on the
+"""The genotype pass: the donor's V genotype inferred from a repertoire's rows (TIgGER-like frequency rule on the
 reads whose V tie list is a single allele), and the rows whose call it moves."""
 import pytest
 
-from alignair.genotype.lean import GenotypeEvidence, allowed_v
+from alignair.genotype.infer import GenotypeEvidence, allowed_v
 
 pytestmark = pytest.mark.component
 

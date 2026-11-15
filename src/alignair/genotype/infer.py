@@ -1,4 +1,4 @@
-"""The lean genotype pass: the donor's V genotype from a repertoire's own rows, and the rows it re-calls.
+"""The genotype pass: the donor's V genotype from a repertoire's own rows, and the rows it re-calls.
 
 A single read cannot always tell two alleles apart (``v_call`` lists the ones it ties, ``predict.ties``); a repertoire
 can, since the donor carries few of each gene's alleles. As TIgGER's frequency rule does on IgBLAST's output, the

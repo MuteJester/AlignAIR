@@ -1,5 +1,5 @@
 import pytest
-from alignair.compare import compare_airr, read_airr, format_report_md
+from alignair.analyze.compare import compare_airr, read_airr, format_report_md
 
 pytestmark = pytest.mark.component
 

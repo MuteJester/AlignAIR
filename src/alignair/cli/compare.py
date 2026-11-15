@@ -1,6 +1,6 @@
 """``alignair compare`` — tool-to-tool AIRR agreement between two rearrangement TSVs.
 
-Wraps :mod:`alignair.compare`: matches rows by ``sequence_id`` and reports per-gene call agreement,
+Wraps :mod:`alignair.analyze.compare`: matches rows by ``sequence_id`` and reports per-gene call agreement,
 junction/productivity concordance, and equivalence-set rescue. Works on the user's own data (no ground
 truth), e.g. AlignAIR vs IgBLAST/MiXCR ``exportAirr`` output, or two AlignAIR runs.
 """
@@ -19,7 +19,7 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    from ..compare import compare_airr, format_report_md, read_airr
+    from ..analyze.compare import compare_airr, format_report_md, read_airr
     a, b = read_airr(args.a), read_airr(args.b)
     result = compare_airr(a, b, a_name=args.a_name, b_name=args.b_name)
     if args.json:

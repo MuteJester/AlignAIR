@@ -16,7 +16,7 @@ from .. import __version__
 from ..aligner import Aligner
 from ..errors import (AlignAIRError, ConfigurationError, DataContractError, InputError, ModelError,
                       RegistryError, report_error)
-from ..genotype.lean import EXPLAIN, MIN_READS
+from ..genotype.infer import EXPLAIN, MIN_READS
 from ..io.files import sha256_file
 from ..reference.reference_set import FALLBACK_LOCUS
 from ._errors import fail
@@ -124,7 +124,7 @@ def _stream_predict(aligner, *, input_path, out_path, columns, chunk_size, seq_c
     chunks of sequence/metadata payloads. ID reservations grow with distinct accepted output IDs.
     Order and cross-chunk ID handling are preserved; rejects are written incrementally. Returns
     ``(counts, fail_reasons, partial_reasons)``. The output is committed atomically on a clean pass.
-    ``pool`` (a ``predict.parallel.ProcessPool``), when given, predicts each chunk in its workers. ``observe``, when
+    ``pool`` (a ``parallel.ProcessPool``), when given, predicts each chunk in its workers. ``observe``, when
     given, is called with each chunk's first row index and its records before they are counted."""
     import csv
     from collections import Counter
@@ -288,7 +288,7 @@ def run(args) -> int:
     if args.threads is not None and args.threads < 1:
         return report_error(ConfigurationError(f"--threads must be at least 1 (got {args.threads})"))
     if device == "cpu" and args.threads is not None and args.threads > 1:
-        from ..predict import parallel             # the workers' forkserver imports while the model loads
+        from .. import parallel                     # the workers' forkserver imports while the model loads
         parallel.prestart()
     for name, val in (("--max-assembly-failures", args.max_assembly_failures),
                       ("--max-partial-assemblies", args.max_partial_assemblies)):
@@ -352,11 +352,11 @@ def run(args) -> int:
 
     meta_by_id, extra_cols = _load_metadata_table(args)  # disk-backed join index (bounded lookup)
 
-    # threads: on the CPU, worker processes of one thread each (predict.parallel); elsewhere torch's CPU threads
+    # threads: on the CPU, worker processes of one thread each (alignair.parallel); elsewhere torch's CPU threads
     pool = None
     if args.threads is not None:
         if device == "cpu" and args.threads > 1:
-            from ..predict.parallel import ProcessPool
+            from ..parallel import ProcessPool
             pool = ProcessPool(aligner, args.threads)
         else:
             torch.set_num_threads(args.threads)
@@ -386,7 +386,7 @@ def run(args) -> int:
                 if pool is None:
                     return lambda sequences: bound.predict(sequences, batch_size=args.batch_size,
                                                            airr=do_airr).to_dicts()
-                from ..predict.parallel import ProcessPool
+                from ..parallel import ProcessPool
                 pool.close()
                 pool = None
                 pool = workers = ProcessPool(bound, args.threads)
