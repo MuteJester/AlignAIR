@@ -93,19 +93,23 @@ def local_path(url: str) -> str | None:
     return None
 
 
-def fetch_bytes(source: str, relpath: str, *, offline: bool = False, revision: str = "main") -> bytes:
-    """Fetch a small file (e.g. ``registry.json``) from a source. Large artifacts stream via the
-    cache module. Raises :class:`OfflineError` if ``offline`` and the source is remote."""
+def open_artifact(source: str, relpath: str, *, offline: bool = False, revision: str = "main", timeout: float = 30):
+    """A binary stream of ``relpath`` from ``source``: the file of a local source, else the remote one (``timeout``
+    seconds to connect). Raises :class:`OfflineError` if ``offline`` and the source is remote."""
     url = artifact_url(source, relpath, revision=revision)
     local = local_path(url)
     if local is not None:
-        with open(local, "rb") as f:
-            return f.read()
+        return open(local, "rb")
     if offline:
         raise OfflineError(f"offline: cannot fetch {url}")
     import urllib.request
-    with urllib.request.urlopen(url, timeout=30) as r:            # nosec - user-configured registry
-        return r.read()
+    return urllib.request.urlopen(url, timeout=timeout)            # nosec - user-configured registry
+
+
+def fetch_bytes(source: str, relpath: str, *, offline: bool = False, revision: str = "main") -> bytes:
+    """A small file (e.g. ``registry.json``) of a source (``open_artifact``); the cache streams large artifacts."""
+    with open_artifact(source, relpath, offline=offline, revision=revision) as stream:
+        return stream.read()
 
 
 def load_registry(source: str, *, offline: bool = False) -> dict:

@@ -4,66 +4,15 @@ from __future__ import annotations
 import dataclasses
 import re
 from numbers import Integral
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Iterable, List
 
 import numpy as np
 
 from ..errors import ConfigurationError, DataContractError, InputError
 from .info import AlleleInfo
+from .loci import (CHAIN_OF_LOCUS, FALLBACK_LOCUS, LocusInfo, loci_from_membership, locus_from_name)
 from .provenance import SourceProvenance
-
-# GenAIRR chain-type value -> AIRR locus code
-_LOCUS_OF_CHAIN = {
-    "BCR_HEAVY": "IGH", "BCR_LIGHT_KAPPA": "IGK", "BCR_LIGHT_LAMBDA": "IGL",
-    "TCR_ALPHA": "TRA", "TCR_BETA": "TRB", "TCR_GAMMA": "TRG", "TCR_DELTA": "TRD",
-}
-_CHAIN_OF_LOCUS = {locus: chain for chain, locus in _LOCUS_OF_CHAIN.items()}
-_LOCUS_NAME_RE = re.compile(r"^(IG[HKL]|TR[ABGD])")
-
-
-def _locus_of(chain_type) -> str:
-    key = str(getattr(chain_type, "value", chain_type)).upper()
-    return _LOCUS_OF_CHAIN.get(key, key)
-
-
-def is_tcr(dataconfig) -> bool:
-    """Whether a provider reference declares a T-cell receptor chain."""
-    chain_type = getattr(dataconfig.metadata, "chain_type", "")
-    return "TCR" in str(getattr(chain_type, "value", chain_type)).upper()
-
-
-def _locus_from_name(name: str):
-    """The AIRR locus a standard IMGT/AIRR allele name belongs to (IGKV1-5*01 -> IGK), or None."""
-    m = _LOCUS_NAME_RE.match(str(name).upper())
-    return m.group(1) if m else None
-
-
-def _loci_from_membership(per_index: Dict[str, list], order: List[str],
-                          chain_of: Dict[str, str] | None = None) -> List["LocusInfo"]:
-    """Build the per-locus schema from per-gene per-index locus membership. Each locus must occupy a
-    single **contiguous** block within every gene head — same-locus dataconfigs merged adjacently are
-    fine, but an *interleaved / split* locus (another locus's alleles inside its range) is refused
-    rather than masked by a silently-widened min/max range. ``order`` is the class-id
-    order; ``chain_of`` maps a locus to its GenAIRR chain-type value (defaults to the locus code)."""
-    loci = []
-    for lc in order:
-        ranges: Dict[str, tuple] = {}
-        for G, loci_of in per_index.items():
-            idx = [i for i, x in enumerate(loci_of) if x == lc]
-            if not idx:
-                continue
-            s, e = idx[0], idx[-1] + 1
-            if idx != list(range(s, e)):                 # not a single contiguous block -> fail closed
-                raise ValueError(
-                    f"locus {lc!r} alleles are not contiguous in the {G} head (interleaved / split "
-                    f"loci); order the dataconfigs so each locus occupies one block, and merge "
-                    f"same-locus references before building.")
-            ranges[G] = (s, e)
-        loci.append(LocusInfo(locus=lc, chain_type=(chain_of or {}).get(lc, lc),
-                              has_d="D" in ranges, ranges=ranges))
-    return loci
-
 
 @dataclass
 class GeneReference:
@@ -76,25 +25,6 @@ class GeneReference:
 
     def __len__(self) -> int:
         return len(self.names)
-
-
-@dataclass
-class LocusInfo:
-    """One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has
-    a D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union's allele order. A read's
-    locus is the network's (``refine.locus``: its V, D and J calls are of it; ``predict.stages.record_loci``).
-    ``shared`` names, per gene, the alleles of another
-    locus's block that this locus lists too (TRAV/DV alleles, which rearrange in TRA and TRD alike): they belong to
-    both loci (``ReferenceSet.locus_mask``)."""
-    locus: str
-    chain_type: str
-    has_d: bool
-    ranges: Dict[str, tuple] = field(default_factory=dict)   # {"V": (s,e), "J": (s,e), ["D": (s,e)]}
-    species: str | None = None                                # the species of all its alleles, when they share one
-    shared: Dict[str, tuple] = field(default_factory=dict)   # {"V": (name, ...)}: other loci's alleles it lists too
-
-
-FALLBACK_LOCUS = "IGH"   # the locus of a reference that declares none, or several
 
 
 class ReferenceSet:
@@ -243,7 +173,7 @@ class ReferenceSet:
         has_d = bool(upper.get("D"))
         wanted = ["V", "J"] + (["D"] if has_d else [])
         alleles = {g: dict(upper.get(g, {})) for g in wanted}          # name -> sequence, first of a name kept
-        of = {g: [locus or _locus_from_name(name) for name in alleles[g]] for g in ("V", "J", "D") if g in alleles}
+        of = {g: [locus or locus_from_name(name) for name in alleles[g]] for g in ("V", "J", "D") if g in alleles}
         shown = list(dict.fromkeys(lc for g in ("V", "J", "D") if g in of for lc in of[g] if lc is not None))
         grouped = len(shown) > 1 and all(lc is not None for lcs in of.values() for lc in lcs)
         if grouped:                                   # several loci: each gene's alleles grouped by locus
@@ -268,10 +198,10 @@ class ReferenceSet:
             out[g] = GeneReference(names, sequences, index, anchors=ganc or None, gapped=gapped or None)
         if len(shown) == 1 or locus is not None:      # one locus over every allele
             only = locus or shown[0]
-            loci = _loci_from_membership({g: [only] * len(out[g]) for g in out}, [only], _CHAIN_OF_LOCUS)
+            loci = loci_from_membership({g: [only] * len(out[g]) for g in out}, [only], CHAIN_OF_LOCUS)
         elif grouped:
-            loci = _loci_from_membership({g: [_locus_from_name(n) for n in out[g].names] for g in out}, shown,
-                                         _CHAIN_OF_LOCUS)
+            loci = loci_from_membership({g: [locus_from_name(n) for n in out[g].names] for g in out}, shown,
+                                         CHAIN_OF_LOCUS)
         else:
             loci = []
         return cls(out, has_d, loci=loci)
@@ -292,11 +222,11 @@ class ReferenceSet:
             info = {n: ref.info[n] for n in keep if n in ref.info} if ref.info else None
             out[G] = GeneReference(keep, seqs, {n: i for i, n in enumerate(keep)},
                                    anchors=anc or None, gapped=gapped or None, info=info or None)
-        membership = self._membership()
+        membership = self.membership()
         per_index = {G: [membership[G][self.genes[G].index[n]] for n in out[G].names] for G in out}
         return ReferenceSet(out, self.has_d, loci=self._loci_keeping_fields(per_index), provenance=self.provenance)
 
-    def _membership(self) -> Dict[str, list]:
+    def membership(self) -> Dict[str, list]:
         """Each gene's per-index locus (None for an allele no locus range holds), from the locus schema."""
         membership = {G: [None] * len(ref) for G, ref in self.genes.items()}
         for info in self.loci:
@@ -311,7 +241,7 @@ class ReferenceSet:
         if not self.loci:
             return []
         known = [*self.loci, *extra]
-        rebuilt = _loci_from_membership(per_index, [l.locus for l in known])
+        rebuilt = loci_from_membership(per_index, [l.locus for l in known])
         return [dataclasses.replace(info, ranges=new.ranges, has_d=info.has_d or new.has_d)
                 for info, new in zip(known, rebuilt)]
 
@@ -344,10 +274,10 @@ class ReferenceSet:
                              hint="Rename them, or pass on_conflict='keep' to keep the reference's.")
         added = {G: [n for n in ref.names if n not in (self.genes[G].index if G in self.genes else {})]
                  for G, ref in other.genes.items()}
-        loci_of, theirs = {}, other._membership()
+        loci_of, theirs = {}, other.membership()
         for G, names in added.items():
             for n in names:
-                locus = theirs[G][other.genes[G].index[n]] or _locus_from_name(n) or (
+                locus = theirs[G][other.genes[G].index[n]] or locus_from_name(n) or (
                     self.loci[0].locus if len(self.loci) == 1 else None)
                 if locus is None and self.loci:
                     raise InputError(f"no locus of the reference can hold the added allele {n}",
@@ -355,7 +285,7 @@ class ReferenceSet:
                                      hint="Name it after its locus (e.g. IGKV...), or add it to a one-locus reference.")
                 loci_of[(G, n)] = locus
         new_loci = list(dict.fromkeys(loc for loc in loci_of.values() if loc not in self.locus_names()))
-        membership = self._membership()
+        membership = self.membership()
         genes, per_index = {}, {}
         for G in dict.fromkeys([*self.genes, *other.genes]):
             mine = self.genes.get(G) or GeneReference([], [], {})
@@ -373,7 +303,7 @@ class ReferenceSet:
                                      gapped=pick("gapped") or None, info=pick("info") or None)
             per_index[G] = [x for _, x in order]
         extra = [next((dataclasses.replace(l, ranges={}) for l in other.loci if l.locus == loc), None)
-                 or LocusInfo(loc, _CHAIN_OF_LOCUS.get(loc, loc), False) for loc in new_loci]
+                 or LocusInfo(loc, CHAIN_OF_LOCUS.get(loc, loc), False) for loc in new_loci]
         provenance = [*self.provenance, *(src for src in other.provenance if src not in self.provenance)]
         return ReferenceSet(genes, self.has_d or other.has_d, loci=self._loci_keeping_fields(per_index, extra),
                             provenance=provenance)

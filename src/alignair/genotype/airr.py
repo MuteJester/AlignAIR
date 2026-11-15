@@ -6,6 +6,9 @@ Source: docs.airr-community.org/en/latest/datarep/germline.html.
 """
 from __future__ import annotations
 
+import json
+import os
+
 
 # Vendored structural schema (AIRR Genotype/GenotypeSet).
 _REQUIRED = {
@@ -33,6 +36,14 @@ def to_genotype_set(genotype: dict[str, list[str]], locus: str, *, germline_set_
                 "documented_alleles": documented, "undocumented_alleles": [],
                 "deleted_genes": [], "inference_process": "repertoire_sequencing"}
     return {"receptor_genotype_set_id": set_id, "genotype_class_list": [genotype]}, warnings
+
+
+def write_genotype_set(path: str | os.PathLike[str], genotype: dict[str, list[str]], locus: str, *,
+                       set_id: str = "alignair-genotype-pass") -> None:
+    """The genotype ``{gene: alleles}`` of ``locus`` as an AIRR GenotypeSet JSON at ``path`` (``to_genotype_set``)."""
+    genotype_set, _ = to_genotype_set(genotype, locus, set_id=set_id)
+    with open(path, "w") as handle:
+        json.dump(genotype_set, handle, indent=2)
 
 
 def validate(genotype_set: dict) -> list:

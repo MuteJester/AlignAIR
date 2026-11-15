@@ -5,7 +5,7 @@ from __future__ import annotations
 from alignair.reference.genes import GENES
 from alignair.core.orientation import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
 from alignair.errors import DataContractError
-from alignair.reference.reference_set import FALLBACK_LOCUS
+from alignair.reference.loci import FALLBACK_LOCUS
 
 import csv
 import os

@@ -26,7 +26,7 @@ def dataconfig(name: str):
 
 def is_tcr(config) -> bool:
     """Whether the GenAIRR DataConfig ``config`` is a T-cell receptor's (no somatic hypermutation)."""
-    from alignair.reference.reference_set import is_tcr as declares_tcr
+    from alignair.genairr.catalog import is_tcr as declares_tcr
     return declares_tcr(config)
 
 

@@ -142,17 +142,6 @@ def cache_lock(path: Path):
             fcntl.flock(f, fcntl.LOCK_UN)
 
 
-def _open_stream(source: str, relpath: str, offline: bool, revision: str = "main"):
-    url = registry_sources.artifact_url(source, relpath, revision=revision)
-    local = registry_sources.local_path(url)
-    if local is not None:
-        return open(local, "rb")
-    if offline:
-        raise registry_sources.OfflineError(f"offline: cannot fetch {url}")
-    import urllib.request
-    return urllib.request.urlopen(url, timeout=60)                 # nosec - user-configured registry
-
-
 def download_verified(source: str, relpath: str, dest: Path, expected_sha256: str | None = None, *,
                       offline: bool = False) -> Path:
     """Stream ``relpath`` from ``source`` into ``dest``, SHA256-verify, atomically install. Idempotent:
@@ -164,7 +153,7 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
             _write_sidecar(dest, expected_sha256)                 # record hash for later offline checks
             return dest
         h = hashlib.sha256()
-        with _open_stream(source, relpath, offline) as r, open(part, "wb") as w:
+        with registry_sources.open_artifact(source, relpath, offline=offline, timeout=60) as r, open(part, "wb") as w:
             for chunk in iter(lambda: r.read(1 << 20), b""):
                 h.update(chunk)
                 w.write(chunk)

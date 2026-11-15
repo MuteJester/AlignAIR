@@ -50,3 +50,13 @@ def test_load_registry_from_file_scheme(tmp_path):
 def test_offline_fetch_raises(tmp_path):
     with pytest.raises(sources.OfflineError):
         sources.fetch_bytes("hf://a/b", "registry.json", offline=True)
+
+
+def test_an_artifact_opens_as_a_stream_from_a_local_source_and_never_offline_from_a_remote_one(tmp_path):
+    (tmp_path / "models").mkdir()
+    (tmp_path / "models" / "m.alignair").write_bytes(b"model bytes")
+    with sources.open_artifact(str(tmp_path), "models/m.alignair") as stream:
+        assert stream.read() == b"model bytes"
+    assert sources.fetch_bytes(str(tmp_path), "models/m.alignair") == b"model bytes"
+    with pytest.raises(sources.OfflineError):
+        sources.open_artifact("hf://a/b", "models/m.alignair", offline=True)

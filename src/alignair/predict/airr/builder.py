@@ -23,7 +23,7 @@ from .alignment import (build_germline_alignment, build_sequence_alignment,
                         extract_segment_alignments, translate_alignment)
 from ...core.d_presence import ABSENT, D_CLASSES, SHORT
 from ...reference.genes import GENES
-from ...reference.reference_set import FALLBACK_LOCUS
+from ...reference.loci import FALLBACK_LOCUS
 from .constants import SHORT_D_SENTINEL
 from ..results import ReadResult, light_record
 from .regions import anchor_junction_fields, extract_regions

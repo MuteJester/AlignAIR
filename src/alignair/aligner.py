@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from .core.runtime import resolve_device
 from .errors import MissingDependencyError, ModelError
-from .reference.reference_set import FALLBACK_LOCUS
+from .reference.loci import FALLBACK_LOCUS
 
 from dataclasses import dataclass
 from typing import Iterator, Optional, Sequence

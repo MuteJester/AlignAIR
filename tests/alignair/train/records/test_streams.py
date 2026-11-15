@@ -320,7 +320,7 @@ def test_invalid_source_request_is_rejected_eagerly(references,options):
 
 def test_receptor_policy_uses_enum_values_and_matches_experiment_detection():
     from enum import Enum
-    from alignair.reference.reference_set import is_tcr
+    from alignair.genairr.catalog import is_tcr
     class Kind(Enum):
         BETA='TCR_BETA'
         HEAVY='BCR_HEAVY'

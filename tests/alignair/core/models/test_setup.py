@@ -5,7 +5,7 @@ import torch
 from alignair.core import AlignAIR, AlignAIRConfig, ModelSetup, prepare_model
 from alignair.errors import ConfigurationError, DataContractError
 from alignair.reference import GeneReference, ReferenceSet
-from alignair.reference.reference_set import LocusInfo
+from alignair.reference.loci import LocusInfo
 
 pytestmark = pytest.mark.component
 

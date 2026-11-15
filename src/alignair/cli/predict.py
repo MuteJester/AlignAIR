@@ -18,7 +18,7 @@ from ..errors import (AlignAIRError, ConfigurationError, DataContractError, Inpu
                       RegistryError, report_error)
 from ..genotype.infer import EXPLAIN, MIN_READS
 from ..io.files import sha256_file
-from ..reference.reference_set import FALLBACK_LOCUS
+from ..reference.loci import FALLBACK_LOCUS
 from ._errors import fail
 
 

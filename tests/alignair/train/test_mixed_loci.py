@@ -18,7 +18,7 @@ from alignair.genairr.experiment import build_experiment
 from alignair.train.records import Curriculum
 from alignair.genairr.catalog import dataconfig_name
 from alignair.train.records.streams import (CurriculumStreamPolicy, mutation_cap_for, effective_mutation_caps)
-from alignair.reference.reference_set import is_tcr
+from alignair.genairr.catalog import is_tcr
 
 
 pytestmark = pytest.mark.integration

@@ -13,7 +13,8 @@ from typing import Dict, List
 
 from ..errors import ConfigurationError
 from ..reference import AlleleInfo, AnchorEvidence, SourceProvenance, annotate
-from ..reference.reference_set import GeneReference, ReferenceSet, _loci_from_membership, _locus_of
+from ..reference.loci import loci_from_membership, locus_of_chain
+from ..reference.reference_set import GeneReference, ReferenceSet
 from .catalog import name_of
 
 _FUNCTIONAL = {"functional": "F", "f": "F", "orf": "ORF", "pseudogene": "P", "p": "P"}
@@ -40,7 +41,7 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
     locus_chain: Dict[str, str] = {}
     locus_species: Dict[str, set] = {}
     for dc in dataconfigs:
-        locus = _locus_of(dc.metadata.chain_type)
+        locus = locus_of_chain(dc.metadata.chain_type)
         if locus not in locus_order:
             locus_order.append(locus)
             locus_chain[locus] = str(getattr(dc.metadata.chain_type, "value", dc.metadata.chain_type))
@@ -55,7 +56,7 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
         for dc in dataconfigs:
             if g == "d" and not dc.metadata.has_d:
                 continue
-            locus = _locus_of(dc.metadata.chain_type)
+            locus = locus_of_chain(dc.metadata.chain_type)
             own = set()                               # within one dataconfig the first of a name is kept
             for allele in dc.allele_list(g):
                 if allele.name in own:
@@ -101,7 +102,7 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
     loci = [dataclasses.replace(info, species=next(iter(locus_species[info.locus]))
                                 if len(locus_species[info.locus]) == 1 else None,
                                 shared={g: tuple(names) for g, names in shared.get(info.locus, {}).items()})
-            for info in _loci_from_membership(per_index, locus_order, locus_chain)]
+            for info in loci_from_membership(per_index, locus_order, locus_chain)]
     provenance = list(dict.fromkeys(
         SourceProvenance("genairr_dataconfig", locator=locator[id(dc)], sha256=dc.compute_checksum(),
                          release=_text(dc.metadata.reference_set)) for dc in dataconfigs))

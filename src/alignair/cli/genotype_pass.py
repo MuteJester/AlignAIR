@@ -4,15 +4,15 @@ Pass 1, the plain streaming predict into a temporary TSV, hands each chunk's row
 and the assembly outcome of every row with tied alleles). The genotype is inferred from them; pass 2 reads the input
 again, re-calls only the moved reads with the genotype as the bank (bound once) and writes their rows;
 the output is pass 1's rows with the moved ones replaced (``merge``, atomic), and the genotype is written as an AIRR
-GenotypeSet (``write_genotype``). ``complete`` runs everything after pass 1.
+GenotypeSet (``genotype.airr.write_genotype_set``). ``complete`` runs everything after pass 1.
 """
 from __future__ import annotations
 
 import csv
-import json
 import os
 from contextlib import closing
 
+from ..genotype.airr import write_genotype_set
 from ..genotype.infer import GenotypeEvidence, allowed_v
 
 
@@ -102,14 +102,6 @@ def recount(counts: dict, fail_reasons: dict, partial_reasons: dict, before: lis
                     del reasons[reason]
 
 
-def write_genotype(path: str, genotype: dict, locus: str) -> None:
-    """The genotype ``{gene: alleles}`` as an AIRR GenotypeSet JSON at ``path``."""
-    from ..genotype.airr import to_genotype_set
-    genotype_set, _ = to_genotype_set(genotype, locus, set_id="alignair-genotype-pass")
-    with open(path, "w") as handle:
-        json.dump(genotype_set, handle, indent=2)
-
-
 def complete(observer: Observer, args, *, first: str, bind, v_names, extra_cols, out_locus: str, meta_by_id,
              counts: dict, fail_reasons: dict, partial_reasons: dict) -> dict:
     """After pass 1 wrote ``first``: infer the genotype from ``observer``, re-call the rows it moves with
@@ -136,6 +128,6 @@ def complete(observer: Observer, args, *, first: str, bind, v_names, extra_cols,
                     os.remove(path)
         recount(counts, fail_reasons, partial_reasons, [observer.outcomes[i] for i in rows], after)
     genotype_out = args.genotype_out or f"{args.out}.genotype.json"
-    write_genotype(genotype_out, genotype, out_locus)
+    write_genotype_set(genotype_out, genotype, out_locus)
     return {"genotype_out": genotype_out, "explain": args.genotype_explain, "min_reads": args.genotype_min_reads,
             "genotype": genotype, "moved_rows": len(rows)}

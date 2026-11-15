@@ -27,7 +27,7 @@ def register(sub) -> None:
 
 def run(args) -> int:
     from ..genotype.infer import GenotypeEvidence
-    from .genotype_pass import write_genotype
+    from ..genotype.airr import write_genotype_set
     if not (0.0 < args.explain <= 1.0) or args.min_reads < 1:
         return report_error(ConfigurationError("--explain must be in (0, 1] and --min-reads at least 1",
                                        context={"explain": args.explain, "min_reads": args.min_reads}))
@@ -39,7 +39,7 @@ def run(args) -> int:
         for index, row in enumerate(reader):
             evidence.observe(index, row["v_call"])
     genotype = evidence.genotype(explain=args.explain, min_reads=args.min_reads)
-    write_genotype(args.out, genotype, args.locus)
+    write_genotype_set(args.out, genotype, args.locus)
     for gene, counts in sorted(evidence.counts.items()):
         if gene in genotype:
             print(f"{gene}: {', '.join(genotype[gene])}")

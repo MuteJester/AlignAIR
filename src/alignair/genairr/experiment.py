@@ -1,7 +1,7 @@
 """The GenAIRR experiment AlignAIR simulates reads with: the training curriculum's record streams, the benchmark's
 and the demo's reads."""
 from ..errors import ConfigurationError
-from ..reference.reference_set import is_tcr
+from .catalog import is_tcr
 
 # The keys build_experiment reads: the curriculum's (``Curriculum.params``), productive_only (selected records), the
 # share of inverted Ds, and a GenAIRR genotype (novel alleles).

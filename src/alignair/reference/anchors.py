@@ -25,7 +25,8 @@ import numpy as np
 from ..errors import InputError
 from .codons import CYS_CODONS, GAP, IMGT_CODON_104
 from .info import ANCHORED, AlleleInfo, AnchorEvidence
-from .reference_set import _CHAIN_OF_LOCUS, GeneReference, ReferenceSet, _loci_from_membership, _locus_from_name
+from .loci import CHAIN_OF_LOCUS, loci_from_membership, locus_from_name
+from .reference_set import GeneReference, ReferenceSet
 
 class LocusMismatchWarning(UserWarning):
     """A reference of another locus was bound to a model of one locus: allowed, but the model never trained on it."""
@@ -110,7 +111,7 @@ def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> Refe
     """``reference`` with every V and J allele's missing anchor and every V's missing gapped form filled (the module
     docstring's order) and how each anchor was found recorded; ``reference`` itself is unchanged."""
     from ..genairr.anchors import resolve_anchor
-    membership = reference._membership()
+    membership = reference.membership()
     genes = {}
     for gene, alleles in reference.genes.items():
         if gene not in _GENES:
@@ -148,7 +149,7 @@ def annotate(reference: ReferenceSet, known: ReferenceSet | None = None) -> Refe
                         anchors[name], evidence = carried_anchor, carried_evidence
             if name not in anchors:
                 resolved = resolve_anchor(sequence, gene, gapped=gapped.get(name) if gene == "V" else None,
-                                          locus=_locus_from_name(name) or membership[gene][i] or "")
+                                          locus=locus_from_name(name) or membership[gene][i] or "")
                 position = imgt_position(sequence, gapped.get(name)) if gene == "V" and resolved.status == "invalid" \
                     else None
                 if resolved.status in ("inferred", "verified") and resolved.position is not None:
@@ -181,7 +182,7 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
     the model's only locus; each gene's alleles grouped by locus, the reference's order within one. InputError for an
     allele no locus of the model can hold."""
     loci = [info.locus for info in known.loci]
-    theirs = known._membership()
+    theirs = known.membership()
     genes = {}
     per_index = {}
     for gene, alleles in reference.genes.items():
@@ -195,7 +196,7 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
                    and target.sequences[target.index[name]] == sequence else by_sequence.get(sequence))
             locus = theirs[gene][row] if row is not None else None
             if locus is None:
-                named = _locus_from_name(name)
+                named = locus_from_name(name)
                 locus = named if named in loci else (loci[0] if len(loci) == 1 else None)
             if locus is None:
                 raise InputError(f"the reference's allele {name} belongs to none of the model's loci "
@@ -209,7 +210,7 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
                                     {n: i for i, n in enumerate(order)}, anchors=pick(alleles.anchors) or None,
                                     gapped=pick(alleles.gapped) or None, info=pick(alleles.info) or None)
         per_index[gene] = [dict(placed)[n] for n in order]
-    ranges = _loci_from_membership(per_index, loci)
+    ranges = loci_from_membership(per_index, loci)
     schema = [dataclasses.replace(info, ranges=new.ranges) for info, new in zip(known.loci, ranges)]
     other = _other_locus(reference, loci)
     if other is not None:          # one-locus model, a reference wholly of another locus: label its records by it
@@ -217,7 +218,7 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
                       f"allowed, but its calls on {other} have not been measured; records are labelled {other}",
                       LocusMismatchWarning, stacklevel=4)
         mine = next((info for info in reference.loci if info.locus == other), None)
-        schema = [dataclasses.replace(schema[0], locus=other, chain_type=_CHAIN_OF_LOCUS.get(other, other),
+        schema = [dataclasses.replace(schema[0], locus=other, chain_type=CHAIN_OF_LOCUS.get(other, other),
                                       species=mine.species if mine is not None else None, shared={})]
     return ReferenceSet(genes, reference.has_d, loci=schema, provenance=reference.provenance)
 
@@ -225,7 +226,7 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
 def _named_loci(name: str) -> set:
     """The loci an allele's name shows: its prefix's (IGKV1-5*01 -> IGK), and TRD too for a TRAV/DV allele, which
     rearranges in TRA and TRD alike; none for a name that shows no locus."""
-    named = _locus_from_name(name)
+    named = locus_from_name(name)
     if named is None:
         return set()
     return {named, "TRD"} if named == "TRA" and "/DV" in str(name).upper() else {named}

@@ -9,11 +9,10 @@ from collections.abc import Iterable, Iterator, Mapping
 
 from ...errors import ConfigurationError, error_context
 from ...data.flanks import FlankPolicy, flank_records
-from ...reference.reference_set import is_tcr
 from ..checks import integer, probability
 from .curriculum import Curriculum
 from .curriculum import INDEL_FRACTION, indel_form_name, indel_fraction_range
-from ...genairr.catalog import dataconfig_name
+from ...genairr.catalog import dataconfig_name, is_tcr
 from ...genairr.experiment import build_experiment
 from .novel import NovelAlleles, novel_records
 from .seeds import STREAM_PURPOSES, seed_block

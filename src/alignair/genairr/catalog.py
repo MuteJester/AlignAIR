@@ -9,7 +9,7 @@ import functools
 from typing import Iterable
 
 from ..errors import ConfigurationError
-from ..reference.reference_set import _locus_of
+from ..reference.loci import locus_of_chain
 
 _HINT = "List them with `alignair reference list`."
 
@@ -52,7 +52,7 @@ def list_dataconfigs() -> list[dict]:
     for name in dataconfig_names():
         metadata = getattr(_data(), name).metadata
         rows.append({"name": name, "chain_type": _text(metadata.chain_type), "species": _text(metadata.species),
-                     "locus": _locus_of(metadata.chain_type), "has_d": bool(metadata.has_d)})
+                     "locus": locus_of_chain(metadata.chain_type), "has_d": bool(metadata.has_d)})
     return rows
 
 
@@ -66,6 +66,12 @@ def name_of(dataconfig) -> str | None:
     """The built-in name of ``dataconfig`` (a built-in or a copy of one), or None for a custom dataconfig."""
     checksum = getattr(dataconfig, "compute_checksum", None)
     return None if checksum is None else _builtin_by_checksum().get(checksum())
+
+
+def is_tcr(dataconfig) -> bool:
+    """Whether ``dataconfig`` declares a T-cell receptor chain."""
+    chain_type = getattr(dataconfig.metadata, "chain_type", "")
+    return "TCR" in str(getattr(chain_type, "value", chain_type)).upper()
 
 
 def dataconfig_name(dataconfig) -> str:
@@ -86,4 +92,4 @@ def dataconfig_name(dataconfig) -> str:
 
 def locus_of(dataconfig) -> str:
     """The AIRR locus code of ``dataconfig``'s chain type (``IGH``, ``TRB``, ...)."""
-    return _locus_of(dataconfig.metadata.chain_type)
+    return locus_of_chain(dataconfig.metadata.chain_type)

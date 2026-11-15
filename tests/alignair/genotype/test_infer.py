@@ -54,3 +54,17 @@ def test_the_allowed_v_alleles_are_the_genotype_where_a_gene_has_evidence_and_ev
     names = ["IGHV1-2*02", "IGHV1-2*04", "IGHV3-23*01", "IGHV3-23*04", "IGHV4-34*01"]
     genotype = {"IGHV1-2": ["IGHV1-2*02"], "IGHV3-23": ["IGHV3-23*01", "IGHV3-23*04"]}
     assert allowed_v(genotype, names) == ["IGHV1-2*02", "IGHV3-23*01", "IGHV3-23*04", "IGHV4-34*01"]
+
+
+def test_an_inferred_genotype_is_written_as_an_airr_genotype_set(tmp_path):
+    import json
+
+    from alignair.genotype.airr import validate, write_genotype_set
+    path = tmp_path / "genotype.json"
+    write_genotype_set(path, {"V": ["IGHV1-2*02", "IGHV1-2*04"], "J": ["IGHJ4*02"]}, "IGH")
+    genotype_set = json.loads(path.read_text())
+    assert validate(genotype_set) == []
+    (genotype,) = genotype_set["genotype_class_list"]
+    assert genotype["locus"] == "IGH" and [a["label"] for a in genotype["documented_alleles"]] == [
+        "IGHV1-2*02", "IGHV1-2*04", "IGHJ4*02"]
+    assert genotype_set["receptor_genotype_set_id"] == "alignair-genotype-pass"
