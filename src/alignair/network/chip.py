@@ -150,16 +150,44 @@ class ChipCore(nn.Module):
         return out
 
     def _forward(self, emb, mask, end_mask, *, tokens, batch, bank, counts):
+        """The stages in their order: trunk, parse and reader; the boundaries and anchors; per gene its routing and
+        bank scan; the D presence evidence; the read's mutation and indel heads; the one-locus restriction (prediction
+        only); the V end and J start refinement; the D and V call refinements (evaluation only); the training
+        internals (adapter batches only)."""
         chip_batch = "teacher_region" in batch
         windowed = not (self.training or chip_batch)     # inference: each gene's columns only where the parse puts it
         features = self.trunk(emb, mask)
         parsed = self.parser(features, mask)
         reading = self.reader(features, mask, coordinates=not windowed)
-        out = dict(parsed.boundary_logits)
+        out = _boundaries(parsed, self.genes, mask, end_mask)
+        self._anchor_logits(out, features, mask, parsed)
+        # the one teacher draw per batch, before the genes: which reads take their true region and coordinates
+        teach = (torch.rand(mask.shape[0], device=mask.device) < P_TEACHER
+                 if self.training and chip_batch else None)
+        keep = (1 - reading.inserted) * mask
         for gene in self.genes:
-            out[f"{gene}_start"] = expected_slot(out[f"{gene}_start_logits"], mask)
-            out[f"{gene}_end"] = expected_slot(out[f"{gene}_end_logits"], end_mask)
+            weights, columns, probs = self._route(gene, features, parsed, reading, windowed)
+            if teach is not None:
+                weights, columns, probs = _taught(gene, batch, teach, weights, columns, probs)
+            self._scan_bank(out, gene, weights * keep, reading, tokens, columns, probs, bank, batch, counts, mask)
+        if self.d_presence is not None:
+            out[D_PRESENCE_LOGITS] = self.d_presence(_d_presence_evidence(parsed, out))
+        _read_heads(out, parsed, reading, self.genes)
+        # One locus per read (V, D and J of its best same-locus V-J pair), for prediction batches only: an adapter batch
+        # (training, and validation in eval mode) keeps the scans' posteriors, and may carry novel rows the bound bank's
+        # locus masks do not cover.
+        if windowed and bank.locus_count:
+            restrict_to_locus(out, read_loci(out, bank), bank)
+        # the V end and J start, counted along the bank from the anchors (in every mode)
+        refine_boundaries(out, tokens, mask, end_mask, bank)
+        if not self.training:
+            self._refine_calls(out, tokens, mask, end_mask, bank, counts)
+        if chip_batch:
+            out.update(_training_outputs(parsed, reading))
+        return out
 
+    def _anchor_logits(self, out: dict, features, mask, parsed) -> None:
+        """Each anchor head's logits, its in-read positions weighted by the parse's region of its gene."""
         length = mask.shape[1]
         log_region = torch.log(parsed.marginals + _REGION_FLOOR)
         for gene, head in self.anchors.items():
@@ -167,63 +195,83 @@ class ChipCore(nn.Module):
             out[ANCHOR_LOGITS[gene]] = torch.cat(
                 [logits[:, :length] + log_region[..., GENE_STATE[gene]], logits[:, length:]], -1)
 
-        teach = (torch.rand(mask.shape[0], device=mask.device) < P_TEACHER
-                 if self.training and chip_batch else None)
-        keep = (1 - reading.inserted) * mask
-        for gene in self.genes:
-            weights = valve(parsed.marginals[..., GENE_STATE[gene]], ROUTE_VALVE)
-            if windowed:
-                columns, probs = self.reader.top_columns(features, gene, parsed.marginals[..., GENE_STATE[gene]] > SUPPORT,
-                                                         TOP_K)
-            else:
-                columns, probs = top_coordinates(reading.coord_logits[gene], TOP_K)
-            if teach is not None:
-                true_region = (batch["teacher_region"] == GENE_STATE[gene]).to(weights.dtype)
-                true_column = batch[f"teacher_coord_{gene}"]
-                taught_columns = torch.zeros_like(columns)
-                taught_columns[..., 0] = true_column.clamp_min(0)
-                taught_probs = torch.zeros_like(probs)
-                taught_probs[..., 0] = (true_column >= 0).to(probs.dtype)
-                weights = torch.where(teach[:, None], true_region, weights)
-                columns = torch.where(teach[:, None, None], taught_columns, columns)
-                probs = torch.where(teach[:, None, None], taught_probs, probs)
-            allele_mask = batch.get(f"bank_mask_{gene}")
-            if allele_mask is None:
-                allele_mask = torch.ones(mask.shape[0], counts[gene], dtype=torch.bool, device=mask.device)
-            row_logits = self.scans[gene](weights * keep, reading.m, tokens, columns, probs,
-                                          getattr(bank, f"table_{gene}"), getattr(bank, f"cover_{gene}"),
-                                          bank.row_mask(gene, allele_mask))
-            log_posterior = allele_log_posterior(row_logits, getattr(bank, f"row_allele_{gene}"),
-                                                 counts[gene])
-            out[f"{gene}_log_posterior"] = log_posterior
-            out[f"{gene}_allele"] = torch.exp(log_posterior - log_posterior.max(-1, keepdim=True).values)
+    def _route(self, gene: str, features, parsed, reading, windowed: bool):
+        """``(weights, columns, probs)`` of ``gene``: the parse's per-position weight of the gene, and the reader's top
+        germline columns and their probabilities (windowed: only where the parse supports the gene)."""
+        weights = valve(parsed.marginals[..., GENE_STATE[gene]], ROUTE_VALVE)
+        if windowed:
+            columns, probs = self.reader.top_columns(features, gene, parsed.marginals[..., GENE_STATE[gene]] > SUPPORT,
+                                                     TOP_K)
+        else:
+            columns, probs = top_coordinates(reading.coord_logits[gene], TOP_K)
+        return weights, columns, probs
 
-        if self.d_presence is not None:
-            in_d = parsed.marginals[..., GENE_STATE["d"]].detach()
-            posterior = out["d_log_posterior"].detach().exp()
-            evidence = torch.stack([in_d.max(1).values, in_d.sum(1) / D_LENGTH_SCALE, posterior.max(-1).values,
-                                    -torch.xlogy(posterior, posterior).sum(-1)], -1)
-            out[D_PRESENCE_LOGITS] = self.d_presence(evidence)
+    def _scan_bank(self, out: dict, gene: str, weights, reading, tokens, columns, probs, bank, batch, counts,
+                   mask) -> None:
+        """``gene``'s bank scan: its allele log-posterior and its alleles' likelihoods relative to the best."""
+        allele_mask = batch.get(f"bank_mask_{gene}")
+        if allele_mask is None:
+            allele_mask = torch.ones(mask.shape[0], counts[gene], dtype=torch.bool, device=mask.device)
+        row_logits = self.scans[gene](weights, reading.m, tokens, columns, probs,
+                                      getattr(bank, f"table_{gene}"), getattr(bank, f"cover_{gene}"),
+                                      bank.row_mask(gene, allele_mask))
+        log_posterior = allele_log_posterior(row_logits, getattr(bank, f"row_allele_{gene}"), counts[gene])
+        out[f"{gene}_log_posterior"] = log_posterior
+        out[f"{gene}_allele"] = torch.exp(log_posterior - log_posterior.max(-1, keepdim=True).values)
 
-        in_vdj = sum(parsed.marginals[..., GENE_STATE[gene]] for gene in self.genes)
-        out["mutation_rate"] = (reading.m * in_vdj).sum(1, keepdim=True) / in_vdj.sum(1, keepdim=True).clamp_min(1.)
-        out["indel_count"] = (reading.inserted * in_vdj).sum(1, keepdim=True)
-        # One locus per read (V, D and J of its best same-locus V-J pair), for prediction batches only: an adapter batch
-        # (training, and validation in eval mode) keeps the scans' posteriors, and may carry novel rows the bound bank's
-        # locus masks do not cover.
-        if not (self.training or chip_batch) and bank.locus_count:
-            restrict_to_locus(out, read_loci(out, bank), bank)
-        refine_boundaries(out, tokens, mask, end_mask, bank)   # the V end and J start, counted along the bank from the anchors
-        if "d" in self.genes and not self.training:   # the D call: the scan's times the junction's local alignment
+    def _refine_calls(self, out: dict, tokens, mask, end_mask, bank, counts) -> None:
+        """The evaluation-only call refinements: the D call (the scan's times the junction's local alignment) and the
+        D's edges on it, then the V call (the scan's times its banded alignment)."""
+        if "d" in self.genes:
             local = local_d_log_posterior(out, tokens, mask, bank, counts["d"])
             out["d_log_posterior"] = torch.log_softmax(out["d_log_posterior"] + local, -1)
             out["d_allele"] = torch.exp(out["d_log_posterior"] - out["d_log_posterior"].amax(-1, keepdim=True))
             refine_d_boundaries(out, tokens, mask, end_mask, bank)     # the D's edges on the called germline
-        if not self.training:                         # the V call: the scan's times its banded alignment
-            rescore_v(out, tokens, bank)
+        rescore_v(out, tokens, bank)
 
-        if chip_batch:
-            out["chip_emissions"], out["chip_transitions"] = parsed.emissions, parsed.transitions
-            out["chip_log_z"], out["chip_edit_logits"] = parsed.log_z, reading.edit_logits
-            out.update({f"chip_coord_logits_{gene}": logits for gene, logits in reading.coord_logits.items()})
-        return out
+
+def _boundaries(parsed, genes, mask, end_mask) -> dict:
+    """The parse's boundary logits and each gene's expected start and end slots."""
+    out = dict(parsed.boundary_logits)
+    for gene in genes:
+        out[f"{gene}_start"] = expected_slot(out[f"{gene}_start_logits"], mask)
+        out[f"{gene}_end"] = expected_slot(out[f"{gene}_end_logits"], end_mask)
+    return out
+
+
+def _taught(gene: str, batch: dict, teach, weights, columns, probs):
+    """The routing of ``gene`` with the ``teach`` reads given their true region and their true germline column."""
+    true_region = (batch["teacher_region"] == GENE_STATE[gene]).to(weights.dtype)
+    true_column = batch[f"teacher_coord_{gene}"]
+    taught_columns = torch.zeros_like(columns)
+    taught_columns[..., 0] = true_column.clamp_min(0)
+    taught_probs = torch.zeros_like(probs)
+    taught_probs[..., 0] = (true_column >= 0).to(probs.dtype)
+    return (torch.where(teach[:, None], true_region, weights),
+            torch.where(teach[:, None, None], taught_columns, columns),
+            torch.where(teach[:, None, None], taught_probs, probs))
+
+
+def _d_presence_evidence(parsed, out: dict):
+    """The D presence head's evidence (detached): the parse's peak and length-scaled mass of D, the D scan's best
+    likelihood and its entropy."""
+    in_d = parsed.marginals[..., GENE_STATE["d"]].detach()
+    posterior = out["d_log_posterior"].detach().exp()
+    return torch.stack([in_d.max(1).values, in_d.sum(1) / D_LENGTH_SCALE, posterior.max(-1).values,
+                        -torch.xlogy(posterior, posterior).sum(-1)], -1)
+
+
+def _read_heads(out: dict, parsed, reading, genes) -> None:
+    """The read's mutation rate (the reader's mutation over the V(D)J positions) and indel count."""
+    in_vdj = sum(parsed.marginals[..., GENE_STATE[gene]] for gene in genes)
+    out["mutation_rate"] = (reading.m * in_vdj).sum(1, keepdim=True) / in_vdj.sum(1, keepdim=True).clamp_min(1.)
+    out["indel_count"] = (reading.inserted * in_vdj).sum(1, keepdim=True)
+
+
+def _training_outputs(parsed, reading) -> dict:
+    """The internals the training losses read: the parse's emissions, transitions and partition, the reader's edit
+    logits and each gene's coordinate logits."""
+    return {"chip_emissions": parsed.emissions, "chip_transitions": parsed.transitions, "chip_log_z": parsed.log_z,
+            "chip_edit_logits": reading.edit_logits,
+            **{f"chip_coord_logits_{gene}": logits for gene, logits in reading.coord_logits.items()}}
+
