@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .core.runtime import resolve_device
-from .errors import MissingDependencyError, ModelError
+from .errors import InputError, MissingDependencyError, ModelError
 from .predict import PredictConfig
 from .predict import predict as _predict
 from .reference.loci import FALLBACK_LOCUS
@@ -74,11 +74,11 @@ class Aligner:
     """A loaded model bound to its germline reference, ready to predict. Construct with :meth:`from_pretrained` (a
     local path, a shipped catalog id, or ``id@revision``); ``alignair predict`` loads its model through it."""
 
-    def __init__(self, model: AlignAIR, reference: ReferenceSet, *, device: str = "cpu",
+    def __init__(self, model: AlignAIR, reference: ReferenceSet, *, device: str = "auto",
                  model_path: str | None = None, source_commit: str | None = None) -> None:
-        self.model = model
+        self.device = resolve_device(device)    # "auto": CUDA, then Apple MPS, then CPU
+        self.model = model.to(self.device)
         self.reference = reference
-        self.device = device
         self.model_path = model_path
         self.source_commit = source_commit     # resolved HF commit SHA (provenance), else None
 
@@ -151,9 +151,9 @@ class Aligner:
 
     @classmethod
     def from_model(cls, model: AlignAIR, reference: ReferenceSet, *, device: str = "auto") -> Aligner:
-        """Wrap an already-loaded ``(model, reference)`` pair (e.g. straight from training)."""
-        dev = resolve_device(device)
-        return cls(model.to(dev), reference, device=dev)
+        """Wrap an already-loaded ``(model, reference)`` pair (e.g. straight from training), the model placed on
+        ``device``."""
+        return cls(model, reference, device=device)
 
     def bound_to(self, reference: ReferenceSet) -> Aligner:
         """An Aligner that predicts from ``reference`` (its bank, e.g. a donor genotype's subset of the reference): a
@@ -196,17 +196,30 @@ class Aligner:
         return self.reference.default_locus
 
     # ------------------------------------------------------------------ inference
-    def predict(self, sequences: Sequence[str], *, batch_size: int | str = "auto", airr: bool = True,
-                **overrides) -> PredictionResult:
-        """Eagerly align a list of nucleotide strings, returning a :class:`PredictionResult`.
-        ``batch_size="auto"`` picks a device-appropriate size. To call from a donor's genotype, predict with
-        :meth:`with_genotype`'s Aligner."""
-        bs = auto_batch_size(self.device) if batch_size in (None, "auto") else int(batch_size)
-        cfg = PredictConfig.for_model(self.model, self.reference, batch_size=bs, airr=airr, **overrides)
-        records = _predict(self.model, sequences, self.reference, cfg, device=self.device)
-        return PredictionResult(records, locus=self.default_locus)
+    def _batch_size(self, batch_size: int | str) -> int | str:
+        return auto_batch_size(self.device) if batch_size == "auto" else batch_size
 
-    def predict_raw(self, sequences: Sequence[str], *, batch_size: int = 64) -> dict:
+    def predict(self, sequences: Sequence[str], *, ids: Sequence[str] | None = None, batch_size: int | str = "auto",
+                threshold: float | None = None, cap: int | None = None, airr: bool = True) -> PredictionResult:
+        """Align nucleotide strings, returning a :class:`PredictionResult` of one record per sequence, in order: every
+        sequence given is predicted (``read_sequences`` and the CLI drop the reads of a file that are mostly not
+        bases; an empty one is refused here).
+
+        ``ids`` (one string per sequence) fill each record's ``sequence_id`` and the result's ``ids``.
+        ``batch_size="auto"`` picks a device-appropriate size. ``threshold`` and ``cap`` set the called alleles of each
+        gene (``v_calls``...): those scoring at least ``threshold`` relative to the best (default 0.5), at most ``cap``
+        of them (default 3), never none. ``airr=False`` returns light records without the AIRR assembly. To call from a
+        donor's genotype, predict with :meth:`with_genotype`'s Aligner."""
+        if ids is not None:
+            sequences, ids = _named_reads(sequences, ids)
+        cfg = PredictConfig.for_model(self.model, self.reference, batch_size=self._batch_size(batch_size),
+                                      threshold=threshold, cap=cap, airr=airr)
+        records = _predict(self.model, sequences, self.reference, cfg, device=self.device)
+        if ids is not None:
+            records = [{"sequence_id": name, **record} for name, record in zip(ids, records)]
+        return PredictionResult(records, locus=self.default_locus, ids=ids)
+
+    def predict_raw(self, sequences: Sequence[str], *, batch_size: int | str = "auto") -> dict:
         """The model's raw head arrays; label_schema describes column identity.
 
         This method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the
@@ -218,20 +231,56 @@ class Aligner:
         from .predict.forward import run_model
         cfg = self.model.cfg
         batches = run_model(self.model, sequences, PredictConfig(max_seq_length=cfg.max_seq_length,
-                                                                 batch_size=batch_size), self.device)
+                                                                 batch_size=self._batch_size(batch_size)), self.device)
         return {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
 
-    def predict_iter(self, sequences: Iterable[str], *, batch_size: int | str = "auto", chunk_size: int = 20000,
-                     **kw) -> Iterator[dict]:
-        """Stream prediction over an iterable of sequences in bounded memory: yields per-read records,
-        predicting ``chunk_size`` reads at a time. Same options as :meth:`predict`."""
+    def predict_iter(self, sequences: Iterable[str], *, ids: Iterable[str] | None = None,
+                     batch_size: int | str = "auto", chunk_size: int = 20000, threshold: float | None = None,
+                     cap: int | None = None, airr: bool = True) -> Iterator[dict]:
+        """Stream prediction over an iterable of sequences in bounded memory: yields per-read records, predicting
+        ``chunk_size`` reads at a time. Same options as :meth:`predict`; ``ids`` may be an iterable too (InputError
+        when it runs out before the sequences, or after)."""
+        from itertools import islice, zip_longest
+
         from .data.inputs import sequence_batch_iterator
-        buf: list = []
-        for s in sequence_batch_iterator(sequences):
-            buf.append(s)
-            if len(buf) >= chunk_size:
-                yield from self.predict(buf, batch_size=batch_size, **kw).records
-                buf = []
-        if buf:
-            yield from self.predict(buf, batch_size=batch_size, **kw).records
+        reads = sequence_batch_iterator(sequences)
+        names = _id_iterator(ids) if ids is not None else None
+        options = {"batch_size": batch_size, "threshold": threshold, "cap": cap, "airr": airr}
+        while True:
+            if names is None:
+                chunk, chunk_ids = list(islice(reads, chunk_size)), None
+            else:
+                pairs = list(islice(zip_longest(reads, names, fillvalue=_MISSING), chunk_size))
+                if any(_MISSING in pair for pair in pairs):
+                    raise InputError("ids and sequences differ in number", context={"field": "ids"})
+                chunk, chunk_ids = [read for read, _ in pairs], [name for _, name in pairs]
+            if not chunk:
+                return
+            yield from self.predict(chunk, ids=chunk_ids, **options).records
+
+
+_MISSING = object()
+
+
+def _id_iterator(ids) -> Iterator:
+    """An iterator over ``ids``; InputError for a bare string, bytes or mapping, or a non-iterable."""
+    if isinstance(ids, (str, bytes, Mapping)):
+        raise InputError("ids must be a sequence of strings, one per sequence, not a bare string, bytes or mapping",
+                         context={"field": "ids"})
+    try:
+        return iter(ids)
+    except TypeError as exc:
+        raise InputError("ids must be a sequence of strings, one per sequence", context={"field": "ids"}) from exc
+
+
+def _named_reads(sequences, ids) -> tuple[list, list]:
+    """``(sequences, ids)`` as lists; InputError unless ``ids`` is one string per sequence."""
+    from .data.inputs import sequence_batch_iterator
+    reads, names = list(sequence_batch_iterator(sequences)), list(_id_iterator(ids))
+    if len(names) != len(reads):
+        raise InputError(f"{len(names)} ids for {len(reads)} sequences: give one id per sequence",
+                         context={"field": "ids"})
+    if not all(isinstance(name, str) for name in names):
+        raise InputError("ids must be strings", context={"field": "ids"})
+    return reads, names
 

@@ -3,6 +3,7 @@ commit, and save_pretrained. Network is never touched (offline / mocked)."""
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 from alignair.registry import hf
 from alignair.registry.cache import resolve_model
@@ -84,7 +85,7 @@ def test_aligner_from_pretrained_captures_hf_commit(monkeypatch, tmp_path):
     monkeypatch.setattr("alignair.registry.hf.download_from_hub", lambda spec, **k: snap)
     monkeypatch.setattr(aln, "resolve_device", lambda d: "cpu")
     monkeypatch.setattr("alignair.model_file.load_model",
-                        lambda *a, **k: SimpleNamespace(model="MODEL", reference="REF"))
+                        lambda *a, **k: SimpleNamespace(model=torch.nn.Module(), reference="REF"))
     a = aln.Aligner.from_pretrained("hf://org/repo", device="cpu")
     assert a.model_path == str(snap) and a.source_commit == "cafebabe99"
 
@@ -94,11 +95,11 @@ def test_save_pretrained_copies_artifact(monkeypatch, tmp_path):
     src = tmp_path / "loaded.alignair"
     src.write_bytes(b"ALIGNAIR-artifact-bytes")
     monkeypatch.setattr("alignair.model_file.read_metadata", lambda p: {"sections": {"config": {}}})
-    a = Aligner(model=None, reference=None, model_path=str(src))
+    a = Aligner(model=torch.nn.Module(), reference=None, model_path=str(src))
     dest = a.save_pretrained(str(tmp_path / "out"))
     assert open(dest, "rb").read() == b"ALIGNAIR-artifact-bytes"
 
-    bare = Aligner(model=None, reference=None)                 # not loaded from a file
+    bare = Aligner(model=torch.nn.Module(), reference=None)                 # not loaded from a file
     with pytest.raises(ValueError, match="loaded from a file"):
         bare.save_pretrained(str(tmp_path / "out2"))
 
@@ -110,7 +111,7 @@ def test_save_pretrained_refuses_pickle_checkpoint(monkeypatch, tmp_path):
     src.write_bytes(b"x")
     monkeypatch.setattr("alignair.model_file.read_metadata",
                         lambda p: {"sections": {"config": {}, "dataconfig/0": {}, "train_state": {}}})
-    a = Aligner(model=None, reference=None, model_path=str(src))
+    a = Aligner(model=torch.nn.Module(), reference=None, model_path=str(src))
     with pytest.raises(ValueError, match="pickle sections|not distributable"):
         a.save_pretrained(str(tmp_path / "out"))
 

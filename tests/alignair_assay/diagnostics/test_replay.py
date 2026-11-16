@@ -143,9 +143,9 @@ def test_predict_config_is_the_one_aligner_predict_builds(small_model, monkeypat
     model, reference_set = small_model
     seen = []
     monkeypatch.setattr(aligner, "_predict", lambda model, sequences, reference, cfg, device: seen.append(cfg) or [])
-    for overrides in ({}, {"threshold": 0.3, "cap": 5, "airr": False}, {"loci": ("X",)}):
-        Aligner.from_model(model, reference_set, device="cpu").predict(["ACGT"], batch_size=7, **overrides).records
-        assert predict_config(model, reference_set, batch_size=7, **overrides) == seen[-1]
+    for options in ({}, {"threshold": 0.3, "cap": 5, "airr": False}):
+        Aligner.from_model(model, reference_set, device="cpu").predict(["ACGT"], batch_size=7, **options)
+        assert predict_config(model, reference_set, batch_size=7, **options) == seen[-1]
     assert seen[0].loci == ("IGH",)
 
 
