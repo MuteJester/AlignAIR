@@ -34,8 +34,6 @@ contract: AlignAIR 3 model files do not run on it.
   row; the default batch size follows the device (256 on a GPU, 64 on the CPU, 16 per worker with `--threads`).
 - **`alignair genotype`** now infers a donor's V genotype from an AIRR table: `alignair genotype --airr TSV --out
   JSON [--locus] [--explain] [--min-reads]`.
-- **`alignair convert`** converts lab chip model files (`lab-chip-v1`, `lab-chipw64-v1`) to `chip-v1`; it no longer
-  converts `.pt` checkpoints.
 - Model loading takes no dataconfigs or `trust_pickle`: `alignair predict` loses `--dataconfig` and `--trust-pickle`,
   `alignair benchmark` loses `--trust-pickle`.
 - A model file written for sharing records neither the host nor the user it was written by.
@@ -51,10 +49,49 @@ contract: AlignAIR 3 model files do not run on it.
   no longer lists light chains).
 - `alignair predict`, `demo` and `benchmark` without `--device` resolve `auto` (CUDA, then Apple MPS, then CPU), as the
   Python API does.
-- The missing-segment refusal has a hint; `alignair convert` names an AlignAIR 3 model file as one; the refusal to
-  share a checkpoint names `alignair export`.
+- The missing-segment refusal has a hint; the refusal to share a checkpoint names `alignair export`.
 - Training reads get library flanks by default (a 5' leader, a primer masked to N, a 3' constant region), in
   `alignair train`, `run_training` and `train_model`.
+- **Error classes end in `Error`.** `DuplicateMetadataId` is `DuplicateMetadataIdError`, `PredictionCountMismatch` is
+  `PredictionCountMismatchError`, `alignair.registry.cache.IntegrityError` is
+  `alignair.registry.DownloadIntegrityError`, and `NonFiniteLossError` is `NonFiniteTrainingError`; the old names are
+  gone. `OperationIOError` is an `OSError`.
+- **Modules moved.** `alignair.compare` is `alignair.analyze.compare`; the germline reader
+  (`alignair.predict.heuristic_matcher`, `alignair.predict.germline`) is the `alignair.predict.germline` package
+  (`HeuristicGermlineMatcher` is `locate.GermlineLocator`, `match_one` is `locate`); `alignair.train.gym` is
+  `alignair.train.records`; `alignair.train.build` is `alignair.train.bundle` (its dataconfig builder is
+  `alignair.genairr.custom`); `build_experiment` is `alignair.genairr.experiment.build_experiment`.
+- **Python API signatures.** `build_airr(reads, reference, has_d=True)` replaces `chain="heavy"/"light"`;
+  `PredictConfig(loci=...)` replaces `chain_types=`; `select_alleles(probs, names, threshold, cap)` is the one
+  allele-set rule; `load_genotype(path)` returns the genotype dict and `to_genotype_set(genotype, locus)` builds the
+  AIRR GenotypeSet; `save_model(path, model, reference, *, dataconfigs=(), ...)` embeds the reference it is given, and
+  `save_checkpoint`/`save_rotating` take the reference too; `build_experiment` refuses a parameter it does not read
+  (a typo no longer simulates the default) and needs `invert_d_prob`; `NucleotideBatchAdapter(augment_orientation=)`
+  takes True or False and refuses any other value.
+- **Model files** no longer store allele counts, input/label spaces or a label schema; the reference digests identify
+  the model. An earlier AlignAIR 4 development build cannot read a file this one writes. A stored configuration that
+  is invalid is a `ModelIntegrityError` (the file's fault). A training checkpoint resumes only onto the reference it
+  was trained on, its sequences included (`init_from` warm-starts from it otherwise).
+- **Metadata joins** (`load_metadata`, `build_metadata_index`) rename a column that collides with an AIRR field to
+  `meta_<column>` by default, as `alignair predict --metadata` does.
+- **`alignair info`** and **`alignair models info`** print one model card: the id and version (or "(local)"), species
+  and locus when set, the model's allele counts, allele order and sections.
+- **`alignair analyze`** reads CSV as well as TSV; its QC counts the `orientation` column's four transforms
+  (`reverse_complement`, `complement`, `reverse`, `forward`; was `reoriented`); the always-empty V confidence
+  statistics are gone.
+- **`alignair benchmark --dataconfig`** takes one name; unknown `--strata` are refused, naming the strata.
+- **`alignair doctor`** lists the core dependencies (torch, numpy, GenAIRR, safetensors, PyYAML, platformdirs) and the
+  optional ones (zstandard, huggingface-hub), reports each compiled kernel, and its hint for a missing dependency is
+  `pip install alignair`.
+- `--locus` is spelled as the model spells it; a bare model spec naming a `.alignair` file, or a path below
+  `org/repo`, is a path ("model file does not exist"), not a Hugging Face repo; a failed `alignair predict` publishes
+  no rejects file; `<out>.run.json` records the predicting AlignAIR as `alignair_version` and the model's as
+  `model_created_by_alignair`; `ReferenceSet.from_fasta` refuses, naming them, alleles whose name does not tell their
+  segment; a model without a D never gets a D in its AIRR rows, whatever the bound reference holds.
+- The CLI options that had no help text have it (`benchmark`, `analyze --format`, `models prune --keep`, `info`,
+  `train --lr`/`--seed`).
+- The `test` extra adds ruff (`>=0.17.1,<0.18`): `tests/quality/test_lint.py` fails on any finding in `src/alignair`
+  under `pyproject.toml`'s `[tool.ruff]` settings.
 
 ### Added
 - `alignair predict --reference FASTA` and, in Python, `Aligner.from_pretrained(..., reference=...)` and
@@ -88,6 +125,19 @@ contract: AlignAIR 3 model files do not run on it.
   is the one germline reader.
 - The `alignair_benchmark` package and other research code; the head-to-head evaluation is the source-only
   `alignair_assay` package.
+- `PredictConfig.selector` and `pad_mode` (with `SELECTORS`, `largest_gap`, `max_likelihood_percentage`), and
+  `correct_segments(max_len=, pad_mode=)`.
+- `AlignAIR.from_dataconfigs`, `AlignAIRConfig.from_dataconfigs`/`from_reference` and the allele-count and
+  label-space settings: build a model for a reference with `alignair.core.prepare_model`
+  (`ReferenceSet.from_dataconfigs` stays).
+- `ReferenceSet.from_yaml`, `to_yaml` and `infer_locus`; a saved reference reloads with the locus schema it was saved
+  with.
+- `alignair.data.tokenizer` and `alignair.data.encoders` (the tokens are `alignair.core.tokens`; `tokenize_batch`).
+- The ten AIRR extension columns that were never filled: `*_resolved_call`, `*_call_level`, `*_set_confidence` and
+  `is_contaminant`.
+- `alignair reference export --dataconfig/--index` and the `export-reference` verb: `alignair reference export MODEL
+  --fasta OUT` writes a model file's germline FASTA.
+- `alignair convert`: AlignAIR 3 `.pt` checkpoints are refused (run them with `alignair<4`).
 
 ## [3.0.0] - 2026-07-18
 
