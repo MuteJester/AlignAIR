@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ..core.boundaries import read_window
 from ..core.tokens import DEFAULT_WINDOW
 from ..reference.genes import model_genes
+
+if TYPE_CHECKING:
+    from ..core.model import AlignAIR
+    from ..reference.reference_set import ReferenceSet
 
 
 @dataclass
@@ -31,10 +36,10 @@ class PredictConfig:
         return model_genes(self.has_d)
 
     @classmethod
-    def for_model(cls, model, reference, *, batch_size: int, **overrides) -> PredictConfig:
+    def for_model(cls, model: AlignAIR, reference: ReferenceSet, *, batch_size: int, **overrides) -> PredictConfig:
         """The configuration ``alignair.predict_sequences`` predicts ``model`` with: its window and D presence,
         ``batch_size``, and the reference's ordered loci (None for a schema-less reference) unless ``overrides`` names
         them."""
-        overrides.setdefault("loci", (reference.locus_names() or None) if hasattr(reference, "locus_names") else None)
+        overrides.setdefault("loci", reference.locus_names() or None)
         return cls(max_seq_length=model.cfg.max_seq_length, has_d=model.cfg.has_d, batch_size=batch_size,
                    **overrides)

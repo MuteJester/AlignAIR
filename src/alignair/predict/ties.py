@@ -16,10 +16,17 @@ listed. This is what lets a bound reference's alleles the model never trained on
 from __future__ import annotations
 
 import functools
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from .germline.cigar import aligned_columns
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from ..reference.reference_set import ReferenceSet
+    from .state import GermlineAlignment
 
 _NO_BASE = 0                                      # the code of a column an allele holds no base at
 
@@ -68,7 +75,9 @@ def _allowed(matches, allowed, i):
     return np.where(allowed[i], matches, -1)
 
 
-def better_v_alleles(sequences, alignments, reference, candidates, allowed=None) -> list:
+def better_v_alleles(sequences: Sequence[str], alignments: Sequence[GermlineAlignment | None],
+                     reference: ReferenceSet, candidates: Sequence[tuple[str, ...]],
+                     allowed=None) -> list[str | None]:
     """Per read (forward frame), the V allele of the bound bank that matches strictly more of the read bases its V
     alignment puts on germline bases than the call does, or None (no alignment, or the call matches most). Among the
     alleles matching most, the first of the read's ``candidates`` (the model's called names, in its order) that is one,
@@ -93,7 +102,8 @@ def better_v_alleles(sequences, alignments, reference, candidates, allowed=None)
     return out
 
 
-def tied_alleles(sequences, alignments, reference, allowed=None) -> list:
+def tied_alleles(sequences: Sequence[str], alignments: Sequence[GermlineAlignment | None],
+                 reference: ReferenceSet, allowed=None) -> list[tuple[str, ...]]:
     """Per read (forward frame), its V call and the V alleles of the bound bank tied with it, the call first (a tuple
     of names), or ``()`` for a read without a V alignment. ``allowed`` (per read, a bool array over the V alleles, or
     None) keeps a read's ties to its locus's alleles (``refine.locus``)."""

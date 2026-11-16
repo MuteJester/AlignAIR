@@ -1,4 +1,8 @@
 """Shared execution contexts and strict state restoration for model instances."""
+from __future__ import annotations
+
+import os
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 
 import torch
@@ -6,7 +10,8 @@ import torch
 from ..errors import ModelIntegrityError
 
 
-def restore_model_state(model, state_dict, *, source=None) -> None:
+def restore_model_state(model: torch.nn.Module, state_dict: Mapping[str, torch.Tensor], *,
+                        source: str | os.PathLike[str] | None = None) -> None:
     """Apply decoded weights strictly to an existing instance, retaining parameter bindings and mode.
 
     PyTorch owns key/shape validation and copying; no replacement model is constructed. A failed
@@ -23,7 +28,7 @@ def restore_model_state(model, state_dict, *, source=None) -> None:
 
 
 @contextmanager
-def evaluation_mode(model):
+def evaluation_mode(model: torch.nn.Module) -> Iterator[None]:
     """Evaluate without gradients, restoring every module's mode exactly on exit."""
     modes = [(module, module.training) for module in model.modules()]
     try:

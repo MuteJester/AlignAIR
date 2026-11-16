@@ -16,6 +16,7 @@ pytestmark = pytest.mark.component
 class _FakeRef:
     """Minimal reference stub for status/error-handling tests (no germline math needed)."""
     genes = {"V", "J"}
+    loci = []                                       # no locus schema
 
     def gene(self, g):
         return SimpleNamespace(names=["IGHV1-1*01"], sequences=["ACGT"], gapped=None, anchors={})

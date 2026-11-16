@@ -27,7 +27,7 @@ READ_EDITS = EDIT_LABELS[:-1]
 class ReaderOutput:
     """The reader's per-base edit logits and, per gene, column logits."""
     edit_logits: torch.Tensor                 # (B, L, 3) over READ_EDITS
-    coord_logits: dict                        # gene -> (B, L, FRAME_WIDTHS[gene])
+    coord_logits: dict[str, torch.Tensor]     # gene -> (B, L, FRAME_WIDTHS[gene])
 
     @property
     def m(self) -> torch.Tensor:

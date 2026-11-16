@@ -7,6 +7,7 @@ leaves the others as they are. A stage calls its helpers through this module's g
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -23,6 +24,9 @@ from .state import PredictionState
 from .threshold import select_alleles
 from .ties import better_v_alleles, tied_alleles
 from .v_presence import v_absent
+
+if TYPE_CHECKING:
+    from ..reference.reference_set import ReferenceSet
 
 
 def prepare_reads(state: PredictionState) -> PredictionState:
@@ -143,12 +147,12 @@ def build_rows(state: PredictionState) -> PredictionState:
     return replace(state, rows=build_airr(state.results, context.reference, has_d=cfg.has_d))
 
 
-def called_loci(v_alignments, reference, no_v) -> list[str] | None:
+def called_loci(v_alignments, reference: ReferenceSet, no_v) -> list[str] | None:
     """Per read, the locus of its V call (the allele its V is aligned to) in a reference of several loci, ``""`` for a
     read without a V call; None for a reference of one locus or none (its records are labelled otherwise). Its J and D
     calls are of the same locus: the network keeps each read to one locus (``refine.locus``), and better-V and the
     ties keep to it (``locus_alleles``)."""
-    loci = reference.locus_names() if hasattr(reference, "locus_names") else ()
+    loci = reference.locus_names()
     if len(loci) < 2:
         return None
     names = reference.gene("V").names

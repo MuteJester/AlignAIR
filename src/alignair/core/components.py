@@ -9,11 +9,15 @@ import importlib
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, fields
+from typing import TYPE_CHECKING
 
 from torch import nn
 
 from ..errors import ConfigurationError, error_context
 from .config import AlignAIRConfig
+
+if TYPE_CHECKING:
+    from ..tasks.objective import TrainingTasks
 
 
 def _embedding(cfg):
@@ -41,7 +45,7 @@ class ModelComponents:
     takes any reference with its genes, alleles it never trained on included, and its calls are that reference's.
     """
     core: Callable[[AlignAIRConfig], nn.Module]
-    objective: Callable[[AlignAIRConfig], object]
+    objective: Callable[[AlignAIRConfig], TrainingTasks]
     embedding: Callable[[AlignAIRConfig], nn.Module] = _embedding
     orientation_head: Callable[[AlignAIRConfig], nn.Module] = _orientation
 

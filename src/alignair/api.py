@@ -11,7 +11,7 @@ model) in a few lines, without touching the internal config/pipeline machinery.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 from .core import AlignAIR
 from .predict import PredictConfig
@@ -35,7 +35,8 @@ def load_model(checkpoint_path: str, *, reference: ReferenceSet | None = None,
 
 
 def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Sequence[str], *,
-                      device: str | None = None, batch_size: int = 64, genotype=None, **predict_overrides) -> list:
+                      device: str | None = None, batch_size: int = 64,
+                      genotype: Mapping[str, Iterable[str]] | None = None, **predict_overrides) -> list[dict]:
     """Run the full AlignAIR prediction pipeline on raw nucleotide strings, returning AIRR-convention
     records. ``predict_overrides`` forwards to :class:`~alignair.predict.PredictConfig` (e.g.
     ``threshold=``, ``airr=``). A ``genotype`` ({gene letter: allele names}) is the bank: the model is bound to

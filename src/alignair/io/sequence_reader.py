@@ -5,6 +5,7 @@ IUPAC ambiguity codes -> N; a read with more than 20% non-ACGTN characters is dr
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from contextlib import closing
 from dataclasses import dataclass
 from operator import index
@@ -55,7 +56,7 @@ class SequenceReadBatch:
 
 
 def iter_sequence_batches(path: str, chunk_size: int = 20000, seq_column: str | None = None,
-                          id_column: str | None = None, rejects: list | None = None):
+                          id_column: str | None = None, rejects: list | None = None) -> Iterator[SequenceReadBatch]:
     """Yield nucleotide read batches with source IDs/positions retained across all chunks.
 
     One allocator reserves every accepted output ID, including generated names. Rejected reads

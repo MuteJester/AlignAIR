@@ -14,6 +14,7 @@ placement is its ``placed`` alignment (none for an absent gene).
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 from alignair.errors import InferenceError
 
@@ -32,6 +33,9 @@ from .alignment import (
     translate_alignment,
 )
 from .regions import anchor_junction_fields, extract_regions
+
+if TYPE_CHECKING:
+    from ...reference.reference_set import ReferenceSet
 
 # Exceptions edge-case *data* can legitimately raise inside assembly (bad coords, missing anchors,
 # out-of-range slices). These are tagged as per-record assembly failures and tracked; anything else is
@@ -138,7 +142,8 @@ def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bo
     return out
 
 
-def build_airr(reads: Sequence[ReadResult], reference, has_d: bool = True, strict: bool = False) -> list[dict]:
+def build_airr(reads: Sequence[ReadResult], reference: ReferenceSet, has_d: bool = True,
+               strict: bool = False) -> list[dict]:
     """Assemble full AIRR rows from each read's typed result. Each returned row carries ``airr_assembly_status``:
     ``"complete"`` (all expected products derived), ``"partial"`` (valid calls but a product could not
     be assembled — with a machine-readable ``airr_assembly_reason``), or ``"failed"`` (an exception,
@@ -151,7 +156,7 @@ def build_airr(reads: Sequence[ReadResult], reference, has_d: bool = True, stric
     says whether a read of a locus the reference does not describe is assembled with a D."""
     germlines = GermlineMaps.of(reference)
     # each read is assembled with its own locus's D: a reference of several loci may mix loci with and without one
-    locus_hasd = {info.locus: info.has_d for info in getattr(reference, "loci", [])}
+    locus_hasd = {info.locus: info.has_d for info in reference.loci}
     out = []
     for i, read in enumerate(reads):
         ident = f"record[{i}]"

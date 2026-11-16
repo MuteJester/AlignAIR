@@ -12,8 +12,15 @@ A read holds no V when both hold:
 from __future__ import annotations
 
 import functools
+from typing import TYPE_CHECKING
 
 from .germline.cigar import ALIGNED, cigar_ops, matched_bases
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from ..reference.reference_set import ReferenceSet
+    from .state import GermlineAlignment
 
 V_KMER = 15
 V_MIN_SPAN = 20
@@ -47,7 +54,8 @@ def _credible(sequence: str, aln, germlines: dict) -> bool:
     return identity is not None and identity >= V_MIN_IDENTITY
 
 
-def v_absent(sequences, alignments, reference) -> list:
+def v_absent(sequences: Sequence[str], alignments: Sequence[GermlineAlignment | None],
+             reference: ReferenceSet) -> list[bool]:
     """Per read (forward frame), whether it holds no V: its V alignment is no V, and it holds no exact ``V_KMER``-mer
     of any V allele of ``reference``. A read without a V call (alignment ``None``) has no V to drop."""
     germlines = kmers = None

@@ -9,6 +9,7 @@ writes a publish artifact, the portable sections only.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -102,8 +103,10 @@ def reference_identity(reference: ReferenceSet) -> dict:
             "allele_order_sha256": serialize.allele_order_sha256(reference)}
 
 
-def save_model(path, model, reference, *, dataconfigs=(), training, optimizer=None, rng=None, description="",
-               include_trusted_pickle=True, model_id=None, model_version=None, card=None, scheduler=None) -> None:
+def save_model(path: str | os.PathLike[str], model: AlignAIR, reference: ReferenceSet, *, dataconfigs=(),
+               training: dict, optimizer=None, rng=None, description: str = "", include_trusted_pickle: bool = True,
+               model_id: str | None = None, model_version: str | None = None, card: dict | None = None,
+               scheduler=None) -> None:
     """Write ``model``, bound to ``reference``, as an .alignair model file: its weights, its configuration and
     ``reference`` (``reference_json``, and a FASTA), whose digests identify the model. ``dataconfigs`` (names or GenAIRR
     DataConfigs) are the sources the model was trained from, recorded by name. ``include_trusted_pickle=True`` (the
@@ -171,7 +174,7 @@ def save_model(path, model, reference, *, dataconfigs=(), training, optimizer=No
     container.write_container(path, header, sections)
 
 
-def read_metadata(path) -> dict:
+def read_metadata(path: str | os.PathLike[str]) -> dict:
     """A model file's JSON header: its metadata and section index (``container``)."""
     md = container.read_header(path)
     md.pop("_sections_base", None)
@@ -184,7 +187,7 @@ def pickle_sections(metadata: dict) -> list[str]:
     return [name for name in metadata.get("sections", {}) if name.startswith("dataconfig/") or name == "train_state"]
 
 
-def update_card(src_path, dst_path, updates: dict) -> dict:
+def update_card(src_path: str | os.PathLike[str], dst_path: str | os.PathLike[str], updates: dict) -> dict:
     """Maintainer utility: rewrite an .alignair with patched header/card fields (e.g. set
     ``model_id``/``model_version``/``locus``/``species`` on an inference artifact before publishing),
     preserving **every section byte-for-byte** — the payloads (weights, config, reference, reference_json)
@@ -237,14 +240,14 @@ class ModelStateData:
     reference: ReferenceSet
 
 
-def embedded_allele_counts(path) -> dict[str, int]:
+def embedded_allele_counts(path: str | os.PathLike[str]) -> dict[str, int]:
     """Per gene (``"v"``, ``"d"``, ``"j"``), how many alleles the reference a model file embeds holds; no weight is
     read."""
     reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
     return {gene.lower(): len(reference.gene(gene)) for gene in ("V", "D", "J") if gene in reference.genes}
 
 
-def read_model_state(path) -> ModelStateData:
+def read_model_state(path: str | os.PathLike[str]) -> ModelStateData:
     """Decode weights and verify the reference binding without model construction or RNG use.
 
     The reference comes from the no-pickle ``reference_json``, the weights from safetensors. This does not decode
@@ -275,7 +278,8 @@ def read_model_state(path) -> ModelStateData:
     return ModelStateData(md, cfg, model_state, reference)
 
 
-def load_model(path, *, device="cpu", reference=None) -> LoadedModel:
+def load_model(path: str | os.PathLike[str], *, device: str = "cpu",
+               reference: ReferenceSet | None = None) -> LoadedModel:
     """Load an inference model bound to its embedded reference, or to ``reference``: any reference with its genes (the
     model's alleles are an input), annotated against the embedded one (``alignair.reference.annotate``: the model's
     own alleles keep its anchors and gapped forms, a novel one takes them as training would)."""
@@ -306,7 +310,7 @@ class TrainingState(LoadedModel):
     scheduler_state: dict | None = None
 
 
-def read_training_state(path, *, device="cpu") -> TrainingStateData:
+def read_training_state(path: str | os.PathLike[str], *, device: str = "cpu") -> TrainingStateData:
     """Decode a trusted .alignair training checkpoint without constructing a model.
 
     Section checksums and reference/label bindings are checked here. Architecture-specific weight
@@ -327,7 +331,7 @@ def read_training_state(path, *, device="cpu") -> TrainingStateData:
                                  train_args=st.get("train_args", {}), scheduler_state=st.get('scheduler'))
 
 
-def load_training_state(path, *, device="cpu") -> TrainingState:
+def load_training_state(path: str | os.PathLike[str], *, device: str = "cpu") -> TrainingState:
     """Decode a trusted checkpoint and restore its model, retaining the existing model-bearing API."""
     data = read_training_state(path)
     model = AlignAIR.from_state_dict(data.config, data.model_state, device=device, source=path)
@@ -338,12 +342,12 @@ def load_training_state(path, *, device="cpu") -> TrainingState:
                          metadata=data.metadata, scheduler_state=data.scheduler_state)
 
 
-def read_dataconfig(path, index: int):
+def read_dataconfig(path: str | os.PathLike[str], index: int):
     """The pickled GenAIRR DataConfig section ``dataconfig/<index>`` of a training checkpoint (trusted input only: it
     is unpickled)."""
     return serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{index}"))
 
 
-def read_reference(path) -> str:
+def read_reference(path: str | os.PathLike[str]) -> str:
     """A model file's reference as FASTA text (its ``reference`` section)."""
     return container.read_section(path, "reference").decode("utf-8")

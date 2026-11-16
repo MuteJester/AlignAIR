@@ -100,12 +100,12 @@ class TrainingConfig:
                                      context={'fields': sorted(protected.intersection(self.model_options))})
 
     @classmethod
-    def from_genairr(cls, *dataconfigs, preset=None, **overrides):
+    def from_genairr(cls, *dataconfigs, preset: str | None = None, **overrides) -> TrainingConfig:
         """A configuration training on GenAIRR ``dataconfigs``, from a named ``preset`` and ``overrides``."""
         if preset is not None and preset not in _PRESETS:
             raise ConfigurationError(f'unknown preset {preset!r}; choose from {sorted(_PRESETS)}')
         return cls(dataconfigs=tuple(dataconfigs), **{**_PRESETS.get(preset, {}), **overrides})
 
-    def with_(self, **changes):
+    def with_(self, **changes) -> TrainingConfig:
         """A copy with ``changes``."""
         return replace(self, **changes)

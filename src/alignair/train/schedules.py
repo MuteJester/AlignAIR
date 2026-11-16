@@ -1,9 +1,15 @@
 """Serializable learning-rate schedules."""
+from __future__ import annotations
+
 import math
 from dataclasses import asdict, dataclass
 from numbers import Real
+from typing import TYPE_CHECKING
 
 from ..errors import ConfigurationError
+
+if TYPE_CHECKING:
+    import torch
 
 
 @dataclass(frozen=True)
@@ -20,15 +26,15 @@ class CosineSchedule:
             raise ConfigurationError('cosine min_lr must be a nonnegative finite number')
         object.__setattr__(self, 'min_lr', float(self.min_lr))
 
-    def validate(self, lr):
+    def validate(self, lr: float) -> None:
         """Refuse an initial learning rate below ``min_lr`` or not finite."""
         if not isinstance(lr, Real) or isinstance(lr, bool) or not math.isfinite(lr) or lr < self.min_lr:
             raise ConfigurationError('initial learning rate must be finite and at least cosine min_lr')
 
-    def build(self, optimizer):
+    def build(self, optimizer: torch.optim.Optimizer) -> torch.optim.lr_scheduler.LRScheduler:
         """The torch scheduler of ``optimizer``."""
         from torch.optim.lr_scheduler import CosineAnnealingLR
         return CosineAnnealingLR(optimizer, T_max=self.total_steps, eta_min=self.min_lr)
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {'policy': 'cosine-v1', **asdict(self)}

@@ -11,12 +11,17 @@ Training is ``alignair.run_training`` (``alignair.train``).
 """
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .core.runtime import resolve_device
 from .errors import MissingDependencyError, ModelError
 from .reference.loci import FALLBACK_LOCUS
+
+if TYPE_CHECKING:
+    from .core.model import AlignAIR
+    from .reference.reference_set import ReferenceSet
 
 __all__ = ["Aligner", "PredictionResult", "resolve_device"]
 
@@ -34,9 +39,9 @@ class PredictionResult:
     """A typed prediction result: the AIRR-convention records plus convenience I/O. Iterable and
     ``len()``-able over the per-read records; ``write_airr`` emits the TSV; ``to_dicts`` returns the raw
     list. The coordinates in each record refer to that record's canonical ``sequence``."""
-    records: list
+    records: list[dict]
     locus: str = FALLBACK_LOCUS
-    ids: list | None = None
+    ids: list[str] | None = None
 
     def __iter__(self) -> Iterator[dict]:
         return iter(self.records)
@@ -67,8 +72,8 @@ class Aligner:
     """A loaded model bound to its germline reference, ready to predict. Construct with :meth:`from_pretrained` (a
     local path, a shipped catalog id, or ``id@revision``); ``alignair predict`` loads its model through it."""
 
-    def __init__(self, model, reference, *, device: str = "cpu", model_path: str | None = None,
-                 source_commit: str | None = None):
+    def __init__(self, model: AlignAIR, reference: ReferenceSet, *, device: str = "cpu",
+                 model_path: str | None = None, source_commit: str | None = None) -> None:
         self.model = model
         self.reference = reference
         self.device = device
@@ -78,7 +83,8 @@ class Aligner:
     # ------------------------------------------------------------------ constructors
     @classmethod
     def from_pretrained(cls, model: str, *, revision: str | None = None, device: str = "auto",
-                        reference=None, registry=None, offline: bool = False,
+                        reference: ReferenceSet | None = None, registry: Iterable[str] | None = None,
+                        offline: bool = False,
                         token: str | None = None) -> Aligner:
         """Load a model by local path, a Hugging Face repo (``hf://org/repo`` or ``org/repo`` — pulled
         via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``). ``revision`` pins a
@@ -142,12 +148,12 @@ class Aligner:
                                  commit_message=f"Upload {filename}")
 
     @classmethod
-    def from_model(cls, model, reference, *, device: str = "auto") -> Aligner:
+    def from_model(cls, model: AlignAIR, reference: ReferenceSet, *, device: str = "auto") -> Aligner:
         """Wrap an already-loaded ``(model, reference)`` pair (e.g. straight from training)."""
         dev = resolve_device(device)
         return cls(model.to(dev), reference, device=dev)
 
-    def bound_to(self, reference) -> Aligner:
+    def bound_to(self, reference: ReferenceSet) -> Aligner:
         """An Aligner that predicts from ``reference`` (its bank, e.g. a donor genotype's subset of the reference): a
         copy of the model bound to it once, so later calls, and the workers a pool starts from it, use that bank
         with no per-call binding; the reference is annotated against this Aligner's own (``alignair.reference.
@@ -179,7 +185,8 @@ class Aligner:
         return self.reference.default_locus
 
     # ------------------------------------------------------------------ inference
-    def predict(self, sequences: Sequence[str], *, batch_size="auto", genotype=None, airr: bool = True,
+    def predict(self, sequences: Sequence[str], *, batch_size: int | str = "auto",
+                genotype: Mapping[str, Iterable[str]] | None = None, airr: bool = True,
                 **overrides) -> PredictionResult:
         """Eagerly align a list of nucleotide strings, returning a :class:`PredictionResult`.
         ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{V|D|J: allele names}`` dict) is the
@@ -192,7 +199,7 @@ class Aligner:
                                     batch_size=bs, airr=airr, **overrides)
         return PredictionResult(records, locus=self.default_locus)
 
-    def predict_raw(self, sequences, *, batch_size=64) -> dict:
+    def predict_raw(self, sequences: Sequence[str], *, batch_size: int = 64) -> dict:
         """The model's raw head arrays; label_schema describes column identity.
 
         This method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the
@@ -208,7 +215,7 @@ class Aligner:
                                                                  batch_size=batch_size), self.device)
         return {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
 
-    def predict_iter(self, sequences: Iterator[str], *, batch_size="auto", chunk_size: int = 20000,
+    def predict_iter(self, sequences: Iterable[str], *, batch_size: int | str = "auto", chunk_size: int = 20000,
                      **kw) -> Iterator[dict]:
         """Stream prediction over an iterable of sequences in bounded memory: yields per-read records,
         predicting ``chunk_size`` reads at a time. Same options as :meth:`predict`."""

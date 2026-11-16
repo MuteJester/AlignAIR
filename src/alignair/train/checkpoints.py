@@ -7,14 +7,20 @@ import logging
 import os
 import re
 import shutil
+from typing import TYPE_CHECKING
 
 from ..errors import ConfigurationError, error_context
 from ..io.atomic import atomic_write
 from .checks import integer
 from .random_state import capture_rng_state
 
+if TYPE_CHECKING:
+    from ..core.model import AlignAIR
+    from ..reference.reference_set import ReferenceSet
 
-def save_checkpoint(path, model, reference, step, opt=None, *, dataconfigs=None, train_args=None, scheduler=None):
+
+def save_checkpoint(path: str | os.PathLike[str], model: AlignAIR, reference: ReferenceSet, step: int, opt=None, *,
+                    dataconfigs=None, train_args: dict | None = None, scheduler=None) -> None:
     """A self-contained .alignair checkpoint of ``model`` bound to ``reference``, with its trusted training state."""
     from .. import model_file as mf
 
@@ -96,8 +102,8 @@ def _step_of(path) -> int:
     return int(match.group(1)) if match else -1
 
 
-def save_rotating(base_path, model, reference, step, opt, keep=3, *, dataconfigs=None, train_args=None,
-                  scheduler=None):
+def save_rotating(base_path: str | os.PathLike[str], model: AlignAIR, reference: ReferenceSet, step: int, opt,
+                  keep: int = 3, *, dataconfigs=None, train_args: dict | None = None, scheduler=None) -> str:
     """Keep numbered checkpoints and atomically refresh the convenient base-path copy."""
     keep = integer(keep, "keep")
     stem, extension = _stem(base_path), _ext(base_path)
@@ -116,7 +122,7 @@ def save_rotating(base_path, model, reference, step, opt, keep=3, *, dataconfigs
     return path
 
 
-def latest_checkpoint(base_path):
+def latest_checkpoint(base_path: str | os.PathLike[str]) -> str | None:
     """The newest rotating checkpoint of ``base_path`` (its highest ``.step<N>`` file), else ``base_path`` itself
     when it exists, else None."""
     stem = glob.escape(_stem(base_path))

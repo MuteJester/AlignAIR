@@ -4,10 +4,17 @@ its CIGAR on the located window (a pinned banded DP, in the compiled ``_derive_c
 ``settle`` moves a V alignment's ends where it fits better."""
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ..state import GeneCall, GermlineAlignment, Segments
 from .cigar import derive_cigar, matched_bases
 from .locate import GermlineLocator
 from .settle import settle_end, settle_start
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from ...reference.reference_set import ReferenceSet
 
 
 def _germline_seq(gene_ref, allele: str) -> str:
@@ -67,7 +74,9 @@ def _gapless(seq, s, e, aln: GermlineAlignment, germ) -> GermlineAlignment:
     return GermlineAlignment(aln.allele, s + lo, s + hi, lo + offset, hi + offset, f"{hi - lo}M")
 
 
-def align_germline(sequences, segments, calls, reference, *, indel_counts=None, v_limits=None) -> dict:
+def align_germline(sequences: Sequence[str], segments: Segments, calls: dict[str, list[GeneCall]],
+                   reference: ReferenceSet, *, indel_counts=None,
+                   v_limits=None) -> dict[str, list[GermlineAlignment | None]]:
     """Returns {gene: list[GermlineAlignment | None]} (None when a read has no call for the gene).
 
     ``indel_counts`` (per-read, e.g. the model's predicted indel count) bounds the locator's search window and the
@@ -111,7 +120,9 @@ def _matched(sequence: str, aln: GermlineAlignment, germ: str) -> int:
     return matched_bases(sequence.upper(), germ, aln.cigar, aln.seq_start, aln.germ_start)
 
 
-def realign_v(sequences, segments, alignments, alleles, reference, *, indel_counts=None) -> list:
+def realign_v(sequences: Sequence[str], segments: Segments, alignments: list[GermlineAlignment | None],
+              alleles: Sequence[str | None], reference: ReferenceSet, *,
+              indel_counts=None) -> list[GermlineAlignment | None]:
     """``alignments`` (the reads' V alignments) with read i's replaced by the alignment of ``alleles[i]``, aligned as
     ``align_germline`` aligns a called allele over the read's V segment (``segments``), where ``alleles[i]`` is not
     None and that alignment puts more read bases on equal germline bases than read i's current one; the other reads

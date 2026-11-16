@@ -21,6 +21,7 @@ from .targets import UNSCORABLE, TargetBundle, anchor_positions, build_targets, 
 
 if TYPE_CHECKING:
     from ..core.config import AlignAIRConfig
+    from ..reference.reference_set import ReferenceSet
 
 
 @contextmanager
@@ -110,7 +111,7 @@ def _d_presence_targets(bundle: TargetBundle, config) -> dict:
 @dataclass(frozen=True)
 class NucleotideBatchAdapter:
     """Turns GenAIRR training records into one ``TrainingBatch`` for ``config``'s model against ``reference``."""
-    reference: object
+    reference: ReferenceSet
     config: AlignAIRConfig
     device: str = "cpu"
     augment_orientation: bool = True

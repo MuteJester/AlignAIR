@@ -22,7 +22,8 @@ def _kept(p: np.ndarray, threshold: float, cap: int) -> tuple[np.ndarray, np.nda
     return idx, p[idx]
 
 
-def select_alleles(allele_probs: dict, names: dict, threshold: float = 0.5, cap: int = 3) -> dict:
+def select_alleles(allele_probs: dict[str, np.ndarray], names: dict[str, list[str]], threshold: float = 0.5,
+                   cap: int = 3) -> dict[str, list[GeneCall]]:
     """Map per-gene score matrices to per-read allele calls.
 
     ``allele_probs``: {gene: [N, C] allele scores}. ``names``: {gene: [C] allele names, index-aligned to the bound

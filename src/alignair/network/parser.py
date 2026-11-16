@@ -48,7 +48,7 @@ class ParserOutput:
     mask: torch.Tensor                # (B, L) bool
     log_z: torch.Tensor               # (B,)
     marginals: torch.Tensor           # (B, L, S): P(base i is in state s); 0 on pads
-    boundary_logits: dict             # {g}_start_logits / {g}_end_logits, (B, L) over the half-open slots
+    boundary_logits: dict[str, torch.Tensor]  # {g}_start_logits / {g}_end_logits, (B, L) over the half-open slots
 
 
 def _log_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:

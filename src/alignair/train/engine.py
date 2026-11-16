@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import torch
 
@@ -10,6 +10,11 @@ from ..core.runtime import evaluation_mode
 from ..errors import ConfigurationError, TrainingError, error_context
 from ..tasks import MetricReport, TrainingTasks, build_tasks
 from .guards import NonFiniteTrainingError, check_finite_loss, validate_grad_clip
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from ..data.batching import TrainingBatch
 
 
 class StepResult(NamedTuple):
@@ -43,7 +48,8 @@ class TrainingEngine:
     optimized parameter.
     """
 
-    def __init__(self, model, optimizer, *, tasks: TrainingTasks | None = None, grad_clip=None, scheduler=None):
+    def __init__(self, model: torch.nn.Module, optimizer: torch.optim.Optimizer, *, tasks: TrainingTasks | None = None,
+                 grad_clip: float | None = None, scheduler=None) -> None:
         validate_grad_clip(grad_clip)
         self.model = model
         self.optimizer = optimizer
@@ -53,7 +59,7 @@ class TrainingEngine:
         if scheduler is not None and scheduler.optimizer is not optimizer:
             raise ConfigurationError("the scheduler must belong to the engine's optimizer")
 
-    def step(self, batch, *, step: int = 0) -> StepResult:
+    def step(self, batch: TrainingBatch, *, step: int = 0) -> StepResult:
         """Backpropagate one batch; reject non-finite loss/norm before optimizer or scheduler changes."""
         with error_context(stage="training_step", step=step):
             inputs, targets = batch
@@ -93,7 +99,7 @@ class TrainingEngine:
                 self.scheduler.step()
             return StepResult(total_value, part_values, gradient_norm)
 
-    def validate(self, batches) -> ValidationResult:
+    def validate(self, batches: Iterable[TrainingBatch]) -> ValidationResult:
         """The model's metrics and score on ``batches`` (``validate``)."""
         return validate(self.model, batches, tasks=self.tasks)
 

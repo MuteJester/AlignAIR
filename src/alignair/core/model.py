@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -18,6 +19,9 @@ from .components import architecture_components, build_component
 from .config import AlignAIRConfig
 from .orientation import BankOrientation, apply_orientation
 from .runtime import restore_model_state
+
+if TYPE_CHECKING:
+    from ..reference.reference_set import ReferenceSet
 
 
 class AlignAIR(nn.Module):
@@ -75,7 +79,7 @@ class AlignAIR(nn.Module):
         """Named inspection points shared by profilers and model diagnostics: the registered modules themselves."""
         return {"embedding": self.embedding, "orientation_head": self.orientation_head, "core": self.core}
 
-    def bind_reference(self, reference) -> None:
+    def bind_reference(self, reference: ReferenceSet) -> None:
         """Give the parts that read the reference their bank (an input, not weights): the bank orientation's k-mer
         index and the core's bank. The model's allele outputs are then the bound reference's alleles, in its order."""
         if self.bank_orientation is not None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import os
+from collections.abc import Sequence
 
 from alignair.core.orientation import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
 from alignair.errors import DataContractError
@@ -79,7 +80,7 @@ COLUMN_PRESETS = {
 }
 
 
-def resolve_columns(columns) -> list:
+def resolve_columns(columns: str | Sequence[str] | None) -> list[str]:
     """Resolve a column selection to an ordered list of field names. ``columns`` may be:
     ``None`` (the full schema), a preset name (``full``/``core``/``minimal``/``airr``), a
     comma-separated string, or an explicit list of field names. Unknown names are allowed (emitted
@@ -238,7 +239,8 @@ class AirrWriter:
     `write(ids, sequences, preds)` per chunk, then `close()` (or use as a context manager).
     `path` may be '-' for stdout."""
 
-    def __init__(self, path: str, locus: str = FALLBACK_LOCUS, columns=None, extra_columns=None):
+    def __init__(self, path: str, locus: str = FALLBACK_LOCUS, columns: str | Sequence[str] | None = None,
+                 extra_columns: Sequence[str] | None = None) -> None:
         """``columns``: which fields to emit (a preset name, comma-string, or list; default = the full
         schema). ``extra_columns``: extra per-row metadata columns (barcode/UMI/sample) appended after.
 
@@ -305,8 +307,8 @@ class AirrWriter:
 
 
 def write_airr(path: str, ids: list[str], sequences: list[str], preds: list[dict],
-               locus: str = FALLBACK_LOCUS, columns=None, metas: list[dict] | None = None,
-               extra_columns=None) -> None:
+               locus: str = FALLBACK_LOCUS, columns: str | Sequence[str] | None = None, metas: list[dict] | None = None,
+               extra_columns: Sequence[str] | None = None) -> None:
     """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
     `sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
     orientation convention per record. `columns` selects which fields to emit. `metas` (per-row

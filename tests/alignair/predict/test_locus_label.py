@@ -1,4 +1,6 @@
 """A record is labelled with the reference's locus when the reference has one (``stages.record_loci``)."""
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -16,7 +18,8 @@ def _record(reference_loci):
                   "j": [GermlineAlignment("IGKJ1", 20, 30, 0, 10, "10M")]}
     preds = Predictions(allele={}, start={}, end={}, mutation_rate=np.array([0.0]), indel_count=np.array([0.0]),
                         orientation=np.array([0]))
-    loci = record_loci(alignments["v"], object(), None, reference_loci)     # a reference without a locus schema
+    no_schema = SimpleNamespace(locus_names=tuple)                       # a reference without a locus schema
+    loci = record_loci(alignments["v"], no_schema, None, reference_loci)
     (read,) = read_results(prediction_state(["ACGT"], preds, calls, alignments), loci)
     return light_record(read)
 
