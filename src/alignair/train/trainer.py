@@ -52,6 +52,25 @@ class TrainingOutcome:
     best_model_path: str | None
 
 
+def _novel_policy(policy: CurriculumStreamPolicy, dataconfigs, reference_set) -> tuple[CurriculumStreamPolicy,
+                                                                                       str | None]:
+    """``(policy, unavailable)``: the policy the run draws its records with, and why it draws no novel alleles though
+    ``policy`` asks for them (None when it draws them, or none were asked for). Novel alleles cannot be drawn for a
+    reference of several species or of none, or for a dataconfig with no eligible V (``_check_novel_alleles``); the
+    run then trains on the reference's alleles alone, as a run GenAIRR cannot select records for trains unselected."""
+    if policy.novel_alleles is None:
+        return policy, None
+    try:
+        _check_novel_alleles(dataconfigs, reference_set, policy.novel_alleles)
+    except ConfigurationError as error:
+        if error.context.get("field") != "novel_alleles":
+            raise
+        print(f"novel alleles unavailable: {error.message}; the run trains on the reference's alleles alone",
+              flush=True)
+        return replace(policy, novel_alleles=None), error.message
+    return policy, None
+
+
 def _check_novel_alleles(dataconfigs, reference_set, spec) -> None:
     """ConfigurationError unless every dataconfig has an eligible V (``novel_support``) and every locus of the reference
     is of one and the same species (one species per model); prints what each epoch draws."""
@@ -77,8 +96,10 @@ def _train(setup: ModelSetup, model, sources, config: TrainingConfig, policy: Cu
     records are drawn under GenAIRR's ``productive_only()``. The run records them in ``train_args`` with its ``recipe``
     (``RECIPE``) and each component's selected share. When GenAIRR cannot draw productive records from one of
     ``sources`` (``records.streams.selection_supported``), the run draws no selected records, says so, and lists those
-    references in ``train_args["selection_unavailable"]``. ``train_args["flanks"]`` records the policy's flanks, and a
-    run with inverted Ds records ``train_args["inverted_d"]``.
+    references in ``train_args["selection_unavailable"]``; when novel alleles cannot be drawn for them
+    (``_novel_policy``), it draws none, says so, and records why in ``train_args["novel_alleles_unavailable"]``.
+    ``train_args["flanks"]`` records the policy's flanks, and a run with inverted Ds records
+    ``train_args["inverted_d"]``.
 
     ``record_source`` (``records.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
     GenAIRR provider of every curriculum stream of the run: training and validation. With
@@ -96,14 +117,14 @@ def _train(setup: ModelSetup, model, sources, config: TrainingConfig, policy: Cu
     data = prepare_training_data(setup, device=device)
     schedule = config.schedule
     schedule_metadata = schedule.to_dict() if schedule is not None else None
-    if policy.novel_alleles is not None:   # before any record is drawn: an eligible V, one species, GenAIRR's consent
-        _check_novel_alleles(sources, reference_set, policy.novel_alleles)
-    source_policy, unselectable = _record_policy(policy, sources)
+    # before any record is drawn: an eligible V, one species, GenAIRR's consent
+    novel_policy, novel_unavailable = _novel_policy(policy, sources, reference_set)
+    source_policy, unselectable = _record_policy(novel_policy, sources)
     engine = build_training_engine(model, tasks=tasks, device=device, lr=config.lr, grad_clip=config.grad_clip,
                                    scheduler_factory=schedule.build if schedule is not None else None)
     # the order that matters: the RNG restore (a resume), then the validation batches, then the training stream
     start, resume_from = _restore_or_warm_start(model, engine, setup, config, schedule_metadata, device=device)
-    train_args = _train_args(sources, config, policy, source_policy, unselectable, schedule_metadata,
+    train_args = _train_args(sources, config, policy, source_policy, unselectable, novel_unavailable, schedule_metadata,
                              started_from="resume" if resume_from else "init_from" if config.init_from else None,
                              source_checkpoint=resume_from or config.init_from)
     val_set = _validation_batches(sources, source_policy, data, config, record_source=record_source,
@@ -203,8 +224,8 @@ def _restore_or_warm_start(model, engine, setup: ModelSetup, config: TrainingCon
     return 0, None
 
 
-def _train_args(sources, config: TrainingConfig, requested_policy, source_policy, unselectable, schedule_metadata,
-                *, started_from, source_checkpoint) -> dict:
+def _train_args(sources, config: TrainingConfig, requested_policy, source_policy, unselectable, novel_unavailable,
+                schedule_metadata, *, started_from, source_checkpoint) -> dict:
     """The run's ``train_args``: its request, its recipe and its provenance (see ``_train``)."""
     requested = requested_policy
     args = {"lr": config.lr, "batch_size": config.batch_size, "progresses": list(requested.progresses),
@@ -227,8 +248,10 @@ def _train_args(sources, config: TrainingConfig, requested_policy, source_policy
             "init_seed": config.init_seed, "grad_clip": config.grad_clip,
             "started_from": started_from,
             "genairr_source_sha256": recorded_genairr_source()}
-    if requested.novel_alleles is not None:
-        args["novel_alleles"] = requested.novel_alleles.to_dict()
+    if source_policy.novel_alleles is not None:              # what the run drew, and why not when it was asked for
+        args["novel_alleles"] = source_policy.novel_alleles.to_dict()
+    if novel_unavailable is not None:
+        args["novel_alleles_unavailable"] = novel_unavailable
     if requested.inverted_d:
         args["inverted_d"] = requested.inverted_d
     if source_checkpoint:

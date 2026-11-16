@@ -1,11 +1,11 @@
-"""Training with novel alleles is opt-in (``TrainingConfig.novel_alleles``): the run trains on reads simulated from
-novel alleles, with their rows in each batch's bank, records the spec in its train args, and saves the dataconfigs'
-reference (nothing novel reaches a model file); workers reproduce it; it refuses a reference with no eligible V or of
-two species before any record is drawn."""
+"""Training with novel alleles is the default recipe (``TrainingConfig.novel_alleles``): the run trains on reads
+simulated from novel alleles, with their rows in each batch's bank, records the spec in its train args, and saves the
+dataconfigs' reference (nothing novel reaches a model file); workers reproduce it. A reference they cannot be drawn for
+(a dataconfig with no eligible V, or loci of two species) trains without them, as selection does: the run says so and
+records why in ``train_args["novel_alleles_unavailable"]``."""
 import pytest
 
 from alignair import TrainingConfig, run_training
-from alignair.errors import ConfigurationError
 from alignair.model_file import load_model, read_metadata
 from alignair.reference.variants import NOVEL_FIELD
 from alignair.train import NovelAlleles
@@ -56,14 +56,24 @@ def test_a_novel_allele_run_validates_on_batches_with_their_rows(tmp_path, capsy
     assert "VAL score" in capsys.readouterr().out
 
 
-def test_novel_alleles_refuse_a_dataconfig_without_an_eligible_v(tmp_path):
-    def never(*args, **kwargs):
-        raise AssertionError("no record is drawn")
-    with pytest.raises(ConfigurationError, match="MOUSE_TCRA_IMGT"):
-        run_training(request("MOUSE_TCRA_IMGT"), out_path=str(tmp_path / "tra.alignair"), record_source=never)
+def _unavailable(run):
+    return read_metadata(run.model_path)["training"]["train_args"]
 
 
-def test_novel_alleles_refuse_a_reference_of_two_species(tmp_path):
-    with pytest.raises(ConfigurationError, match="species"):
-        run_training(request("HUMAN_IGK_OGRDB", "MOUSE_IGK_IMGT"), out_path=str(tmp_path / "igk.alignair"))
+def test_novel_alleles_are_the_default_recipe():
+    assert TrainingConfig.from_genairr("HUMAN_IGH_OGRDB").novel_alleles == NovelAlleles()
 
+
+def test_a_dataconfig_without_an_eligible_v_trains_without_novel_alleles_and_the_run_says_so(tmp_path, capsys):
+    run, records = trained(request("MOUSE_TCRA_IMGT", steps=1), tmp_path / "tra.alignair")
+    train_args = _unavailable(run)
+    assert "novel_alleles" not in train_args and "MOUSE_TCRA_IMGT" in train_args["novel_alleles_unavailable"]
+    assert not any(NOVEL_FIELD in record for _, batch in records for record in batch)
+    assert "novel alleles unavailable" in capsys.readouterr().out
+
+
+def test_a_reference_of_two_species_trains_without_novel_alleles_and_the_run_says_so(tmp_path, capsys):
+    run, _ = trained(request("HUMAN_IGK_OGRDB", "MOUSE_IGH_IMGT", steps=1), tmp_path / "two.alignair")
+    train_args = _unavailable(run)
+    assert "novel_alleles" not in train_args and "species" in train_args["novel_alleles_unavailable"]
+    assert "novel alleles unavailable" in capsys.readouterr().out

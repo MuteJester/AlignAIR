@@ -43,8 +43,10 @@ class TrainingConfig:
     region) around the curriculum's reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the
     chip's recipe; None trains on the bare reads.
     ``novel_alleles`` (``train.records.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and
-    puts their rows in each batch's bank (``data.novel_bank``); None, the default, trains on the dataconfigs' alleles
-    alone. The model and the saved reference stay the dataconfigs' either way.
+    puts their rows in each batch's bank (``data.novel_bank``), so the model does not memorise the training alleles:
+    by default ``NovelAlleles()``, the shipped models' recipe; None trains on the dataconfigs' alleles alone, as does a
+    run whose reference they cannot be drawn for (a dataconfig with no eligible V, or loci of several species), which
+    says so. The model and the saved reference stay the dataconfigs' either way.
     ``inverted_d`` (0 to 1) inverts the D of that share of the curriculum's records; 0, the default, trains on forward
     Ds alone.
     ``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d`` are the run's settings of its record policy
@@ -68,7 +70,7 @@ class TrainingConfig:
     init_from: str | None = None
     data_workers: int = 0
     flanks: FlankPolicy | None = field(default_factory=FlankPolicy)
-    novel_alleles: NovelAlleles | None = None
+    novel_alleles: NovelAlleles | None = field(default_factory=NovelAlleles)
     inverted_d: float = 0.
 
     def __post_init__(self):

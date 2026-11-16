@@ -15,7 +15,7 @@ pytestmark = pytest.mark.integration
 def request(**options):
     return TrainingConfig.from_genairr('HUMAN_IGH_OGRDB',
         **{'steps': 2, 'batch_size': 2, 'device': 'cpu', 'grad_clip': 1.,
-           'model_options': {'embed_dim': 4, 'trunk_channels': 8}, **options})
+           'model_options': {'embed_dim': 4, 'trunk_channels': 8}, 'novel_alleles': None, **options})
 
 
 @pytest.mark.parametrize('has_d', [True, False])

@@ -19,7 +19,7 @@ STEPS, BATCH, SEED = 3, 4, 5
 def request(**options):
     return TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', **{
         'steps': STEPS, 'batch_size': BATCH, 'device': 'cpu', 'seed': SEED,
-        'model_options': {'embed_dim': 4, 'trunk_channels': 8}, **options})
+        'model_options': {'embed_dim': 4, 'trunk_channels': 8}, 'novel_alleles': None, **options})
 
 
 def stream(record_source=None):

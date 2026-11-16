@@ -41,7 +41,8 @@ def test_the_training_config_takes_a_novel_allele_spec():
     from alignair.train import NovelAlleles
     spec = NovelAlleles(epoch_records=16)
     assert TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", novel_alleles=spec).novel_alleles == spec
-    assert TrainingConfig.from_genairr("HUMAN_IGH_OGRDB").novel_alleles is None
+    assert TrainingConfig.from_genairr("HUMAN_IGH_OGRDB").novel_alleles == NovelAlleles()   # the recipe's
+    assert TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", novel_alleles=None).novel_alleles is None
     with pytest.raises(ConfigurationError) as caught:
         TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", novel_alleles={"gene_fraction": 0.4})
     assert caught.value.context["field"] == "novel_alleles"

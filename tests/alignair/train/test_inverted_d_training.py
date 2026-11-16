@@ -45,7 +45,7 @@ def test_an_invalid_inverted_d_share_is_refused(value):
 def request(**options):
     return TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", **{
         "steps": 3, "batch_size": 8, "device": "cpu", "seed": 5,
-        "model_options": {"embed_dim": 4, "trunk_channels": 8}, **options})
+        "model_options": {"embed_dim": 4, "trunk_channels": 8}, "novel_alleles": None, **options})
 
 
 def trained(config, path):
