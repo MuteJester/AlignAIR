@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .core.runtime import resolve_device
-from .errors import InputError, MissingDependencyError, ModelError
+from .errors import ConfigurationError, InputError, MissingDependencyError, ModelError
 from .predict import PredictConfig
 from .predict import predict as _predict
 from .reference.loci import FALLBACK_LOCUS
@@ -238,11 +238,15 @@ class Aligner:
                      batch_size: int | str = "auto", chunk_size: int = 20000, threshold: float | None = None,
                      cap: int | None = None, airr: bool = True) -> Iterator[dict]:
         """Stream prediction over an iterable of sequences in bounded memory: yields per-read records, predicting
-        ``chunk_size`` reads at a time. Same options as :meth:`predict`; ``ids`` may be an iterable too (InputError
-        when it runs out before the sequences, or after)."""
+        ``chunk_size`` reads at a time (a positive integer). Same options as :meth:`predict`; ``ids`` may be an
+        iterable too (InputError when it runs out before the sequences, or after)."""
         from itertools import islice, zip_longest
+        from numbers import Integral
 
         from .data.inputs import sequence_batch_iterator
+        if isinstance(chunk_size, bool) or not isinstance(chunk_size, Integral) or chunk_size < 1:
+            raise ConfigurationError(f"chunk_size must be a positive integer (got {chunk_size!r})",
+                                     context={"field": "chunk_size"})
         reads = sequence_batch_iterator(sequences)
         names = _id_iterator(ids) if ids is not None else None
         options = {"batch_size": batch_size, "threshold": threshold, "cap": cap, "airr": airr}

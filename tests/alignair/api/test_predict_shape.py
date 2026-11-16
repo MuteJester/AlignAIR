@@ -101,3 +101,10 @@ def test_an_aligner_built_without_a_device_predicts_on_the_one_auto_picks():
     aligner = Aligner(model, reference=None)
     assert aligner.device == resolve_device("auto") and aligner.model is model
     assert next(model.parameters()).device.type == torch.device(aligner.device).type
+
+
+@pytest.mark.parametrize("chunk_size", [0, -1, 2.5, True])
+def test_a_bad_chunk_size_is_refused(aligner, reads, chunk_size):
+    with pytest.raises(ConfigurationError) as caught:
+        list(aligner.predict_iter(reads, chunk_size=chunk_size))
+    assert caught.value.context["field"] == "chunk_size"
