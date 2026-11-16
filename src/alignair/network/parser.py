@@ -42,6 +42,7 @@ def expected_slot(logits: torch.Tensor, slots: torch.Tensor) -> torch.Tensor:
 
 @dataclass
 class ParserOutput:
+    """The parse of a batch: its potentials, partition function, per-base state marginals and boundary logits."""
     emissions: torch.Tensor           # (B, L, S)
     transitions: torch.Tensor         # (B, L, S, S); transitions[:, i] enter base i from base i - 1
     mask: torch.Tensor                # (B, L) bool

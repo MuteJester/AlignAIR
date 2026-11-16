@@ -9,12 +9,8 @@ charged for the bases a trim removed. A row scores its best diagonal; the allele
 allele's two rows summed, at ``TEMPERATURE``) is added to the D scan's (a product of the two), which keeps the scan's
 learned preferences where the read is long and lets the alignment decide where it is short. No weights; no gradient.
 The chip takes the product at inference only: the scan trains on its own posterior, a calibrated expert of its own
-(the alignment already decides an easy read, which would leave the scan nothing to learn from it).
-
-On the lab's dev suites (chip-v1b, 20k steps; refiner and bank orientation on) the D call is right for 95.0% of reads
-with the scan alone, 91.3% with the alignment alone, 96.9% with their product at temperature 1 (S6, D trimmed at
-both ends or inverted: 61.0%, 94.9%, 94.9%) and less at temperature 2 (S6 trim 9 and 12: 71% and 64% against 89%
-and 91%); IgBLAST 90.0% (S6 74.4%).
+(the alignment already decides an easy read, which would leave the scan nothing to learn from it). The product calls
+the D better than either alone, most of all a D trimmed at both ends or inverted.
 """
 from __future__ import annotations
 
@@ -27,7 +23,8 @@ from .ratios import RATE, pair_ratios
 
 FLANK = 6                  # bases on each side of the V end and J start the junction keeps
 CROP = 96                  # the junction's most bases
-TEMPERATURE = 1.0          # the scores' temperature in the alleles' log posterior
+# The scores' temperature in the alleles' log posterior (2 calls a short D worse).
+TEMPERATURE = 1.0
 
 
 def junction_bounds(mask: torch.Tensor, v_end: torch.Tensor, j_start: torch.Tensor) -> tuple:

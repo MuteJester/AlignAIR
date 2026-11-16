@@ -84,6 +84,7 @@ class ReadResult:
 
     @property
     def v_present(self) -> bool:
+        """Whether the read holds a V (``predict.v_presence``)."""
         return self.genes["v"].status is not GeneStatus.ABSENT
 
     def junction(self) -> JunctionCall | None:

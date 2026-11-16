@@ -3,10 +3,10 @@ call, as an absent D gets no D call (``core.d_presence``).
 
 A read holds no V when both hold:
 
-- it holds no exact ``V_KMER``-mer of any V allele of the reference (the AlignAIR assay's real-data truth calls such a
-  read one without a V: on four donors 3 of 157,188 reads with an IgBLAST V of at least 100 nt hold none);
-- the V the germline reader placed is no V either: under ``V_MIN_SPAN`` read bases (the assay asks a call of no
-  shorter V) or under ``V_MIN_IDENTITY`` identity along its CIGAR. A heavily mutated V can keep no exact k-mer (a read
+- it holds no exact ``V_KMER``-mer of any V allele of the reference (a read with a V almost always holds one: on four
+  real donors, 3 of 157,188 reads with an IgBLAST V of at least 100 nt hold none);
+- the V the germline reader placed is no V either: under ``V_MIN_SPAN`` read bases (too short to call) or under
+  ``V_MIN_IDENTITY`` identity along its CIGAR. A heavily mutated V can keep no exact k-mer (a read
   that starts in FR3, at high SHM) and keeps its call by its span and identity.
 """
 from __future__ import annotations

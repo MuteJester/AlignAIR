@@ -25,15 +25,18 @@ READ_EDITS = EDIT_LABELS[:-1]
 
 @dataclass
 class ReaderOutput:
+    """The reader's per-base edit logits and, per gene, column logits."""
     edit_logits: torch.Tensor                 # (B, L, 3) over READ_EDITS
     coord_logits: dict                        # gene -> (B, L, FRAME_WIDTHS[gene])
 
     @property
     def m(self) -> torch.Tensor:
+        """(B, L) each base's substitution probability."""
         return self.edit_logits.softmax(-1)[..., 1]
 
     @property
     def inserted(self) -> torch.Tensor:
+        """(B, L) each base's insertion probability."""
         return self.edit_logits.softmax(-1)[..., 2]
 
 
@@ -45,6 +48,8 @@ def top_coordinates(coord_logits: torch.Tensor, k: int) -> tuple[torch.Tensor, t
 
 
 class ShmReader(nn.Module):
+    """The SHM reader (see the module docstring): an edit head and a column head per gene."""
+
     def __init__(self, channels: int, genes: tuple[str, ...] = ("v", "d", "j")):
         super().__init__()
         self.edit = nn.Conv1d(channels, len(READ_EDITS), 1)

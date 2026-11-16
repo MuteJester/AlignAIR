@@ -26,6 +26,7 @@ class GermlineMaps:
 
     @classmethod
     def of(cls, reference) -> "GermlineMaps":
+        """The germline maps of ``reference``."""
         v, j = reference.gene("V"), reference.gene("J")
         d = reference.gene("D") if "D" in reference.genes else None
         return cls(v_gapped=v.gapped or dict(zip(v.names, v.sequences)), j=dict(zip(j.names, j.sequences)),
@@ -166,6 +167,8 @@ def compute_alignment_positions(v_ref_gapped: str, v: GermlineAlignment, d: Germ
 
 def extract_segment_alignments(seq_alignment: str, germ_alignment: str, seq_alignment_aa: str,
                                germ_alignment_aa: str, positions: Mapping[str, int | None], has_d: bool) -> dict:
+    """Each segment's slice of the read and germline alignments (nucleotide and amino acid) at its ``positions``
+    (``compute_alignment_positions``); None for a segment without them."""
     result = {}
     for seg in ["v", "j"] + (["d"] if has_d else []):
         s, e = positions.get(f"{seg}_alignment_start"), positions.get(f"{seg}_alignment_end")
@@ -182,4 +185,5 @@ def extract_segment_alignments(seq_alignment: str, germ_alignment: str, seq_alig
 
 
 def translate_alignment(alignment: str | None) -> str | None:
+    """The amino-acid translation of ``alignment`` (GenAIRR's ``translate``), or None for None."""
     return translate(alignment) if alignment is not None else None

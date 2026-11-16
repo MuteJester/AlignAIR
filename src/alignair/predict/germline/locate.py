@@ -47,6 +47,8 @@ _FALLBACK_RATE = 0.3
 
 
 class GermlineLocator:
+    """Places a read segment in its called allele's germline (see the module docstring)."""
+
     def __init__(self, germlines: dict[str, str]):
         """``germlines``: {allele_name -> uppercase ungapped germline}."""
         self._germlines = germlines
@@ -56,7 +58,7 @@ class GermlineLocator:
     def _anchor_cost(query_kmer: str, germline_window: str) -> float:
         """Directional match cost of aligning ``query_kmer`` to ``germline_window`` position-by-position:
         matches reward, mismatches penalize, and runs of the same outcome are amplified by a growing
-        velocity term. Lower is a better anchor. (Identical to the TF ``_affine_alignment_cost``.)"""
+        velocity term. Lower is a better anchor."""
         score = velocity = 0.0
         prev_matched = None
         for matched in (q == g for q, g in zip(query_kmer, germline_window)):
@@ -170,6 +172,8 @@ class GermlineLocator:
     # ------------------------------------------------------------------ public API
     def locate(self, sequence: str, seq_start: int, seq_end: int, allele: str,
                   indel_count) -> GermlineMatch:
+        """Where ``sequence[seq_start:seq_end]``, called ``allele`` with ``indel_count`` indels, sits in its
+        germline."""
         germline = self._germlines[allele]
         ref_len = len(germline)
 

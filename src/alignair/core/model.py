@@ -21,6 +21,8 @@ from .orientation import BankOrientation, apply_orientation
 
 
 class AlignAIR(nn.Module):
+    """The AlignAIR network (see the module docstring); bind a reference before predicting (``bind_reference``)."""
+
     def __init__(self, cfg: AlignAIRConfig):
         super().__init__()
         if not isinstance(cfg, AlignAIRConfig):
@@ -37,9 +39,9 @@ class AlignAIR(nn.Module):
                         device: str | torch.device = "cpu", source=None) -> "AlignAIR":
         """Restore decoded weights strictly, then place the model in evaluation mode.
 
-        Construction uses the configured architecture on CPU before device placement. Artifact
-        decoders own configuration migrations and reference/label checks; this factory neither reads files nor relaxes key/shape matching. ``source`` supplies a
-        diagnostic path only. Parameters retain gradients for subsequent fine-tuning.
+        Construction uses the configured architecture on CPU before device placement. The model file's reader checks
+        the configuration and the reference; this factory neither reads files nor relaxes key or shape matching.
+        ``source`` supplies a diagnostic path only. Parameters retain gradients for subsequent fine-tuning.
         """
         with torch.device("cpu"):
             model = cls(cfg)

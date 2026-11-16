@@ -20,6 +20,7 @@ _COMPLEMENT_BASES = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 
 def reverse_complement(sequence: str) -> str:
+    """The reverse complement of ``sequence`` (A/C/G/T/N, either case); any other character stays."""
     return sequence.translate(_COMPLEMENT_BASES)[::-1]
 
 
@@ -40,6 +41,7 @@ _COMPLEMENT_TOKENS = torch.tensor(COMPLEMENT_TOKENS, dtype=torch.long)
 
 
 def complement(tokens: torch.Tensor) -> torch.Tensor:
+    """The complement of base tokens; padding and N stay."""
     return _COMPLEMENT_TOKENS.to(tokens.device)[tokens]
 
 
@@ -68,8 +70,8 @@ def apply_orientation(tokens: torch.Tensor, mask: torch.Tensor,
 class EmbeddingOrientationHead(nn.Module):
     """4-class orientation logits from the model's shared initial embeddings.
 
-    Order-sensitive (a masked depthwise-ish conv) so forward vs reverse is distinguishable — a plain
-    mean-pool could not tell a read from its reverse. Feeds the in-model correct-and-re-embed step.
+    Order-sensitive (a width-7 convolution over the masked embeddings) so forward vs reverse is distinguishable — a
+    plain mean-pool could not tell a read from its reverse. Feeds the in-model correct-and-re-embed step.
     """
 
     def __init__(self, embed_dim: int, num_orientations: int = NUM_ORIENTATIONS):
@@ -112,6 +114,7 @@ class BankOrientation(nn.Module):
         return torch.where(acgt.unfold(1, self.k, 1).all(-1), (windows * powers).sum(-1), -1)
 
     def bind(self, reference) -> None:
+        """Hold the k-mers of every allele of ``reference``."""
         codes = [self._codes(torch.from_numpy(encode(sequence))[None])[0]
                  for gene in reference.genes.values() for sequence in gene.sequences]
         codes = torch.cat(codes) if codes else torch.zeros(0, dtype=torch.long)

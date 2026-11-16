@@ -16,6 +16,8 @@ class MetricReport:
     counts: dict[str, int] = field(default_factory=dict)
 
     def add(self, name: str, values: torch.Tensor, mask=None, *, keep_empty=False) -> None:
+        """Record metric ``name``: the sum and count of ``values`` (those under ``mask``); a metric with no value is
+        recorded only with ``keep_empty``."""
         values = values.detach().float()
         if mask is not None:
             values = values[mask]
@@ -32,12 +34,15 @@ class MetricReport:
             self.counts[name] = self.counts.get(name, 0) + other.counts[name]
 
     def means(self) -> dict[str, float]:
+        """Each metric's mean (NaN for a metric with no value)."""
         return {key: total / self.counts[key] if self.counts[key] else math.nan
                 for key, total in self.totals.items()}
 
 
 @torch.no_grad()
 def alignment_metrics(out: dict, targets: dict, genes) -> MetricReport:
+    """A batch's shared metrics: per gene, the top-1 allele and the boundary error over its supervised rows; and the
+    orientation, mutation-rate and indel-count errors."""
     report = MetricReport()
     for gene in genes:
         scores = out[f"{gene}_allele"]

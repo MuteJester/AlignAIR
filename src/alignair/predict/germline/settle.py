@@ -116,7 +116,7 @@ _END_GATE_MATCHES = 4  # of the _END_ANCHOR read bases after the end that, match
 def _end_is_doubtful(read: str, germ: str, seq_end: int, ref_end: int, cigar: str) -> bool:
     """Whether a V end could move: the alignment's last ``_END_ANCHOR`` read bases hold a gap or two mismatches, or
     ``_END_GATE_MATCHES`` of the ``_END_ANCHOR`` read bases after the end match the germline after it, in place or up
-    to 3 bases either way (else no search: its alignment cannot gain ``_END_GAIN``, as measured on the dev suites)."""
+    to 3 bases either way (else no search: on simulated reads such an end never gains ``_END_GAIN``)."""
     r, g, seen, mismatches = seq_end, ref_end, 0, 0
     for n, op in reversed(cigar_ops(cigar)):
         if op != "M":

@@ -1,4 +1,6 @@
-"""Shared mode-safe model execution and explicit batched prediction mechanics."""
+"""Running the network on reads in batches: ``forward_batch`` runs one prepared batch in evaluation mode and checks its
+outputs, ``prediction_batches`` runs a stream of records lazily, and ``run_model`` runs a list of reads batched by
+width bucket. The model's train/eval mode is restored after each batch."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -48,6 +50,7 @@ def forward_batch(model, inputs, *, expected_rows: int) -> dict[str, torch.Tenso
 
 
 class PredictionBatch(NamedTuple):
+    """One batch's outputs: the index of its first record, its number of records, and the model's outputs."""
     record_offset: int
     size: int
     outputs: dict[str, torch.Tensor]

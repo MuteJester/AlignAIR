@@ -80,11 +80,14 @@ def _allowed_states(bits: torch.Tensor) -> torch.Tensor:
 
 
 class ChipObjective:
+    """The chip's training objective (``tasks.TrainingTasks``): its loss terms, metrics and checkpoint score."""
+
     def __init__(self, config):
         self.config = config
         self.genes = config.genes
 
     def loss(self, outputs: dict, targets: dict):
+        """The weighted total loss (``LOSS_WEIGHTS``) and its terms."""
         mask = outputs["start_mask"]
         parts = {}
         if "orientation_logits" in outputs and "orientation" in targets:
@@ -130,6 +133,7 @@ class ChipObjective:
         return total, parts
 
     def metric_report(self, outputs: dict, targets: dict) -> MetricReport:
+        """The batch's metrics, as numerators and counts that merge across batches."""
         report = alignment_metrics(outputs, targets, self.genes)
         mask = outputs["start_mask"]
         slots = {"start": mask, "end": outputs["end_mask"]}
@@ -164,8 +168,10 @@ class ChipObjective:
         return report
 
     def metrics(self, outputs: dict, targets: dict) -> dict[str, float]:
+        """The batch's metric means."""
         return self.metric_report(outputs, targets).means()
 
     def selection_score(self, metrics: dict[str, float]) -> float:
+        """The score that selects the best checkpoint: the mean top-1 scan accuracy over the genes (NaN without)."""
         values = [metrics[f"scan_{gene}_top1"] for gene in self.genes if f"scan_{gene}_top1" in metrics]
         return sum(values) / len(values) if values and all(math.isfinite(v) for v in values) else math.nan

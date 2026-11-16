@@ -15,6 +15,8 @@ _FWR_CDR = ("fwr1", "cdr1", "fwr2", "cdr2", "fwr3")
 
 
 def extract_regions(seq_alignment: Optional[str], seq_alignment_aa: Optional[str]) -> dict:
+    """The FWR1-FWR3 and CDR1-CDR2 fields (sequence, amino acids, start, end) cut from the IMGT-gapped read alignment
+    at the IMGT region columns; all None without an alignment."""
     result: dict = {}
     if seq_alignment is None:
         for region in _FWR_CDR:

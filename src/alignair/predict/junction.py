@@ -5,9 +5,8 @@ Trp/Phe codon. The junction runs from the V anchor to the end of the J anchor's 
 defines it: the CDR3 plus the two conserved codons. Productivity is not learned; it follows from the anchors and the
 read's coding span.
 
-**The rule** is GenAIRR's ``canonical_observed_vdj_v1`` productivity policy as the AlignAIR assay's truth reads it
-(``alignair_assay.truth.build``), on the read the model saw, in its forward frame, with 0-based, end-exclusive
-coordinates:
+**The rule** follows GenAIRR's ``canonical_observed_vdj_v1`` productivity policy, applied to the read the model saw,
+in its forward frame, with 0-based, end-exclusive coordinates:
 
 - **Junction.** It exists when both anchors are observed (their codons lie wholly inside the read) and the J
   anchor's codon ends after the V anchor (``j_anchor + 3 > v_anchor``). Otherwise the junction, the frame, the stop
@@ -17,21 +16,19 @@ coordinates:
 - **Stop.** ``stop_codon`` is True when a stop codon (TAA, TAG, TGA) lies in the junction's reading frame anywhere
   in the coding span ``[v_start, j_end)``: the read's V start to its J end, so a stop in V or J outside the junction
   counts. The codons are read from the span's first base on the junction's frame; a codon counts only when it lies
-  wholly inside the span (and the read). It is searched whether or not the junction is in frame, as the assay's truth
-  searches it (which scores it only on in-frame reads).
+  wholly inside the span (and the read). It is searched whether or not the junction is in frame.
 - **Productive.** ``vj_in_frame and not stop_codon``.
 
 GenAIRR's own record goes further than this rule. It checks the V coding frame from the V germline start, the anchor
 residues and recombination trims, and calls a read unproductive with no junction when it sees a stop. Those need
-germline knowledge an anchor does not carry, and the assay's truth does not use them. A stop without a junction is
-None here, as in the assay's truth. The assay's truth also calls a read with a V or J frameshift (net indel not a
-multiple of 3) unproductive; this rule does not, since the anchors cannot see an indel.
+germline knowledge an anchor does not carry. A stop without a junction is None here. A read with a V or J
+frameshift (net indel not a multiple of 3) is not called unproductive for it, since the anchors cannot see an indel.
 
 **Unknown span.** Without the read's V start or J end (``coding_span`` None, or either end None) the stop is
 unknown: an in-frame junction's productivity is then unknown, and an out-of-frame one is unproductive.
 
-On reads in the product's ACGTN alphabet, these three codons are exactly the codons the assay's IUPAC-aware
-translation reads as a stop: no codon holding an N is a stop for every base N may stand for.
+On reads in the product's ACGTN alphabet, these three codons are exactly the codons an IUPAC-aware translation reads
+as a stop: no codon holding an N is a stop for every base N may stand for.
 """
 from __future__ import annotations
 

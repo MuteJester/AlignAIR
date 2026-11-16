@@ -11,13 +11,13 @@ within ``BAND`` diagonals of the anchor's. With ``F(k)`` the best score of the k
 bases from the anchor to b are V) and ``-R(a - b)`` for b < a, and a J start at slot b gains ``R(a - b)`` for b <= a (the
 bases from b to the anchor are J) and ``-F(b - a)`` for b > a, times ``EVIDENCE_WEIGHT``, on the parser's
 log-probability, its distribution the prior. An edge so moves outward over N bases that continue the germline and
-inward over mutated edge bases, as the assay's boundary intervals allow. A read without the anchor, or whose called
-allele has none annotated, keeps the parser's boundary. The evidence carries no gradient: the parser trains on its own
-loss.
+inward over mutated edge bases, the freedom the training targets give a boundary (``data.chip_inputs``). A read without
+the anchor, or whose called allele has none annotated, keeps the parser's boundary. The evidence carries no gradient:
+the parser trains on its own loss.
 
-Without gaps (``GAP`` -inf) the evidence is the ungapped comparison read base i <-> germline base
-``anchor_base + (i - a)``: an indel between the anchor and a boundary then stopped the boundary at the indel, and one
-just before the anchor made the shifted bases before it look non-V, pulling the V end back past the anchor.
+The gaps let a boundary pass an indel. Without them (``GAP`` -inf) the comparison is ungapped, read base i <->
+germline base ``anchor_base + (i - a)``: an indel between the anchor and a boundary stops the boundary at the indel,
+and one just before the anchor makes the shifted bases before it look non-V, pulling the V end back past the anchor.
 """
 from __future__ import annotations
 
@@ -31,13 +31,11 @@ from .ratios import OUTSIDE, RATE, pair_ratios
 
 WINDOW = 24               # bases from the anchor whose evidence counts
 BAND = 3                  # the most net indels the alignment follows between the anchor and a boundary
-# The ratio of a base inserted into the read or deleted from it. On the lab's dev suites (chip flank screen, 20k steps)
-# the V end lands in the assay's interval for 91.15% of reads ungapped and 91.03%, 91.50%, 91.62% and 91.53% at -2, -3,
-# -4 and -6; -6 is the one that drops no suite (S5, polymerase indels: 86.7% -> 92.4%; J start 86.7% -> 89.5%).
+# The ratio of a base inserted into the read or deleted from it: of -2, -3, -4 and -6, the one that places the edges
+# of reads with polymerase indels best without costing any other kind of read.
 GAP = -6.0
 _UNREACHED = -1e4         # the score of a diagonal no path has reached
-# The evidence's weight against the parser's log-probability. On the lab's dev suites (chip-v1b, 20k steps) the V end
-# lands in the assay's interval for 88.7%, 90.7% and 91.9% of reads at 0.5, 1 and 2.
+# The evidence's weight against the parser's log-probability: of 0.5, 1 and 2, the one that places the V end best.
 EVIDENCE_WEIGHT = 2.0
 REFINED = {"v": "v_end_logits", "j": "j_start_logits"}
 

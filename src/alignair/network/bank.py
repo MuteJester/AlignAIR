@@ -77,6 +77,8 @@ def extension_inputs(base, extended, frames: dict, gene: str) -> dict:
 
 
 class BankCompiler(nn.Module):
+    """The bank of ``reference`` (see the module docstring), as non-persistent buffers."""
+
     def __init__(self, reference):
         super().__init__()
         self.genes = []
@@ -112,9 +114,11 @@ class BankCompiler(nn.Module):
                 persistent=False)
 
     def width(self, gene: str) -> int:
+        """``gene``'s frame columns."""
         return getattr(self, f"cover_{gene}").shape[1]
 
     def rows(self, gene: str) -> int:
+        """``gene``'s bank rows."""
         return getattr(self, f"cover_{gene}").shape[0]
 
     def row_mask(self, gene: str, allele_mask: torch.Tensor) -> torch.Tensor:
@@ -151,12 +155,15 @@ class BankView:
         return getattr(self._bank, name)
 
     def width(self, gene: str) -> int:
+        """``gene``'s frame columns."""
         return getattr(self, f"cover_{gene}").shape[1]
 
     def rows(self, gene: str) -> int:
+        """``gene``'s bank rows."""
         return getattr(self, f"cover_{gene}").shape[0]
 
     def row_mask(self, gene: str, allele_mask: torch.Tensor) -> torch.Tensor:
+        """``allele_mask`` (B, n alleles) bool -> (B, R): each row allowed when its allele is."""
         return allele_mask[:, getattr(self, f"row_allele_{gene}")]
 
 

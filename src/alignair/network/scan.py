@@ -27,6 +27,8 @@ _M_MIN = 1e-4
 
 
 class BankScan(nn.Module):
+    """The bank scan of one gene (see the module docstring): two learned scalars, κ and the temperature."""
+
     def __init__(self):
         super().__init__()
         self.off_row = nn.Parameter(torch.tensor(1.0))           # κ = -softplus(off_row)

@@ -1,5 +1,4 @@
-"""One locus per read: with a reference of several loci, a read's V, D and J calls come from one locus (the owner's
-decision 12: J and D restricted to the called V's locus).
+"""One locus per read: with a reference of several loci, a read's V, D and J calls all come from one locus.
 
 A read's locus is the locus of its most probable same-locus V-J pair under the scans' posteriors (``read_loci``):
 ``max_{v in L} log p(v) + max_{j in L} log p(j)``, over the loci whose bank holds a V and a J allele. The V and J

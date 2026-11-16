@@ -1,5 +1,5 @@
 """The V re-score: the read's V span aligned with gaps to each of its top V rows, the alignment's score multiplied into
-the V call (the design's stage 2, for V).
+the V call.
 
 The V scan places each base at the column the reader gives it; an insertion or deletion shifts every column past it,
 which a read's columns cannot always follow. Here the read's V span (the V start to the refined V end) is aligned to
@@ -11,10 +11,6 @@ alleles' log posterior; every other allele falls ``BEHIND`` (the candidates are 
 anchor, with a V span shorter than ``MIN_SPAN``, or whose candidates lack an annotated anchor keeps the scan's
 posterior. The chip takes the product at inference only (the scan trains on its own posterior). No weights; no
 gradient.
-
-On the lab's dev suites (chip-v1b, 20k steps; refiner, local D and bank orientation on) a parasail spike of the same
-re-score took the V call from 98.9% to 99.3% (S5, V polymerase indels: 96.2% to 98.6%; S12, noise: 97.1% to 99.5%);
-IgBLAST 99.4%.
 
 The band runs in a compiled kernel (``_vband_cy``) when it is built, else in torch (``VBAND_BACKEND`` reports which);
 the two give the same scores bit for bit.

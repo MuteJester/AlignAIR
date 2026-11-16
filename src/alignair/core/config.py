@@ -14,6 +14,7 @@ from .tokens import DEFAULT_WINDOW, VOCAB_SIZE
 
 @dataclass(eq=True)
 class AlignAIRConfig:
+    """The settings that build an AlignAIR network; the model file stores every field."""
     has_d: bool = True
     num_chain_types: int = 1       # the loci of the reference's locus schema
     max_seq_length: int = DEFAULT_WINDOW

@@ -2,12 +2,10 @@
 its classes, its keys and the length a D needs to be called.
 
 A read's D is one of three classes, by its observed germline bases (the D germline from its first to its last aligned
-base, internal deletions included, inside the window the model sees), as the AlignAIR assay's truth measures a
-segment's observed length:
+base, internal deletions included, inside the window the model sees):
 
 - ``ABSENT``: the read shows no aligned D base (no D, or one end loss or the window removed);
-- ``SHORT``: fewer than ``D_CALLABLE_MIN`` observed germline bases, too short to call (the assay asks only that a
-  tool abstain or call it right);
+- ``SHORT``: fewer than ``D_CALLABLE_MIN`` observed germline bases, too short to call;
 - ``CALLABLE``: at least ``D_CALLABLE_MIN``.
 
 The class gates the D call at prediction: an absent D is dropped, a short one keeps its span without a call.

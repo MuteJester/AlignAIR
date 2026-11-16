@@ -9,7 +9,7 @@ as an optional extension; without the ``.so`` the torch band is used.
 from libc.stdint cimport int64_t
 
 cdef enum:
-    MAX_WIDTH = 64              # the widest band the kernel holds (today's: 17 diagonals)
+    MAX_WIDTH = 64              # the widest band the kernel holds (v_rescore's: 2 * BAND + 1 = 17 diagonals)
 
 
 def band_scores(const int64_t[:, ::1] tokens, const int64_t[::1] starts, const int64_t[::1] ends,

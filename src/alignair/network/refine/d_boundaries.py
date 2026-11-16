@@ -1,7 +1,7 @@
 """The D refiner: the D start and end where the read stops following the called D allele's germline.
 
 The parser places the D from the read alone, which a narrow trunk does less well than a wide one; the bank holds the
-germline. The junction (``dlocal.junction``) slides along the called allele's two rows (forward and reverse
+germline. The junction (``d_local.junction``) slides along the called allele's two rows (forward and reverse
 complement) without gaps, as the local D aligner slides it along every row, and the row and diagonal whose best
 contiguous stretch scores highest line the germline up with the read; an inverted D so finds its reverse complement
 row. Along that diagonal each read base gives the log-likelihood ratio of being its germline base, mutated at the
@@ -13,7 +13,8 @@ boundary's refined logits are that score summed over the other boundary (a start
 the starts before it): one edge alone cannot run past the other, where S keeps falling. The D lies between the V end
 and the J start the outputs place (the product's segments order them so, and would move the J start to a D end past
 it), so a germline that runs on into the V or the J stops there. An edge so moves outward over N bases that continue
-the germline and inward over mutated edge bases, as the assay's boundary intervals allow. A read whose junction aligns
+the germline and inward over mutated edge bases, the freedom the training targets give a boundary
+(``data.chip_inputs``). A read whose junction aligns
 no better than ``MIN_SCORE`` to its called allele, or whose V end is not before its J start, keeps the parser's D. No
 weights; no gradient; at inference, after the D call.
 """
@@ -28,11 +29,8 @@ from .d_local import junction, junction_bounds
 from .ratios import OUTSIDE, RATE, pair_ratios
 
 MIN_SCORE = 0.0            # the best stretch a read's junction needs on its called allele for the D to be refined
-# The evidence's weight against the parser's log-probability. On the lab's dev suites (the width screens, 20k steps;
-# IgBLAST 74.1% and 75.2%) the D start and end land in the assay's intervals for 81.5% and 81.0% of reads without the
-# refiner on the 128-channel trunk, 86.6/87.2, 86.9/87.2, 86.8/87.0 and 86.6/86.1 at 1.5, 2, 3 and 4; on the
-# 64-channel trunk 76.2/69.7 without, 86.1/85.7, 86.3/86.0, 85.8/85.2 and 85.4/84.8 (S6, a D trimmed at both ends or
-# inverted: 42.6/42.1 without, 80.5/80.5 at 2; IgBLAST 72.3/69.7). The V and J calls and edges do not move.
+# The evidence's weight against the parser's log-probability: of 1.5, 2, 3 and 4, the one that places the D edges best
+# on both a wide and a narrow trunk. The V and J calls and edges do not move.
 EVIDENCE_WEIGHT = 2.0
 
 
