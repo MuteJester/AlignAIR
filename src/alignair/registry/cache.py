@@ -12,7 +12,7 @@ import hashlib
 import os
 from pathlib import Path
 
-from alignair.errors import ArtifactIntegrityError, ModelError, RegistryError
+from alignair.errors import ArtifactIntegrityError, ModelError, ModelNotFoundError, RegistryError
 
 from ..io.files import sha256_file
 from . import sources as registry_sources
@@ -147,7 +147,8 @@ def cache_lock(path: Path):
 def download_verified(source: str, relpath: str, dest: Path, expected_sha256: str | None = None, *,
                       offline: bool = False) -> Path:
     """Stream ``relpath`` from ``source`` into ``dest``, SHA256-verify, atomically install. Idempotent:
-    a present, matching ``dest`` is returned without re-downloading."""
+    a present, matching ``dest`` is returned without re-downloading. A connection that fails or drops is a retryable
+    RegistryUnavailableError; a disk error stays an OSError."""
     dest = Path(dest)
     part = dest.with_name(dest.name + ".part")
     with cache_lock(dest.with_name(dest.name + ".lock")):
@@ -155,7 +156,9 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
             _write_sidecar(dest, expected_sha256)                 # record hash for later offline checks
             return dest
         h = hashlib.sha256()
-        with registry_sources.open_artifact(source, relpath, offline=offline, timeout=60) as r, open(part, "wb") as w:
+        with registry_sources.network_errors(registry_sources.artifact_url(source, relpath)), \
+                registry_sources.open_artifact(source, relpath, offline=offline, timeout=60) as r, \
+                open(part, "wb") as w:
             for chunk in iter(lambda: r.read(1 << 20), b""):
                 h.update(chunk)
                 w.write(chunk)
@@ -216,8 +219,9 @@ def _spec_text(spec) -> str:
 
 
 def _local_file(spec: str, explicit_path: bool) -> Path | None:
-    """The model file ``spec`` names when it exists; a ModelError when it names a file (a path object, an absolute or
-    relative path, a model file name) that does not exist or is not a file; None for a repo or catalog id."""
+    """The model file ``spec`` names when it exists; ModelNotFoundError when it names a file (a path object, an absolute
+    or relative path, a model file name) that does not exist, a ModelError when it is not a file; None for a repo or
+    catalog id."""
     local = Path(spec).expanduser()
     if local.exists():
         if not local.is_file():
@@ -227,8 +231,8 @@ def _local_file(spec: str, explicit_path: bool) -> Path | None:
     from . import hf
     if (explicit_path or os.path.isabs(spec) or spec.startswith(("./", "../", "~"))
             or not spec.startswith("hf://") and hf.names_model_file(spec)):
-        raise ModelError("model file does not exist",
-                         context={"stage": "model_resolution", "path": local})
+        raise ModelNotFoundError("model file does not exist",
+                                 context={"stage": "model_resolution", "path": local})
     return None
 
 
@@ -247,7 +251,7 @@ def _cached_without_lookup(model_id: str, version: str | None, offline: bool) ->
 def _from_registry(spec: str, model_id: str, version: str | None, srcs: list[str], offline: bool) -> Path:
     """The verified artifact of ``model_id`` (``version`` or the latest) from the first registry in ``srcs`` that
     lists it, downloaded unless already cached; when none does, the latest cached version of an unpinned id, else
-    the lookup's error or an unknown-model ModelError naming the known ids."""
+    the lookup's error or a ModelNotFoundError naming the known ids."""
     lookup_error = None
     try:
         found = registry_sources.find_model(model_id, version, srcs, offline=offline)
@@ -263,9 +267,9 @@ def _from_registry(spec: str, model_id: str, version: str | None, srcs: list[str
             raise lookup_error
         known = _known_ids(srcs, offline)
         hint = f" Known ids: {', '.join(known)}." if known else ""
-        raise ModelError(f"unknown model '{spec}' — pass a file path or a registry id.{hint}",
-                         context={"stage": "model_resolution", "model_id": model_id, "version": version},
-                         hint="Check the model ID, requested version, and registry configuration.")
+        raise ModelNotFoundError(f"unknown model '{spec}' — pass a file path or a registry id.{hint}",
+                                 context={"stage": "model_resolution", "model_id": model_id, "version": version},
+                                 hint="Check the model ID, requested version, and registry configuration.")
     src, ver, entry, _ = found
     dest = cache_path(model_id, ver)
     sha = entry.get("artifact_sha256")

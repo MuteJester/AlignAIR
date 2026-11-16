@@ -1,11 +1,26 @@
 """Error codes are one scheme, ``ALIGNAIR_<THING>_<STATE>``: every error class of the package has the code this table
-pins, and every code but the base's and the CLI boundary's two names a thing and one of seven states."""
+pins, and every code but the base's and the CLI boundary's two names a thing and one of seven states. A model that is
+not there (a missing file, an id no registry lists, a hub repo or revision that does not exist) is MODEL_NOT_FOUND; a
+registry that cannot be reached is REGISTRY_UNAVAILABLE and retryable; a registry that cannot be read is
+REGISTRY_INVALID."""
 import importlib
+import json
 import re
+import urllib.error
+import urllib.request
 
 import pytest
 
-from alignair.errors import AlignAIRError
+from alignair.errors import (
+    AlignAIRError,
+    ModelError,
+    ModelNotFoundError,
+    RegistryError,
+    RegistryInvalidError,
+    RegistryUnavailableError,
+)
+from alignair.registry import sources
+from alignair.registry.sources import OfflineError
 
 pytestmark = pytest.mark.component
 
@@ -78,3 +93,133 @@ def test_the_table_names_every_error_class_of_the_package():
 def test_every_code_names_a_thing_and_one_of_seven_states():
     scheme = re.compile(rf"^ALIGNAIR_[A-Z]+(_[A-Z]+)*?_({'|'.join(STATES)})$")
     assert [code for code in set(CODES.values()) - UNSCHEMED if not scheme.match(code)] == []
+
+
+def test_a_missing_model_file_is_model_not_found(tmp_path):
+    from alignair import Aligner
+    with pytest.raises(ModelNotFoundError) as caught:
+        Aligner.from_pretrained(str(tmp_path / "missing.alignair"), device="cpu")
+    assert caught.value.code == "ALIGNAIR_MODEL_NOT_FOUND" and isinstance(caught.value, ModelError)
+    assert caught.value.retryable is False
+
+
+def _registry(tmp_path, models: dict) -> str:
+    (tmp_path / "registry.json").write_text(json.dumps({"models": models}))
+    return f"file://{tmp_path}/"
+
+
+def test_an_id_no_registry_lists_is_model_not_found(tmp_path):
+    from alignair.registry.cache import resolve_model
+    source = _registry(tmp_path, {"other": {"latest": "1", "versions": {"1": {"file": "o.alignair"}}}})
+    with pytest.raises(ModelNotFoundError, match="unknown model 'absent'") as caught:
+        resolve_model("absent", sources=[source])
+    assert caught.value.context["model_id"] == "absent"
+
+
+@pytest.mark.parametrize("text", ["{not json", json.dumps({"models": []})], ids=["not JSON", "no models mapping"])
+def test_a_registry_that_cannot_be_read_is_invalid_and_not_retryable(tmp_path, text):
+    (tmp_path / "registry.json").write_text(text)
+    with pytest.raises(RegistryInvalidError) as caught:
+        sources.load_registry(f"file://{tmp_path}/")
+    assert caught.value.code == "ALIGNAIR_REGISTRY_INVALID" and caught.value.retryable is False
+    with pytest.raises(RegistryInvalidError):
+        sources.find_model("m", None, [f"file://{tmp_path}/"])
+
+
+def _unreachable(error):
+    def urlopen(url, timeout=None):
+        raise error
+    return urlopen
+
+
+@pytest.mark.parametrize("error, retryable", [
+    (urllib.error.URLError("no route"), True),
+    (TimeoutError("timed out"), True),
+    (urllib.error.HTTPError("https://r.example/registry.json", 503, "busy", None, None), True),
+    (urllib.error.HTTPError("https://r.example/registry.json", 429, "slow down", None, None), True),
+    (urllib.error.HTTPError("https://r.example/registry.json", 404, "not found", None, None), False),
+    (urllib.error.HTTPError("https://r.example/registry.json", 403, "forbidden", None, None), False),
+], ids=["no route", "timeout", "503", "429", "404", "403"])
+def test_a_registry_that_cannot_be_reached_is_unavailable(monkeypatch, error, retryable):
+    monkeypatch.setattr(urllib.request, "urlopen", _unreachable(error))
+    with pytest.raises(RegistryUnavailableError) as caught:
+        sources.load_registry("https://r.example/")
+    assert caught.value.code == "ALIGNAIR_REGISTRY_UNAVAILABLE" and caught.value.retryable is retryable
+    assert caught.value.__cause__ is error
+    with pytest.raises(RegistryUnavailableError) as aggregated:
+        sources.find_model("m", None, ["https://r.example/"])
+    assert aggregated.value.retryable is retryable
+
+
+def test_a_local_registry_that_is_not_there_is_unavailable_and_not_retryable(tmp_path):
+    with pytest.raises(RegistryUnavailableError) as caught:
+        sources.find_model("m", None, [f"file://{tmp_path}/absent/"])
+    assert caught.value.retryable is False and isinstance(caught.value.__cause__, FileNotFoundError)
+
+
+def test_offline_with_the_model_not_cached_is_model_unavailable_and_not_retryable():
+    with pytest.raises(OfflineError) as caught:
+        sources.find_model("m", None, ["https://r.example/"], offline=True)
+    assert caught.value.code == "ALIGNAIR_MODEL_UNAVAILABLE" and caught.value.retryable is False
+    assert isinstance(caught.value, RegistryError)
+
+
+class _Dropping:
+    """A remote stream whose connection drops after the first chunk."""
+
+    def __init__(self):
+        self.reads = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, size=-1):
+        self.reads += 1
+        if self.reads > 1:
+            raise ConnectionResetError("connection reset by peer")
+        return b"x" * 16
+
+
+def test_a_download_whose_connection_drops_is_unavailable_and_retryable(tmp_path, monkeypatch):
+    from alignair.registry.cache import download_verified
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: _Dropping())
+    dest = tmp_path / "m" / "1.alignair"
+    with pytest.raises(RegistryUnavailableError) as caught:
+        download_verified("https://r.example/", "m.alignair", dest, "0" * 64)
+    assert caught.value.retryable is True and isinstance(caught.value.__cause__, ConnectionResetError)
+    assert not dest.exists()
+
+
+def test_a_full_disk_during_a_download_stays_an_os_error(tmp_path, monkeypatch):
+    from alignair.registry import cache
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: _Dropping())
+
+    class Full:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def write(self, data):
+            raise OSError(28, "No space left on device")
+
+    real_open = open
+    monkeypatch.setattr("builtins.open", lambda path, mode="r", *a, **k: Full() if str(path).endswith(".part")
+                        else real_open(path, mode, *a, **k))
+    with pytest.raises(OSError) as caught:
+        cache.download_verified("https://r.example/", "m.alignair", tmp_path / "m" / "1.alignair", None)
+    assert not isinstance(caught.value, AlignAIRError) and caught.value.errno == 28
+
+
+def test_the_cli_reports_a_missing_model_as_not_found(tmp_path, capsys):
+    from alignair.cli.main import main
+    reads = tmp_path / "reads.fasta"
+    reads.write_text(">r\nACGT\n")
+    assert main(["--error-format", "json", "predict", "--model", str(tmp_path / "missing.alignair"),
+                 "--input", str(reads), "--out", str(tmp_path / "out.tsv")]) == 1
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "ALIGNAIR_MODEL_NOT_FOUND" and payload["retryable"] is False

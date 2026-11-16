@@ -18,7 +18,7 @@ import json
 import os
 from pathlib import Path
 
-from ..errors import MissingDependencyError, RegistryError
+from ..errors import MissingDependencyError, ModelNotFoundError, RegistryInvalidError
 from ..model_file import read_metadata
 from .cache import cache_lock, version_key
 from .hf import hf_token
@@ -129,19 +129,19 @@ def upload_version(registry_dir: str, model_id: str, version: str, *, repo_id: s
     """Maintainer-only: upload ``model_id@version`` from the catalog directory ``registry_dir`` (as ``publish_bundle``
     wrote it) to the shared Hugging Face catalog repo, in one commit: the artifact, its companions and
     ``registry.json``. The local ``registry.json`` becomes the hub's, so build it on the hub's current one. The version
-    is validated first (RegistryError when it is missing or fails). ``api`` (an ``HfApi``) defaults to one with
-    ``token`` (or ``$HF_TOKEN``). Returns the uploaded paths."""
+    is validated first (ModelNotFoundError when the catalog lacks it, RegistryInvalidError when it fails). ``api`` (an
+    ``HfApi``) defaults to one with ``token`` (or ``$HF_TOKEN``). Returns the uploaded paths."""
     registry_dir = Path(registry_dir)
     reg = json.loads((registry_dir / "registry.json").read_text())
     entry = reg.get("models", {}).get(model_id, {}).get("versions", {}).get(version)
     if entry is None:
-        raise RegistryError(f"{model_id}@{version} is not in {registry_dir / 'registry.json'}",
+        raise ModelNotFoundError(f"{model_id}@{version} is not in {registry_dir / 'registry.json'}",
                             context={"model_id": model_id, "version": version},
                             hint="Publish it first (publish_bundle).")
     one = {"models": {model_id: {"latest": version, "versions": {version: entry}}}}
     problems = validate_registry(one, lambda r: str(registry_dir / r))
     if problems:
-        raise RegistryError(f"{model_id}@{version} fails validation: {'; '.join(problems)}",
+        raise RegistryInvalidError(f"{model_id}@{version} fails validation: {'; '.join(problems)}",
                             context={"model_id": model_id, "version": version})
     paths = [entry["file"], *(c["file"] for c in entry.get("companions", {}).values()), "registry.json"]
     try:

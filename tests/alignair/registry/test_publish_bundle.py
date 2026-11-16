@@ -104,11 +104,23 @@ def test_upload_version_sends_the_model_its_card_manifest_and_the_catalog_in_one
 
 
 def test_upload_version_refuses_a_version_the_catalog_lacks(bundle, tmp_path):
-    from alignair.errors import RegistryError
+    from alignair.errors import ModelNotFoundError
     registry = tmp_path / "registry"
     assert publish_bundle(str(bundle), ID, VERSION, str(registry)) == []
-    with pytest.raises(RegistryError, match="9.9.9"):
+    with pytest.raises(ModelNotFoundError, match="9.9.9") as caught:
         upload_version(str(registry), ID, "9.9.9", api=RecordingApi())
+    assert caught.value.code == "ALIGNAIR_MODEL_NOT_FOUND"
+
+
+def test_upload_version_refuses_a_version_that_fails_validation_and_sends_nothing(bundle, tmp_path):
+    from alignair.errors import RegistryInvalidError
+    registry = tmp_path / "registry"
+    assert publish_bundle(str(bundle), ID, VERSION, str(registry)) == []
+    (registry / ID / f"{VERSION}.model_card.md").write_text("edited\n")
+    api = RecordingApi()
+    with pytest.raises(RegistryInvalidError, match="model_card sha256 mismatch") as caught:
+        upload_version(str(registry), ID, VERSION, api=api)
+    assert caught.value.code == "ALIGNAIR_REGISTRY_INVALID" and caught.value.retryable is False and api.commits == []
 
 
 def test_push_to_hub_uploads_the_card_and_manifest_beside_the_model(bundle, monkeypatch):

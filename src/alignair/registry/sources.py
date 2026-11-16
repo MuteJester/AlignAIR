@@ -14,11 +14,14 @@ so never colon-split) > ``~/.config/alignair/config.toml`` ``registries`` > the 
 """
 from __future__ import annotations
 
+import contextlib
+import http.client
 import json
 import os
+import urllib.error
 from urllib.parse import urljoin
 
-from alignair.errors import RegistryError, error_context
+from alignair.errors import RegistryError, RegistryInvalidError, RegistryUnavailableError, error_context
 
 try:
     import tomllib  # Python >= 3.11
@@ -33,6 +36,29 @@ class OfflineError(RegistryError):
     """A fetch was needed while offline: the model is not available from the cache. Not retryable: the same call
     fails the same way until offline mode is off."""
     code = "ALIGNAIR_MODEL_UNAVAILABLE"
+
+
+# What a remote fetch raises when the network or the server fails (URLError includes an HTTP error answer).
+NETWORK_ERRORS = (urllib.error.URLError, ConnectionError, TimeoutError, http.client.HTTPException)
+
+
+def retryable_status(status: int | None) -> bool:
+    """Whether a retry may succeed after an HTTP answer ``status`` (None: no answer): not after a 4xx, which says the
+    request itself is wrong, but 408 (timeout) and 429 (rate limit)."""
+    return status is None or not 400 <= status < 500 or status in (408, 429)
+
+
+@contextlib.contextmanager
+def network_errors(url: str):
+    """Raise a network failure inside the block (``NETWORK_ERRORS``) as a RegistryUnavailableError naming ``url``,
+    retryable unless the server answered that the request is wrong. Other errors (a local file, the disk) pass."""
+    try:
+        yield
+    except NETWORK_ERRORS as exc:
+        status = exc.code if isinstance(exc, urllib.error.HTTPError) else None
+        raise RegistryUnavailableError(f"could not fetch {url}: {exc}", context={"url": url, "http_status": status},
+                                       hint="Check connectivity and the registry source.",
+                                       retryable=retryable_status(status)) from exc
 
 
 def config_dir() -> str:
@@ -102,35 +128,40 @@ def open_artifact(source: str, relpath: str, *, offline: bool = False, revision:
     if local is not None:
         return open(local, "rb")
     if offline:
-        raise OfflineError(f"offline: cannot fetch {url}")
+        raise OfflineError(f"offline: cannot fetch {url}", context={"url": url, "offline": True})
     import urllib.request
-    return urllib.request.urlopen(url, timeout=timeout)            # nosec - user-configured registry
+    with network_errors(url):
+        return urllib.request.urlopen(url, timeout=timeout)        # nosec - user-configured registry
 
 
 def fetch_bytes(source: str, relpath: str, *, offline: bool = False, revision: str = "main") -> bytes:
     """A small file (e.g. ``registry.json``) of a source (``open_artifact``); the cache streams large artifacts."""
-    with open_artifact(source, relpath, offline=offline, revision=revision) as stream:
+    with network_errors(artifact_url(source, relpath, revision=revision)), \
+            open_artifact(source, relpath, offline=offline, revision=revision) as stream:
         return stream.read()
 
 
 def load_registry(source: str, *, offline: bool = False) -> dict:
-    """The ``registry.json`` catalog of ``source``, checked; a RegistryError when it cannot be read."""
+    """The ``registry.json`` catalog of ``source``, checked: RegistryUnavailableError when it cannot be fetched (an
+    OSError for a local one that cannot be opened), RegistryInvalidError when it is not a catalog."""
     with error_context(source=source, stage="registry_lookup"):
         try:
             registry = json.loads(fetch_bytes(source, "registry.json", offline=offline).decode("utf-8"))
         except (ValueError, UnicodeError) as exc:
             if isinstance(exc, RegistryError):
                 raise
-            raise RegistryError("invalid registry JSON", hint="Check the configured registry source.") from exc
+            raise RegistryInvalidError("invalid registry JSON", hint="Check the configured registry source.") from exc
         if not isinstance(registry, dict) or not isinstance(registry.get("models"), dict):
-            raise RegistryError("registry must contain a models mapping")
+            raise RegistryInvalidError("registry must contain a models mapping")
         return registry
 
 
 def find_model(model_id: str, version: str | None, sources: list[str], *, offline: bool = False):
     """Search ``sources`` in order for ``model_id`` (``version`` or the registry's ``latest``).
     Returns ``(source, version, version_entry, model_entry)`` or None. Failed sources are
-    tried in order; if no match is found, failures are reported rather than called 'unknown model'."""
+    tried in order; if no match is found, failures are reported rather than called 'unknown model': an OfflineError
+    when every source failed for being offline, a RegistryUnavailableError when one could not be reached or read
+    (retryable when one of those is), else a RegistryInvalidError."""
     failures = []
     for src in sources:
         try:
@@ -142,18 +173,28 @@ def find_model(model_id: str, version: str | None, sources: list[str], *, offlin
         if not model:
             continue
         if not isinstance(model, dict) or not isinstance(model.get("versions"), dict):
-            failures.append((src, RegistryError("invalid model registry entry")))
+            failures.append((src, RegistryInvalidError("invalid model registry entry")))
             continue
         ver = version or model.get("latest")
         entry = model.get("versions", {}).get(ver)
         if entry is not None:
             return src, ver, entry, model
     if failures:
-        error_type = OfflineError if all(isinstance(e, OfflineError) for _, e in failures) else RegistryError
-        message = "offline: model is not available in the local cache or registries" if error_type is OfflineError \
-            else "could not resolve model because registry sources failed"
-        raise error_type(message, context={"model_id": model_id, "version": version,
-                                          "failed_sources": [s for s, _ in failures]},
-                         hint="Check registry connectivity, configuration, and offline/cache settings."
-                         ) from failures[-1][1]
+        raise _lookup_failure(failures, context={"model_id": model_id, "version": version,
+                                                 "failed_sources": [s for s, _ in failures]}) from failures[-1][1]
     return None
+
+
+def _lookup_failure(failures, *, context) -> RegistryError:
+    """The error a lookup whose sources failed raises (``find_model``)."""
+    errors = [error for _, error in failures]
+    hint = "Check registry connectivity, configuration, and offline/cache settings."
+    if all(isinstance(error, OfflineError) for error in errors):
+        return OfflineError("offline: model is not available in the local cache or registries",
+                            context={**context, "offline": True}, hint=hint)
+    unreachable = [error for error in errors if not isinstance(error, (OfflineError, RegistryInvalidError))]
+    if unreachable:
+        return RegistryUnavailableError("could not resolve model because registry sources failed", context=context,
+                                        hint=hint, retryable=any(getattr(e, "retryable", False) for e in unreachable))
+    return RegistryInvalidError("could not resolve model because a registry source is invalid", context=context,
+                                hint=hint)
