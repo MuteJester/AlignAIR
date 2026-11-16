@@ -5,14 +5,14 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from fractions import Fraction
 from itertools import chain
-from typing import Literal, Protocol
+from typing import Protocol
 
 from ...data.flanks import FlankPolicy, flank_records
 from ...errors import ConfigurationError, error_context
 from ...genairr.catalog import dataconfig_name, is_tcr
 from ...genairr.experiment import build_experiment
 from ..checks import integer, probability
-from .curriculum import INDEL_FRACTION, Curriculum, indel_form_name, indel_fraction_range
+from .curriculum import INDEL_FRACTION, Curriculum, indel_fraction_range
 from .novel import NovelAlleles, novel_records
 from .seeds import STREAM_PURPOSES, seed_block
 
@@ -28,13 +28,13 @@ def inverted_d_share(value) -> float:
     return probability(value, 'inverted_d')
 
 
-def mutation_cap_for(dataconfig, mutation_cap):
-    """TCR references retain a zero mutation cap; other references use the requested cap."""
-    return 0.0 if is_tcr(dataconfig) else mutation_cap
+def mutation_cap_for(dataconfig) -> float | None:
+    """A reference's mutation cap: zero for a TCR reference (T cells carry no SHM), None (uncapped) for any other."""
+    return 0.0 if is_tcr(dataconfig) else None
 
 
-def effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
-    """Record each source's effective cap; repeated or colliding custom names remain distinct."""
+def effective_mutation_caps(dataconfigs) -> dict:
+    """Each source's mutation cap (``mutation_cap_for``); repeated or colliding custom names remain distinct."""
     caps = {}
     for position, dataconfig in enumerate(dataconfigs):
         base = key = dataconfig_name(dataconfig)
@@ -42,7 +42,7 @@ def effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
         while key in caps:
             key = f'{base}#{suffix}'
             suffix += 1
-        caps[key] = mutation_cap_for(dataconfig, mutation_cap)
+        caps[key] = mutation_cap_for(dataconfig)
     return caps
 
 
@@ -55,6 +55,8 @@ def effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
 # 10 to 25 times slower to simulate (HUMAN_IGH_OGRDB), come from k streams that can be generated in parallel.
 SELECTED_FRACTION = 0.75
 MAX_SELECTION_PERIOD = 10
+# The curriculum's indel form for training (``Curriculum``): the uniform form is the pinned evaluation strata's.
+INDEL_FORM = 'weighted'
 # The read-length amplicons of the mix, (5' end loss, 3' end loss) over the curriculum at progress 0.6. They all stay
 # unselected. productive_only() keeps the V Cys and J Trp/Phe landmarks observed, so it narrows any end loss that would
 # remove one (on HUMAN_IGH_OGRDB): selected V-anchored reads come out full length (median 342 nt against 130),
@@ -75,10 +77,12 @@ def _selected_fraction(value) -> float:
 
 @dataclass(frozen=True)
 class CurriculumStreamPolicy:
-    """The training mix of curriculum components. ``indel_form`` is the curriculum's indel form (``Curriculum``):
-    ``"weighted"`` by default, whose weight of reads with a polymerase indel is ``indel_fraction`` ``(low, high)`` at
-    curriculum progress 0 and 1, giving about 85% indel-free reads over the default mix; ``"uniform"`` draws a uniform
-    count. ``selected_fraction`` (``SELECTED_FRACTION``) of each full-length
+    """The training mix of curriculum components: one per curriculum progress, plus, for a mix (several progresses,
+    heavy SHM, a short boost, or several reference panels), the three read-length amplicons per short boost and a
+    heavy-SHM component. The curriculum's polymerase indels are weighted (``Curriculum``): the weight of reads with an
+    indel is ``indel_fraction`` ``(low, high)`` at curriculum progress 0 and 1, giving about 85% indel-free reads over
+    the default mix. A TCR reference's records carry no SHM (``mutation_cap_for``).
+    ``selected_fraction`` (``SELECTED_FRACTION``) of each full-length
     component's records are drawn under GenAIRR's ``productive_only()`` (``substreams_for``); amplicon records never
     are. ``flanks`` (a ``data.flanks.FlankPolicy``) puts library flanks around every stream's records, drawn from the
     stream's own seed block after its provider (``training_records``); None leaves the simulated reads bare.
@@ -89,18 +93,13 @@ class CurriculumStreamPolicy:
     progresses: tuple[float, ...] = (.3, .6, .9)
     heavy_shm: float = .25
     short_boost: int = 1
-    mutation_cap: float | None = None
-    mode: Literal['auto', 'amplicon'] = 'auto'
     indel_fraction: tuple[float, float] = INDEL_FRACTION
-    indel_form: Literal['uniform', 'weighted'] = 'weighted'
     selected_fraction: float = SELECTED_FRACTION
     flanks: FlankPolicy | None = None
     novel_alleles: NovelAlleles | None = None
     inverted_d: float = 0.
 
     def __post_init__(self):
-        if self.mode not in ('auto', 'amplicon'):
-            raise ConfigurationError('source mode must be auto or amplicon', context={'field': 'mode'})
         try:
             if isinstance(self.progresses, (str, bytes)):
                 raise TypeError
@@ -108,16 +107,13 @@ class CurriculumStreamPolicy:
         except TypeError as exc:
             raise ConfigurationError('progresses must be an iterable of curriculum values',
                                      context={'field': 'progresses'}) from exc
-        if not progresses and self.mode == 'auto':
-            raise ConfigurationError('auto source mode requires at least one progress value',
+        if not progresses:
+            raise ConfigurationError('a curriculum mix needs at least one progress value',
                                      context={'field': 'progresses'})
         object.__setattr__(self, 'progresses', tuple(probability(value, 'progresses') for value in progresses))
         object.__setattr__(self, 'heavy_shm', probability(self.heavy_shm, 'heavy_shm'))
         object.__setattr__(self, 'short_boost', integer(self.short_boost, 'short_boost', 1))
-        if self.mutation_cap is not None:
-            object.__setattr__(self, 'mutation_cap', probability(self.mutation_cap, 'mutation_cap'))
         object.__setattr__(self, 'indel_fraction', indel_fraction_range(self.indel_fraction))
-        indel_form_name(self.indel_form)
         object.__setattr__(self, 'selected_fraction', _selected_fraction(self.selected_fraction))
         if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
             raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
@@ -135,10 +131,9 @@ class CurriculumStreamPolicy:
 
     def _components(self, force_mixture) -> list[tuple[dict, bool]]:
         """Each component's parameters, before any mutation cap, and whether its records may be selected."""
-        curriculum = Curriculum(indel_form=self.indel_form, indel_fraction=self.indel_fraction)
+        curriculum = Curriculum(indel_form=INDEL_FORM, indel_fraction=self.indel_fraction)
         components = [(dict(curriculum.params(progress)), True) for progress in self.progresses]
-        mixed = (force_mixture or self.mode == 'amplicon' or len(self.progresses) > 1
-                 or self.heavy_shm > 0 or self.short_boost > 1)
+        mixed = force_mixture or len(self.progresses) > 1 or self.heavy_shm > 0 or self.short_boost > 1
         if mixed:
             background = dict(curriculum.params(.6))
             components.extend(({**background, 'end_loss_5': end_loss_5, 'end_loss_3': end_loss_3}, False)
@@ -149,7 +144,7 @@ class CurriculumStreamPolicy:
 
     def _capped(self, dataconfig, force_mixture) -> list[tuple[dict, bool]]:
         components = self._components(force_mixture)
-        cap = mutation_cap_for(dataconfig, self.mutation_cap)
+        cap = mutation_cap_for(dataconfig)
         if cap is not None:
             for parameters, _ in components:
                 parameters['mutation_rate'] = min(parameters['mutation_rate'], cap)

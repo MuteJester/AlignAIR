@@ -29,8 +29,7 @@ def test_the_recipe_stream_is_about_85_percent_indel_free_and_deterministic_per_
     assert again == records[:140]
 
 
-@pytest.mark.parametrize('options,form', [({}, 'weighted'), ({'indel_form': 'uniform'}, 'uniform')])
-def test_a_run_draws_its_components_from_its_indel_form_and_fraction_and_records_them(tmp_path, options, form):
+def test_a_run_draws_its_components_from_its_indel_fraction_and_records_it(tmp_path):
     import GenAIRR.data as gd
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
     setup = prepare_model(reference, embed_dim=4, trunk_channels=8)
@@ -43,10 +42,10 @@ def test_a_run_draws_its_components_from_its_indel_form_and_fraction_and_records
     path = tmp_path / 'model.alignair'
     _train(setup, setup.build_model(), [gd.HUMAN_IGH_OGRDB],
            TrainingConfig(dataconfigs=(gd.HUMAN_IGH_OGRDB,), steps=1, batch_size=2),
-           CurriculumStreamPolicy(indel_fraction=(0.1, 0.2), **options), save_path=str(path), log_every=0,
+           CurriculumStreamPolicy(indel_fraction=(0.1, 0.2)), save_path=str(path), log_every=0,
            record_source=watched)
-    curriculum = Curriculum(indel_form=form, indel_fraction=(0.1, 0.2))
+    curriculum = Curriculum(indel_form='weighted', indel_fraction=(0.1, 0.2))
     period = len(CurriculumStreamPolicy().selection_pattern)          # the streams of one component
     assert seen[::period][:3] == [curriculum.indel_count(progress) for progress in (0.3, 0.6, 0.9)]
     train_args = read_metadata(path)['training']['train_args']
-    assert train_args['indel_form'] == form and train_args['indel_fraction'] == [0.1, 0.2]
+    assert train_args['indel_form'] == 'weighted' and train_args['indel_fraction'] == [0.1, 0.2]

@@ -131,8 +131,7 @@ def test_the_manifest_records_genairr_the_recipe_and_each_streams_records(recipe
     assert manifest['dataconfigs'] == ['HUMAN_IGH_OGRDB']
     assert (manifest['recipe'], manifest['purpose'], manifest['start_step']) == (RECIPE, 'training', 0)
     assert manifest['policy'] == {'progresses': {'__tuple__': [0.3, 0.6, 0.9]}, 'heavy_shm': 0.25, 'short_boost': 1,
-                                  'mutation_cap': None, 'mode': 'auto', 'indel_fraction': {'__tuple__': [0.05, 0.25]},
-                                  'indel_form': 'weighted', 'selected_fraction': 0.75}
+                                  'indel_fraction': {'__tuple__': [0.05, 0.25]}, 'selected_fraction': 0.75}
     files = manifest['code']['files']           # provenance: the code that produced the records
     assert {'train/records/streams.py', 'train/records/seeds.py', 'genairr/experiment.py',
             'train/records/curriculum.py'} <= set(files)
@@ -359,7 +358,6 @@ def test_require_checks_a_whole_stream_before_any_record(cache):
 
 @pytest.mark.parametrize('field,request_', [
     ('selected_fraction', {'policy': dataclasses.replace(UNSELECTED, selected_fraction=0.5)}),
-    ('indel_form', {'policy': dataclasses.replace(UNSELECTED, indel_form='uniform')}),
     ('indel_fraction', {'policy': dataclasses.replace(UNSELECTED, indel_fraction=(0.1, 0.3))}),
     ('heavy_shm', {'policy': dataclasses.replace(UNSELECTED, heavy_shm=0.3)}),
     ('seed', {'seed': 1}),
@@ -447,10 +445,18 @@ def test_an_existing_cache_or_an_unfinished_one_is_not_a_cache(cache, tmp_path):
         CachedRecordSource(tmp_path / 'partial').manifest
 
 
-def test_a_policy_without_novel_alleles_keeps_the_manifest_fields_of_before():
+def test_a_policy_without_novel_alleles_keeps_the_manifest_fields_of_before_but_the_retired_three():
     from alignair_lab.records import policy_fields
-    assert set(policy_fields(POLICY)) == {"progresses", "heavy_shm", "short_boost", "mutation_cap", "mode",
-                                          "indel_fraction", "indel_form", "selected_fraction"}
+    assert set(policy_fields(POLICY)) == {"progresses", "heavy_shm", "short_boost", "indel_fraction",
+                                          "selected_fraction"}
+
+
+def test_a_cache_written_with_the_retired_policy_fields_still_serves(cache, tmp_path):
+    """A cache written while the stream policy had a mode, an indel form and a mutation cap stores them too; require
+    compares the request's fields only, so it serves the run it served before."""
+    old = altered(cache, tmp_path, **{'policy.mode': 'auto', 'policy.indel_form': 'weighted',
+                                      'policy.mutation_cap': None})
+    old.require(DATACONFIGS, policy=UNSELECTED, seed=SEED, records=7)
 
 
 def test_a_policy_with_inverted_ds_records_their_share_in_the_manifest():

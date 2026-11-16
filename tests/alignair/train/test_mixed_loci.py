@@ -31,9 +31,9 @@ _PROGRESSES = (0.3, 0.6, 0.9)
 _HEAVY_SHM = 0.25
 
 
-def _rates(dc, mutation_cap=None):
+def _rates(dc):
     """The distinct SHM rates every stream of this locus would actually be simulated with."""
-    specs = CurriculumStreamPolicy(_PROGRESSES, _HEAVY_SHM, 1, mutation_cap).parameters_for(dc)
+    specs = CurriculumStreamPolicy(_PROGRESSES, _HEAVY_SHM, 1).parameters_for(dc)
     return sorted({round(s["mutation_rate"], 4) for s in specs})
 
 
@@ -45,9 +45,9 @@ def test_is_tcr_classifies_loci():
 
 
 def test_tcr_loci_are_always_capped_to_zero_and_ig_is_untouched():
-    assert mutation_cap_for(_TRA, None) == 0.0
-    assert mutation_cap_for(_TRB, None) == 0.0
-    assert mutation_cap_for(_IGH, None) is None            # IG keeps the run-level cap (uncapped by default)
+    assert mutation_cap_for(_TRA) == 0.0
+    assert mutation_cap_for(_TRB) == 0.0
+    assert mutation_cap_for(_IGH) is None                  # IG is uncapped
 
 
 def test_mixed_ig_tcr_keeps_shm_for_ig_and_zeroes_tcr():
@@ -58,12 +58,10 @@ def test_mixed_ig_tcr_keeps_shm_for_ig_and_zeroes_tcr():
     assert trb_rates == [0.0], f"TCR streams must have zero SHM, got {trb_rates}"
 
 
-def test_a_global_cap_would_have_broken_ig_shm():
-    """Guards the *reason* the cap is per-locus: a global 0.0 flattens IGH's whole ladder."""
-    global_capped = sorted({round(s["mutation_rate"], 4)
-                            for s in CurriculumStreamPolicy(_PROGRESSES, _HEAVY_SHM, 1, 0.0).parameters_for(_IGH)})
-    assert global_capped == [0.0]
-    assert _rates(_IGH) != global_capped           # the per-locus path must NOT behave that way
+def test_the_tcr_zero_cap_leaves_the_ig_shm_ladder_whole():
+    """Guards the *reason* the cap is per locus: a global 0.0 would flatten IGH's whole ladder."""
+    assert _rates(_TRB) == [0.0]
+    assert len(_rates(_IGH)) > 1 and 0.0 not in _rates(_IGH)
 
 
 def test_tcr_streams_never_request_shm_from_genairr():
@@ -82,16 +80,16 @@ def test_dc_name_resolves_canonical_genairr_names():
 
 def test_effective_caps_single_tcr_locus_records_the_zero():
     """A TRA run must not read as `mutation_cap: null` (uncapped) when it saw zero SHM."""
-    assert effective_mutation_caps([_TRA], None) == {"HUMAN_TCRA_IMGT": 0.0}
+    assert effective_mutation_caps([_TRA]) == {"HUMAN_TCRA_IMGT": 0.0}
 
 
 def test_effective_caps_mixed_run_records_each_locus():
-    caps = effective_mutation_caps([_IGH, _TRB], None)
+    caps = effective_mutation_caps([_IGH, _TRB])
     assert caps == {"HUMAN_IGH_OGRDB": None, "HUMAN_TCRB_IMGT": 0.0}
 
 
 def test_effective_caps_disambiguates_repeated_dataconfigs():
-    caps = effective_mutation_caps([_IGH, _IGH], None)
+    caps = effective_mutation_caps([_IGH, _IGH])
     assert len(caps) == 2, f"a repeated dataconfig must not overwrite its twin: {caps}"
 
 

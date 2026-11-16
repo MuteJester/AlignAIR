@@ -25,33 +25,33 @@ def provider(dataconfig, parameters, seed):
         yield {'panel': dataconfig.name, 'seed': seed, 'ordinal': ordinal, 'rate': parameters['mutation_rate']}
 
 
-def test_auto_single_source_and_explicit_amplicon_mixture_have_distinct_contracts():
-    automatic = CurriculumStreamPolicy((.3,), 0.)
-    assert len(automatic.parameters_for(reference())) == 1
-    assert automatic.parameters_for(reference())[0]['mutation_rate'] == pytest.approx(.0485)
-    mixture = CurriculumStreamPolicy((.3,), 0., mode='amplicon')
-    params = mixture.parameters_for(reference())
+def test_a_single_component_policy_takes_the_amplicons_only_in_a_mixture():
+    single = CurriculumStreamPolicy((.3,), 0.)
+    assert len(single.parameters_for(reference())) == 1
+    assert single.parameters_for(reference())[0]['mutation_rate'] == pytest.approx(.0485)
+    params = single.parameters_for(reference(), force_mixture=True)        # several panels: always the mixture
     assert len(params) == 4
     assert [(row['end_loss_5'], row['end_loss_3']) for row in params[1:]] == [
         ((0,15),(150,350)), ((150,350),(0,15)), ((70,175),(70,175))]
-    assert len(CurriculumStreamPolicy((), 0., mode='amplicon').parameters_for(reference())) == 3
+    assert len(MIXTURE.parameters_for(reference())) == 5                   # p=.3, three amplicons, heavy SHM
 
 
-def test_default_mix_repeats_profiles_independently_and_caps_each_reference():
-    policy = CurriculumStreamPolicy(short_boost=2, mutation_cap=.1)
+def test_default_mix_repeats_profiles_independently_and_caps_each_tcr_reference_at_zero():
+    policy = CurriculumStreamPolicy(short_boost=2)
     igh = policy.parameters_for(reference())
     tcr = policy.parameters_for(reference('TRB','TCR_BETA'))
-    assert len(igh) == 10 and max(row['mutation_rate'] for row in igh) == .1
+    assert len(igh) == 10 and max(row['mutation_rate'] for row in igh) == .25
     assert {row['mutation_rate'] for row in tcr} == {0.}
     igh[3]['mutation_rate'] = .9
     assert igh[6]['mutation_rate'] != .9
-    assert max(row['mutation_rate'] for row in policy.parameters_for(reference())) == .1
+    assert max(row['mutation_rate'] for row in policy.parameters_for(reference())) == .25
 
 
-UNSELECTED = CurriculumStreamPolicy((.3,), 0., mode='amplicon', selected_fraction=0)   # one stream per component
+MIXTURE = CurriculumStreamPolicy((.3,), .25)       # the smallest mixture: p=.3, three amplicons, heavy SHM
+UNSELECTED = CurriculumStreamPolicy((.3,), .25, selected_fraction=0)   # one stream per component
 
 
-def seeds_of(references=(reference(),), policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'), **options):
+def seeds_of(references=(reference(),), policy=MIXTURE, **options):
     """The GenAIRR seed of every provider call of one stream, in call order."""
     calls = []
     def observed(dc, params, seed):
@@ -87,17 +87,17 @@ def test_a_component_interleaves_three_selected_streams_with_one_unselected_stre
     def observed(dc, params, seed):
         calls.append((seed, params.get('productive_only', False)))
         yield from provider(dc, params, seed)
-    policy = CurriculumStreamPolicy((.3,), 0., mode='amplicon')   # p=.3, V-anchored, J-anchored, fragment amplicons
+    policy = MIXTURE                              # p=.3, V-anchored, J-anchored, fragment amplicons, heavy SHM
     assert policy.selected_fraction == SELECTED_FRACTION == .75
     assert policy.selection_pattern == (True, True, True, False)
     rows = list(training_records((reference(),), policy=policy, seed=17, record_source=observed))
     blocks = blocks_of(policy, 17)
     assert [seed for seed, _ in calls] == [block for streams in blocks for block in streams]
-    assert len({seed for seed, _ in calls}) == 16
-    assert [selected for _, selected in calls] == [True, True, True, False, *[False] * 12]
+    assert len({seed for seed, _ in calls}) == 20
+    assert [selected for _, selected in calls] == [True, True, True, False, *[False] * 12, True, True, True, False]
     # record k of a component comes from its stream k % 4; the components take turns record by record
     assert [(row['seed'], row['ordinal']) for row in rows] == [
-        (blocks[component][k % 4], k // 4) for k in range(12) for component in range(4)]
+        (blocks[component][k % 4], k // 4) for k in range(12) for component in range(5)]
 
 
 def test_only_full_length_components_are_selected_and_every_amplicon_stays_unselected():
@@ -156,7 +156,7 @@ def test_streams_of_a_run_never_share_a_block_or_reach_the_assays_seeds():
 def test_two_streams_drawing_the_same_block_are_refused(monkeypatch):
     monkeypatch.setattr(streams, 'seed_block', lambda *key: 2**62)
     with pytest.raises(ConfigurationError, match='same seed block'):
-        next(training_records((reference(),), policy=CurriculumStreamPolicy((.3,),0.,mode='amplicon'),
+        next(training_records((reference(),), policy=MIXTURE,
                               record_source=provider))
 
 
@@ -168,8 +168,8 @@ def test_finite_components_emit_complete_rounds_with_the_historical_partial_roun
             pulled.append((seed,ordinal))
             yield {'seed':seed,'ordinal':ordinal}
     rows=list(training_records((reference(),),policy=UNSELECTED, record_source=finite))
-    assert len(rows)==4
-    assert pulled==[(blocks[0],0),(blocks[1],0),(blocks[2],0),(blocks[3],0),(blocks[0],1)]
+    assert len(rows)==5
+    assert pulled==[(blocks[0],0),(blocks[1],0),(blocks[2],0),(blocks[3],0),(blocks[4],0),(blocks[0],1)]
 
 
 def test_a_component_ends_with_its_last_complete_period():
@@ -267,18 +267,17 @@ def test_materialized_provider_names_and_custom_name_collisions_are_preserved(mo
     monkeypatch.setitem(sys.modules,'GenAIRR',package)
     monkeypatch.setitem(sys.modules,'GenAIRR.data',module)
     assert dataconfig_name(item)=='CANONICAL'
-    caps=effective_mutation_caps((reference('x'),reference('x#2'),reference('x','TCR_BETA')),None)
+    caps=effective_mutation_caps((reference('x'),reference('x#2'),reference('x','TCR_BETA')))
     assert caps=={'x':None,'x#2':None,'x#3':0.}
 
 
 @pytest.mark.parametrize('options,field',[
-    ({'mode':'random'},'mode'),({'progresses':None},'progresses'),({'progresses':'0.3'},'progresses'),
+    ({'progresses':None},'progresses'),({'progresses':'0.3'},'progresses'),
     ({'progresses':()},'progresses'),({'progresses':(float('nan'),)},'progresses'),
     ({'heavy_shm':True},'heavy_shm'),({'heavy_shm':1.1},'heavy_shm'),
     ({'short_boost':0},'short_boost'),({'short_boost':False},'short_boost'),
-    ({'short_boost':1.5},'short_boost'),({'mutation_cap':-.1},'mutation_cap'),
+    ({'short_boost':1.5},'short_boost'),
     ({'indel_fraction':None},'indel_fraction'),({'indel_fraction':(.3,.1)},'indel_fraction'),
-    ({'indel_form':'realistic'},'indel_form'),({'indel_form':None},'indel_form'),
     ({'selected_fraction':1.1},'selected_fraction'),({'selected_fraction':-.25},'selected_fraction'),
     ({'selected_fraction':True},'selected_fraction'),({'selected_fraction':float('nan')},'selected_fraction'),
     ({'selected_fraction':'0.75'},'selected_fraction'),({'selected_fraction':.123},'selected_fraction'),
@@ -288,15 +287,7 @@ def test_invalid_policy_is_rejected_before_source_construction(options,field):
     assert caught.value.context['field']==field
 
 
-def test_the_historical_uniform_indel_form_reproduces_the_1_0_0_component_parameters():
-    policy = CurriculumStreamPolicy(indel_form='uniform')
-    # progresses .3/.6/.9, then the three amplicon profiles at .6 and heavy SHM at .3
-    assert [component['indel_count'] for component in policy.parameters_for(reference())] == [
-        (0, 2), (0, 3), (0, 4), (0, 3), (0, 3), (0, 3), (0, 2)]
-
-
 def test_every_component_draws_indels_from_the_policys_indel_fraction_ramp():
-    assert CurriculumStreamPolicy().indel_form == 'weighted'
     assert CurriculumStreamPolicy().indel_fraction == INDEL_FRACTION
     policy = CurriculumStreamPolicy(indel_fraction=[0, 1])
     assert policy.indel_fraction == (0., 1.)
@@ -341,7 +332,7 @@ def test_a_flank_policy_flanks_every_streams_records_from_the_streams_own_seed()
                    'v_sequence_end': 6, 'v_cigar': '6M', 'v_germline_start': 0}
 
     flanks = FlankPolicy(p_prefix=1.0, prefix=(4, 8), p_mask=0.0, p_suffix=0.5, suffix=(1, 3))
-    policy = CurriculumStreamPolicy((.3,), 0., mode='amplicon', selected_fraction=0, flanks=flanks)
+    policy = CurriculumStreamPolicy((.3,), .25, selected_fraction=0, flanks=flanks)
     records = list(training_records((reference(),), policy=policy, seed=17, record_source=bare))
     plain = list(training_records((reference(),), policy=UNSELECTED, seed=17, record_source=bare))
     assert [(r['seed'], r['ordinal']) for r in records] == [(r['seed'], r['ordinal']) for r in plain]

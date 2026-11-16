@@ -25,6 +25,7 @@ from .checkpoints import (
 from .loop import training_iterations
 from .random_state import restore_rng_state as _restore_rng
 from .records.streams import (
+    INDEL_FORM,
     CurriculumStreamPolicy,
     effective_mutation_caps,
     selection_supported,
@@ -71,7 +72,7 @@ def _train(setup: ModelSetup, model, sources, config: TrainingConfig, policy: Cu
     """Train ``model``, built from ``setup``, for ``config`` on ``policy``'s curriculum records of ``sources`` (the
     run's resolved dataconfigs); ``run_training`` is the public way in, and ``config.record_policy()`` its policy.
 
-    ``policy.indel_form`` and ``policy.indel_fraction`` select the curriculum's polymerase-indel counts
+    ``policy.indel_fraction`` weights the curriculum's polymerase-indel counts
     (``records.streams.CurriculumStreamPolicy``), and ``policy.selected_fraction`` of each full-length component's
     records are drawn under GenAIRR's ``productive_only()``. The run records them in ``train_args`` with its ``recipe``
     (``RECIPE``) and each component's selected share. When GenAIRR cannot draw productive records from one of
@@ -209,18 +210,18 @@ def _train_args(sources, config: TrainingConfig, requested_policy, source_policy
     args = {"lr": config.lr, "batch_size": config.batch_size, "progresses": list(requested.progresses),
             "heavy_shm": requested.heavy_shm, "short_boost": requested.short_boost, "seed": config.seed,
             "steps": config.steps,
-            # `mutation_cap` is the run-level REQUEST; `effective_mutation_caps` is what each
-            # locus actually got (TCR -> 0). Without the latter the card misstates the training
-            # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
-            "source_mode": source_policy.mode, "mutation_cap": requested.mutation_cap,
+            # source_mode, mutation_cap and indel_form are the values every run has trained with (the stream policy no
+            # longer has the fields), kept so train_args compare with every earlier checkpoint's;
+            # `effective_mutation_caps` is what each locus got (TCR -> 0).
+            "source_mode": "auto", "mutation_cap": None,
             "recipe": RECIPE,
-            "indel_form": source_policy.indel_form, "indel_fraction": list(source_policy.indel_fraction),
+            "indel_form": INDEL_FORM, "indel_fraction": list(source_policy.indel_fraction),
             "selected_fraction": requested.selected_fraction,
             "selected_shares": list(source_policy.selected_shares(force_mixture=len(sources) > 1)),
             "selection_unavailable": unselectable,
             "flanks": requested.flanks.to_dict() if requested.flanks is not None else None,
             "schedule": schedule_metadata,
-            "effective_mutation_caps": effective_mutation_caps(sources, requested.mutation_cap),
+            "effective_mutation_caps": effective_mutation_caps(sources),
             # provenance only: worker processes reproduce the serial batches exactly
             "data_workers": config.data_workers,
             "init_seed": config.init_seed, "grad_clip": config.grad_clip,

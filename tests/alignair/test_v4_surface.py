@@ -13,6 +13,8 @@ except ModuleNotFoundError:  # Python 3.10
 
 import pytest
 
+import alignair
+import alignair.train
 from alignair.cli.main import main
 from alignair.core import AlignAIR, ModelComponents
 from alignair.predict.threshold import select_alleles
@@ -131,6 +133,14 @@ def test_the_switches_every_trained_model_used_one_way_are_retired():
     assert "reject_empty_sequences" not in inspect.signature(collate_samples).parameters
 
 
+def test_the_record_policy_keeps_no_field_every_model_set_one_way():
+    """Every model trained with the automatic mix, the weighted indels and no mutation cap (a TCR reference is capped
+    at zero on its own); ``train_args`` still record the three values, so they compare with earlier checkpoints'."""
+    from alignair.train.records.streams import CurriculumStreamPolicy
+    assert not {"mode", "indel_form", "mutation_cap"} & {field.name for field in dataclasses.fields(
+        CurriculumStreamPolicy)}
+
+
 def test_reads_have_one_nucleotide_normaliser():
     """A read is normalised by one rule, for a file (dropped when mostly unusable) or a prediction (cut to the
     window); the generic, protein-era validation framework and its compatibility names are gone."""
@@ -159,7 +169,6 @@ def test_training_has_no_study_schedule():
 
 def test_training_has_one_entry_point():
     """``run_training`` is the one way to train: ``train_model`` skipped its seeding and had defaults of its own."""
-    import alignair
     from alignair import api
     from alignair.train import trainer
     assert not hasattr(alignair, "train_model") and not hasattr(api, "train_model")

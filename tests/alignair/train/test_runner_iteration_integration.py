@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 @pytest.mark.parametrize('source_size', [0, 1, 3])
 def test_exhausted_source_saves_completed_steps(source_size, tmp_path, monkeypatch):
     import GenAIRR as ga
-    source = training_records(('HUMAN_IGH_OGRDB',), policy=CurriculumStreamPolicy(mode='amplicon'), seed=21)
+    source = training_records(('HUMAN_IGH_OGRDB',), policy=CurriculumStreamPolicy(), seed=21)
     record = next(islice(source, 1))
     setup = prepare_model(ReferenceSet.from_dataconfigs(ga.HUMAN_IGH_OGRDB), trunk_channels=8, embed_dim=4)
     model = AlignAIR(setup.config)
