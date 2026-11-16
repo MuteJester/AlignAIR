@@ -236,12 +236,16 @@ def test_a_reference_bound_to_a_two_locus_model_takes_its_loci_in_its_order():
 
 def test_an_allele_no_locus_of_a_two_locus_model_holds_is_refused():
     """A one-locus model takes a novel allele into its locus whatever its name shows (a TRD model's TRAV/DV alleles
-    are named TRA); a model of several loci refuses one whose name shows none of them."""
-    from alignair.errors import InputError
+    are named TRA); a model of several loci refuses one whose name shows another locus (the locus it does not call)
+    or none (the allele, which no locus of the model holds)."""
+    from alignair.errors import ConfigurationError, InputError
     igk_igl = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
     user = ReferenceSet.from_genotype({"V": {"TRBV9-99*01": "ACGT" * 70}, "J": {}})
-    with pytest.raises(InputError, match=r"TRBV9-99\*01"):
+    with pytest.raises(ConfigurationError, match=r"alleles of TRB, a locus the model does not call"):
         annotate(user, igk_igl)
+    unnamed = ReferenceSet.from_genotype({"V": {"MYV9*01": "ACGT" * 70}, "J": {}})
+    with pytest.raises(InputError, match=r"MYV9\*01"):
+        annotate(unnamed, igk_igl)
     trd = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRD_IMGT)
     novel = ReferenceSet.from_genotype({"V": {"TRAV14/DV4*99": "ACGT" * 70}, "J": {}})
     assert annotate(novel, trd).locus_names() == ("TRD",)

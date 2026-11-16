@@ -1,6 +1,7 @@
 """A reference of another locus bound to a one-locus model: binding stays allowed, the bound reference keeps its own
 locus (so the records' ``locus`` comes from the alleles called, not the model card), and one warning says the model
-was trained on another locus. A reference of the model's own locus, or one whose names show no locus, binds silently."""
+was trained on another locus. A reference of the model's own locus, or one whose names show no locus, binds silently.
+A reference that holds alleles of the model's locus and of another is refused, naming the other."""
 import warnings
 
 import GenAIRR.data as gd
@@ -102,3 +103,30 @@ def test_a_reference_without_the_models_d_is_refused_with_a_hint():
             warnings.simplefilter("ignore", LocusMismatchWarning)
             Aligner.from_pretrained(str(TEST_CHIP), device="cpu", reference=igk)
     assert caught.value.hint and "V, D and J" in caught.value.hint and "reference export" in caught.value.hint
+
+
+def test_a_reference_of_the_models_locus_and_another_is_refused_naming_the_other(igh):
+    from alignair.errors import ConfigurationError
+    mixed = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB)
+    with pytest.raises(ConfigurationError, match=r"alleles of IGK, a locus the model does not call") as caught:
+        annotate(mixed, igh)
+    assert caught.value.context["loci"] == ["IGK"] and caught.value.context["field"] == "reference"
+    assert "subset" in caught.value.hint
+
+
+def test_a_reference_of_tra_and_trd_is_refused_by_a_trd_model_naming_tra():
+    from alignair.errors import ConfigurationError
+    trd = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRD_IMGT)
+    with pytest.raises(ConfigurationError, match=r"alleles of TRA, a locus the model does not call"):
+        annotate(ReferenceSet.from_dataconfigs(gd.HUMAN_TCRA_IMGT, gd.HUMAN_TCRD_IMGT), trd)
+
+
+def test_a_mixed_reference_is_refused_at_load_and_when_bound():
+    from alignair import Aligner
+    from alignair.errors import ConfigurationError
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    mixed = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB)
+    with pytest.raises(ConfigurationError, match="IGK"):
+        Aligner.from_pretrained(str(TEST_CHIP), device="cpu", reference=mixed)
+    with pytest.raises(ConfigurationError, match="IGK"):
+        Aligner.from_pretrained(str(TEST_CHIP), device="cpu").bound_to(mixed)

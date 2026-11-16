@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..errors import InputError
+from ..errors import ConfigurationError, InputError
 from .codons import CYS_CODONS, GAP, IMGT_CODON_104
 from .info import ANCHORED, AlleleInfo, AnchorEvidence
 from .loci import CHAIN_OF_LOCUS, loci_from_membership, locus_from_name
@@ -226,9 +226,17 @@ def _copy(alleles: GeneReference) -> GeneReference:
 def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> ReferenceSet:
     """``reference`` laid on ``known``'s locus schema (the chain head's classes, in their order): an allele ``known``
     holds (by name and sequence, else by sequence) takes its locus, a novel one its name's when the model has it, else
-    the model's only locus; each gene's alleles grouped by locus, the reference's order within one. InputError for an
-    allele no locus of the model can hold."""
+    the model's only locus; each gene's alleles grouped by locus, the reference's order within one. ConfigurationError
+    for a reference that holds alleles of loci the model does not call besides its own (``_extra_loci``); InputError
+    for an allele no locus of the model can hold."""
     loci = [info.locus for info in known.loci]
+    extra = _extra_loci(reference, loci)
+    if extra:
+        raise ConfigurationError(f"the reference holds alleles of {', '.join(extra)}, a locus the model does not call "
+                                 f"(it calls {', '.join(loci)})",
+                                 context={"field": "reference", "loci": extra, "model_loci": loci},
+                                 hint="Bind a subset of the reference of the model's loci only, or align each locus "
+                                      "with a model of that locus.")
     theirs = known.membership()
     genes = {}
     per_index = {}
@@ -278,6 +286,17 @@ def _named_loci(name: str) -> set:
     if named is None:
         return set()
     return {named, "TRD"} if named == "TRA" and "/DV" in str(name).upper() else {named}
+
+
+def _extra_loci(reference: ReferenceSet, loci: list) -> list:
+    """The loci beyond the model's ``loci`` that allele names of ``reference`` show, sorted; an allele whose name shows
+    one of the model's loci too is the model's (a TRAV/DV allele on a TRD model). Empty for a reference wholly of one
+    other locus on a one-locus model (``_other_locus``), which binds with a warning."""
+    if _other_locus(reference, loci) is not None:
+        return []
+    model = set(loci)
+    shown = (_named_loci(name) for alleles in reference.genes.values() for name in alleles.names)
+    return sorted({locus for named in shown if named and not named & model for locus in named})
 
 
 def _other_locus(reference: ReferenceSet, loci: list) -> str | None:
