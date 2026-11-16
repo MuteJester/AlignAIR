@@ -14,8 +14,7 @@ from ..errors import ConfigurationError, DataContractError
 
 def default_strata() -> dict:
     """Named GenAIRR generation params: clean, moderate corruption, heavy-SHM, and a J-anchored short
-    amplicon. (The head-to-head against IgBLAST is the development assay's, ``alignair_assay``.) The strata are
-    pinned to the curriculum's historical uniform indel form, so they keep generating the same data."""
+    amplicon. The strata are pinned to the curriculum's uniform indel form, so they keep generating the same data."""
     from ..train.records import Curriculum
     cur = Curriculum(indel_form="uniform")
     return {
@@ -80,6 +79,8 @@ def score(truth: list[dict], preds: list[dict]) -> dict:
 
 def run_benchmark(model, reference, dataconfig, *, n: int = 200, seed: int = 0,
                   strata_names: list[str] | None = None, device: str = "cpu", batch_size: int = 64) -> dict:
+    """Score ``model`` on ``n`` reads per stratum (``default_strata``, or the named ones) generated from
+    ``dataconfig``: ``{stratum: {"n": ..., metric: value}}`` (``score``)."""
     strata = default_strata()
     if strata_names:
         unknown = [name for name in strata_names if name not in strata]
@@ -97,6 +98,7 @@ def run_benchmark(model, reference, dataconfig, *, n: int = 200, seed: int = 0,
 
 
 def format_text(results: dict) -> str:
+    """``run_benchmark``'s results as a text table, one row per stratum."""
     metrics = ["v_call_acc", "d_call_acc", "j_call_acc", "junction_nt_exact", "junction_len_mae",
                "v_sequence_start_mae", "v_sequence_end_mae", "j_sequence_start_mae",
                "j_sequence_end_mae", "productive_acc"]

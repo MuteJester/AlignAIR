@@ -27,7 +27,7 @@ def register(sub) -> None:
         sp.add_argument("model", nargs="?", help="model id (default: all installed)")
         sp.set_defaults(func=fn)
     prn = ms.add_parser("prune", help="remove old cached model versions")
-    prn.add_argument("--keep", type=int, default=1)
+    prn.add_argument("--keep", type=int, default=1, help="the newest versions to keep per model (default 1)")
     prn.set_defaults(func=_prune)
 
 

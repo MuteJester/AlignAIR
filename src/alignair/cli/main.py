@@ -43,6 +43,7 @@ def _add_reporting_options(parser, *, root=True):
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """The ``alignair`` parser, every subcommand registered."""
     parser = argparse.ArgumentParser(prog="alignair",
                                      description="AlignAIR — a neural aligner for IG/TCR repertoires.")
     parser.add_argument("--version", action="version", version=f"alignair {__version__}")
@@ -54,6 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    """Run the ``alignair`` command ``argv`` (default: the process's arguments); returns the exit code."""
     args = build_parser().parse_args(argv)
     with error_context(command=args.command), error_reporting(debug=args.debug,
                                                               json_output=args.error_format == "json"):

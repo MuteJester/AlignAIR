@@ -217,8 +217,8 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
         row["sequence_alignment"] = canonical[min(starts):max(ends)] if starts and ends else ""
     for g in GENES:
         ss, se = p.get(f"{g}_sequence_start"), p.get(f"{g}_sequence_end")
-        # An absent / zero-length segment (e.g. Short-D) has no span; AIRR 1-based-inclusive coords
-        # cannot encode an empty interval (start would exceed end), so blank its coords + CIGAR.
+        # An absent / zero-length segment (one the segment correction collapsed) has no span; AIRR 1-based-inclusive
+        # coords cannot encode an empty interval (start would exceed end), so blank its coords + CIGAR.
         if ss is not None and se is not None and se <= ss:
             row[f"{g}_cigar"] = ""
             row[f"{g}_sequence_start"] = row[f"{g}_sequence_end"] = None

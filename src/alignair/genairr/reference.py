@@ -1,11 +1,11 @@
 """A GenAIRR dataconfig's reference, the one AlignAIR trains on, built through ``alignair.reference.annotate``.
 
 ``reference_from_dataconfigs`` unions the dataconfigs' alleles in AlignAIR's order (V, J, then D; each dataconfig in
-turn; the first allele of a name kept), takes each stored anchor that is not GenAIRR's legacy 0 as supplied, the
+turn; the first allele of a name kept), takes each stored anchor that is not 0 (GenAIRR's "not found") as supplied, the
 IMGT-gapped forms, each allele's functionality, species and source label, each locus's species, and one source record
 per dataconfig, then annotates the rest: a stored 0 is resolved by GenAIRR's resolver and its verdict recorded. A
 union whose dataconfigs name one allele with two sequences is refused; inside one dataconfig (MOUSE_IGK_IMGT and
-MOUSE_IGL_IMGT each name two alleles twice) the first of a name is kept, as AlignAIR always did."""
+MOUSE_IGL_IMGT each name two alleles twice) the first of a name is kept."""
 from __future__ import annotations
 
 import dataclasses
@@ -79,8 +79,8 @@ class _GeneUnion:
 
 
 def _stored_anchor(allele, gene: str, source: str) -> tuple[int | None, AnchorEvidence | None]:
-    """The anchor the dataconfig stores for ``allele`` and its evidence: a V or J anchor of 0 is GenAIRR's legacy "no
-    anchor" (``annotate`` resolves it), any other is supplied by ``source``; a D's is kept as it is."""
+    """The anchor the dataconfig stores for ``allele`` and its evidence: a V or J anchor of 0 is GenAIRR's "no anchor"
+    (``annotate`` resolves it), any other is supplied by ``source``; a D's is kept as it is."""
     stored = getattr(allele, "anchor", None)
     if gene in ("V", "J"):
         return (int(stored), AnchorEvidence("supplied", "supplied", None, source)) if stored else (None, None)

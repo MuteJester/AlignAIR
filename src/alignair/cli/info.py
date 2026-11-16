@@ -8,7 +8,7 @@ from ..model_file import embedded_allele_counts, read_metadata
 
 def register(sub) -> None:
     p = sub.add_parser("info", help="print an .alignair model file's metadata / model card")
-    p.add_argument("model")
+    p.add_argument("model", help="a model file (.alignair)")
     p.add_argument("--json", action="store_true", help="print the raw metadata JSON")
     p.set_defaults(func=run)
 

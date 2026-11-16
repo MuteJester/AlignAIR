@@ -27,11 +27,11 @@ def register(sub) -> None:
     p.add_argument("--preset", choices=["quick", "desktop", "full"], default="desktop",
                    help="resource-tuned defaults for steps/batch/validation (default: desktop)")
     p.add_argument("--steps", type=int, default=None, help="override the preset's step count")
-    p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--lr", type=float, default=3e-4, help="initial learning rate (default 3e-4)")
     p.add_argument("--batch-size", type=int, default=None, help="override the preset's batch size")
     p.add_argument("--grad-clip", type=float, default=None, help="clip the global gradient norm")
     p.add_argument("--val-every", type=int, default=None, help="override the preset's validation interval")
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--seed", type=int, default=0, help="seed of the training data and initial weights (default 0)")
     p.add_argument("--data-workers", type=int, default=0,
                    help="generate training data in this many worker processes (at most one per curriculum "
                         "stream: 28 for the default mix, 7 components of 4 streams); the batches are identical "
@@ -112,8 +112,8 @@ def run(args) -> int:
     checkpoint = run.best_model_path or run.model_path
     sources = {"v_fasta": args.v_fasta, "d_fasta": args.d_fasta, "j_fasta": args.j_fasta} if args.v_fasta else None
     # No `training=` override: export_bundle reads the full provenance from the checkpoint (actual
-    # steps + curriculum + effective per-locus SHM caps). Restating a reduced dict here is what used
-    # to drop `train_args` from every distributable bundle.
+    # steps + curriculum + effective per-locus SHM caps); a dict restated here would drop the fields it does not list,
+    # such as `train_args`.
     bundle = export_bundle(checkpoint, dcs, os.path.join(args.out, "bundle"),
                            description="AlignAIR model (custom reference)" if args.v_fasta else "",
                            sources=sources, report=report, overwrite=args.overwrite)

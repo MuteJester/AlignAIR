@@ -1,3 +1,4 @@
+"""Germline references: the alleles a model is bound to (``ReferenceSet``), their loci, anchors and provenance."""
 from .anchors import AnchorReport, LocusMismatchWarning, anchor_report, annotate
 from .info import AlleleInfo, AnchorEvidence
 from .provenance import SourceProvenance

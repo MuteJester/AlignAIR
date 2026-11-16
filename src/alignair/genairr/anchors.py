@@ -4,10 +4,10 @@ codon (V Cys104, J Trp/Phe118) is.
 ``resolve_anchor`` returns the native resolver's verdict on a sequence (V from its IMGT-gapped form, column 309; J
 from a unique F/W-G-X-G motif, under its locus's rule) as a ``ResolvedAnchor``. It calls the resolver on the
 sequences, never through ``GenAIRR._reference_annotations.resolve_allele_anchor``, which writes its result into a
-dataconfig's allele. When GenAIRR makes the resolver public (ask G4), only ``_native`` changes.
+dataconfig's allele. Should GenAIRR make the resolver public, only ``_native`` changes.
 
-GenAIRR's bundled dataconfigs store ``anchor = 0`` for an allele whose codon was not found, a legacy "not found" that
-reads as a real position: ``alignair.genairr.reference`` takes only a stored non-zero anchor as supplied and annotates
+GenAIRR's bundled dataconfigs store ``anchor = 0`` for an allele whose codon was not found, a "not found" that reads
+as a real position: ``alignair.genairr.reference`` takes only a stored non-zero anchor as supplied and annotates
 the rest, so a stored 0 is resolved here."""
 from __future__ import annotations
 

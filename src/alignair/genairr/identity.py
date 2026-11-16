@@ -1,6 +1,5 @@
 """Which GenAIRR this process runs: the version it reports, its determinism version and the content digest of its
-package (sources, compiled engine and data), the digest being the method of the assay's GenAIRR provenance
-(``tree_digest`` of the package directory), so the two compare."""
+package (sources, compiled engine and data: ``tree_sha256`` of the package directory)."""
 from __future__ import annotations
 
 import functools
@@ -25,8 +24,8 @@ def tree_sha256(directory: str) -> str:
 
 def genairr_source_sha256() -> str:
     """The content digest of the GenAIRR package this process imports (its sources, compiled engine and data), as
-    ``train_args["genairr_source_sha256"]`` records it: the method of the assay's GenAIRR provenance
-    (``tree_digest`` of the package directory), so the two compare. About 0.5 s, once per process."""
+    ``train_args["genairr_source_sha256"]`` records it (``tree_sha256`` of the package directory). About 0.5 s, once
+    per process."""
     import GenAIRR
     return tree_sha256(str(Path(GenAIRR.__file__).resolve().parent))
 

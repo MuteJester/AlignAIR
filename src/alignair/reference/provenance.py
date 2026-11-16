@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class SourceProvenance:
+    """One source of a reference's alleles (see the module docstring)."""
     kind: str
     locator: str | None = None
     sha256: str | None = None
@@ -18,9 +19,11 @@ class SourceProvenance:
     attribution: str | None = None
 
     def to_dict(self) -> dict:
+        """The fields as a plain dict."""
         return dataclasses.asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "SourceProvenance":
+        """From ``to_dict``'s form; unknown keys are ignored."""
         names = {field.name for field in dataclasses.fields(cls)}
         return cls(**{key: value for key, value in dict(data).items() if key in names})

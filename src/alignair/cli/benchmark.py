@@ -1,7 +1,7 @@
 """``alignair benchmark`` — evaluate a model on freshly-generated GenAIRR reads, per stratum.
 
-A self-contained self-check (call accuracy, coord MAE, junction_nt_exact). The head-to-head against IgBLAST, on
-simulated suites and real donors, is the development assay's (``alignair_assay``).
+A self-check on simulated reads (call accuracy, coordinate MAE, junction_nt_exact); it does not compare the model
+with other aligners.
 """
 from __future__ import annotations
 
@@ -19,13 +19,13 @@ def register(sub) -> None:
                    help="the GenAIRR dataconfig to generate reads from (default: the model card's first)")
     p.add_argument("--n", type=int, default=200, help="reads per stratum")
     p.add_argument("--strata", default=None, help="comma-list subset (default: all)")
-    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--seed", type=int, default=0, help="seed of the generated reads (default 0)")
     p.add_argument("--device", default=None, help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
-    p.add_argument("--batch-size", type=int, default=64)
-    p.add_argument("--out", default=None)
-    p.add_argument("--format", choices=["text", "json"], default="text")
-    p.add_argument("--registry", action="append")
-    p.add_argument("--offline", action="store_true")
+    p.add_argument("--batch-size", type=int, default=64, help="reads per batch (default 64)")
+    p.add_argument("--out", default=None, help="write the report here (default: stdout)")
+    p.add_argument("--format", choices=["text", "json"], default="text", help="report format (default: text)")
+    p.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
+    p.add_argument("--offline", action="store_true", help="never touch the network")
     p.set_defaults(func=run)
 
 

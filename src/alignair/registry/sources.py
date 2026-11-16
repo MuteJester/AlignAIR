@@ -86,6 +86,7 @@ def artifact_url(source: str, relpath: str, *, revision: str = "main") -> str:
 
 
 def local_path(url: str) -> str | None:
+    """The filesystem path of a ``file://`` URL or a bare path; None for a remote URL."""
     if url.startswith("file://"):
         return url[len("file://"):]
     if "://" not in url:
@@ -113,6 +114,7 @@ def fetch_bytes(source: str, relpath: str, *, offline: bool = False, revision: s
 
 
 def load_registry(source: str, *, offline: bool = False) -> dict:
+    """The ``registry.json`` catalog of ``source``, checked; a RegistryError when it cannot be read."""
     with error_context(source=source, stage="registry_lookup"):
         try:
             registry = json.loads(fetch_bytes(source, "registry.json", offline=offline).decode("utf-8"))

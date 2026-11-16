@@ -8,7 +8,7 @@ def register(sub) -> None:
     p = sub.add_parser("analyze", help="summarize an AIRR TSV (repertoire + QC + validation)")
     p.add_argument("input", help="AIRR rearrangement TSV (e.g. from `alignair predict`)")
     p.add_argument("--out", default=None, help="write the report here (default: stdout)")
-    p.add_argument("--format", choices=["text", "json"], default="text")
+    p.add_argument("--format", choices=["text", "json"], default="text", help="report format (default: text)")
     p.set_defaults(func=run)
 
 

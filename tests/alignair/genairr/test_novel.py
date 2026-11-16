@@ -1,6 +1,5 @@
 """GenAIRR simulates reads from the novel alleles AlignAIR draws (``alignair.genairr.novel``): a permissive genotype
-with each one homozygous for its gene; a GenAIRR refusal names the allele; short-indel variants wait for GenAIRR's
-``derive_variant`` (ask G3)."""
+with each one homozygous for its gene; a GenAIRR refusal names the allele; ``derive_variant`` draws SNP variants."""
 import random
 
 import GenAIRR.data as gd

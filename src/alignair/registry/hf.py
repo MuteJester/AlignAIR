@@ -1,11 +1,9 @@
-"""Direct Hugging Face Hub model loading.
+"""Loading a model straight from its own Hugging Face Hub repo.
 
-The catalog path (``registry.json`` under a source) still works; this adds the *one-repo-per-model*
-path used by `Aligner.from_pretrained("hf://org/repo")` / `"org/repo"`: pull the ``.alignair`` straight
-from a HF model repo via ``huggingface_hub`` — with revision (branch/tag/commit) pinning, tokens for
-private/gated repos, offline cache lookup, the standard HF cache, retries and resumable
-transfers. Both paths funnel through ``resolve_model`` so aliases stay a convenience, not a second
-incompatible loader.
+Besides the catalog path (``registry.json`` under a source), ``Aligner.from_pretrained("hf://org/repo")`` or
+``"org/repo"`` pulls the ``.alignair`` from a Hub model repo through ``huggingface_hub``, with revision (branch, tag or
+commit) pinning, tokens for private or gated repos, offline cache lookup, the standard HF cache, retries and resumable
+transfers. Both paths go through ``resolve_model``.
 """
 from __future__ import annotations
 

@@ -11,9 +11,10 @@
    ``MAX_DIFFERENT`` of its bases differ); a V of another length stays without, reported.
 
 Each V and J allele records how its anchor was found (``AlleleInfo.anchor_evidence``: supplied, known_allele,
-nearest_known_allele or the resolver's method; ambiguous, unresolved or invalid when none was). A D is left as given. Given a ``known``
-with a locus schema, the result is laid on it (``_on_the_models_loci``): the model's loci, in its order, are the bound
-reference's, whatever the alleles' names show. ``anchor_report`` counts the anchored alleles and names those without."""
+nearest_known_allele or the resolver's method; ambiguous, unresolved or invalid when none was). A D is left as given.
+Given a ``known`` with a locus schema, the result is laid on it (``_on_the_models_loci``): the model's loci, in its
+order, are the bound reference's, whatever the alleles' names show. ``anchor_report`` counts the anchored alleles and
+names those without."""
 from __future__ import annotations
 
 import dataclasses
@@ -93,9 +94,9 @@ def _verdict(resolved) -> AnchorEvidence:
 
 def imgt_position(sequence: str, gapped: str | None) -> tuple[int, str] | None:
     """``(anchor, codon)`` of a V whose codon 104 (IMGT-gapped columns 309-311) holds bases that are not Cys, when
-    its gapped form is its sequence with gaps on IMGT numbering; else None. The owner's rule (2026-11-07): codon 104
-    anchors the V whatever its residue, as IMGT numbers the junction from it. A form whose Cys sits a codon or more
-    past column 309 (columns 312-327) is not on IMGT numbering (GenAIRR G2) and gets none."""
+    its gapped form is its sequence with gaps on IMGT numbering; else None. Codon 104 anchors the V whatever its
+    residue, as IMGT numbers the junction from it. A form whose Cys sits a codon or more past column 309 (columns
+    312-327) is not on IMGT numbering and gets none."""
     codon_end = IMGT_CODON_104 + 3
     if (not gapped or len(gapped) < codon_end or GAP in gapped[IMGT_CODON_104:codon_end]
             or gapped.replace(GAP, "").upper() != sequence):
@@ -301,6 +302,7 @@ class AnchorReport:
     noncanonical: dict = field(default_factory=dict)   # V alleles anchored on a codon that is not Cys, by gene
 
     def complete(self) -> bool:
+        """Whether every V and J allele has an anchor."""
         return all(self.anchored[gene] == self.total[gene] for gene in self.total)
 
     def summary(self) -> str:

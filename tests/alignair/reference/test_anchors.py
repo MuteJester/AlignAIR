@@ -122,9 +122,9 @@ def test_a_j_with_two_motifs_is_ambiguous_and_unanchored(known):
 
 
 def test_a_v_without_its_cys_is_anchored_at_its_imgt_position_gapped_or_not(known):
-    """The owner's rule (2026-11-07): codon 104 anchors the V whatever its residue (IMGT numbers the junction from
-    it), where GenAIRR calls such a gapped V invalid; given gapped or ungapped, the allele gets the same anchor, and the
-    report names it as non-canonical."""
+    """Codon 104 anchors the V whatever its residue (IMGT numbers the junction from it), where GenAIRR calls such a
+    gapped V invalid; given gapped or ungapped, the allele gets the same anchor, and the report names it as
+    non-canonical."""
     v = known.gene("V")
     g = v.gapped[v.names[0]]
     gapped = g[:309] + "TGG" + g[312:]

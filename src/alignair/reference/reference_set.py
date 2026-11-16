@@ -1,4 +1,5 @@
-"""ReferenceSet: union 1..N GenAIRR dataconfigs into per-gene allele references."""
+"""``ReferenceSet``: a germline reference, the alleles of each gene (V, D, J) with their anchors, IMGT-gapped forms,
+loci and provenance."""
 from __future__ import annotations
 
 import dataclasses
@@ -16,6 +17,7 @@ from .provenance import SourceProvenance
 
 @dataclass
 class GeneReference:
+    """One gene's alleles, in order, with their sequences, anchors, IMGT-gapped forms and source information."""
     names: List[str]          # ordered allele names
     sequences: List[str]      # germline nucleotide seqs (uppercased), aligned with names
     index: Dict[str, int]     # name -> row index
@@ -28,7 +30,9 @@ class GeneReference:
 
 
 class ReferenceSet:
-    """Per-gene union allele references built from one or more GenAIRR DataConfigs."""
+    """A germline reference: a ``GeneReference`` per gene, its loci and its sources. Build one from GenAIRR
+    dataconfigs (``from_dataconfigs``), a FASTA file (``from_fasta``), a genotype mapping (``from_genotype``) or its
+    JSON form (``from_serializable``)."""
 
     def __init__(self, genes: Dict[str, GeneReference], has_d: bool, loci: List[LocusInfo] | None = None,
                  provenance: Iterable[SourceProvenance] = ()):
@@ -38,6 +42,7 @@ class ReferenceSet:
         self.provenance = tuple(provenance)      # the sources its alleles came from, in order
 
     def gene(self, g: str) -> GeneReference:
+        """The ``GeneReference`` of gene ``g`` (V, D or J, either case)."""
         return self.genes[g.upper()]
 
     def validate(self, *, genes=None) -> None:

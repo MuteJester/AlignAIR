@@ -24,6 +24,7 @@ class RawSequenceRecord(NamedTuple):
 
 @contextmanager
 def open_text(path):
+    """Open ``path`` for text reading: stdin for ``-``, gzip for a ``.gz`` name."""
     if path == "-":
         yield sys.stdin
     else:

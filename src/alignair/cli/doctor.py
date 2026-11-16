@@ -29,6 +29,7 @@ def _module_version(name: str) -> str:
 
 
 def diagnostics() -> dict:
+    """The environment report: versions, devices, kernels and the cache and config directories."""
     from .. import __version__
     info = {"alignair": __version__, "python": sys.version.split()[0],
             "platform": platform.platform(), "executable": sys.executable}

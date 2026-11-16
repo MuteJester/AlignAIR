@@ -36,6 +36,8 @@ def _histogram(vals: list[int], width: int = 6) -> dict:
 
 
 def repertoire(rows: list[dict]) -> dict:
+    """The repertoire's composition: productive, in-frame and stop-codon shares, the top genes, the CDR3 lengths and
+    the unique junctions."""
     n = len(rows)
     def pct(x):
         return round(100.0 * x / n, 1) if n else 0.0
@@ -62,6 +64,7 @@ def _orientation(row: dict) -> str:
 
 
 def qc(rows: list[dict]) -> dict:
+    """Prediction QC: the orientations, the reads with an indel, the V identity and each key field's completeness."""
     n = len(rows)
     orient = Counter(_orientation(r) for r in rows)
     indel = sum(1 for r in rows if any(_has_indel(r.get(f"{g}_cigar")) for g in GENES))
@@ -74,16 +77,19 @@ def qc(rows: list[dict]) -> dict:
 
 
 def analyze_rows(rows: list[dict], columns: list[str] | None = None) -> dict:
+    """The report of AIRR ``rows`` (with their ``columns``): repertoire, QC and AIRR validation."""
     cols = columns or (list(rows[0].keys()) if rows else [])
     return {"repertoire": repertoire(rows), "qc": qc(rows), "validation": validate_airr(rows, cols)}
 
 
 def analyze_file(path: str) -> dict:
+    """The report of the AIRR TSV at ``path`` (``analyze_rows``)."""
     rows, cols = read_airr_table(path)
     return {"input": path, **analyze_rows(rows, cols)}
 
 
 def format_text(report: dict) -> str:
+    """A report as plain text."""
     rep, q, val = report["repertoire"], report["qc"], report["validation"]
     L = [f"AlignAIR analyze — {report.get('input', '')}", "=" * 60, "REPERTOIRE",
          f"  reads:            {rep['n_reads']}",

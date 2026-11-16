@@ -50,6 +50,7 @@ class RunCounts:
 
     @property
     def input(self) -> int:
+        """The input records read: accepted plus rejected."""
         return self.accepted + self.rejected
 
     def add(self, record: dict) -> None:

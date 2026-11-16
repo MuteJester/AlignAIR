@@ -1,10 +1,10 @@
 """GenAIRR's side of novel alleles: drawing a variant (``derive_variant``, the hook for GenAIRR's own generator) and
 the genotype a stream simulates reads from (``novel_genotype``).
 
-``derive_variant`` is AlignAIR's SNP generator (``alignair.reference.variants.snp_variant``) until GenAIRR ships
-``GenAIRR.alleles.derive_variant`` (ask G3: seeded SNP and short in-frame indel variants). Then it calls that with
-``protect="anchor"``, ``seed=rng`` and ``distinct_from`` the dataconfig, and passes the variant's gapped form and
-anchor as supplied; a variant of another length also needs GenAIRR's gapping by template (ask G6), which
+``derive_variant`` draws SNP variants with AlignAIR's generator (``alignair.reference.variants.snp_variant``). It is
+the one place to call a GenAIRR variant generator (seeded SNP and short in-frame indel variants) should GenAIRR ship
+one: with ``protect="anchor"``, ``seed=rng`` and ``distinct_from`` the dataconfig, passing the variant's gapped form
+and anchor as supplied. A variant of another length also needs gapping by template, which
 ``alignair.reference.annotate`` has as its gapping hook."""
 from __future__ import annotations
 

@@ -10,6 +10,7 @@ from .context import current_error_context, snapshot
 
 
 class ExitCode(IntEnum):
+    """The CLI's exit codes."""
     SUCCESS = 0
     ERROR = 1
     USAGE = 2
@@ -66,6 +67,7 @@ class AlignAIRError(Exception):
                 "context": self.context, "retryable": self.retryable}
 
     def to_json(self) -> str:
+        """The error as JSON (``to_dict``)."""
         return json.dumps(self.to_dict(), ensure_ascii=False, allow_nan=False, sort_keys=True)
 
     def __reduce__(self):

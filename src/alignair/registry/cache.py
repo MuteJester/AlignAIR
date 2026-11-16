@@ -34,6 +34,7 @@ def cache_root() -> Path:
 
 
 def cache_path(model_id: str, version: str) -> Path:
+    """Where version ``version`` of ``model_id`` is cached."""
     return cache_root() / "models" / model_id / f"{version}.alignair"
 
 
@@ -66,7 +67,7 @@ def _sidecar_ok(path: Path):
 @contextlib.contextmanager
 def _excl_lock(path: Path, *, timeout: float = 600.0, stale_after: float = 3600.0, poll: float = 0.05):
     """Portable cross-process mutual exclusion via an atomic ``O_EXCL`` lockfile (works where ``flock``
-    is absent, e.g. Windows — the previous no-op there let concurrent downloads corrupt the cache).
+    is absent, e.g. Windows, so concurrent downloads cannot corrupt the cache).
     Acquire by exclusive create; spin-wait while another holder has it; reclaim a *stale* lock (a dead
     holder's file older than ``stale_after``) so a crash can't deadlock the cache; time out otherwise."""
     import time
@@ -127,6 +128,7 @@ def _excl_lock(path: Path, *, timeout: float = 600.0, stale_after: float = 3600.
 
 @contextlib.contextmanager
 def cache_lock(path: Path):
+    """Hold a cross-process lock on ``path`` (``flock``, or a lockfile where there is none)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         import fcntl
@@ -211,7 +213,7 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
     if version:                                                    # pinned + cached -> no network
         cached = cache_path(model_id, version)
         # return a cached pinned version without the network ONLY if its integrity sidecar still checks
-        # out (or there is no sidecar to check — legacy cache). A tampered/corrupt file falls through to
+        # out (or there is no sidecar to check: a cache written without one). A tampered/corrupt file falls through to
         # a registry re-resolve instead of loading the wrong model.
         if cached.exists() and _sidecar_ok(cached) is not False:
             return cached
@@ -247,8 +249,8 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
 
 
 def _latest_cached(model_id: str) -> Path | None:
-    """The latest cached version of ``model_id`` when its integrity sidecar checks out (or it has none: a legacy
-    cache); else None."""
+    """The latest cached version of ``model_id`` when its integrity sidecar checks out (or it has none: a cache
+    written without one); else None."""
     inst = installed_models().get(model_id)
     if inst:
         cached = cache_path(model_id, inst[-1])
@@ -272,6 +274,7 @@ def installed_models() -> dict[str, list[str]]:
 
 
 def version_key(v: str):
+    """A sort key for version strings: dotted integers numerically, before any other string."""
     try:
         return (0, tuple(int(x) for x in v.split(".")))
     except ValueError:

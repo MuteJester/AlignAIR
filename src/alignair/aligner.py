@@ -44,6 +44,7 @@ class PredictionResult:
         return len(self.records)
 
     def to_dicts(self) -> list:
+        """The records as a list of dicts, one per read."""
         return list(self.records)
 
     def _ids(self) -> list:
@@ -62,9 +63,8 @@ class PredictionResult:
 
 
 class Aligner:
-    """A loaded model plus its verified germline reference, ready to predict. Construct with
-    :meth:`from_pretrained` (a local path, a shipped catalog id, or ``id@revision``) — the single
-    inference entry point the CLI is a client of."""
+    """A loaded model bound to its germline reference, ready to predict. Construct with :meth:`from_pretrained` (a
+    local path, a shipped catalog id, or ``id@revision``); ``alignair predict`` loads its model through it."""
 
     def __init__(self, model, reference, *, device: str = "cpu", model_path: Optional[str] = None,
                  source_commit: Optional[str] = None):

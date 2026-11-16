@@ -23,16 +23,19 @@ _GENES = ("V", "D", "J")
 
 @dataclass(frozen=True)
 class NovelAllele:
+    """A novel allele: its name, the reference allele it derives from (``base``), its sequence and its gene."""
     name: str
     base: str
     sequence: str
     gene: str = "V"
 
     def to_dict(self) -> dict:
+        """The fields as a plain dict."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data) -> "NovelAllele":
+        """From ``to_dict``'s form: a ValueError for a missing name, base or sequence or a gene not V, D or J."""
         data = dict(data)
         missing = [key for key in ("name", "base", "sequence") if key not in data]
         if missing:

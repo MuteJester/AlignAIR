@@ -24,7 +24,7 @@ def test_every_stored_anchor_of_the_clean_human_sets_is_kept(name):
 
 def test_a_zero_anchor_the_resolver_cannot_confirm_is_dropped():
     """TRBJ2-2P*01 (stored 0, no unique motif) gets none; TRBV17*01 (stored 0, codon 104 TAC) is anchored at its IMGT
-    position by the owner's rule (``alignair.reference.anchors.imgt_position``), not by the stored 0."""
+    position (``alignair.reference.anchors.imgt_position``), not by the stored 0."""
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRB_IMGT)
     assert "TRBJ2-2P*01" not in reference.gene("J").anchors
     assert reference.gene("V").anchors["TRBV17*01"] > 0

@@ -16,6 +16,7 @@ _LOCUS_NAME_RE = re.compile(r"^(IG[HKL]|TR[ABGD])")
 
 
 def locus_of_chain(chain_type) -> str:
+    """The AIRR locus of a GenAIRR chain type (BCR_HEAVY -> IGH); an unknown chain type is returned as given."""
     key = str(getattr(chain_type, "value", chain_type)).upper()
     return LOCUS_OF_CHAIN.get(key, key)
 

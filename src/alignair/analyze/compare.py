@@ -1,10 +1,7 @@
-"""Tool-to-tool AIRR agreement on the USER's own data (no ground truth needed): compare two
-rearrangement TSVs (e.g. AlignAIR vs IgBLAST or MiXCR `exportAirr`) row-by-row on `sequence_id`
-and report per-gene call agreement, junction/productivity concordance, coverage, and — uniquely —
-how often AlignAIR's equivalence SET already contains the other tool's call (so an
-allele "disagreement" is really shared ambiguity, not a conflict).
-
-This turns "should I trust AlignAIR over my current tool?" into an evidence report on real data.
+"""Tool-to-tool AIRR agreement on the user's own data (no ground truth needed): compare two rearrangement TSVs (for
+example AlignAIR and IgBLAST, or MiXCR ``exportAirr``) row by row on ``sequence_id``, and report per-gene call
+agreement, junction and productivity concordance, coverage, and how often AlignAIR's equivalence set already holds
+the other tool's call (an allele "disagreement" that is shared ambiguity, not a conflict).
 """
 from __future__ import annotations
 
@@ -87,6 +84,7 @@ def compare_airr(a: Dict[str, dict], b: Dict[str, dict], a_name="model_a", b_nam
 
 
 def format_report_md(r: dict) -> str:
+    """A comparison report as Markdown."""
     a, b = r["model_a"], r["model_b"]
     c = r["coverage"]
     lines = [f"# AIRR agreement: {a} vs {b}", "",

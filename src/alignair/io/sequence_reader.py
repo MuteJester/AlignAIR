@@ -1,8 +1,6 @@
-"""Read input reads from common formats for `alignair predict`.
-
-Supports FASTA, FASTQ, CSV/TSV (a sequence column), and plain one-per-line TXT, optionally
-gzip-compressed. Returns (ids, sequences) with sequences uppercased and validated: IUPAC
-ambiguity codes -> N; a read with >20% non-ACGTN characters is dropped (reported).
+"""Reading input reads from FASTA, FASTQ, CSV/TSV (a sequence column) or plain one-per-line TXT, optionally
+gzip-compressed. ``iter_sequence_batches`` yields ``SequenceReadBatch``es whose reads are uppercased and validated:
+IUPAC ambiguity codes -> N; a read with more than 20% non-ACGTN characters is dropped (reported).
 """
 from __future__ import annotations
 
@@ -36,19 +34,23 @@ class SequenceRead:
 
 @dataclass(frozen=True)
 class SequenceReadBatch:
+    """One chunk of accepted reads, and how many of the chunk's records were dropped."""
     records: tuple[SequenceRead, ...]
     n_dropped: int
 
     @property
     def ids(self) -> list[str]:
+        """The reads' ids."""
         return [record.sequence_id for record in self.records]
 
     @property
     def sequences(self) -> list[str]:
+        """The reads' cleaned sequences."""
         return [record.sequence for record in self.records]
 
     @property
     def source_ids(self) -> list[str | None]:
+        """The reads' ids as the input file gave them (None when the reader assigned one)."""
         return [record.source_id for record in self.records]
 
 

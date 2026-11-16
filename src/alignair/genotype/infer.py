@@ -7,10 +7,6 @@ until they explain ``EXPLAIN`` of those reads; a gene with fewer than ``MIN_READ
 open (every allele allowed). A row then moves when its call is outside the genotype and its tie list holds an allowed
 allele; a row whose read matches no allowed allele as well as its call keeps it. The CLI re-calls the moved rows with
 the genotype as the ``--genotype`` constraint, so their rows stay consistent.
-
-The assay's real arm (donors sequenced by RACE and by multiplex) measures how far the rule lowers the share of V calls
-the donor's genotype does not support, beside the same rule on IgBLAST's own tie lists (about IgBLAST + TIgGER); the
-AlignAIR 4 figures are pending (PENDING-V4-NUMBERS).
 """
 from __future__ import annotations
 
@@ -21,6 +17,7 @@ MIN_READS = 10           # the single-allele reads a gene needs for its alleles 
 
 
 def gene_of(allele: str) -> str:
+    """The gene of an allele name (IGHV1-2*02 -> IGHV1-2)."""
     return allele.split("*")[0]
 
 
@@ -33,6 +30,7 @@ class GenotypeEvidence:
         self.tied: dict[int, tuple[str, ...]] = {}
 
     def observe(self, index: int, v_call: str) -> None:
+        """Count row ``index``'s ``v_call``: a single allele for its gene, a tie list kept by row."""
         listed = tuple(allele for allele in (v_call or "").split(",") if allele)
         if len(listed) == 1:
             self.counts[gene_of(listed[0])][listed[0]] += 1

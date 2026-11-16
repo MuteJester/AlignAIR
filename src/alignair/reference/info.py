@@ -21,6 +21,7 @@ def _known(cls, data: dict) -> dict:
 
 @dataclass(frozen=True)
 class AnchorEvidence:
+    """How an allele's anchor was found: the method, the status (``ANCHOR_STATUSES``), a detail and its source."""
     method: str
     status: str
     detail: str | None = None
@@ -31,15 +32,18 @@ class AnchorEvidence:
             raise ValueError(f"an anchor's status is one of {', '.join(ANCHOR_STATUSES)}, got {self.status!r}")
 
     def to_dict(self) -> dict:
+        """The fields as a plain dict."""
         return dataclasses.asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "AnchorEvidence":
+        """From ``to_dict``'s form; unknown keys are ignored."""
         return cls(**_known(cls, data))
 
 
 @dataclass(frozen=True)
 class AlleleInfo:
+    """What a source tells about one allele: functionality (``FUNCTIONALITIES``), species, label, anchor evidence."""
     functional: str | None = None
     species: str | None = None
     source_label: str | None = None
