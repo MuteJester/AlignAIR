@@ -8,7 +8,7 @@ import torch
 
 from ..core.runtime import evaluation_mode
 from ..errors import ConfigurationError, TrainingError, error_context
-from ..tasks import MetricReport, TrainingTasks, build_tasks
+from ..tasks import MetricReport, TrainingTasks
 from .guards import NonFiniteTrainingError, check_finite_loss, validate_grad_clip
 
 if TYPE_CHECKING:
@@ -48,12 +48,12 @@ class TrainingEngine:
     optimized parameter.
     """
 
-    def __init__(self, model: torch.nn.Module, optimizer: torch.optim.Optimizer, *, tasks: TrainingTasks | None = None,
+    def __init__(self, model: torch.nn.Module, optimizer: torch.optim.Optimizer, *, tasks: TrainingTasks,
                  grad_clip: float | None = None, scheduler=None) -> None:
         validate_grad_clip(grad_clip)
         self.model = model
         self.optimizer = optimizer
-        self.tasks = build_tasks(model.cfg) if tasks is None else tasks
+        self.tasks = tasks
         self.grad_clip = grad_clip
         self.scheduler = scheduler
         if scheduler is not None and scheduler.optimizer is not optimizer:

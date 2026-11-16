@@ -4,13 +4,12 @@ from .engine import StepResult, TrainingEngine, ValidationResult
 from .loop import TrainingIteration, training_iterations
 from .records.novel import NovelAlleles
 from .schedules import CosineSchedule
-from .setup import OptimizerFactory, build_training_engine
+from .setup import build_training_engine
 from .workflow import TrainingRun, run_training
 
 __all__ = [
     "CosineSchedule",
     "NovelAlleles",
-    "OptimizerFactory",
     "StepResult",
     "TrainingConfig",
     "TrainingEngine",

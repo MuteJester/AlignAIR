@@ -141,6 +141,16 @@ def test_the_record_policy_keeps_no_field_every_model_set_one_way():
         CurriculumStreamPolicy)}
 
 
+def test_the_training_engine_has_no_extension_hooks():
+    """Training steps AdamW under the run's ``CosineSchedule`` on the objective the model's components build; an
+    architecture plugs in through ``ModelComponents``, not through optimizer, scheduler or task factories."""
+    from alignair.train import engine, setup
+    assert not hasattr(setup, "OptimizerFactory") and "OptimizerFactory" not in alignair.train.__all__
+    assert list(inspect.signature(setup.build_training_engine).parameters) == ["model", "tasks", "device", "lr",
+                                                                               "grad_clip", "schedule"]
+    assert inspect.signature(engine.TrainingEngine).parameters["tasks"].default is inspect.Parameter.empty
+
+
 def test_reads_have_one_nucleotide_normaliser():
     """A read is normalised by one rule, for a file (dropped when mostly unusable) or a prediction (cut to the
     window); the generic, protein-era validation framework and its compatibility names are gone."""

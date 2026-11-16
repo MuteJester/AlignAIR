@@ -121,7 +121,7 @@ def _train(setup: ModelSetup, model, sources, config: TrainingConfig, policy: Cu
     novel_policy, novel_unavailable = _novel_policy(policy, sources, reference_set)
     source_policy, unselectable = _record_policy(novel_policy, sources)
     engine = build_training_engine(model, tasks=tasks, device=device, lr=config.lr, grad_clip=config.grad_clip,
-                                   scheduler_factory=schedule.build if schedule is not None else None)
+                                   schedule=schedule)
     # the order that matters: the RNG restore (a resume), then the validation batches, then the training stream
     start, resume_from = _restore_or_warm_start(model, engine, setup, config, schedule_metadata, device=device)
     train_args = _train_args(sources, config, policy, source_policy, unselectable, novel_unavailable, schedule_metadata,

@@ -1,11 +1,13 @@
-"""Training-state construction: placement, identity, ownership, and independent factories."""
+"""Training-state construction: placement, identity and ownership; the optimizer is AdamW and the scheduler the
+run's ``CosineSchedule``."""
 from types import SimpleNamespace
 
 import pytest
 import torch
 
 from alignair.errors import ConfigurationError, current_error_context
-from alignair.train import build_training_engine
+from alignair.train import CosineSchedule
+from alignair.train.setup import build_training_engine
 
 pytestmark = pytest.mark.component
 
@@ -47,27 +49,18 @@ def test_a_shared_parameter_is_optimized_once():
     assert [id(p) for p in engine.optimizer.param_groups[0]['params']] == [id(model.value), id(model.other)]
 
 
-def test_custom_optimizer_and_scheduler_keep_the_hand_calculated_update_order():
+def test_a_cosine_schedule_advances_once_after_the_update():
     model = ScalarModel()
-    def optimizer_factory(parameters, *, lr):
-        return torch.optim.SGD(parameters, lr=lr)
-    engine = build_training_engine(model, tasks=plain_tasks(), lr=1., optimizer_factory=optimizer_factory,
-        scheduler_factory=lambda opt: torch.optim.lr_scheduler.StepLR(opt, step_size=1, gamma=.5))
+    engine = build_training_engine(model, tasks=plain_tasks(), lr=1., schedule=CosineSchedule(total_steps=2, min_lr=0.))
     engine.step(({},{}))
-    assert model.value.item() == -1
-    assert engine.optimizer.param_groups[0]['lr'] == .5 and engine.scheduler.last_epoch == 1
+    assert engine.scheduler.last_epoch == 1 and engine.optimizer.param_groups[0]['lr'] == pytest.approx(.5)
 
 
 def test_placement_occurs_before_optimizer_creation_and_preserves_current_device_by_default():
     model = ScalarModel()
     old_parameter = model.value
-    observations = []
-    def optimizer(parameters, *, lr):
-        observations.append(tuple(p.device.type for p in parameters))
-        return torch.optim.SGD(parameters, lr=lr)
-    engine = build_training_engine(model, tasks=plain_tasks(), device='meta', optimizer_factory=optimizer)
+    engine = build_training_engine(model, tasks=plain_tasks(), device='meta')
     assert model.value is not old_parameter
-    assert observations == [('meta', 'meta')]
     assert model.offset.device.type == 'meta'
     assert engine.optimizer.param_groups[0]['params'][0] is model.value
     second = build_training_engine(model, tasks=plain_tasks())
@@ -79,15 +72,12 @@ def test_a_model_without_parameters_is_rejected():
         build_training_engine(torch.nn.Identity(), tasks=plain_tasks())
 
 
-def test_frozen_parameters_retain_default_order_but_custom_groups_may_omit_them():
+def test_frozen_parameters_retain_their_order_in_the_default_group():
     model = ScalarModel()
     model.register_parameter('frozen',torch.nn.Parameter(torch.tensor(4.),requires_grad=False))
     tasks = SimpleNamespace(loss=lambda output,*_: (output+1,{}))
     default = build_training_engine(model,tasks=tasks)
     assert default.optimizer.param_groups[0]['params'][2] is model.frozen
-    filtered = build_training_engine(model,tasks=tasks,optimizer_factory=
-        lambda parameters,lr: torch.optim.SGD([p for p in parameters if p.requires_grad],lr=lr))
-    assert len(filtered.optimizer.param_groups[0]['params']) == 2
 
 
 @pytest.mark.parametrize('lr',[0,-.1,float('nan'),float('inf'),True,'0.1'])
@@ -101,8 +91,7 @@ def test_bad_learning_rate_fails_before_module_placement(lr,monkeypatch):
     assert current_error_context()=={}
 
 
-@pytest.mark.parametrize('options', [{'grad_clip':False},{'optimizer_factory':None},{'scheduler_factory':False},
-                                     {'device':'unknown-device'}])
+@pytest.mark.parametrize('options', [{'grad_clip':False},{'schedule':'cosine'},{'device':'unknown-device'}])
 def test_bad_initialization_options_are_rejected(options):
     with pytest.raises(ConfigurationError):
         build_training_engine(ScalarModel(),tasks=plain_tasks(),**options)
@@ -127,47 +116,12 @@ def test_completely_frozen_state_is_rejected_before_optimizer_construction():
         build_training_engine(model,tasks=plain_tasks())
 
 
-@pytest.mark.parametrize('kind',['not_optimizer','missing','foreign','duplicate'])
-def test_custom_optimizer_cannot_silently_change_parameter_ownership(kind):
-    def make(parameters,*,lr):
-        if kind=='not_optimizer':return object()
-        if kind=='missing':parameters=parameters[1:]
-        elif kind=='foreign':parameters=(*parameters,torch.nn.Parameter(torch.tensor(1.)))
-        optimizer=torch.optim.SGD(parameters,lr=lr)
-        if kind=='duplicate':optimizer.param_groups[0]['params'].append(parameters[0])
-        return optimizer
-    with pytest.raises(ConfigurationError,match='optimizer'):
-        build_training_engine(ScalarModel(),tasks=plain_tasks(),optimizer_factory=make)
-
-
-@pytest.mark.parametrize('kind',['none','missing_step','wrong_optimizer','metric'])
-def test_custom_scheduler_must_bind_the_same_optimizer(kind):
-    def scheduler(optimizer):
-        if kind=='none':return None
-        if kind=='metric':return torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
-        if kind=='missing_step':return SimpleNamespace(optimizer=optimizer)
-        other=torch.optim.SGD(optimizer.param_groups[0]['params'],lr=.1)
-        return torch.optim.lr_scheduler.StepLR(other,1)
-    with pytest.raises(ConfigurationError,match='scheduler_factory'):
-        build_training_engine(ScalarModel(),tasks=plain_tasks(),scheduler_factory=scheduler)
-
-
-def test_default_tasks_are_selected_from_the_shared_model_configuration():
-    from alignair.core import AlignAIR,AlignAIRConfig
-    cfg=AlignAIRConfig(has_d=False,max_seq_length=128,embed_dim=4,trunk_channels=8)
-    model=AlignAIR(cfg)
-    engine=build_training_engine(model)
-    assert engine.tasks.config is model.cfg and engine.tasks.config == cfg
-
-
 def test_device_transfer_cannot_silently_split_shared_parameter_aliases():
     model = ScalarModel()
     model.sub = torch.nn.Module()
     model.sub.register_parameter('tied', model.value)
-    def forbidden(*args, **kwargs):
-        raise AssertionError('optimizer was created for split aliases')
     with pytest.raises(ConfigurationError, match='shared parameter aliases'):
-        build_training_engine(model, tasks=plain_tasks(), device='meta', optimizer_factory=forbidden)
+        build_training_engine(model, tasks=plain_tasks(), device='meta')
 
 
 def test_reused_submodules_keep_their_identity_during_placement():
@@ -178,12 +132,3 @@ def test_reused_submodules_keep_their_identity_during_placement():
     assert model.layer is model.alias
     assert len(engine.optimizer.param_groups[0]['params']) == 2
     assert all(parameter.device.type=='meta' for parameter in engine.optimizer.param_groups[0]['params'])
-
-
-@pytest.mark.parametrize('config',[None,{}])
-def test_custom_configurations_require_explicit_task_selection(config):
-    model=ScalarModel()
-    model.cfg=config
-    with pytest.raises(ConfigurationError,match='AlignAIRConfig'):
-        build_training_engine(model)
-    assert build_training_engine(model,tasks=plain_tasks()).model is model
