@@ -167,6 +167,15 @@ class Aligner:
         model.bind_reference(reference)
         return Aligner(model, reference, device=self.device, source_commit=self.source_commit)
 
+    def with_genotype(self, genotype: Mapping[str, Iterable[str]]) -> Aligner:
+        """An Aligner whose calls come from a donor's ``genotype`` (``{V|D|J: allele names}``, either case): this
+        Aligner bound once to the genotype's subset of its reference (``bound_to``); a gene it does not name keeps all
+        its alleles. This Aligner is unchanged. UnknownAlleleError for an allele the reference does not hold (give its
+        sequence in the reference), InputError for a gene left with no allele, ConfigurationError for a key that is
+        not V, D or J."""
+        from .genotype.bank import genotype_bank
+        return self.bound_to(genotype_bank(self.reference, genotype))
+
     # ------------------------------------------------------------------ properties
     @property
     def label_schema(self) -> dict:
