@@ -16,7 +16,7 @@ class ConfigurationError(AlignAIRError, ValueError):
 
 class DataContractError(AlignAIRError, RuntimeError):
     """A record, batch, or component violated its declared data contract."""
-    code = "ALIGNAIR_DATA_CONTRACT"
+    code = "ALIGNAIR_DATA_INVALID"
     category = "data"
 
 
@@ -28,18 +28,24 @@ class ModelError(AlignAIRError, ValueError):
 
 class ModelFormatError(ModelError):
     """Malformed or unsupported .alignair container."""
-    code = "ALIGNAIR_MODEL_FORMAT"
+    code = "ALIGNAIR_MODEL_FORMAT_INVALID"
+
+
+class ModelNotFoundError(ModelError):
+    """No such model: a model file that does not exist, an id no registry lists, a hub repo, revision or file that is
+    not there."""
+    code = "ALIGNAIR_MODEL_NOT_FOUND"
 
 
 class ArtifactIntegrityError(AlignAIRError, RuntimeError):
     """Artifact bytes or bound identities failed verification."""
-    code = "ALIGNAIR_ARTIFACT_INTEGRITY"
+    code = "ALIGNAIR_ARTIFACT_INTEGRITY_FAILED"
     category = "integrity"
 
 
 class ModelIntegrityError(ModelError, ArtifactIntegrityError):
     """A model section failed verification (also catchable as ValueError)."""
-    code = "ALIGNAIR_MODEL_INTEGRITY"
+    code = "ALIGNAIR_MODEL_INTEGRITY_FAILED"
 
 
 class ModelSectionError(ModelError, KeyError):
@@ -48,9 +54,24 @@ class ModelSectionError(ModelError, KeyError):
 
 
 class RegistryError(AlignAIRError, RuntimeError, ValueError):
-    """Model registry lookup or transfer failed; retry only when explicitly permitted."""
-    code = "ALIGNAIR_REGISTRY_UNAVAILABLE"
+    """Model registry lookup or transfer failed; ``retryable`` says whether a retry may succeed."""
+    code = "ALIGNAIR_REGISTRY_FAILED"
     category = "registry"
+
+
+class RegistryUnavailableError(RegistryError):
+    """A registry source or the hub could not be reached or read (the network, a server, a local registry that is not
+    there). Retryable unless the server answered that the request itself is wrong or the source is local."""
+    code = "ALIGNAIR_REGISTRY_UNAVAILABLE"
+
+    def __init__(self, message: str = "", *, retryable: bool = True, **kwargs):
+        super().__init__(message, retryable=retryable, **kwargs)
+
+
+class RegistryInvalidError(RegistryError):
+    """A registry's catalog cannot be used: not JSON, no models mapping, a malformed entry, a version that fails
+    validation."""
+    code = "ALIGNAIR_REGISTRY_INVALID"
 
 
 class TrainingError(AlignAIRError, RuntimeError):
@@ -72,7 +93,7 @@ class InferenceError(AlignAIRError, RuntimeError):
 
 class NumericalError(AlignAIRError, RuntimeError, ValueError):
     """Non-finite model outputs, losses, or gradients."""
-    code = "ALIGNAIR_NUMERICAL_FAILURE"
+    code = "ALIGNAIR_NUMERICS_INVALID"
     category = "numerical"
 
 

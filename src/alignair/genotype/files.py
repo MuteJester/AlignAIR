@@ -16,7 +16,7 @@ _GENE_NAME = re.compile(r"^(IG[HKL]|TR[ABGD])[VDJ]", re.IGNORECASE)
 
 class UnknownAlleleError(InputError):
     """A genotype names alleles the reference does not hold; their sequences belong in the reference."""
-    code = "ALIGNAIR_GENOTYPE_UNKNOWN_ALLELE"
+    code = "ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND"
 
 
 def check_segment_keys(keys, *, source: str = "the genotype", context=None) -> None:

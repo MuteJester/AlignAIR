@@ -24,7 +24,7 @@ _SQL_PARAM_CHUNK = 900
 
 class DuplicateMetadataIdError(InputError):
     """A metadata join key occurs more than once; neither row may silently win."""
-    code = "ALIGNAIR_DUPLICATE_METADATA_ID"
+    code = "ALIGNAIR_METADATA_ID_INVALID"
 
 
 def _duplicate(key):

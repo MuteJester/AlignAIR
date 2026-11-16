@@ -30,7 +30,7 @@ def test_read_metadata_on_garbage_errors(tmp_path):
     p.write_bytes(b"\x00\x01\x02\x03 not a real container " * 8)
     with pytest.raises(ModelFormatError) as caught:
         mf.read_metadata(str(p))
-    assert caught.value.code == "ALIGNAIR_MODEL_FORMAT"
+    assert caught.value.code == "ALIGNAIR_MODEL_FORMAT_INVALID"
     assert caught.value.context["path"] == str(p)
 
 

@@ -59,7 +59,7 @@ def main():
         try:
             model_file.read_metadata(broken)
         except ModelFormatError as exc:
-            assert exc.code == "ALIGNAIR_MODEL_FORMAT"
+            assert exc.code == "ALIGNAIR_MODEL_FORMAT_INVALID"
         else:
             raise AssertionError("corrupt installed-model input was accepted")
         parsed = build_parser().parse_args(["doctor"])

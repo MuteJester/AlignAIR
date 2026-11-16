@@ -10,14 +10,13 @@ from alignair.errors import ConfigurationError, NumericalError, TrainingError
 
 class TrainingConfigError(ConfigurationError, TrainingError):
     """A training request is invalid (bad hyperparameters / config / reference). Raised *before* the
-    full model is allocated so misuse fails fast with an actionable message."""
-    code = "ALIGNAIR_TRAINING_CONFIG"
+    full model is allocated so misuse fails fast with an actionable message. Its code is a configuration error's."""
 
 
 class NonFiniteTrainingError(TrainingError, NumericalError):
     """Loss or a gradient became NaN/Inf — training is aborted with a per-task diagnostic rather than
     continuing to corrupt the weights."""
-    code = "ALIGNAIR_TRAINING_NONFINITE"
+    code = "ALIGNAIR_TRAINING_NUMERICS_INVALID"
 
 
 def validate_grad_clip(grad_clip) -> None:

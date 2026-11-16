@@ -30,8 +30,9 @@ _HF = "https://huggingface.co"
 
 
 class OfflineError(RegistryError):
-    """Raised when a fetch is attempted while offline."""
-    code = "ALIGNAIR_OFFLINE"
+    """A fetch was needed while offline: the model is not available from the cache. Not retryable: the same call
+    fails the same way until offline mode is off."""
+    code = "ALIGNAIR_MODEL_UNAVAILABLE"
 
 
 def config_dir() -> str:

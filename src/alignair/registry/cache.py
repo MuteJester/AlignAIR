@@ -20,7 +20,7 @@ from . import sources as registry_sources
 
 class DownloadIntegrityError(ArtifactIntegrityError):
     """A downloaded artifact failed SHA256 verification."""
-    code = "ALIGNAIR_DOWNLOAD_INTEGRITY"
+    code = "ALIGNAIR_DOWNLOAD_INTEGRITY_FAILED"
 
 
 def cache_root() -> Path:

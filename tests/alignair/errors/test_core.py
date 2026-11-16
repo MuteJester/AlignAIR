@@ -168,4 +168,4 @@ def test_a_padding_failure_is_a_data_contract_error_not_a_training_one():
     from alignair.errors import DataContractError, TrainingDataError
     with pytest.raises(DataContractError) as caught:
         pad_vectors([torch.zeros(5, dtype=torch.long)], width=3)
-    assert not isinstance(caught.value, TrainingDataError) and caught.value.code == "ALIGNAIR_DATA_CONTRACT"
+    assert not isinstance(caught.value, TrainingDataError) and caught.value.code == "ALIGNAIR_DATA_INVALID"

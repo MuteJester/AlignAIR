@@ -104,7 +104,7 @@ def test_a_training_step_rejects_non_finite_loss_or_gradient_before_optimizer(mo
     monkeypatch.setattr(opt, "step", optimizer_step)
     with pytest.raises(NonFiniteTrainingError, match="non-finite (loss|gradient)") as caught:
         TrainingEngine(m, opt, tasks=tasks).step(({}, {}), step=17)
-    assert caught.value.code == "ALIGNAIR_TRAINING_NONFINITE"
+    assert caught.value.code == "ALIGNAIR_TRAINING_NUMERICS_INVALID"
     assert caught.value.context["stage"] == ("training_gradient" if bad is None else "training_loss")
     assert caught.value.context["step"] == 17
     assert calls == []
