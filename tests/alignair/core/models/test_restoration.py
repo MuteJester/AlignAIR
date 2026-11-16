@@ -15,7 +15,7 @@ def _reference(has_d=True):
     genes = {"V": {"V1": "ATGTGTAAACCC", "V2": "ATGTGCAAACCC", "V3": "ATGTGTTTTCCC"}, "J": {"J1": "TGGAAA", "J2": "TGGTTT"}}
     if has_d:
         genes["D"] = {"D1": "TACGG", "D2": "ACGTT"}
-    return ReferenceSet.from_genotype(genes)
+    return ReferenceSet.from_alleles(genes)
 
 
 def _config(has_d=True):

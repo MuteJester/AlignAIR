@@ -39,7 +39,7 @@ def test_a_novel_v_of_the_first_locus_lands_inside_a_two_locus_bank():
     v = base.gene("V")
     sequence = v.sequences[0]
     novel = sequence[:100] + ("A" if sequence[100] != "A" else "C") + sequence[101:]
-    extended = base.extend(annotate(ReferenceSet.from_genotype({"V": {"IGHVF1-G1*99": novel}, "J": {}}), known=base))
+    extended = base.extend(annotate(ReferenceSet.from_alleles({"V": {"IGHVF1-G1*99": novel}, "J": {}}), known=base))
     inputs = extension_inputs(base, extended, gene_frames(extended), "v")
     order = inputs["bank_order_v"]
     assert torch.equal(order[:198], torch.arange(198)) and int(order[198]) == 366 and int(order[199]) == 198

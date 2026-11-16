@@ -17,7 +17,7 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def artifact(tmp_path):
-    reference = ReferenceSet.from_genotype({'V': {'V2': 'ATGTGTAAA', 'V1': 'ATGTGTTTT'},
+    reference = ReferenceSet.from_alleles({'V': {'V2': 'ATGTGTAAA', 'V1': 'ATGTGTTTT'},
                                             'D': {'D1': 'TAC'}, 'J': {'J1': 'TGGAAA'}})
     reference.gene('V').anchors = {'V2': 3, 'V1': 3}
     reference.gene('J').anchors = {'J1': 0}

@@ -19,7 +19,7 @@ def test_predict_streams_with_the_genotypes_bank(tmp_path, monkeypatch):
     model.write_bytes(b"model fixture")
     genotype = tmp_path / "donor.json"
     genotype.write_text(json.dumps({"v": ["V*01"], "j": ["J*01"]}))
-    reference = ReferenceSet.from_genotype({"V": {"V*01": "ACGTAC", "V*02": "ACGAAC"}, "D": {"D*01": "GGGCCC"},
+    reference = ReferenceSet.from_alleles({"V": {"V*01": "ACGTAC", "V*02": "ACGAAC"}, "D": {"D*01": "GGGCCC"},
                                             "J": {"J*01": "TTTGGA", "J*02": "TTAGGA"}})
     banks, streamed = [], []
     loaded = SimpleNamespace(reference=reference,

@@ -52,7 +52,7 @@ def _another_reference():
     subset = reference.subset({"V": reference.gene("V").names[:10]})
     v = subset.gene("V")
     novel = ("A" if v.sequences[0][0] != "A" else "C") + v.sequences[0][1:]
-    return ReferenceSet.from_genotype(
+    return ReferenceSet.from_alleles(
         {"V": {**dict(zip(v.names, v.sequences)), "IGHV-novel*01": novel},
          "D": dict(zip(subset.gene("D").names, subset.gene("D").sequences)),
          "J": dict(zip(subset.gene("J").names, subset.gene("J").sequences))})

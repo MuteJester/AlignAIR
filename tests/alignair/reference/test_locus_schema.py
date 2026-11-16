@@ -15,26 +15,26 @@ def _loci(reference):
 
 
 def test_a_single_locus_genotype_gets_its_locus_schema():
-    reference = ReferenceSet.from_genotype({"V": {"IGKV1-5*01": "ACGT", "IGKV3-20*01": "ACGG"},
+    reference = ReferenceSet.from_alleles({"V": {"IGKV1-5*01": "ACGT", "IGKV3-20*01": "ACGG"},
                                             "J": {"IGKJ1*01": "TTTT"}})
     assert _loci(reference) == [("IGK", "BCR_LIGHT_KAPPA", False, {"V": (0, 2), "J": (0, 1)})]
 
 
 def test_alleles_without_a_locus_name_join_the_one_the_others_name():
-    reference = ReferenceSet.from_genotype({"V": {"IGHV1-2*02": "ACGTACGTACGT", "NOVEL-V*01": "TTTTGGGGCCCC"},
+    reference = ReferenceSet.from_alleles({"V": {"IGHV1-2*02": "ACGTACGTACGT", "NOVEL-V*01": "TTTTGGGGCCCC"},
                                             "D": {"IGHD3-10*01": "GGGGTTTTAAAA"}, "J": {"IGHJ6*02": "CCCCAAAATTTT"}})
     assert _loci(reference) == [("IGH", "BCR_HEAVY", True, {"V": (0, 2), "D": (0, 1), "J": (0, 1)})]
 
 
 def test_a_genotype_naming_no_locus_has_none_unless_given_one():
     genes = {"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}}
-    assert ReferenceSet.from_genotype(genes).loci == []
-    assert _loci(ReferenceSet.from_genotype(genes, locus="TRB")) == [
+    assert ReferenceSet.from_alleles(genes).loci == []
+    assert _loci(ReferenceSet.from_alleles(genes, locus="TRB")) == [
         ("TRB", "TCR_BETA", False, {"V": (0, 1), "J": (0, 1)})]
 
 
 def test_an_interleaved_two_locus_genotype_is_grouped_by_locus():
-    reference = ReferenceSet.from_genotype({"V": {"IGKV1*01": "ACGT", "IGLV1*01": "ACGA", "IGKV2*01": "ACGG"},
+    reference = ReferenceSet.from_alleles({"V": {"IGKV1*01": "ACGT", "IGLV1*01": "ACGA", "IGKV2*01": "ACGG"},
                                             "J": {"IGLJ1*01": "TTTT", "IGKJ1*01": "TTTA"}})
     assert reference.gene("V").names == ["IGKV1*01", "IGKV2*01", "IGLV1*01"]
     assert reference.gene("J").names == ["IGKJ1*01", "IGLJ1*01"]
@@ -45,7 +45,7 @@ def test_an_interleaved_two_locus_genotype_is_grouped_by_locus():
 
 
 def test_a_multi_locus_genotype_with_an_unplaceable_allele_keeps_file_order_and_no_schema():
-    reference = ReferenceSet.from_genotype({"V": {"IGKV1*01": "ACGT", "IGLV1*01": "ACGA", "myV*01": "ACGG"},
+    reference = ReferenceSet.from_alleles({"V": {"IGKV1*01": "ACGT", "IGLV1*01": "ACGA", "myV*01": "ACGG"},
                                             "J": {"IGKJ1*01": "TTTT"}})
     assert reference.loci == [] and reference.gene("V").names == ["IGKV1*01", "IGLV1*01", "myV*01"]
 
@@ -70,7 +70,7 @@ def test_a_subset_keeps_the_locus_schema():
 
 
 def test_a_given_locus_is_upper_cased():
-    reference = ReferenceSet.from_genotype({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}}, locus="trb")
+    reference = ReferenceSet.from_alleles({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}}, locus="trb")
     assert reference.locus_names() == ("TRB",) and reference.loci[0].chain_type == "TCR_BETA"
 
 
@@ -121,8 +121,8 @@ def test_the_shared_alleles_round_trip_through_the_reference_json():
 
 
 def test_the_default_locus_is_the_references_one_locus_else_igh():
-    trb = ReferenceSet.from_genotype({"V": {"TRBV10-1*01": "ACGT"}, "J": {"TRBJ1-1*01": "TTTT"}})
-    unnamed = ReferenceSet.from_genotype({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}})
+    trb = ReferenceSet.from_alleles({"V": {"TRBV10-1*01": "ACGT"}, "J": {"TRBJ1-1*01": "TTTT"}})
+    unnamed = ReferenceSet.from_alleles({"v": {"myV1": "ACGT"}, "j": {"myJ1": "TTTT"}})
     assert (trb.default_locus, unnamed.default_locus) == ("TRB", "IGH")
 
 
@@ -133,5 +133,5 @@ def test_the_default_locus_is_the_references_one_locus_else_igh():
 def test_a_saved_reference_reloads_with_the_locus_schema_it_had(genes):
     """The stored schema is the schema: a reference saved with none reloads with none (its names are not re-read)."""
     from alignair.model_file.serialize import reference_from_json, reference_to_json
-    reference = ReferenceSet.from_genotype(genes)
+    reference = ReferenceSet.from_alleles(genes)
     assert reference_from_json(reference_to_json(reference)).locus_names() == reference.locus_names()

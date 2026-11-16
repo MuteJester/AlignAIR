@@ -96,7 +96,7 @@ def test_a_novel_alleles_record_form_round_trips():
 def test_annotate_gives_every_variant_its_bases_anchor_and_gap_columns(igh):
     v = igh.gene("V")
     variants = [variant for *_, variant in _draws(igh) if variant is not None]
-    genotype = ReferenceSet.from_genotype({"V": {a.name: a.sequence for a in variants}, "J": {}})
+    genotype = ReferenceSet.from_alleles({"V": {a.name: a.sequence for a in variants}, "J": {}})
 
     def columns(gapped):
         return [i for i, c in enumerate(gapped) if c == "."]

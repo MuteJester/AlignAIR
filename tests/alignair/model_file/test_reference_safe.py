@@ -52,7 +52,7 @@ def test_reference_fasta_hash_matches_canonical_fasta():
 
 
 def test_allele_order_hash_has_empty_D_for_light_chain():
-    ref = ReferenceSet.from_genotype({"V": {"IGKV1-1*01": "ACGT"}, "J": {"IGKJ1*01": "ACGT"}})
+    ref = ReferenceSet.from_alleles({"V": {"IGKV1-1*01": "ACGT"}, "J": {"IGKJ1*01": "ACGT"}})
     payload = json.dumps({"V": ["IGKV1-1*01"], "D": [], "J": ["IGKJ1*01"]},
                          separators=(",", ":"), ensure_ascii=False)
     assert serialize.allele_order_sha256(ref) == hashlib.sha256(payload.encode("utf-8")).hexdigest()

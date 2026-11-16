@@ -33,22 +33,22 @@ def test_union_of_two_dataconfigs():
     assert len(set(rs.gene("V").names)) == len(rs.gene("V").names)
 
 
-def test_from_genotype_heavy_and_novel():
+def test_from_alleles_heavy_and_novel():
     # a genotype with a known-subset plus a NOVEL allele the model never trained on
     genes = {
         "V": {"IGHV1-2*02": "ACGTACGTACGT", "NOVEL-V*01": "TTTTGGGGCCCC"},
         "D": {"IGHD3-10*01": "GGGGTTTTAAAA"},
         "J": {"IGHJ6*02": "CCCCAAAATTTT"},
     }
-    rs = ReferenceSet.from_genotype(genes)
+    rs = ReferenceSet.from_alleles(genes)
     assert rs.has_d is True
     assert rs.gene("V").names == ["IGHV1-2*02", "NOVEL-V*01"]
     assert rs.gene("V").index["NOVEL-V*01"] == 1
     assert rs.gene("V").sequences[1] == "TTTTGGGGCCCC"
 
 
-def test_from_genotype_light_no_d():
-    rs = ReferenceSet.from_genotype({"v": {"IGKV1*01": "ACGT"}, "j": {"IGKJ1*01": "TTTT"}})
+def test_from_alleles_light_no_d():
+    rs = ReferenceSet.from_alleles({"v": {"IGKV1*01": "ACGT"}, "j": {"IGKJ1*01": "TTTT"}})
     assert rs.has_d is False
     assert set(rs.genes) == {"V", "J"}
 
@@ -83,8 +83,8 @@ def test_subset_preserves_the_gapped_forms():
     assert sub.gene("V").gapped == {n: rs.gene("V").gapped[n] for n in keepV}
 
 
-def test_from_genotype_with_anchors():
-    rs = ReferenceSet.from_genotype(
+def test_from_alleles_with_anchors():
+    rs = ReferenceSet.from_alleles(
         {"v": {"IGHV1-2*02": "ACGT"}, "j": {"IGHJ6*02": "TTTT"}},
         anchors={"V": {"IGHV1-2*02": 288}},
     )
@@ -95,7 +95,7 @@ def test_from_genotype_with_anchors():
 def test_a_subset_keeps_the_references_allele_order():
     """The bank's row order is the reference's whatever order (or set) the alleles are named in: the chip's scores
     depend on it."""
-    rs = ReferenceSet.from_genotype({"V": {"V*01": "ACGTAC", "V*02": "ACGAAC", "V*03": "ACCTAC", "V*04": "TCGTAC"},
+    rs = ReferenceSet.from_alleles({"V": {"V*01": "ACGTAC", "V*02": "ACGAAC", "V*03": "ACCTAC", "V*04": "TCGTAC"},
                                      "J": {"J*01": "TTTGGA"}})
     sub = rs.subset({"V": ["V*04", "V*02", "V*02"]})
     assert sub.gene("V").names == ["V*02", "V*04"]

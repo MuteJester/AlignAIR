@@ -22,7 +22,7 @@ def test_load_genotype_json_and_yaml(tmp_path):
 def test_the_bank_refuses_a_genotype_naming_alleles_the_reference_lacks():
     from alignair.genotype import genotype_bank
     from alignair.reference.reference_set import ReferenceSet
-    reference = ReferenceSet.from_genotype({"V": {"IGHV1-2*01": "ACGT", "IGHV3-23*01": "ACGG"},
+    reference = ReferenceSet.from_alleles({"V": {"IGHV1-2*01": "ACGT", "IGHV3-23*01": "ACGG"},
                                             "J": {"IGHJ4*02": "TTTT"}})
     with pytest.raises(UnknownAlleleError, match="NOT-A-REAL-ALLELE") as caught:
         genotype_bank(reference, {"v": {"IGHV1-2*01", "NOT-A-REAL-ALLELE"}})

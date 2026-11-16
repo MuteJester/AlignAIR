@@ -48,7 +48,7 @@ def test_an_allele_the_read_matches_better_than_the_call_becomes_the_call(monkey
     i, novel = next((i, v) for i, row in enumerate(rows) if (v := _variant(row, reference)) is not None)
     base = rows[i]["v_call"].split(",")[0]
     NOVEL = base.split("*")[0] + "*99"
-    bound = reference.extend(ReferenceSet.from_genotype({"V": {NOVEL: novel}, "J": {}}))
+    bound = reference.extend(ReferenceSet.from_alleles({"V": {NOVEL: novel}, "J": {}}))
     aligner = Aligner.from_pretrained(str(TEST_CHIP), reference=bound, device="cpu")
     bound = aligner.reference
     index = bound.gene("V").index

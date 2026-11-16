@@ -32,7 +32,7 @@ def test_a_trb_reference_bound_to_an_igh_model_keeps_its_locus_and_warns(igh):
 def test_a_reference_of_the_models_own_locus_binds_without_a_warning(igh):
     v = igh.gene("V")
     novel = v.sequences[0][:100] + ("A" if v.sequences[0][100] != "A" else "C") + v.sequences[0][101:]
-    user = ReferenceSet.from_genotype({"V": {v.names[0]: v.sequences[0], "IGHVF1-G1*99": novel},
+    user = ReferenceSet.from_alleles({"V": {v.names[0]: v.sequences[0], "IGHVF1-G1*99": novel},
                                        "D": {"IGHD1-1*01": "GGTACAACTGGAACGAC"}, "J": {"IGHJ4*02": igh.gene("J").sequences[3]}})
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -48,7 +48,7 @@ def test_a_trd_reference_whose_trav_dv_names_show_tra_binds_to_a_trd_model_witho
 
 def test_a_reference_whose_names_show_no_locus_takes_the_models_without_a_warning(igh):
     v = igh.gene("V")
-    user = ReferenceSet.from_genotype({"V": {"MYV1*01": v.sequences[0]}, "D": {"MYD1*01": "GGTACAACTGGAACGAC"},
+    user = ReferenceSet.from_alleles({"V": {"MYV1*01": v.sequences[0]}, "D": {"MYD1*01": "GGTACAACTGGAACGAC"},
                                        "J": {"MYJ1*01": igh.gene("J").sequences[3]}})
     with warnings.catch_warnings():
         warnings.simplefilter("error")
@@ -61,7 +61,7 @@ def test_the_records_of_a_trb_reference_on_an_igh_model_say_trb():
     aligner = Aligner.from_pretrained(str(TEST_CHIP), device="cpu")
     ref = aligner.reference
     renamed = {g: {n.replace("IGH", "TRB"): s for n, s in zip(ref.gene(g).names, ref.gene(g).sequences)} for g in "VDJ"}
-    trb = ReferenceSet.from_genotype(renamed)
+    trb = ReferenceSet.from_alleles(renamed)
     read = "".join(s for s in (ref.gene("V").sequences[5], "GGGAAA", ref.gene("D").sequences[2], "CCT",
                                ref.gene("J").sequences[3]))
     with pytest.warns(LocusMismatchWarning):

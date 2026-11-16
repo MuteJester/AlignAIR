@@ -28,7 +28,7 @@ def _toy_known():
 
 
 def _users(v, j=None, d=True):
-    return ReferenceSet.from_genotype({"V": v, **({"D": {"IGHD1-1*01": "GGGCCC"}} if d else {}),
+    return ReferenceSet.from_alleles({"V": v, **({"D": {"IGHD1-1*01": "GGGCCC"}} if d else {}),
                                        "J": j or {"IGHJ1*01": "TTTGGAA"}})
 
 
@@ -74,7 +74,7 @@ def test_an_allele_without_a_same_length_neighbour_stays_without_gaps_or_anchor(
 
 def test_a_supplied_anchor_and_gapped_form_are_never_overwritten(known):
     v = known.gene("V")
-    user = ReferenceSet.from_genotype({"V": {v.names[0]: v.sequences[0]}, "J": {}}, anchors={"V": {v.names[0]: 5}})
+    user = ReferenceSet.from_alleles({"V": {v.names[0]: v.sequences[0]}, "J": {}}, anchors={"V": {v.names[0]: 5}})
     done = annotate(user, known)
     assert done.gene("V").anchors[v.names[0]] == 5
     assert _evidence(done, "V", v.names[0]) == AnchorEvidence("supplied", "supplied")
@@ -84,7 +84,7 @@ def test_an_allele_the_known_reference_holds_takes_its_gapped_form_and_anchor(kn
     v = known.gene("V")
     v0, s = v.names[0], v.sequences[0]
     for name in (v0, "IGHV1-NOVEL*01"):
-        done = annotate(ReferenceSet.from_genotype({"V": {name: s}, "J": {}}), known)
+        done = annotate(ReferenceSet.from_alleles({"V": {name: s}, "J": {}}), known)
         assert done.gene("V").gapped[name] == v.gapped[v0] and done.gene("V").anchors[name] == 288
         assert _evidence(done, "V", name) == AnchorEvidence("known_allele", "inferred", None, "IGHVF1-G1*01")
 
@@ -92,30 +92,30 @@ def test_an_allele_the_known_reference_holds_takes_its_gapped_form_and_anchor(kn
 def test_the_known_allele_wins_over_a_disagreeing_motif():
     cow = ReferenceSet.from_dataconfigs(gd.COW_TCRA_IMGT)
     j = cow.gene("J")
-    user = ReferenceSet.from_genotype({"V": {}, "J": {"TRAJ10*01": j.sequences[j.index["TRAJ10*01"]]}})
+    user = ReferenceSet.from_alleles({"V": {}, "J": {"TRAJ10*01": j.sequences[j.index["TRAJ10*01"]]}})
     assert annotate(user, cow).gene("J").anchors["TRAJ10*01"] == 5
     assert annotate(user).gene("J").anchors["TRAJ10*01"] == 29
 
 
 def test_a_gapped_v_is_anchored_from_its_imgt_gaps(known):
     v = known.gene("V")
-    gapped = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": _snp(v.sequences[0])}, "J": {}}),
+    gapped = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": _snp(v.sequences[0])}, "J": {}}),
                       known).gene("V").gapped["IGHV1-NOVEL*01"]
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": gapped}, "J": {}}))
+    done = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": gapped}, "J": {}}))
     assert done.gene("V").anchors["IGHV1-NOVEL*01"] == 288
     assert _evidence(done, "V", "IGHV1-NOVEL*01").method == "imgt_gapped_104"
 
 
 def test_a_j_is_anchored_from_its_unique_motif(known):
     j = known.gene("J")
-    done = annotate(ReferenceSet.from_genotype({"V": {}, "J": {"IGHJ1*91": j.sequences[0]}}))
+    done = annotate(ReferenceSet.from_alleles({"V": {}, "J": {"IGHJ1*91": j.sequences[0]}}))
     assert done.gene("J").anchors["IGHJ1*91"] == 18
     assert _evidence(done, "J", "IGHJ1*91").method == "unique_j_fwgxg"
 
 
 def test_a_j_with_two_motifs_is_ambiguous_and_unanchored(known):
     js = known.gene("J").sequences[0]
-    done = annotate(ReferenceSet.from_genotype({"V": {}, "J": {"IGHJ1*91": js[:18] + "TGGGGCAAAGGC" + js[18:]}}),
+    done = annotate(ReferenceSet.from_alleles({"V": {}, "J": {"IGHJ1*91": js[:18] + "TGGGGCAAAGGC" + js[18:]}}),
                     known)
     assert not done.gene("J").anchors
     assert _evidence(done, "J", "IGHJ1*91").status == "ambiguous"
@@ -128,11 +128,11 @@ def test_a_v_without_its_cys_is_anchored_at_its_imgt_position_gapped_or_not(know
     v = known.gene("V")
     g = v.gapped[v.names[0]]
     gapped = g[:309] + "TGG" + g[312:]
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": gapped}, "J": {}}), known)
+    done = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": gapped}, "J": {}}), known)
     assert done.gene("V").anchors["IGHV1-NOVEL*01"] == 288
     evidence = _evidence(done, "V", "IGHV1-NOVEL*01")
     assert (evidence.method, evidence.status) == ("imgt_position_104", "inferred") and "TGG" in evidence.detail
-    ungapped = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": gapped.replace(".", "")}, "J": {}}), known)
+    ungapped = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": gapped.replace(".", "")}, "J": {}}), known)
     assert ungapped.gene("V").anchors["IGHV1-NOVEL*01"] == 288
     report = anchor_report(done)
     assert report.complete() and report.noncanonical == {"V": ("IGHV1-NOVEL*01",)}
@@ -145,14 +145,14 @@ def test_a_v_gapped_off_imgt_numbering_stays_unanchored(known):
     v = known.gene("V")
     g = v.gapped[v.names[0]]
     shifted = g[:300] + "..." + g[300:-3]
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": shifted}, "J": {}}))
+    done = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": shifted}, "J": {}}))
     assert not done.gene("V").anchors
     assert _evidence(done, "V", "IGHV1-NOVEL*01").status == "invalid"
 
 
 def test_an_ungapped_snp_variant_takes_its_nearest_alleles_gaps_and_anchor(known):
     snp = _snp(known.gene("V").sequences[0])
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": snp}, "J": {}}), known)
+    done = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": snp}, "J": {}}), known)
     gapped = done.gene("V").gapped["IGHV1-NOVEL*01"]
     assert len(gapped) == 322 and gapped.count(".") == 21 and gapped.replace(".", "") == snp
     assert done.gene("V").anchors["IGHV1-NOVEL*01"] == 288
@@ -164,7 +164,7 @@ def test_an_indel_variant_stays_unanchored_until_genairr_gaps_it(known):
     """GenAIRR's G6 (gap an ungapped V by its nearest gapped template) will give this allele its gapped form and
     anchor 285; until then it is reported unresolved. When G6 lands, expect them here."""
     s = known.gene("V").sequences[0]
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": s[:250] + s[253:]}, "J": {}}), known)
+    done = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": s[:250] + s[253:]}, "J": {}}), known)
     assert not done.gene("V").gapped and not done.gene("V").anchors
     evidence = _evidence(done, "V", "IGHV1-NOVEL*01")
     assert (evidence.method, evidence.status) == ("unresolved", "unresolved")
@@ -173,7 +173,7 @@ def test_an_indel_variant_stays_unanchored_until_genairr_gaps_it(known):
 def test_the_report_counts_anchors_and_names_the_alleles_without(known):
     v, j = known.gene("V"), known.gene("J")
     s, js = v.sequences[0], j.sequences[0]
-    user = ReferenceSet.from_genotype({"V": {v.names[0]: s, "IGHVF1-G1*91": _snp(s), "IGHVF1-G1*92": s[:250] + s[253:]},
+    user = ReferenceSet.from_alleles({"V": {v.names[0]: s, "IGHVF1-G1*91": _snp(s), "IGHVF1-G1*92": s[:250] + s[253:]},
                                        "J": {j.names[0]: js, "IGHJ1*91": js[:18] + "TGGGGCAAAGGC" + js[18:]}})
     report = anchor_report(annotate(user, known))
     assert report.anchored == {"V": 2, "J": 1} and report.total == {"V": 3, "J": 2}
@@ -184,7 +184,7 @@ def test_the_report_counts_anchors_and_names_the_alleles_without(known):
 
 def test_annotate_keeps_order_loci_provenance_and_d_and_leaves_its_input_untouched(known):
     v = known.gene("V")
-    user = ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": _snp(v.sequences[0]), v.names[1]: v.sequences[1]},
+    user = ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": _snp(v.sequences[0]), v.names[1]: v.sequences[1]},
                                        "D": {"IGHD1-1*01": "GGGCCC"}, "J": {}})
     before = user.to_serializable()
     done = annotate(user, known)
@@ -199,11 +199,11 @@ def test_annotate_keeps_order_loci_provenance_and_d_and_leaves_its_input_untouch
 
 def test_the_summary_names_five_alleles_then_how_many_more(known):
     s = known.gene("V").sequences[0]
-    user = ReferenceSet.from_genotype({"V": {f"IGHVF1-G1*9{i}": s[:250] + s[253 + i:] for i in range(7)}, "J": {}})
+    user = ReferenceSet.from_alleles({"V": {f"IGHVF1-G1*9{i}": s[:250] + s[253 + i:] for i in range(7)}, "J": {}})
     summary = anchor_report(annotate(user, known)).summary()
     assert summary.startswith("V 0/7, J 0/0 anchored; no anchor: IGHVF1-G1*90 (unresolved), ")
     assert summary.endswith("IGHVF1-G1*94 (unresolved), and 2 more")
-    complete = anchor_report(annotate(ReferenceSet.from_genotype({"V": {"IGHVF1-G1*01": s}, "J": {}}), known))
+    complete = anchor_report(annotate(ReferenceSet.from_alleles({"V": {"IGHVF1-G1*01": s}, "J": {}}), known))
     assert complete.complete() and complete.summary() == "V 1/1, J 0/0 anchored"
 
 
@@ -226,7 +226,7 @@ def test_a_reference_bound_to_a_two_locus_model_takes_its_loci_in_its_order():
     has no allele of; an allele the model holds takes its locus, a novel one its name's."""
     igk_igl = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
     v, j = igk_igl.gene("V"), igk_igl.gene("J")
-    user = ReferenceSet.from_genotype({"V": {"IGLV9-99*01": _snp(v.sequences[200], 50), v.names[0]: v.sequences[0]},
+    user = ReferenceSet.from_alleles({"V": {"IGLV9-99*01": _snp(v.sequences[200], 50), v.names[0]: v.sequences[0]},
                                        "J": {j.names[0]: j.sequences[0]}})
     bound = annotate(user, igk_igl)
     assert bound.locus_names() == ("IGK", "IGL")
@@ -240,14 +240,14 @@ def test_an_allele_no_locus_of_a_two_locus_model_holds_is_refused():
     or none (the allele, which no locus of the model holds)."""
     from alignair.errors import ConfigurationError, InputError
     igk_igl = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
-    user = ReferenceSet.from_genotype({"V": {"TRBV9-99*01": "ACGT" * 70}, "J": {}})
+    user = ReferenceSet.from_alleles({"V": {"TRBV9-99*01": "ACGT" * 70}, "J": {}})
     with pytest.raises(ConfigurationError, match=r"alleles of TRB, a locus the model does not call"):
         annotate(user, igk_igl)
-    unnamed = ReferenceSet.from_genotype({"V": {"MYV9*01": "ACGT" * 70}, "J": {}})
+    unnamed = ReferenceSet.from_alleles({"V": {"MYV9*01": "ACGT" * 70}, "J": {}})
     with pytest.raises(InputError, match=r"MYV9\*01"):
         annotate(unnamed, igk_igl)
     trd = ReferenceSet.from_dataconfigs(gd.HUMAN_TCRD_IMGT)
-    novel = ReferenceSet.from_genotype({"V": {"TRAV14/DV4*99": "ACGT" * 70}, "J": {}})
+    novel = ReferenceSet.from_alleles({"V": {"TRAV14/DV4*99": "ACGT" * 70}, "J": {}})
     assert annotate(novel, trd).locus_names() == ("TRD",)
 
 
@@ -258,7 +258,7 @@ def test_a_known_allele_whose_gapped_form_is_not_its_sequence_lends_no_gaps():
     v = union.gene("V")
     name = "IGHV4-3GMG*04"
     assert v.gapped[name].replace(".", "") != v.sequences[v.index[name]]
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV4-3GMG*99": _snp(v.sequences[v.index[name]])}, "J": {}}),
+    done = annotate(ReferenceSet.from_alleles({"V": {"IGHV4-3GMG*99": _snp(v.sequences[v.index[name]])}, "J": {}}),
                     union)
     gapped = (done.gene("V").gapped or {}).get("IGHV4-3GMG*99")
     assert gapped is None or gapped.replace(".", "") == _snp(v.sequences[v.index[name]])
@@ -280,13 +280,13 @@ def test_a_v_that_takes_its_nearest_alleles_anchor_asks_genairr_nothing(known, m
     calls = []
     resolve = adapter.resolve_anchor
     monkeypatch.setattr(adapter, "resolve_anchor", lambda *a, **k: calls.append(a) or resolve(*a, **k))
-    done = annotate(ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": _snp(known.gene("V").sequences[0])}, "J": {}}),
+    done = annotate(ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": _snp(known.gene("V").sequences[0])}, "J": {}}),
                     known)
     assert done.gene("V").anchors["IGHV1-NOVEL*01"] == 288 and calls == []
 
 
 def test_annotate_shares_no_gene_or_locus_object_with_its_input(known):
-    user = ReferenceSet.from_genotype({"V": {"IGHV1-NOVEL*01": _snp(known.gene("V").sequences[0])},
+    user = ReferenceSet.from_alleles({"V": {"IGHV1-NOVEL*01": _snp(known.gene("V").sequences[0])},
                                        "D": {"IGHD1-1*01": "GGGCCC"}, "J": {}})
     done = annotate(user)
     assert done.gene("D") is not user.gene("D") and all(a is not b for a, b in zip(done.loci, user.loci))

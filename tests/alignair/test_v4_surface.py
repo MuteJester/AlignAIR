@@ -195,6 +195,15 @@ def test_prediction_has_one_entry_point():
     assert callable(Aligner.with_genotype)
 
 
+def test_a_genotype_is_allele_names_and_a_reference_is_built_from_alleles():
+    """"Genotype" names one thing, a donor's allele names (``with_genotype``, ``alignair genotype``): a reference built
+    from ``{gene: {allele name: sequence}}`` is ``ReferenceSet.from_alleles``."""
+    from alignair.reference import ReferenceSet
+    assert not hasattr(ReferenceSet, "from_genotype")
+    reference = ReferenceSet.from_alleles({"V": {"IGHV1-1*01": "ACGT" * 75}, "J": {"IGHJ1*01": "ACGTACGTAC"}})
+    assert reference.gene("V").names == ["IGHV1-1*01"] and reference.locus_names() == ("IGH",)
+
+
 def test_training_names_live_in_one_module_each():
     """No compatibility re-exports: the trainer re-exports neither the batch builder, the validator, the task metrics
     nor the GenAIRR identity; ``alignair.train`` does not re-export the runtime's evaluation mode, nor the gym the

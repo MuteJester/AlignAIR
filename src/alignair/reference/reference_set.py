@@ -32,7 +32,7 @@ class GeneReference:
 
 class ReferenceSet:
     """A germline reference: a ``GeneReference`` per gene, its loci and its sources. Build one from GenAIRR
-    dataconfigs (``from_dataconfigs``), a FASTA file (``from_fasta``), a genotype mapping (``from_genotype``) or its
+    dataconfigs (``from_dataconfigs``), a FASTA file (``from_fasta``), allele sequences (``from_alleles``) or its
     JSON form (``from_serializable``)."""
 
     def __init__(self, genes: dict[str, GeneReference], has_d: bool, loci: list[LocusInfo] | None = None,
@@ -158,12 +158,12 @@ class ReferenceSet:
         return cls(out, bool(data.get("has_d")), loci=loci, provenance=provenance)
 
     @classmethod
-    def from_genotype(cls, genes: dict[str, dict[str, str]],
-                      anchors: dict[str, dict[str, int]] | None = None, *,
-                      locus: str | None = None) -> ReferenceSet:
-        """Build a reference from a genotype mapping {gene_type: {allele_name: dna_seq}}.
+    def from_alleles(cls, genes: dict[str, dict[str, str]],
+                     anchors: dict[str, dict[str, int]] | None = None, *,
+                     locus: str | None = None) -> ReferenceSet:
+        """Build a reference from allele sequences, ``{gene: {allele_name: dna_seq}}`` (gene V, D or J, either case).
 
-        gene_type is V/J (+ D for heavy chains; omit D for light). ``anchors`` optionally supplies
+        V and J, plus D for a chain that has one (omit D for a light chain). ``anchors`` optionally supplies
         {gene: {allele_name: pos}} so alleles keep their junction anchor.
 
         The locus schema comes from ``locus`` when given (one locus over every allele), else from the allele names:
@@ -313,7 +313,7 @@ class ReferenceSet:
         (``_infer_segment``); an InputError names the alleles it cannot be read from, and those named twice with two
         sequences.
 
-        Like :meth:`from_genotype`, the result can be bound to a model or trained against."""
+        Like :meth:`from_alleles`, the result can be bound to a model or trained against."""
         genes: dict[str, dict[str, str]] = {"V": {}, "D": {}, "J": {}}
         name = None
         chunks: list[str] = []
@@ -351,7 +351,7 @@ class ReferenceSet:
         if twice:
             raise InputError(f"{path} names {len(twice)} alleles twice with two sequences: {', '.join(twice[:5])}",
                              context={"path": path, "alleles": twice}, hint="Give each allele one name.")
-        return cls.from_genotype({g: m for g, m in genes.items() if m})
+        return cls.from_alleles({g: m for g, m in genes.items() if m})
 
 
 # An IG/TR locus code and the segment letter after it, anywhere in an allele name (``_infer_segment``).

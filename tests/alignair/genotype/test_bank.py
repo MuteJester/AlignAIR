@@ -46,7 +46,7 @@ def test_a_genotype_bank_is_the_same_under_any_hash_seed():
     import sys
     code = ("from alignair.genotype.bank import genotype_bank; from alignair.reference.reference_set import "
             "ReferenceSet; names = [f'IGHV{i}-1*01' for i in range(30)]; "
-            "ref = ReferenceSet.from_genotype({'V': {n: 'ACGT' * 3 for n in names}, 'J': {'IGHJ1*01': 'TTGG'}}); "
+            "ref = ReferenceSet.from_alleles({'V': {n: 'ACGT' * 3 for n in names}, 'J': {'IGHJ1*01': 'TTGG'}}); "
             "print(','.join(genotype_bank(ref, {'v': set(names[::2])}).gene('V').names))")
     banks = {subprocess.run([sys.executable, "-c", code], env={**os.environ, "PYTHONHASHSEED": str(seed)},
                             capture_output=True, text=True, check=True).stdout.strip() for seed in range(4)}

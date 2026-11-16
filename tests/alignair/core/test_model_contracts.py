@@ -94,7 +94,7 @@ def test_a_core_without_bind_reference_is_bound_through_the_bank_vote_alone(scra
     from alignair.reference.reference_set import ReferenceSet
     register_architecture("test-echo-v1", ModelComponents(core=EchoCore, objective=_objective))
     model = AlignAIR(_config(architecture="test-echo-v1"))
-    reference = ReferenceSet.from_genotype({"V": {"IGHV1-1*01": "ACGTACGTACGTACGTACGT"},
+    reference = ReferenceSet.from_alleles({"V": {"IGHV1-1*01": "ACGTACGTACGTACGTACGT"},
                                             "D": {"IGHD1-1*01": "GGTACC"}, "J": {"IGHJ1*01": "TGGGGCCAGGGA"}})
     model.bind_reference(reference)
     assert not hasattr(model.core, "bind_reference") and model.bank_orientation.present.any()

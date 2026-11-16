@@ -12,7 +12,7 @@ pytestmark = pytest.mark.component
 
 
 def _setup(has_d=True):
-    reference = ReferenceSet.from_genotype({
+    reference = ReferenceSet.from_alleles({
         'V': {'V2': 'ATGTGTAAA', 'V1': 'ATGTGCAAA', 'V3': 'ATGTGTTTT'},
         'D': {'D1': 'TAC'}, 'J': {'J2': 'TGGAAA', 'J1': 'TGGTTT'},
     })

@@ -128,7 +128,7 @@ def batch_bank(reference: ReferenceSet, records) -> BatchBank | None:
     aliases = {gene: names for gene, names in aliases.items() if names}
     if not novel:
         return BatchBank(reference, reference, {}, aliases)
-    annotated = annotate(ReferenceSet.from_genotype({"V": {}, "J": {}, **genotype}), known=reference)
+    annotated = annotate(ReferenceSet.from_alleles({"V": {}, "J": {}, **genotype}), known=reference)
     wrong = [a.name for gene, rows in novel.items() for a in rows
              if (annotated.gene(gene).anchors or {}).get(a.name) != (reference.gene(gene).anchors or {}).get(a.base)
              or _columns((annotated.gene(gene).gapped or {}).get(a.name))

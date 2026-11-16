@@ -60,7 +60,7 @@ def heldout_reference(reference, donors) -> tuple:
             held = sequences[name]
             first = next(subject for sequence, subject in held if sequence == allele.sequence)
             mapping[(donor.subject_id, name)] = name if len(held) == 1 else f"{name}_{first}"
-    return reference.extend(ReferenceSet.from_genotype({"V": rows, "J": {}})), mapping
+    return reference.extend(ReferenceSet.from_alleles({"V": rows, "J": {}})), mapping
 
 
 def _empty() -> dict:
