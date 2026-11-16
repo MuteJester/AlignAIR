@@ -1,13 +1,10 @@
-"""User-facing façade for AlignAIR — load a trained model and run predictions (or train a custom
-model) in a few lines, without touching the internal config/pipeline machinery.
+"""User-facing façade for AlignAIR — load a trained model and run predictions in a few lines, without touching the
+internal config/pipeline machinery.
 
     from alignair import load_model, predict_sequences
     model, reference = load_model("model.alignair")
     records = predict_sequences(model, reference, ["CAGGTGCAGCTG..."])
     # records: AIRR-convention dicts (v_call/d_call/j_call, coordinates, CIGAR, productivity, ...)
-
-    from alignair import train_model
-    train_model(["HUMAN_IGH_OGRDB"], out_path="my_model.alignair", steps=100_000)
 """
 from __future__ import annotations
 
@@ -18,7 +15,7 @@ from .predict import PredictConfig
 from .predict import predict as _predict
 from .reference.reference_set import ReferenceSet
 
-__all__ = ["load_model", "predict_sequences", "train_model"]
+__all__ = ["load_model", "predict_sequences"]
 
 def load_model(checkpoint_path: str, *, reference: ReferenceSet | None = None,
                device: str = "cpu") -> tuple[AlignAIR, ReferenceSet]:
@@ -55,34 +52,3 @@ def predict_sequences(model: AlignAIR, reference: ReferenceSet, sequences: Seque
     pcfg = PredictConfig.for_model(model, reference, batch_size=batch_size, **predict_overrides)
     return _predict(model, sequences, reference, pcfg, device=device)
 
-
-def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str = "cpu",
-                **train_overrides) -> str:
-    """Train a new AlignAIR model on one or more GenAIRR dataconfigs and save a resumable checkpoint to ``out_path``.
-    ``train_overrides`` forwards to :func:`alignair.train.trainer.train` (e.g. ``lr=``, ``batch_size=``,
-    ``progresses=``, ``short_boost=``, ``resume_path=``). Like ``alignair train``, the curriculum's reads get library
-    flanks (``data.flanks.FlankPolicy``) unless ``flanks=`` says otherwise (None: bare reads)."""
-    from .core import prepare_model
-    from .data.flanks import FlankPolicy
-    from .genairr import resolve_dataconfigs
-    from .tasks import build_tasks
-    from .train.guards import validate_training_request
-    from .train.trainer import train as _train
-
-    dcs = resolve_dataconfigs(dataconfigs)
-    reference = ReferenceSet.from_dataconfigs(*dcs)
-    setup = prepare_model(reference)
-    cfg = setup.config
-    # validate the request BEFORE allocating the (potentially large) model
-    validate_training_request(steps=steps, batch_size=train_overrides.get("batch_size", 32),
-                              lr=train_overrides.get("lr", 3e-4), max_seq_length=cfg.max_seq_length,
-                              reference=reference, progresses=train_overrides.get("progresses", (0.3,)),
-                              grad_clip=train_overrides.get("grad_clip"))
-    model = setup.build_model()
-    tasks = train_overrides.get("tasks")
-    tasks = build_tasks(cfg) if tasks is None else tasks
-    train_overrides["tasks"] = tasks
-    train_overrides.setdefault("flanks", FlankPolicy())
-    _train(model, reference, dcs, cfg, steps=steps, device=device,
-           save_path=out_path, **train_overrides)
-    return out_path

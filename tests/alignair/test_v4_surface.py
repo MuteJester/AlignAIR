@@ -157,6 +157,14 @@ def test_training_has_no_study_schedule():
     assert {field.name for field in dataclasses.fields(TrainingRun)} == {"model_path", "best_model_path", "steps"}
 
 
+def test_training_has_one_entry_point():
+    """``run_training`` is the one way to train: ``train_model`` skipped its seeding and had defaults of its own."""
+    import alignair
+    from alignair import api
+    assert not hasattr(alignair, "train_model") and not hasattr(api, "train_model")
+    assert "train_model" not in alignair.__all__
+
+
 def test_training_names_live_in_one_module_each():
     """No compatibility re-exports: the trainer re-exports neither the batch builder, the validator, the task metrics
     nor the GenAIRR identity; ``alignair.train`` does not re-export the runtime's evaluation mode, nor the gym the

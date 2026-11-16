@@ -36,11 +36,13 @@ def _simulate_reads(dataconfig, n: int, seed: int = 7) -> list:
 
 
 def run(args) -> int:
-    from ..api import load_model, predict_sequences, train_model
+    from ..api import load_model, predict_sequences
     from ..core.runtime import resolve_device
     from ..genairr import resolve_dataconfig
     from ..io.airr import write_airr
     from ..reference.genes import model_genes
+    from ..train.config import TrainingConfig
+    from ..train.workflow import run_training
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     out = args.out or __import__("tempfile").mkdtemp(prefix="alignair_demo_")  # zero-arg `alignair demo`
     os.makedirs(out, exist_ok=True)
@@ -50,7 +52,9 @@ def run(args) -> int:
     dc = resolve_dataconfig(args.dataconfig)
 
     print(f"[demo] training a tiny model on {args.dataconfig} ({args.steps} steps, {device})...")
-    train_model([args.dataconfig], out_path=model_path, steps=args.steps, device=device)
+    # batch 32 keeps the demo's tiny budget; run_training seeds the run, so the same command trains the same model
+    run_training(TrainingConfig.from_genairr(args.dataconfig, steps=args.steps, batch_size=32, device=device),
+                 out_path=model_path)
 
     print("[demo] simulating reads + predicting (default reference)...")
     reads = _simulate_reads(dc, args.reads)

@@ -35,7 +35,7 @@ def test_training_config_presets_and_immutability():
 
 def test_public_surface_snapshot():
     for name in ("Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
-                 "resolve_device", "load_model", "predict_sequences", "train_model"):
+                 "resolve_device", "load_model", "predict_sequences"):
         assert name in alignair.__all__ and hasattr(alignair, name)
     for m in ("from_pretrained", "from_model", "predict", "predict_iter", "loci", "default_locus"):
         assert hasattr(Aligner, m)
