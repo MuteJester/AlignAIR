@@ -16,12 +16,12 @@ def test_prediction_has_one_genotype_mechanism_and_one_reader():
 
 
 @pytest.mark.parametrize("overrides", [{}, {"threshold": 0.3, "cap": 5, "airr": False}, {"loci": ("X",)}])
-def test_for_model_is_the_config_predict_sequences_builds(overrides, monkeypatch):
+def test_for_model_is_the_config_aligner_predict_builds(overrides, monkeypatch):
     from types import SimpleNamespace
-    from alignair import api
+    from alignair import aligner
     model = SimpleNamespace(cfg=SimpleNamespace(max_seq_length=320, has_d=False))
-    reference = SimpleNamespace(locus_names=lambda: ("IGK",))
+    reference = SimpleNamespace(locus_names=lambda: ("IGK",), default_locus="IGK")
     seen = []
-    monkeypatch.setattr(api, "_predict", lambda m, s, r, cfg, device: seen.append(cfg) or [])
-    api.predict_sequences(model, reference, ["ACGT"], device="cpu", batch_size=7, **overrides)
+    monkeypatch.setattr(aligner, "_predict", lambda m, s, r, cfg, device: seen.append(cfg) or [])
+    aligner.Aligner(model, reference, device="cpu").predict(["ACGT"], batch_size=7, **overrides)
     assert seen == [PredictConfig.for_model(model, reference, batch_size=7, **overrides)]

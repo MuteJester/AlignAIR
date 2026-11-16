@@ -1,5 +1,5 @@
-"""The inference surface: load a model (``Aligner.from_pretrained``) and predict, a thin, typed and registry-aware
-wrapper over ``alignair.api``.
+"""The inference surface: load a model (``Aligner.from_pretrained``) and predict, a typed and registry-aware wrapper
+over the prediction pipeline (``alignair.predict``).
 
     from alignair import Aligner
     # a catalog id (PENDING-V4-PUBLISH), a path, or id@version
@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING
 
 from .core.runtime import resolve_device
 from .errors import MissingDependencyError, ModelError
+from .predict import PredictConfig
+from .predict import predict as _predict
 from .reference.loci import FALLBACK_LOCUS
 
 if TYPE_CHECKING:
@@ -90,13 +92,13 @@ class Aligner:
         via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``). ``revision`` pins a
         HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
         ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU)."""
-        from .api import load_model
+        from .model_file import load_model
         from .registry import hf, resolve_model
         path = str(resolve_model(model, sources=list(registry) if registry is not None else None,
                                  offline=offline, token=token, revision=revision))
         dev = resolve_device(device)
-        m, ref = load_model(path, reference=reference, device=dev)
-        return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
+        loaded = load_model(path, reference=reference, device=dev)
+        return cls(loaded.model, loaded.reference, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
 
     def _assert_distributable(self) -> None:
         """Refuse to distribute a resumable checkpoint: those carry trusted **pickle** sections
@@ -194,18 +196,14 @@ class Aligner:
         return self.reference.default_locus
 
     # ------------------------------------------------------------------ inference
-    def predict(self, sequences: Sequence[str], *, batch_size: int | str = "auto",
-                genotype: Mapping[str, Iterable[str]] | None = None, airr: bool = True,
+    def predict(self, sequences: Sequence[str], *, batch_size: int | str = "auto", airr: bool = True,
                 **overrides) -> PredictionResult:
         """Eagerly align a list of nucleotide strings, returning a :class:`PredictionResult`.
-        ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{V|D|J: allele names}`` dict) is the
-        bank the calls come from: a subset of the bound reference."""
-        from .api import predict_sequences
+        ``batch_size="auto"`` picks a device-appropriate size. To call from a donor's genotype, predict with
+        :meth:`with_genotype`'s Aligner."""
         bs = auto_batch_size(self.device) if batch_size in (None, "auto") else int(batch_size)
-        if genotype is not None:
-            overrides["genotype"] = genotype
-        records = predict_sequences(self.model, self.reference, sequences, device=self.device,
-                                    batch_size=bs, airr=airr, **overrides)
+        cfg = PredictConfig.for_model(self.model, self.reference, batch_size=bs, airr=airr, **overrides)
+        records = _predict(self.model, sequences, self.reference, cfg, device=self.device)
         return PredictionResult(records, locus=self.default_locus)
 
     def predict_raw(self, sequences: Sequence[str], *, batch_size: int = 64) -> dict:
@@ -217,7 +215,6 @@ class Aligner:
         """
         import numpy as np
 
-        from .predict import PredictConfig
         from .predict.forward import run_model
         cfg = self.model.cfg
         batches = run_model(self.model, sequences, PredictConfig(max_seq_length=cfg.max_seq_length,

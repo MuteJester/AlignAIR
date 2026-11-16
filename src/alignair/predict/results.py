@@ -5,7 +5,7 @@ A gate sets a gene's status instead of removing its evidence: a read without a V
 head's class makes a D ``ABSENT`` (no D), ``ABSTAINED`` (a span too short to call: kept, without a call) or
 ``CALLED``. The call and the alignment stay on the result whatever the status; the reported views apply it:
 ``GeneResult.call_field``/``names``/``likelihoods`` are empty unless ``CALLED``, and ``placed`` is the alignment
-unless ``ABSENT``. ``light_record`` is a read's light record, the dict ``predict_sequences`` returns without the AIRR
+unless ``ABSENT``. ``light_record`` is a read's light record, the dict ``Aligner.predict`` returns without the AIRR
 assembly, with its keys in their order.
 """
 from __future__ import annotations

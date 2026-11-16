@@ -14,7 +14,7 @@ import pytest
 pytest.importorskip("GenAIRR")
 
 import torch  # noqa: E402
-from alignair import Aligner, api  # noqa: E402
+from alignair import Aligner, aligner  # noqa: E402
 from alignair.model_file import save_model  # noqa: E402
 from alignair.predict import forward, pipeline, stages  # noqa: E402
 from alignair.data import prepare_nucleotide_inputs  # noqa: E402
@@ -134,15 +134,15 @@ def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout, de
     assert out.airr_rows == Aligner.from_model(model, reference_set, device=device).predict(seqs, batch_size=64).records
 
 
-def test_predict_sequences_runs_the_product_pipeline():
-    # the equivalence tests compare the replay with predict_sequences: it must run the pipeline the replay runs
-    assert api._predict is pipeline.predict
+def test_aligner_predict_runs_the_product_pipeline():
+    # the equivalence tests compare the replay with Aligner.predict: it must run the pipeline the replay runs
+    assert aligner._predict is pipeline.predict
 
 
-def test_predict_config_is_the_one_predict_sequences_builds(small_model, monkeypatch):
+def test_predict_config_is_the_one_aligner_predict_builds(small_model, monkeypatch):
     model, reference_set = small_model
     seen = []
-    monkeypatch.setattr(api, "_predict", lambda model, sequences, reference, cfg, device: seen.append(cfg) or [])
+    monkeypatch.setattr(aligner, "_predict", lambda model, sequences, reference, cfg, device: seen.append(cfg) or [])
     for overrides in ({}, {"threshold": 0.3, "cap": 5, "airr": False}, {"loci": ("X",)}):
         Aligner.from_model(model, reference_set, device="cpu").predict(["ACGT"], batch_size=7, **overrides).records
         assert predict_config(model, reference_set, batch_size=7, **overrides) == seen[-1]

@@ -1,4 +1,4 @@
-"""The rows ``predict_sequences`` returns keep their keys in today's order (a user who writes them with ``json.dumps``
+"""The rows ``Aligner.predict`` returns keep their keys in today's order (a user who writes them with ``json.dumps``
 or iterates them sees it): the light records, the AIRR rows, and the rows of reads whose D is short, against the key
 lists recorded at 38d72394 (``fixtures/test_chip_row_keys.json``). The golden check sorts keys, so only this test
 catches a reorder."""

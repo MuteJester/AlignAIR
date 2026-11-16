@@ -8,7 +8,6 @@ import json
 
 import pytest
 
-from alignair import api
 from alignair.aligner import Aligner
 from alignair.cli.main import main
 from alignair.train.config import TrainingConfig
@@ -25,7 +24,6 @@ def _help(verb: str) -> str:
 
 
 def test_loading_takes_no_dataconfigs_or_trust_pickle():
-    assert set(inspect.signature(api.load_model).parameters) == {"checkpoint_path", "reference", "device"}
     assert {"dataconfigs", "trust_pickle"}.isdisjoint(inspect.signature(Aligner.from_pretrained).parameters)
     assert "trust_pickle" not in {field.name for field in dataclasses.fields(TrainingConfig)}
     assert "--dataconfig" not in _help("predict") and "--trust-pickle" not in _help("predict")

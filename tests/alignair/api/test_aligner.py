@@ -35,9 +35,9 @@ def test_training_config_presets_and_immutability():
 
 def test_public_surface_snapshot():
     for name in ("Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
-                 "resolve_device", "load_model", "predict_sequences"):
+                 "resolve_device"):
         assert name in alignair.__all__ and hasattr(alignair, name)
-    for m in ("from_pretrained", "from_model", "predict", "predict_iter", "loci", "default_locus"):
+    for m in ("from_pretrained", "from_model", "with_genotype", "predict", "predict_iter", "loci", "default_locus"):
         assert hasattr(Aligner, m)
 
 
@@ -52,9 +52,8 @@ def test_prediction_result_io(tmp_path):
     assert rows[0]["v_call"] == "IGHV1-1*01" and rows[0]["locus"] == "IGH"
 
 
-def test_aligner_predict_parity_with_functional_api():
+def test_aligner_predict_returns_a_result_labelled_with_the_models_locus():
     from pathlib import Path
-    from alignair.api import load_model, predict_sequences
     igh_model = str(Path(__file__).resolve().parents[1] / "fixtures" / "test_chip.alignair")   # the trained chip
     seqs = ["CAGGTGCAGCTGGTGCAGTCTGGGGCTGAGGTGAAGAAGCCTGGGGCCTCAGTGAAGGTCTCCTGCAAGGCT",
             "GAGGTGCAGCTGGTGGAGTCTGGGGGAGGCTTGGTACAGCCTGGGGGGTCCCTGAGACTCTCCTGTGCAGCC"]
@@ -62,9 +61,7 @@ def test_aligner_predict_parity_with_functional_api():
     result = aligner.predict(seqs, batch_size="auto")
     assert isinstance(result, PredictionResult) and len(result) == 2
     assert result.locus == "IGH"                           # single-locus model labels itself
-    model, ref = load_model(igh_model, device="cpu")
-    baseline = predict_sequences(model, ref, seqs, device="cpu")
-    assert [r["v_call"] for r in result] == [r["v_call"] for r in baseline]   # identical path
+    assert all(record["v_call"] for record in result)
 
 
 @pytest.mark.slow

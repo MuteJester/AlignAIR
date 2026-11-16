@@ -179,11 +179,20 @@ def test_training_has_no_study_schedule():
 
 def test_training_has_one_entry_point():
     """``run_training`` is the one way to train: ``train_model`` skipped its seeding and had defaults of its own."""
-    from alignair import api
     from alignair.train import trainer
-    assert not hasattr(alignair, "train_model") and not hasattr(api, "train_model")
-    assert "train_model" not in alignair.__all__
+    assert not hasattr(alignair, "train_model") and "train_model" not in alignair.__all__
     assert not hasattr(trainer, "train")             # its private _train takes the run's config and record policy
+
+
+def test_prediction_has_one_entry_point():
+    """``Aligner`` is the one way to load and predict: the functional façade (``load_model``, ``predict_sequences``)
+    had defaults of its own, and a genotype binds once (``with_genotype``), not on every ``predict`` call (which
+    rebound the shared model)."""
+    from alignair import Aligner
+    assert _gone("alignair.api")
+    assert not any(hasattr(alignair, name) or name in alignair.__all__ for name in ("load_model", "predict_sequences"))
+    assert "genotype" not in inspect.signature(Aligner.predict).parameters
+    assert callable(Aligner.with_genotype)
 
 
 def test_training_names_live_in_one_module_each():

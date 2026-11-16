@@ -37,7 +37,7 @@ class PredictConfig:
 
     @classmethod
     def for_model(cls, model: AlignAIR, reference: ReferenceSet, *, batch_size: int, **overrides) -> PredictConfig:
-        """The configuration ``alignair.predict_sequences`` predicts ``model`` with: its window and D presence,
+        """The configuration ``Aligner.predict`` predicts ``model`` with: its window and D presence,
         ``batch_size``, and the reference's ordered loci (None for a schema-less reference) unless ``overrides`` names
         them."""
         overrides.setdefault("loci", reference.locus_names() or None)

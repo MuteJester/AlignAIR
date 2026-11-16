@@ -1,5 +1,7 @@
 """Direct Hugging Face repo loading — spec parsing, routing, offline behavior, provenance
 commit, and save_pretrained. Network is never touched (offline / mocked)."""
+from types import SimpleNamespace
+
 import pytest
 
 from alignair.registry import hf
@@ -81,7 +83,8 @@ def test_aligner_from_pretrained_captures_hf_commit(monkeypatch, tmp_path):
     snap.write_text("x")
     monkeypatch.setattr("alignair.registry.hf.download_from_hub", lambda spec, **k: snap)
     monkeypatch.setattr(aln, "resolve_device", lambda d: "cpu")
-    monkeypatch.setattr("alignair.api.load_model", lambda *a, **k: ("MODEL", "REF"))
+    monkeypatch.setattr("alignair.model_file.load_model",
+                        lambda *a, **k: SimpleNamespace(model="MODEL", reference="REF"))
     a = aln.Aligner.from_pretrained("hf://org/repo", device="cpu")
     assert a.model_path == str(snap) and a.source_commit == "cafebabe99"
 

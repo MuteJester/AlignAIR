@@ -5,7 +5,6 @@ import pytest
 import torch
 
 from alignair import Aligner
-from alignair.api import predict_sequences
 from alignair.core.orientation import orient
 from alignair.errors import InputError
 
@@ -36,15 +35,13 @@ def reference():
                            default_locus='IGH')
 
 
-@pytest.mark.parametrize('entry', ['functional', 'object', 'stream'])
+@pytest.mark.parametrize('entry', ['object', 'stream'])
 @pytest.mark.parametrize('value', ['ACGT', b'ACGT', {'sequence': 'ACGT'}, None, ['AC', None], ['AC', 123], ['AC', {'sequence': 'AC'}]])
 def test_public_entries_reject_malformed_batches_without_running_model(entry, value):
     model = ObservedModel()
     aligner = Aligner(model, reference())
     with pytest.raises(InputError):
-        if entry == 'functional':
-            predict_sequences(model, aligner.reference, value, airr=False)
-        elif entry == 'object':
+        if entry == 'object':
             aligner.predict(value, airr=False)
         else:
             list(aligner.predict_iter(value, airr=False))
