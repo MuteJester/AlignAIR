@@ -10,7 +10,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from ..errors import MissingDependencyError, RegistryError
+from ..errors import MissingDependencyError, ModelNotFoundError, RegistryError, RegistryUnavailableError
+from .sources import OfflineError, retryable_status
 
 DEFAULT_FILENAME = "model.alignair"
 
@@ -69,7 +70,9 @@ def resolved_commit(path: str | Path) -> str | None:
 def download_from_hub(spec: str, *, revision: str | None = None, filename: str | None = None,
                       token: str | None = None, offline: bool = False) -> Path:
     """Download a model's ``.alignair`` from a HF repo and return the local cached path. ``offline`` uses
-    the local cache directly (no network; a cache miss raises a clear error). Requires ``huggingface_hub``."""
+    the local cache directly (no network; a cache miss is an OfflineError). A repo, revision or file the hub does not
+    have is a ModelNotFoundError; a hub that cannot be reached a retryable RegistryUnavailableError. Requires
+    ``huggingface_hub``."""
     repo_id, spec_rev, spec_file = parse_hf_spec(spec)
     rev = revision or spec_rev
     fname = filename or spec_file or DEFAULT_FILENAME
@@ -92,11 +95,27 @@ def download_from_hub(spec: str, *, revision: str | None = None, filename: str |
         path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=hf_token(token),
                                library_name="alignair", library_version=__version__)
     except Exception as e:                               # normalize hub errors to an actionable message
-        hint = " (offline: not in the local HF cache)" if offline else ""
-        raise RegistryError(
-            f"could not fetch {fname!r} from Hugging Face repo {repo_id!r} "
-            f"(revision {rev or 'main'}){hint}",
-            context={"stage": "model_download", "repo_id": repo_id, "revision": rev,
-                     "filename": fname, "offline": offline},
-            hint="Check repository access, revision, connectivity, and local cache availability.") from e
+        raise _hub_failure(e, repo_id=repo_id, revision=rev, filename=fname, offline=offline) from e
     return Path(path)
+
+
+def _hub_failure(error: Exception, *, repo_id: str, revision: str | None, filename: str,
+                 offline: bool) -> RegistryError | ModelNotFoundError:
+    """The error a failed hub download raises (``download_from_hub``), classified by what the hub said; the hub's own
+    offline mode (``HF_HUB_OFFLINE``) counts as offline."""
+    from huggingface_hub import constants, utils
+    offline = offline or bool(getattr(constants, "HF_HUB_OFFLINE", False))
+    message = f"could not fetch {filename!r} from Hugging Face repo {repo_id!r} (revision {revision or 'main'})"
+    context = {"stage": "model_download", "repo_id": repo_id, "revision": revision, "filename": filename,
+               "offline": offline}
+    hint = "Check repository access, revision, connectivity, and local cache availability."
+    if offline:
+        return OfflineError(f"{message} (offline: not in the local HF cache)", context=context, hint=hint)
+    if isinstance(error, getattr(utils, "LocalEntryNotFoundError", ())):     # the hub unreachable, the file not cached
+        return RegistryUnavailableError(message, context=context, hint=hint)
+    missing = tuple(getattr(utils, name) for name in ("RepositoryNotFoundError", "RevisionNotFoundError",
+                                                      "EntryNotFoundError") if hasattr(utils, name))
+    if isinstance(error, missing):
+        return ModelNotFoundError(message, context=context, hint=hint)
+    status = getattr(getattr(error, "response", None), "status_code", None)
+    return RegistryUnavailableError(message, context=context, hint=hint, retryable=retryable_status(status))

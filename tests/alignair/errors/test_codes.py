@@ -215,6 +215,66 @@ def test_a_full_disk_during_a_download_stays_an_os_error(tmp_path, monkeypatch):
     assert not isinstance(caught.value, AlignAIRError) and caught.value.errno == 28
 
 
+def _hub_error(name: str):
+    from huggingface_hub import utils
+    cls = getattr(utils, name)
+    error = cls.__new__(cls)
+    Exception.__init__(error, f"{name} from the hub")
+    return error
+
+
+@pytest.mark.parametrize("raised, expected, retryable", [
+    (lambda: _hub_error("RepositoryNotFoundError"), ModelNotFoundError, False),
+    (lambda: _hub_error("RevisionNotFoundError"), ModelNotFoundError, False),
+    (lambda: _hub_error("EntryNotFoundError"), ModelNotFoundError, False),
+    (lambda: _hub_error("LocalEntryNotFoundError"), RegistryUnavailableError, True),
+    (lambda: ConnectionError("hub unreachable"), RegistryUnavailableError, True),
+], ids=["no repo", "no revision", "no file", "unreachable, not cached", "connection"])
+def test_a_hub_download_failure_is_not_found_or_unavailable(monkeypatch, raised, expected, retryable):
+    pytest.importorskip("huggingface_hub")
+    import huggingface_hub
+
+    from alignair.registry import hf
+    error = raised()
+
+    def download(**kwargs):
+        raise error
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    with pytest.raises(expected) as caught:
+        hf.download_from_hub("hf://org/repo")
+    assert type(caught.value) is expected and caught.value.retryable is retryable
+    assert caught.value.__cause__ is error and caught.value.context["repo_id"] == "org/repo"
+
+
+def test_a_hub_model_not_cached_offline_is_model_unavailable(tmp_path, monkeypatch):
+    pytest.importorskip("huggingface_hub")
+    from huggingface_hub import constants
+
+    from alignair.registry import hf
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path / "empty-hub"))
+    with pytest.raises(OfflineError) as caught:
+        hf.download_from_hub("hf://org/absent-repo", offline=True)
+    assert caught.value.context["offline"] is True and caught.value.retryable is False
+    assert isinstance(caught.value.__cause__, FileNotFoundError)
+
+
+def test_a_hub_model_not_cached_under_the_hubs_own_offline_mode_is_model_unavailable(monkeypatch):
+    pytest.importorskip("huggingface_hub")
+    import huggingface_hub
+    from huggingface_hub import constants
+
+    from alignair.registry import hf
+    error = _hub_error("LocalEntryNotFoundError")
+
+    def download(**kwargs):
+        raise error
+    monkeypatch.setattr(constants, "HF_HUB_OFFLINE", True)
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    with pytest.raises(OfflineError) as caught:
+        hf.download_from_hub("hf://org/repo")
+    assert caught.value.retryable is False and caught.value.context["offline"] is True
+
+
 def test_the_cli_reports_a_missing_model_as_not_found(tmp_path, capsys):
     from alignair.cli.main import main
     reads = tmp_path / "reads.fasta"
