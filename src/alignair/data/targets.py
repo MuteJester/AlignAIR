@@ -33,7 +33,7 @@ def d_presence_class(alignment: RecordAlignment, width: int | None = None) -> in
     its observed germline length: from the first to the last aligned germline base, so an internal deletion counts
     and an edge gap or an insertion does not. An inverted D is a D like any other (its alignment spans the
     reverse-complemented germline). ``UNSCORABLE`` when the record places a D in the read but its alignment cannot be
-    mapped. Only a model with a D presence head needs it."""
+    mapped. Every model with a D trains its D presence head on it."""
     with error_context(stage="build_targets", record_id=alignment.record.get("sequence_id")):
         if "d" not in alignment.query_spans:
             return ABSENT
@@ -55,8 +55,8 @@ def read_anchors(record: dict, reference_set) -> dict[str, int | None]:
 
 def anchor_positions(alignment: RecordAlignment, reference_set) -> dict[str, int | None]:
     """``{"v": ..., "j": ...}``: the read position of each anchor codon's first base, None when the read does not show
-    it, ``UNSCORABLE`` when the segment's alignment cannot be mapped (``_anchor``). Only a model with anchor heads needs
-    them, so ``build_targets`` does not compute them."""
+    it, ``UNSCORABLE`` when the segment's alignment cannot be mapped (``_anchor``). The batch adapter computes them
+    beside ``build_targets``, for the anchor heads."""
     with error_context(stage="build_targets", record_id=alignment.record.get("sequence_id")):
         return {gene: _anchor(alignment, gene, reference_set) for gene in ANCHOR_GENES}
 

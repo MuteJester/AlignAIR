@@ -2,8 +2,10 @@
 
 Checks each ``registry.json`` version against its artifact: size + SHA256 match; the artifact is
 **pickle-free** (no ``dataconfig/*`` / ``train_state``) and carries ``reference_json``; the card's
-``model_id``/``model_version`` match the registry; both reference hashes (allele order and FASTA) recompute from the
-embedded ``reference_json``; and versions are unique + ``latest`` resolves. Returns a list of problems ([]==ok).
+``model_id``/``model_version`` match the registry, and its reference hashes the registry's; both reference hashes
+(allele order and FASTA) recompute from the embedded ``reference_json``; every companion file (the card, the
+manifest) is present with the registry's SHA256; and ``latest`` names a listed version. Returns a list of problems
+([]==ok).
 """
 from __future__ import annotations
 

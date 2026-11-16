@@ -5,10 +5,10 @@
 1. a supplied anchor or gapped form, never changed;
 2. the allele of ``known`` (the reference a model came with) with the same sequence, the same name first: its anchor
    and V gapped form, so a sequence the model trained on keeps the model's anchor;
-3. GenAIRR's resolver (``alignair.genairr.anchors.resolve_anchor``: a V from its IMGT gaps, a J from a unique
-   F/W-G-X-G motif under its locus), whose position counts when it is inferred or verified;
-4. for a V still without a gapped form: the gaps and anchor of the nearest same-length allele of ``known`` (at most
-   ``MAX_DIFFERENT`` of its bases differ); a V of another length stays without, reported.
+3. for a V still without a gapped form: the gaps and anchor of the nearest same-length allele of ``known`` (at most
+   ``MAX_DIFFERENT`` of its bases differ); a V of another length stays without, reported;
+4. GenAIRR's resolver (``alignair.genairr.anchors.resolve_anchor``: a V from its IMGT gaps, a J from a unique
+   F/W-G-X-G motif under its locus), whose position counts when it is inferred or verified.
 
 Each V and J allele records how its anchor was found (``AlleleInfo.anchor_evidence``: supplied, known_allele,
 nearest_known_allele or the resolver's method; ambiguous, unresolved or invalid when none was). A D is left as given.

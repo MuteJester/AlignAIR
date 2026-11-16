@@ -31,8 +31,8 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     """Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.
 
     With ``config.data_workers`` > 0, worker processes are spawned: call this under an
-    ``if __name__ == "__main__":`` guard. On an accelerator, the step, ``on_iteration`` and a study
-    evaluator must not draw from the CPU random generators: such a draw raises TrainingError, and
+    ``if __name__ == "__main__":`` guard. On an accelerator, the step and ``on_iteration`` must not draw from
+    the CPU random generators: such a draw raises TrainingError, and
     ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``record_source`` replaces the
     GenAIRR provider of the run's curriculum records (see ``trainer.train``).
     """

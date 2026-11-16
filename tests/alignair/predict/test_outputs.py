@@ -75,6 +75,15 @@ def test_a_models_outputs_are_read_in_full(model):
     assert back.keys() == batch.keys() and all(back[key] is batch[key] for key in batch)
 
 
+def test_outputs_without_the_optional_ones_are_given_back_without_them(chip_batch):
+    """A core registered through ``core.components`` may give no allele log posteriors, anchor logits or D presence
+    logits: the outputs read without them give back exactly the keys they were read from."""
+    optional = {*ANCHOR_LOGITS.values(), D_PRESENCE_LOGITS, *(f"{gene}_log_posterior" for gene in ("v", "d", "j"))}
+    batch = {key: value for key, value in chip_batch.items() if key not in optional}
+    back = ModelOutputs.from_network(batch, ("v", "d", "j")).network_dict()
+    assert back.keys() == batch.keys() and all(back[key] is batch[key] for key in batch)
+
+
 def test_a_missing_head_output_is_refused(chip_batch):
     for key in ("v_allele", "indel_count"):
         with pytest.raises(InferenceError, match=key):

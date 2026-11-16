@@ -21,13 +21,16 @@ The header is one JSON object. Its ``sections`` maps each section's name to its 
 
 The header's other keys describe the model (``model_file.io.save_model``): the format versions, the model's settings,
 its training, its reference's digests, its provenance and the card's descriptive fields. A model file's sections are
-``config`` (JSON), ``weights`` (safetensors), ``reference`` (FASTA), ``reference_json`` (the full reference, JSON) and,
-in a training checkpoint only, ``dataconfig/<i>`` and ``train_state`` (Python pickle).
+``config`` (JSON), ``weights`` (safetensors), ``reference`` (FASTA) and ``reference_json`` (the full reference, JSON),
+and two kinds of Python pickle: ``dataconfig/<i>``, each training dataconfig, unless the file was saved with
+``include_trusted_pickle=False`` (a publish artifact has none), and ``train_state`` (the optimizer, scheduler and
+random state) when it was saved with any of them, as a training checkpoint is.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import struct
 
 from ..errors import (
@@ -96,7 +99,7 @@ def decompress(blob: bytes, codec: str) -> bytes:
     raise ModelFormatError(f"unknown codec {codec!r}", context={"codec": codec})
 
 
-def is_alignair_file(path: str) -> bool:
+def is_alignair_file(path: str | os.PathLike[str]) -> bool:
     """Whether ``path`` starts with the ``.alignair`` format tag."""
     try:
         with open(path, "rb") as f:
@@ -120,10 +123,9 @@ def _not_a_model_file(path, head: bytes) -> ModelError:
                             hint="An empty or truncated file is an interrupted download: fetch the model again.")
 
 
-def read_header(path: str) -> dict:
-    """The model file's JSON header. A ModelError for a missing file and for a file that is not a model file (an
-    AlignAIR 3 checkpoint named as such), a ModelFormatError for a damaged or newer one."""
-    import os
+def read_header(path: str | os.PathLike[str]) -> dict:
+    """The model file's JSON header. A ModelError for a missing file; a ModelFormatError for a file that is not a model
+    file (an AlignAIR 3 checkpoint named as such), a damaged one or a newer one."""
 
     if not os.path.isfile(path):
         raise ModelError(f"no such model file: {path}", context={"path": str(path)},
@@ -153,7 +155,7 @@ def read_header(path: str) -> dict:
     return header
 
 
-def write_container(path: str, header: dict, sections: dict) -> None:
+def write_container(path: str | os.PathLike[str], header: dict, sections: dict) -> None:
     """Write ``sections`` (name -> ``(payload, codec)``) under ``header`` at ``path``; the header's ``_formats`` gives
     each section's ``format`` and is not written (no key starting with ``_`` is)."""
     formats = header.get("_formats", {})
@@ -177,13 +179,13 @@ def write_container(path: str, header: dict, sections: dict) -> None:
             f.write(blob)
 
 
-def read_section(path: str, name: str) -> bytes:
+def read_section(path: str | os.PathLike[str], name: str) -> bytes:
     """Section ``name``'s payload, both checksums and its length checked."""
     with error_context(path=path, section=name, stage="model_section"):
         return _read_section(path, name)
 
 
-def _read_section(path: str, name: str) -> bytes:
+def _read_section(path: str | os.PathLike[str], name: str) -> bytes:
     header = read_header(path)
     if name not in header["sections"]:
         raise ModelSectionError(f"section {name!r} not in model file")

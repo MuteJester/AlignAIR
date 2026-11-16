@@ -1,7 +1,6 @@
 """The model's construction contracts: architecture registration refuses what it cannot hold, a component factory
-must give a torch module, the model takes only an AlignAIRConfig, an empty read is refused when the configuration
-says so, and a model without an orientation head or bank vote runs its core on the read as given and counts the alleles of
-the reference it is bound to."""
+must give a torch module, the model takes only an AlignAIRConfig, an all-padding read reaches the core, every model
+orients its reads, and a core that reads no reference (no ``bind_reference``) is bound through the bank vote alone."""
 import pytest
 import torch
 from torch import nn
@@ -89,6 +88,16 @@ def test_every_model_orients_its_reads(scratch):
     out = model({"tokenized_sequence": torch.randint(1, 5, (2, 32))})
     assert out["orientation_logits"].shape == (2, 4) and out["orientation"].shape == (2,)
     assert out["start_mask"].all() and not out["end_mask"][:, 0].any()
+
+
+def test_a_core_without_bind_reference_is_bound_through_the_bank_vote_alone(scratch):
+    from alignair.reference.reference_set import ReferenceSet
+    register_architecture("test-echo-v1", ModelComponents(core=EchoCore, objective=_objective))
+    model = AlignAIR(_config(architecture="test-echo-v1"))
+    reference = ReferenceSet.from_genotype({"V": {"IGHV1-1*01": "ACGTACGTACGTACGTACGT"},
+                                            "D": {"IGHD1-1*01": "GGTACC"}, "J": {"IGHJ1*01": "TGGGGCCAGGGA"}})
+    model.bind_reference(reference)
+    assert not hasattr(model.core, "bind_reference") and model.bank_orientation.present.any()
 
 
 def test_the_configurations_own_checks_name_their_field():

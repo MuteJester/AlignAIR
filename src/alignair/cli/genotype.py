@@ -10,6 +10,7 @@ import csv
 
 from ..errors import ConfigurationError, InputError, report_error
 from ..genotype.infer import EXPLAIN, MIN_READS
+from ..reference.loci import FALLBACK_LOCUS
 
 
 def register(sub) -> None:
@@ -17,7 +18,7 @@ def register(sub) -> None:
                                         "--infer-genotype), written as an AIRR GenotypeSet")
     p.add_argument("--airr", required=True, help="an AIRR rearrangement TSV with a v_call column (any tool's)")
     p.add_argument("--out", required=True, help="the AIRR GenotypeSet JSON to write")
-    p.add_argument("--locus", default="IGH", help="the genotype's locus (default %(default)s)")
+    p.add_argument("--locus", default=FALLBACK_LOCUS, help="the genotype's locus (default %(default)s)")
     p.add_argument("--explain", type=float, default=EXPLAIN,
                    help="the share of a gene's single-allele rows its alleles explain (default %(default)s)")
     p.add_argument("--min-reads", type=int, default=MIN_READS,

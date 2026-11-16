@@ -6,8 +6,9 @@ and its boundary expectations (``{g}_allele``, ``{g}_start``, ``{g}_end``, requi
 parser gives boundary logits for every gene it scores (a light chain's D included); the read gives its mutation rate
 and indel count (required), and, from the heads a model may have, its orientation, the slot masks, the V and J anchor
 logits and the D presence logits; a model bound to a reference of several loci gives each read's locus index
-(``read_locus``, ``refine.locus``). A required key missing, a key outside these, or one key of a pair without the other
-(a gene's start and end logits, the V and J anchor logits, anchor logits and the start mask) is an InferenceError.
+(``read_locus``, ``network.refine.locus``). A required key missing, a key outside these, or one key of a pair without
+the other (a gene's start and end logits, the V and J anchor logits, anchor logits and the start mask) is an
+InferenceError.
 The arrays are kept as given; ``network_dict`` gives the network's dict back.
 """
 from __future__ import annotations

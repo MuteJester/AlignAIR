@@ -300,3 +300,16 @@ def test_source_metadata_alignment_supports_generators_mappings_and_disabled_met
         {'cell_id': 'one'}, {}, {}, {}, {'cell_id': 'one'}]
     assert lookup_metadata_rows(None, None) is None
     assert lookup_metadata_rows({}, []) == []
+
+
+def test_a_metadata_index_storage_failure_is_reported_as_the_index_s_not_the_metadata_file_s(tmp_path, monkeypatch):
+    """The index's own failure (a full temporary disk, an SQLite error) reaches the caller as the index's
+    ``OperationIOError`` ("cannot store metadata rows"), not as "cannot read metadata input", which would send the user
+    to a metadata file that is fine."""
+    def full_disk(self, items):
+        raise OperationIOError("cannot store metadata rows", context={"stage": "metadata_index"})
+    monkeypatch.setattr(MetadataIndex, "put_many", full_disk)
+    m = tmp_path / "annot.csv"
+    m.write_text("contig_id,barcode\nc1,AAAA-1\n")
+    with pytest.raises(OperationIOError, match="cannot store metadata rows"):
+        build_metadata_index(str(m), id_column="contig_id")

@@ -2,12 +2,12 @@
 reference.
 
 Produces IMGT-gapped sequence_alignment, np1/np2, germline alignment, IMGT-frame positions,
-per-segment alignments, FWR/CDR regions, junction/CDR3 via the J anchor, and quality flags.
+per-segment alignments, FWR/CDR regions, the junction and CDR3 from the V and J anchors, and quality flags.
 Per-record ``try/except`` isolates edge cases (fall back to a bare row).
 
 A row starts from the read's light record (``predict.results.light_record``) and adds the assembly. A read takes its
 junction, CDR3, FWR4, frame, stop codon and productivity from its predicted V and J anchors (``ReadResult.junction``,
-over its V start and J end), in read coordinates; a read without anchors (a model built without anchor heads) has
+over its V start and J end), in read coordinates; a read without anchors (from a core without anchor heads) has
 none of them. The rest of the assembly is the same for both. Every field it reads is the read's typed field; a gene's
 placement is its ``placed`` alignment (none for an absent gene).
 """
@@ -153,16 +153,18 @@ def build_airr(reads: Sequence[ReadResult], reference: ReferenceSet, has_d: bool
     Expected data-edge exceptions become tagged failures; any other exception is a programming defect
     and is re-raised as :class:`AirrAssemblyError` with the record identifier. ``strict=True`` re-raises
     even the expected data failures (used to gate release fixtures / tests that must assemble cleanly). ``has_d``
-    says whether a read of a locus the reference does not describe is assembled with a D."""
+    says whether the model calls a D: without one no read is assembled with a D; with one, a read is assembled with
+    its locus's D, and a read of a locus the reference does not describe with a D."""
     germlines = GermlineMaps.of(reference)
-    # each read is assembled with its own locus's D: a reference of several loci may mix loci with and without one
+    # each read is assembled with its own locus's D (a reference of several loci may mix loci with and without one),
+    # and never with a D the model does not call
     locus_hasd = {info.locus: info.has_d for info in reference.loci}
     out = []
     for i, read in enumerate(reads):
         ident = f"record[{i}]"
         light = light_record(read)
         try:
-            row = _build_one(read, light, germlines, locus_hasd.get(read.locus, has_d))
+            row = _build_one(read, light, germlines, has_d and locus_hasd.get(read.locus, True))
             row.setdefault("airr_assembly_status", "complete")   # _build_one sets complete/partial
             out.append(row)
         except _EXPECTED_ASSEMBLY_ERRORS as e:

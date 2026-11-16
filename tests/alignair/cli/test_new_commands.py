@@ -18,6 +18,14 @@ def _run(register, argv, **defaults):
     return args.func(args)
 
 
+def test_doctor_reports_each_kernel_even_when_the_other_cannot_be_imported(monkeypatch):
+    """The two kernels are reported independently: one whose module cannot be imported does not hide the other."""
+    import sys
+    monkeypatch.setitem(sys.modules, "alignair.network.refine.v_rescore", None)      # its import now fails
+    info = doctor.diagnostics()
+    assert "derive_backend" in info and "vband_backend" not in info
+
+
 def test_doctor_reports_core_env_and_exits_zero(capsys):
     info = doctor.diagnostics()
     assert "alignair" in info and "python" in info and "torch" in info

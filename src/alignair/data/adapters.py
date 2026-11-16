@@ -117,6 +117,11 @@ class NucleotideBatchAdapter:
     augment_orientation: bool = True
     overflow: str = "prefix"
 
+    def __post_init__(self):
+        if not isinstance(self.augment_orientation, bool):
+            raise ConfigurationError("augment_orientation must be True or False",
+                                     context={"field": "augment_orientation"})
+
     def __call__(self, records) -> TrainingBatch:
         records = list(records)
         bank = batch_bank(self.reference, records)       # None unless a read comes from a novel allele

@@ -1,12 +1,10 @@
 """Shape-matched warm starts from another model's weights.
 
-A chip's weights do not depend on its reference (the alleles are an input, the bound bank), so a source of the
-same widths (``embed_dim``, ``trunk_channels``) transfers whole. A part whose shape differs (another width, or a
-gene the target does not have) keeps the target's fresh initialization. This is not a guarantee of architectural
+Every parameter and buffer whose name and shape match the source's is copied; the rest keep the target's fresh
+initialization. A chip's weights do not depend on its reference (the alleles are an input, the bound bank), so a
+source of the same widths (``embed_dim``, ``trunk_channels``) transfers whole; a part whose shape differs (another
+width, or a gene the target does not have) does not. A match of names and shapes is not a guarantee of architectural
 compatibility.
-
-Transfer is a shape-matched partial load: copy every parameter/buffer whose NAME **and** SHAPE match the
-source; leave the rest at the target's init. General across any source→target pair.
 """
 from __future__ import annotations
 

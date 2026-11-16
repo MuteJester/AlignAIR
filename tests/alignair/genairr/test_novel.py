@@ -43,7 +43,7 @@ def test_a_genairr_refusal_names_the_allele(igh):
     assert caught.value.context["allele"] == name
 
 
-def test_derive_variant_is_the_snp_generator_until_g3(igh):
+def test_derive_variant_is_the_snp_generator(igh):
     base = sorted(a for names in eligible_bases(igh).values() for a in names)[0]
     assert derive_variant(igh, base, substitutions=2, rng=random.Random(3)) == snp_variant(igh, base, 2,
                                                                                          random.Random(3))

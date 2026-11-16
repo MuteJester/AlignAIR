@@ -1,6 +1,7 @@
-"""Genotype files: ``{segment: [allele names]}`` (segments V, D, J, any case) as JSON or YAML, read and checked against
-a reference. A file that is not such a mapping (a FASTA, broken YAML or JSON, a list, a segment given one string) or one
-keyed by gene names is refused with a ConfigurationError whose hint gives the format."""
+"""Genotype files: ``{segment: [allele names]}`` (segments V, D, J, any case) as JSON or YAML, read and their keys
+checked; ``genotype.bank`` checks the names against a reference. A file that is not such a mapping (a FASTA, broken YAML
+or JSON, a list, a segment given one string) or one keyed by gene names is refused with a ConfigurationError whose hint
+gives the format."""
 from __future__ import annotations
 
 import re

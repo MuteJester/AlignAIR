@@ -49,10 +49,14 @@ def diagnostics() -> dict:
         info["device_auto"] = resolve_device("auto")
     except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass
-    try:    # the two kernels: each compiled (Cython) when built, else its pure-Python / torch fallback
-        from ..network.refine.v_rescore import VBAND_BACKEND
+    # the two kernels, each on its own: compiled (Cython) when built, else its pure-Python / torch fallback
+    try:
         from ..predict.germline.cigar import DERIVE_BACKEND
         info["derive_backend"] = DERIVE_BACKEND
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
+        pass
+    try:
+        from ..network.refine.v_rescore import VBAND_BACKEND
         info["vband_backend"] = VBAND_BACKEND
     except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass

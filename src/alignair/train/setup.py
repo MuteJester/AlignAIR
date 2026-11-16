@@ -1,4 +1,4 @@
-"""Assemble shared training state without selecting a source, checkpoint, or study policy."""
+"""Assemble shared training state (the model, its optimizer and tasks) without selecting a source or checkpoint."""
 from __future__ import annotations
 
 import math

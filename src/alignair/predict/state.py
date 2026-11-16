@@ -42,8 +42,8 @@ class Predictions:
     anchors: dict[str, np.ndarray] | None = None
     # [N] int: the D presence head's class (core.d_presence: absent, short, callable), which gates the D call
     d_presence: np.ndarray | None = None
-    # [N] int: the read's locus, an index into the reference's ``locus_names()`` (``refine.locus``); None for a model
-    # bound to one locus
+    # [N] int: the read's locus, an index into the reference's ``locus_names()`` (``network.refine.locus``); None for a
+    # model bound to one locus
     read_locus: np.ndarray | None = None
 
     def take(self, rows) -> Predictions:
@@ -53,7 +53,7 @@ class Predictions:
 
 @dataclass
 class Segments:
-    """De-padded, clipped, order-repaired integer segment coordinates in the read frame.
+    """Clipped, order-repaired integer segment coordinates in the read frame.
 
     All coordinates satisfy ``0 <= start <= end <= seq_len`` and the biological ordering
     ``v_end <= d_start <= d_end <= j_start <= j_end`` jointly (constrained projection, not a

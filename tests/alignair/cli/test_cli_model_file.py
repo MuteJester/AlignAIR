@@ -36,6 +36,36 @@ def test_models_info_prints_the_card_info_prints(tmp_path, capsys):
     assert "alleles:   V=198 D=33 J=7" in card and "allele order:" in card
 
 
+@pytest.mark.parametrize("dataconfig,has_d,expected", [
+    (gd.HUMAN_IGK_OGRDB, None, "D=0"),        # a light-chain model: its reference has no D
+    (gd.HUMAN_IGH_OGRDB, False, "D=0"),       # a model built without a D on a reference that has one
+])
+def test_the_card_counts_the_alleles_the_model_calls(tmp_path, capsys, dataconfig, has_d, expected):
+    """The card's allele counts are the model's genes' (a model without a D calls no D allele), not the embedded
+    reference's genes."""
+    reference = ReferenceSet.from_dataconfigs(dataconfig)
+    setup = prepare_model(reference, has_d=has_d, max_seq_length=128, embed_dim=4, trunk_channels=8)
+    p = tmp_path / "m.alignair"
+    mf.save_model(str(p), setup.build_model(), setup.reference, training={"steps": 1, "batch_size": 1})
+    assert main(["info", str(p)]) == 0
+    assert f"V={len(reference.gene('V'))} {expected} J={len(reference.gene('J'))}" in capsys.readouterr().out
+
+
+def test_info_prints_the_card_of_an_alignair_3_model_file(tmp_path, capsys):
+    """An AlignAIR 3 model file (no ``reference_json``; its header stores the allele counts) still gets its card, as
+    before; only loading it is refused."""
+    from alignair.model_file import container
+    p = _save(tmp_path)
+    header = container.read_header(p)
+    header.pop("_sections_base", None)
+    sections = {name: (container.read_section(p, name), info["codec"])
+                for name, info in header["sections"].items() if name != "reference_json"}
+    header["model"]["allele_counts"] = {"v": 3, "d": 2, "j": 1}
+    container.write_container(p, header, sections)
+    assert main(["info", p]) == 0
+    assert "alleles:   V=3 D=2 J=1" in capsys.readouterr().out
+
+
 def test_cli_reference_export_writes_the_fasta(tmp_path, capsys):
     p = _save(tmp_path)
     fasta = tmp_path / "ref.fasta"

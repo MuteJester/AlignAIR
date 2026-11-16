@@ -22,7 +22,7 @@ class AlignAIRConfig:
     embed_dim: int = 32
     # The serialized network name; it resolves through core.components, and loading never imports code from a file.
     architecture: str = "chip-v1"
-    # At inference, orient each read by the bound reference (``network.orientation.BankOrientation``): the transform
+    # At inference, orient each read by the bound reference (``core.orientation.BankOrientation``): the transform
     # under which most of its 12-mers are germline 12-mers; the orientation head decides when none wins.
     bank_orientation: bool = True
     # The chip's trunk width (channels per position): its parser, anchors, SHM reader and D units read features this

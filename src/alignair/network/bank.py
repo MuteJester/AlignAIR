@@ -103,7 +103,8 @@ class BankCompiler(nn.Module):
                                      persistent=False)
             self.genes.append(gene)
         # A reference of several loci: each locus's alleles per gene, (L, n alleles), and whether it has a D; the chip
-        # restricts a read's calls to one locus at inference (``refine.locus``). 0 loci for a one-locus reference.
+        # restricts a read's calls to one locus at inference (``network.refine.locus``). 0 loci for a one-locus
+        # reference.
         loci = reference.locus_names()
         self.locus_count = len(loci) if len(loci) > 1 else 0
         if self.locus_count:

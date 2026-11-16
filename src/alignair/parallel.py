@@ -9,10 +9,10 @@ hang the child). ``prestart`` starts the forkserver early, so its imports run wh
 platform without a forkserver spawns the workers instead, each importing torch itself. The aligner is pickled once
 to a private temporary file that each worker loads: handed to the workers directly it would be written down each
 one's start-up pipe in turn. A chunk is cut into parts of whole batches, the batches one process runs
-(``forward.bucket_batches``) dealt round-robin, a few parts per worker so a slow part does not hold the rest back;
-each worker batches its part the same way, so the records are one process's, and they come back in input order. Closing
-stops the workers outright: their predictions are all in by then, and each would otherwise spend half a second tearing
-torch down.
+(``predict.forward.bucket_batches``) dealt round-robin, a few parts per worker so a slow part does not hold the rest
+back; each worker batches its part the same way, so the records are one process's, and they come back in input order.
+Closing stops the workers outright: their predictions are all in by then, and each would otherwise spend half a second
+tearing torch down.
 """
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ class ProcessPool:
 
     def predict(self, sequences, *, batch_size: int, **options) -> list:
         """The records of ``sequences`` (``Aligner.predict(...).to_dicts()``, ``options`` passed on), in input
-        order. The workers run the batches one process runs (``forward.bucket_batches``): each part is whole
+        order. The workers run the batches one process runs (``predict.forward.bucket_batches``): each part is whole
         batches dealt round-robin, so a bucket's batches keep their order in a part, its part-full one last, and the
         worker batches them the same way; the records are the ones one process gives."""
         from .core.boundaries import read_window

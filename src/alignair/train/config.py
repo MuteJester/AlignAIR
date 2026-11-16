@@ -21,10 +21,10 @@ _PRESETS = {
 
 @dataclass(frozen=True)
 class TrainingConfig:
-    """Reference sources plus input/label choices and training/model settings.
+    """Reference sources plus training and model settings.
 
-    Model options are copied on construction and validated by reference-bound model setup.
-    Label counts and input vocabulary are derived from the reference and selected spaces.
+    Model options are copied on construction and validated by reference-bound model setup; the allele counts come
+    from the bound reference.
     ``data_workers`` > 0 generates training data in that many worker processes (one per curriculum
     stream at most: 28 for the default mix, 7 components of 4 streams); the batches are those of
     ``data_workers=0``, so it is not part of model identity.
@@ -34,7 +34,7 @@ class TrainingConfig:
     accelerator's random draws, such as its dropout) while training on the same batches.
     Workers are spawned, so a script that trains with them needs an ``if __name__ == "__main__":``
     guard. On an accelerator, batches are assembled ahead from the CPU random state, so a CPU random
-    draw in the training step, an ``on_iteration`` callback or a study evaluator raises TrainingError;
+    draw in the training step or an ``on_iteration`` callback raises TrainingError;
     use ``data_workers=0`` there.
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant
     region) around the curriculum's reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the

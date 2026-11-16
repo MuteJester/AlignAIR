@@ -241,10 +241,17 @@ class ModelStateData:
 
 
 def embedded_allele_counts(path: str | os.PathLike[str]) -> dict[str, int]:
-    """Per gene (``"v"``, ``"d"``, ``"j"``), how many alleles the reference a model file embeds holds; no weight is
-    read."""
+    """Per gene (``"v"``, ``"d"``, ``"j"``), how many alleles of its embedded reference a model file's model calls: 0
+    for the D of a model without one, whatever its reference holds. A file without ``reference_json`` (an AlignAIR 3
+    model) gives the counts its header stores, if any. No weight is read."""
+    md = container.read_header(path)
+    model = md.get("model") or {}
+    if "reference_json" not in md["sections"]:
+        return dict(model.get("allele_counts") or {})
     reference = serialize.reference_from_json(container.read_section(path, "reference_json"))
-    return {gene.lower(): len(reference.gene(gene)) for gene in ("V", "D", "J") if gene in reference.genes}
+    has_d = model.get("has_d", reference.has_d) and "D" in reference.genes
+    return {"v": len(reference.gene("V")), "d": len(reference.gene("D")) if has_d else 0,
+            "j": len(reference.gene("J"))}
 
 
 def read_model_state(path: str | os.PathLike[str]) -> ModelStateData:
@@ -313,7 +320,7 @@ class TrainingState(LoadedModel):
 def read_training_state(path: str | os.PathLike[str], *, device: str = "cpu") -> TrainingStateData:
     """Decode a trusted .alignair training checkpoint without constructing a model.
 
-    Section checksums and reference/label bindings are checked here. Architecture-specific weight
+    Section checksums and the reference binding are checked here. Architecture-specific weight
     keys/shapes are checked when restoring into a model. Model tensors are mapped to ``device``;
     optimizer, scheduler and RNG state retain their serialized values. Like
     ``load_training_state``, this is a trusted resume flow that decodes pickle training sections.

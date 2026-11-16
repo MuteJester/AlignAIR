@@ -39,8 +39,9 @@ class ModelSetup:
 
 def validate_reference_binding(reference, config) -> None:
     """Check that ``config`` can be bound to ``reference`` without allocating model parameters: the reference has
-    alleles for each of the model's genes (a D-less model may read a reference with a D), and the model's locus head
-    is the reference's locus schema. Artifact readers translate an invalid embedded binding to an integrity error."""
+    alleles for each of the model's genes (a D-less model may read a reference with a D), and its locus count is the
+    reference's (``num_chain_types``: the loci of its locus schema, 1 without one). Model setup and the model file's
+    loader run it; the loader turns an invalid embedded binding into an integrity error."""
     if not isinstance(reference, ReferenceSet) or not isinstance(config, AlignAIRConfig):
         raise ConfigurationError('model binding requires a ReferenceSet and AlignAIRConfig')
     if config.has_d and not reference.has_d:

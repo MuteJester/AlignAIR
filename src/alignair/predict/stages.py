@@ -96,8 +96,8 @@ def align_reads(state: PredictionState) -> PredictionState:
 
 
 def locus_alleles(state: PredictionState) -> list | None:
-    """Per read, a bool array over the V alleles of its locus (``Predictions.read_locus``, ``refine.locus``), or None
-    for a model bound to one locus."""
+    """Per read, a bool array over the V alleles of its locus (``Predictions.read_locus``, ``network.refine.locus``), or
+    None for a model bound to one locus."""
     loci = state.predictions.read_locus
     if loci is None:
         return None
@@ -150,8 +150,8 @@ def build_rows(state: PredictionState) -> PredictionState:
 def called_loci(v_alignments, reference: ReferenceSet, no_v) -> list[str] | None:
     """Per read, the locus of its V call (the allele its V is aligned to) in a reference of several loci, ``""`` for a
     read without a V call; None for a reference of one locus or none (its records are labelled otherwise). Its J and D
-    calls are of the same locus: the network keeps each read to one locus (``refine.locus``), and better-V and the
-    ties keep to it (``locus_alleles``)."""
+    calls are of the same locus: the network keeps each read to one locus (``network.refine.locus``), and better-V and
+    the ties keep to it (``locus_alleles``)."""
     loci = reference.locus_names()
     if len(loci) < 2:
         return None

@@ -1,4 +1,4 @@
-"""Base curriculum implementation containing the basic scalar ramp curriculum."""
+"""The training curriculum: corruption settings that ramp from clean (progress 0) to fully corrupted (progress 1)."""
 import math
 from numbers import Real
 

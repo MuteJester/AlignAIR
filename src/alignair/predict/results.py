@@ -76,7 +76,7 @@ class ReadResult:
     mutation_rate: float
     indel_count: float
     genes: Mapping[str, GeneResult]          # v, (d,) j
-    anchors: Anchors | None                  # None without anchor heads
+    anchors: Anchors | None                  # None from a core without anchor heads
     d_presence: str | None                   # the D presence class (D_CLASSES); None without the head or a D
     low_quality: bool | None                 # its V or J collapsed: no feasible segmentation (None: not known)
     cropped: bool                            # cut to the model's window

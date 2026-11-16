@@ -160,6 +160,9 @@ def test_bound_to_binds_a_copy_and_leaves_the_aligner_as_it_was():
     assert bound.reference.gene("V").names == names[:3]
     assert bound.model is not aligner.model and bound.model_path is None
     assert bound.label_schema["genes"]["v"] == names[:3] and aligner.label_schema["genes"]["v"] == list(names)
+    read = json.loads(FIXTURE.read_text())["reads"][0]
+    assert bound.predict_raw([read])["v_allele"].shape[1] == 3                 # the copy's model reads the bank
+    assert aligner.predict_raw([read])["v_allele"].shape[1] == len(names)       # the original's is as it was
 
 
 def test_a_genotype_naming_every_allele_gives_the_rows_of_none(tmp_path):

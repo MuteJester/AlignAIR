@@ -88,6 +88,8 @@ def _metadata_rows(path, id_column, keep_columns, normalize_10x, rename=None):
                              context={"line": number + reader.reader.line_num - 1}) from exc
         except (UnicodeError, EOFError, gzip.BadGzipFile, zlib.error) as exc:
             raise InputError("cannot decode metadata input") from exc
+        except OperationIOError:
+            raise                            # the caller's own I/O failure (the metadata index), already classified
         except OSError as exc:
             raise OperationIOError("cannot read metadata input") from exc
 

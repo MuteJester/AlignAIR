@@ -37,6 +37,14 @@ def _config(length=128, **kwargs):
                           max_seq_length=length, **kwargs)
 
 
+@pytest.mark.parametrize("value", [None, 0, 1, "yes"])
+def test_augment_orientation_is_a_bool_and_anything_else_is_refused(value):
+    """``augment_orientation`` is True or False: None (which once meant "augment") or another value would silently
+    train on forward reads only, so it is refused when the adapter is built."""
+    with pytest.raises(ConfigurationError, match="augment_orientation"):
+        NucleotideBatchAdapter(_reference(), _config(14), augment_orientation=value)
+
+
 def test_prefix_window_clips_coordinates_and_masks_lost_genes_without_mutating_source():
     record = _record()
     original = deepcopy(record)

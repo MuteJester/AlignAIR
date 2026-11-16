@@ -1,4 +1,4 @@
-"""The chip is the product's network, ``chip-v1``: built from ``alignair.network`` and ``alignair.refine`` with the
+"""The chip is the product's network, ``chip-v1``: built from ``alignair.network`` and ``alignair.network.refine`` with the
 trunk width the configuration gives, and importing it loads neither the lab nor the assay."""
 import subprocess
 import sys

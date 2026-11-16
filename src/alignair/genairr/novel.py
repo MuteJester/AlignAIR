@@ -4,8 +4,8 @@ the genotype a stream simulates reads from (``novel_genotype``).
 ``derive_variant`` draws SNP variants with AlignAIR's generator (``alignair.reference.variants.snp_variant``). It is
 the one place to call a GenAIRR variant generator (seeded SNP and short in-frame indel variants) should GenAIRR ship
 one: with ``protect="anchor"``, ``seed=rng`` and ``distinct_from`` the dataconfig, passing the variant's gapped form
-and anchor as supplied. A variant of another length also needs gapping by template, which
-``alignair.reference.annotate`` has as its gapping hook."""
+and anchor as supplied. A variant of another length would also need an IMGT-gapped form, which
+``alignair.reference.annotate`` gives only to a variant of a known allele's length."""
 from __future__ import annotations
 
 from collections.abc import Sequence

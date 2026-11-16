@@ -22,6 +22,21 @@ class _FakeRef:
         return SimpleNamespace(names=["IGHV1-1*01"], sequences=["ACGT"], gapped=None, anchors={})
 
 
+def test_a_model_without_a_d_never_assembles_one_whatever_the_reference_says(monkeypatch):
+    """A model without a D cannot call one: its reads are assembled without a D even when the bound reference gives
+    their locus one (a D-less model bound to an IGH reference)."""
+    from alignair.predict.airr import builder
+    seen = []
+    monkeypatch.setattr(builder, "_build_one", lambda read, light, germlines, has_d: seen.append(has_d) or dict(light))
+    reference = _FakeRef()
+    reference.loci = [SimpleNamespace(locus="IGH", has_d=True)]
+    build_airr([make_read("ACGT", locus="IGH"), make_read("ACGT")], reference, has_d=False)
+    assert seen == [False, False]
+    seen.clear()
+    build_airr([make_read("ACGT", locus="IGH"), make_read("ACGT")], reference, has_d=True)
+    assert seen == [True, True]
+
+
 def test_build_airr_tags_complete_status(monkeypatch):
     from alignair.predict.airr import builder
     monkeypatch.setattr(builder, "_build_one", lambda read, light, *a, **k: dict(light))

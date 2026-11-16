@@ -82,7 +82,7 @@ def better_v_alleles(sequences: Sequence[str], alignments: Sequence[GermlineAlig
     alignment puts on germline bases than the call does, or None (no alignment, or the call matches most). Among the
     alleles matching most, the first of the read's ``candidates`` (the model's called names, in its order) that is one,
     else the first in reference order. ``allowed`` (per read, a bool array over the V alleles, or None) keeps a read
-    to its locus's alleles (``refine.locus``): no other allele is better."""
+    to its locus's alleles (``network.refine.locus``): no other allele is better."""
     bank = None
     out = []
     for i, (sequence, aln, named) in enumerate(zip(sequences, alignments, candidates, strict=True)):
@@ -106,7 +106,7 @@ def tied_alleles(sequences: Sequence[str], alignments: Sequence[GermlineAlignmen
                  reference: ReferenceSet, allowed=None) -> list[tuple[str, ...]]:
     """Per read (forward frame), its V call and the V alleles of the bound bank tied with it, the call first (a tuple
     of names), or ``()`` for a read without a V alignment. ``allowed`` (per read, a bool array over the V alleles, or
-    None) keeps a read's ties to its locus's alleles (``refine.locus``)."""
+    None) keeps a read's ties to its locus's alleles (``network.refine.locus``)."""
     bank = None
     out = []
     for i, (sequence, aln) in enumerate(zip(sequences, alignments, strict=True)):

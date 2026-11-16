@@ -58,7 +58,7 @@ def reverse_valid(tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
 def apply_orientation(tokens: torch.Tensor, mask: torch.Tensor,
                       transform_ids: torch.Tensor) -> torch.Tensor:
-    """Apply a per-row orientation (an index of ``core.orientations.ORIENTATIONS``) to the token batch."""
+    """Apply a per-row orientation (an index of ``ORIENTATIONS``) to the token batch."""
     comp = complement(tokens)
     oriented = {FORWARD: tokens, REVERSE_COMPLEMENT: reverse_valid(comp, mask), COMPLEMENT: comp,
                 REVERSE: reverse_valid(tokens, mask)}
