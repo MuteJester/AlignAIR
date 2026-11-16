@@ -160,3 +160,10 @@ def test_a_row_is_its_light_record_plus_the_assembly():
     (row,) = build_airr([read], ref, has_d=True)
     assert all(row[key] == value for key, value in light_record(read).items() if key != "productive")
     assert row["airr_assembly_status"] == "complete" and row["sequence_alignment"]
+
+
+def test_has_d_and_strict_are_given_by_name():
+    """A positional third argument was the chain ("heavy"/"light") before ``has_d``: taken as ``has_d``, "light" would
+    silently assemble a D."""
+    with pytest.raises(TypeError):
+        build_airr([make_read("ACGT")], _FakeRef(), "light")

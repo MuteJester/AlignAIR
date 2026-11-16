@@ -58,8 +58,8 @@ def test_a_one_hot_row_decodes_to_the_coordinate_the_floored_expectation_gave():
                    "end_mask": torch.arange(length)[None] < seq_len + 1}
         start, end = decoded_boundaries(outputs, "v")
         soft, hard = expectation.numpy().reshape(-1), start.numpy()
-        old = correct_segments({"v": soft, "j": soft}, {"v": soft, "j": soft}, lens, length)
-        new = correct_segments({"v": hard, "j": hard}, {"v": end.numpy(), "j": end.numpy()}, lens, length)
+        old = correct_segments({"v": soft, "j": soft}, {"v": soft, "j": soft}, lens)
+        new = correct_segments({"v": hard, "j": hard}, {"v": end.numpy(), "j": end.numpy()}, lens)
         assert new.start["v"].tolist() == old.start["v"].tolist() == [k]
         assert new.end["v"].tolist() == old.end["v"].tolist()
         assert new.start["j"].tolist() == old.start["j"].tolist()

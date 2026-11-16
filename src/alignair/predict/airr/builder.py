@@ -142,7 +142,7 @@ def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bo
     return out
 
 
-def build_airr(reads: Sequence[ReadResult], reference: ReferenceSet, has_d: bool = True,
+def build_airr(reads: Sequence[ReadResult], reference: ReferenceSet, *, has_d: bool = True,
                strict: bool = False) -> list[dict]:
     """Assemble full AIRR rows from each read's typed result. Each returned row carries ``airr_assembly_status``:
     ``"complete"`` (all expected products derived), ``"partial"`` (valid calls but a product could not

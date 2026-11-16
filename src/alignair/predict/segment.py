@@ -24,7 +24,7 @@ from ..reference.genes import GENES
 from .state import Segments
 
 
-def correct_segments(start: dict, end: dict, seq_lens: np.ndarray, min_span: int = 1) -> Segments:
+def correct_segments(start: dict, end: dict, seq_lens: np.ndarray, *, min_span: int = 1) -> Segments:
     """The read-frame ``Segments`` of the float ``start``/``end`` boundaries ({gene: [N]}) of reads of ``seq_lens``."""
     seq_lens = np.asarray(seq_lens).astype(int)
     genes = [g for g in GENES if g in start]

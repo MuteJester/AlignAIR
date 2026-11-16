@@ -90,3 +90,12 @@ def test_low_quality_flag_when_j_collapses():
     segs = correct_segments(start, end, np.array([5]))
     assert segs.end["j"][0] == segs.start["j"][0]                 # J collapsed
     assert bool(segs.low_quality[0]) is True
+
+
+def test_the_minimum_span_is_given_by_name():
+    """A positional fourth argument was the window (``max_len``) before the parameter was removed: taken as the minimum
+    span, it would silently change the segments."""
+    start, end = {"v": np.array([0.0]), "j": np.array([4.0])}, {"v": np.array([3.0]), "j": np.array([8.0])}
+    with pytest.raises(TypeError):
+        correct_segments(start, end, np.array([8]), 20)
+    assert correct_segments(start, end, np.array([8]), min_span=2).end["v"].tolist() == [3]
