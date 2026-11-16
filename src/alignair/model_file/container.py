@@ -1,4 +1,29 @@
-"""Low-level .alignair binary container: magic + JSON header + independently-compressed sections."""
+"""The ``.alignair`` binary container: an 8-byte magic, a JSON header, then the sections, each compressed on its own.
+
+Byte layout (integers little-endian):
+
+    offset   size   content
+    0        7      b"ALGNAIR", the format tag
+    7        1      the major format version (``MAJOR_VERSION``, 1); a reader refuses a newer one
+    8        8      u64: H, the JSON header's length in bytes
+    16       H      the JSON header, UTF-8
+    16 + H   ...    the sections' blobs, back to back
+
+The header is one JSON object. Its ``sections`` maps each section's name to its blob and how to read it:
+
+- ``offset``: the blob's start, counted from the end of the header (byte 16 + H);
+- ``compressed_length``: the blob's length in the file;
+- ``payload_length``: the section's length once decompressed;
+- ``codec``: ``none``, ``zlib`` or ``zstd`` (reading ``zstd`` needs the ``zstandard`` package);
+- ``compressed_sha256`` and ``payload_sha256``: the SHA-256 hex digests of the blob and of the decompressed payload,
+  both checked on every read;
+- ``format``: how the payload is encoded: ``json``, ``safetensors``, ``fasta``, ``python-pickle`` or ``bytes``.
+
+The header's other keys describe the model (``model_file.io.save_model``): the format versions, the model's settings,
+its training, its reference's digests, its provenance and the card's descriptive fields. A model file's sections are
+``config`` (JSON), ``weights`` (safetensors), ``reference`` (FASTA), ``reference_json`` (the full reference, JSON) and,
+in a training checkpoint only, ``dataconfig/<i>`` and ``train_state`` (Python pickle).
+"""
 from __future__ import annotations
 
 import hashlib
@@ -14,6 +39,7 @@ _HEADER_LEN = struct.Struct("<Q")   # u64 little-endian
 
 
 def sha256_hex(data: bytes) -> str:
+    """The SHA-256 hex digest of ``data``."""
     return hashlib.sha256(data).hexdigest()
 
 
@@ -28,6 +54,7 @@ def available_codec(preferred: str) -> str:
 
 
 def compress(data: bytes, codec: str) -> bytes:
+    """``data`` compressed with ``codec`` (``none``, ``zlib`` or ``zstd``)."""
     if codec == "none":
         return data
     if codec == "zlib":
@@ -40,6 +67,7 @@ def compress(data: bytes, codec: str) -> bytes:
 
 
 def decompress(blob: bytes, codec: str) -> bytes:
+    """``blob`` decompressed with ``codec``; a ModelFormatError for a damaged blob or an unknown codec."""
     if codec == "none":
         return blob
     if codec == "zlib":
@@ -63,6 +91,7 @@ def decompress(blob: bytes, codec: str) -> bytes:
 
 
 def is_alignair_file(path: str) -> bool:
+    """Whether ``path`` starts with the ``.alignair`` format tag."""
     try:
         with open(path, "rb") as f:
             return f.read(7) == MAGIC[:7]
@@ -119,6 +148,8 @@ def read_header(path: str) -> dict:
 
 
 def write_container(path: str, header: dict, sections: dict) -> None:
+    """Write ``sections`` (name -> ``(payload, codec)``) under ``header`` at ``path``; the header's ``_formats`` gives
+    each section's ``format`` and is not written (no key starting with ``_`` is)."""
     formats = header.get("_formats", {})
     index, blobs, offset = {}, [], 0
     for name, (payload, codec) in sections.items():
@@ -141,6 +172,7 @@ def write_container(path: str, header: dict, sections: dict) -> None:
 
 
 def read_section(path: str, name: str) -> bytes:
+    """Section ``name``'s payload, both checksums and its length checked."""
     with error_context(path=path, section=name, stage="model_section"):
         return _read_section(path, name)
 

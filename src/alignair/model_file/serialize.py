@@ -18,6 +18,7 @@ _GENES = ("V", "D", "J")
 
 
 def config_to_bytes(cfg: AlignAIRConfig) -> bytes:
+    """The ``config`` section: the configuration's fields as JSON."""
     return json.dumps(cfg.__dict__).encode("utf-8")
 
 
@@ -36,6 +37,7 @@ def _config_fields() -> frozenset:
 
 
 def v3_refusal(architecture: str) -> ModelError:
+    """The refusal of an AlignAIR 3 model file (architecture ``architecture``)."""
     return ModelError(f"this is an AlignAIR 3 model (architecture {architecture!r}); AlignAIR 4 reads chip models "
                       "only — use alignair<4 to run it", context={"architecture": architecture},
                       hint="pip install 'alignair<4' runs it.")
@@ -98,32 +100,39 @@ def config_from_bytes(b: bytes) -> AlignAIRConfig:
 
 
 def state_dict_to_bytes(sd: dict) -> bytes:
+    """The ``weights`` section: the state dict as safetensors."""
     return st_save({k: v.contiguous().cpu() for k, v in sd.items()})
 
 
 def state_dict_from_bytes(b: bytes) -> dict:
+    """The state dict of a ``weights`` section."""
     return st_load(b)
 
 
 def dataconfig_to_bytes(dc) -> bytes:
+    """A ``dataconfig/<i>`` section: the GenAIRR DataConfig pickled."""
     return pickle.dumps(dc, protocol=5)
 
 
 def dataconfig_from_bytes(b: bytes):
+    """The DataConfig of a ``dataconfig/<i>`` section (unpickled: trusted input only)."""
     return pickle.loads(b)
 
 
 def train_state_to_bytes(state: dict) -> bytes:
+    """The ``train_state`` section: the optimizer, scheduler, random state, step and ``train_args`` (``torch.save``)."""
     buf = io.BytesIO()
     torch.save(state, buf)
     return buf.getvalue()
 
 
 def train_state_from_bytes(b: bytes) -> dict:
+    """The state of a ``train_state`` section (unpickled: trusted input only)."""
     return torch.load(io.BytesIO(b), map_location="cpu", weights_only=False)
 
 
 def reference_fasta(reference) -> str:
+    """The ``reference`` section: every allele as FASTA, V, D then J, in the reference's order."""
     lines = []
     for g in _GENES:
         if g in reference.genes:
@@ -140,6 +149,7 @@ def reference_to_json(reference) -> bytes:
 
 
 def reference_from_json(b: bytes):
+    """The ``ReferenceSet`` of a ``reference_json`` section."""
     from ..reference.reference_set import ReferenceSet
     return ReferenceSet.from_serializable(json.loads(b.decode("utf-8")))
 

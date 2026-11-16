@@ -1,10 +1,11 @@
 """Saving and loading .alignair model files, their selective reads and the model card.
 
-Sections are either *portable* (``config``/json, ``weights``/safetensors, ``reference``/fasta — safe,
-language-agnostic) or *trusted Python-only* (``dataconfig``/``train_state`` — pickle, which executes
-code on load; only open model files you trust). A file written with an optimizer is a resumable
-training checkpoint (large: AdamW moments ~= 2x the model); saving without ``optimizer`` yields a
-compact inference-only model.
+Sections are either *portable* (``config`` and ``reference_json``: JSON; ``weights``: safetensors; ``reference``:
+FASTA; safe and language-agnostic) or *trusted Python-only* (``dataconfig/<i>`` and ``train_state``: pickle, which
+executes code on load; only open model files you trust). A model loads its reference from ``reference_json``. Saved
+with ``include_trusted_pickle=True`` (the default), a file holds the pickled sections, and with an optimizer it is a
+resumable training checkpoint (large: the AdamW moments are about twice the model); ``include_trusted_pickle=False``
+writes a publish artifact, the portable sections only.
 """
 from __future__ import annotations
 
@@ -171,6 +172,7 @@ def save_model(path, model, reference, *, dataconfigs=(), training, optimizer=No
 
 
 def read_metadata(path) -> dict:
+    """A model file's JSON header: its metadata and section index (``container``)."""
     md = container.read_header(path)
     md.pop("_sections_base", None)
     return md
@@ -206,6 +208,7 @@ def update_card(src_path, dst_path, updates: dict) -> dict:
 
 @dataclass
 class LoadedModel:
+    """A loaded model file: the model bound to its reference, its configuration and its metadata."""
     model: AlignAIR
     reference: ReferenceSet
     config: AlignAIRConfig
@@ -341,4 +344,5 @@ def read_dataconfig(path, index: int):
 
 
 def read_reference(path) -> str:
+    """A model file's reference as FASTA text (its ``reference`` section)."""
     return container.read_section(path, "reference").decode("utf-8")
