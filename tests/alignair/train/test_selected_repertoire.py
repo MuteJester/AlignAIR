@@ -12,7 +12,8 @@ from alignair.model_file import read_metadata
 from alignair.reference.reference_set import ReferenceSet
 from alignair.genairr.catalog import dataconfig_name
 from alignair.train.records.streams import (CurriculumStreamPolicy, selection_supported, stream_records, training_records)
-from alignair.train.trainer import train
+from alignair.train.config import TrainingConfig
+from alignair.train.trainer import _train
 
 pytestmark = pytest.mark.integration
 
@@ -55,7 +56,7 @@ def test_selected_records_are_productive_and_the_unselected_amplicons_keep_their
 
 
 def watched_run(tmp_path, dataconfig, **options):
-    """Train one step on ``dataconfig`` with ``train`` ``options``; return whether each stream drew under
+    """Train one step on ``dataconfig`` with the record policy ``options``; return whether each stream drew under
     productive_only(), and the run's train_args."""
     reference = ReferenceSet.from_dataconfigs(dataconfig)
     setup = prepare_model(reference, embed_dim=4, trunk_channels=8)
@@ -66,8 +67,8 @@ def watched_run(tmp_path, dataconfig, **options):
         return stream_records(dataconfig, parameters, seed)
 
     path = tmp_path / 'model.alignair'
-    train(setup.build_model(), reference, [dataconfig], setup.config, steps=1, batch_size=2, model_setup=setup,
-          save_path=str(path), log_every=0, record_source=watched, **options)
+    _train(setup, setup.build_model(), [dataconfig], TrainingConfig(dataconfigs=(dataconfig,), steps=1, batch_size=2),
+           CurriculumStreamPolicy(**options), save_path=str(path), log_every=0, record_source=watched)
     return seen, read_metadata(path)['training']['train_args']
 
 

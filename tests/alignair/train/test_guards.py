@@ -3,8 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from alignair.train.guards import (NonFiniteTrainingError, TrainingConfigError,
-                                    check_finite_loss, validate_training_request)
+from alignair.errors import ConfigurationError
+from alignair.train.config import TrainingConfig
+from alignair.train.guards import (NonFiniteTrainingError, TrainingConfigError, check_finite_loss,
+                                   validate_training_reference, validate_training_request)
+from alignair.train.records.streams import CurriculumStreamPolicy
 
 pytestmark = pytest.mark.component
 
@@ -14,28 +17,46 @@ def _ref(nv=10, nj=5):
 
 
 def _ok(**over):
-    kw = dict(steps=100, batch_size=32, lr=3e-4, max_seq_length=576, reference=_ref())
+    kw = dict(steps=100, batch_size=32, lr=3e-4)
     kw.update(over)
     return kw
 
 
 def test_valid_request_passes():
     validate_training_request(**_ok())
+    validate_training_reference(reference=_ref(), max_seq_length=576)
 
 
 @pytest.mark.parametrize("bad", [
-    dict(steps=0), dict(steps=-1), dict(batch_size=0), dict(lr=0), dict(lr=-1e-3),
-    dict(max_seq_length=0), dict(progresses=()), dict(progresses=(1.5,)), dict(heavy_shm=2.0),
-    dict(short_boost=0), dict(grad_clip=0),
+    dict(steps=0), dict(steps=-1), dict(steps=True), dict(batch_size=0), dict(lr=0), dict(lr=-1e-3),
+    dict(lr=float("nan")), dict(grad_clip=0),
 ])
 def test_invalid_request_raises(bad):
     with pytest.raises(TrainingConfigError):
         validate_training_request(**_ok(**bad))
 
 
+@pytest.mark.parametrize("bad", [dict(steps=0), dict(batch_size=0), dict(lr=0), dict(grad_clip=0)])
+def test_a_training_config_refuses_a_bad_request_when_it_is_built(bad):
+    with pytest.raises(TrainingConfigError):
+        TrainingConfig(dataconfigs=("HUMAN_IGH_OGRDB",), **bad)
+
+
+@pytest.mark.parametrize("bad", [dict(progresses=()), dict(progresses=(1.5,)), dict(heavy_shm=2.0),
+                                 dict(short_boost=0)])
+def test_the_record_policy_refuses_its_bad_values(bad):
+    with pytest.raises(ConfigurationError):
+        CurriculumStreamPolicy(**bad)
+
+
+def test_a_bad_window_raises():
+    with pytest.raises(TrainingConfigError, match="max_seq_length"):
+        validate_training_reference(reference=_ref(), max_seq_length=0)
+
+
 def test_empty_reference_raises():
     with pytest.raises(TrainingConfigError, match="empty V"):
-        validate_training_request(**_ok(reference=_ref(nv=0)))
+        validate_training_reference(reference=_ref(nv=0), max_seq_length=576)
 
 
 def test_finite_loss_passes():

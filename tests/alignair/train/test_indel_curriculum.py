@@ -9,7 +9,8 @@ from alignair.model_file import read_metadata
 from alignair.reference.reference_set import ReferenceSet
 from alignair.train.records.curriculum import Curriculum
 from alignair.train.records.streams import CurriculumStreamPolicy, stream_records, training_records
-from alignair.train.trainer import train
+from alignair.train.config import TrainingConfig
+from alignair.train.trainer import _train
 
 pytestmark = pytest.mark.integration
 
@@ -40,9 +41,10 @@ def test_a_run_draws_its_components_from_its_indel_form_and_fraction_and_records
         return stream_records(dataconfig, parameters, seed)
 
     path = tmp_path / 'model.alignair'
-    train(setup.build_model(), reference, [gd.HUMAN_IGH_OGRDB], setup.config, steps=1, batch_size=2,
-          model_setup=setup, save_path=str(path), log_every=0, indel_fraction=(0.1, 0.2), record_source=watched,
-          **options)
+    _train(setup, setup.build_model(), [gd.HUMAN_IGH_OGRDB],
+           TrainingConfig(dataconfigs=(gd.HUMAN_IGH_OGRDB,), steps=1, batch_size=2),
+           CurriculumStreamPolicy(indel_fraction=(0.1, 0.2), **options), save_path=str(path), log_every=0,
+           record_source=watched)
     curriculum = Curriculum(indel_form=form, indel_fraction=(0.1, 0.2))
     period = len(CurriculumStreamPolicy().selection_pattern)          # the streams of one component
     assert seen[::period][:3] == [curriculum.indel_count(progress) for progress in (0.3, 0.6, 0.9)]

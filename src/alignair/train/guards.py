@@ -34,37 +34,41 @@ def validate_data_workers(data_workers) -> None:
         raise ConfigurationError("data_workers must be a non-negative integer", context={"field": "data_workers"})
 
 
-def validate_training_request(*, steps, batch_size, lr, max_seq_length, reference, progresses=(0.3,),
-                              heavy_shm=0.0, short_boost=1, grad_clip=None) -> None:
-    """Validate hyperparameters/config/reference up front. Raises :class:`TrainingConfigError` on the
-    first problem. Call before building the model/optimizer so a typo doesn't waste a long allocation."""
+def validate_training_request(*, steps, batch_size, lr, grad_clip=None) -> None:
+    """Validate the run's numbers (``TrainingConfig`` does, at construction): :class:`TrainingConfigError` listing
+    every problem, so a typo fails before anything is built."""
     problems = []
-    if not (isinstance(steps, int) and steps > 0):
+    if not (isinstance(steps, int) and not isinstance(steps, bool) and steps > 0):
         problems.append(f"steps must be a positive int (got {steps!r})")
-    if not (isinstance(batch_size, int) and batch_size > 0):
+    if not (isinstance(batch_size, int) and not isinstance(batch_size, bool) and batch_size > 0):
         problems.append(f"batch_size must be a positive int (got {batch_size!r})")
-    if not (isinstance(lr, (int, float)) and lr > 0 and math.isfinite(lr)):
+    if not (isinstance(lr, (int, float)) and not isinstance(lr, bool) and lr > 0 and math.isfinite(lr)):
         problems.append(f"lr must be a positive finite number (got {lr!r})")
-    if not (isinstance(max_seq_length, int) and max_seq_length > 0):
-        problems.append(f"max_seq_length must be a positive int (got {max_seq_length!r})")
-    if not progresses or any(not (0.0 <= float(p) <= 1.0) for p in progresses):
-        problems.append(f"progresses must be non-empty and each in [0, 1] (got {progresses!r})")
-    if not (0.0 <= float(heavy_shm) <= 1.0):
-        problems.append(f"heavy_shm must be in [0, 1] (got {heavy_shm!r})")
-    if not (isinstance(short_boost, int) and short_boost >= 1):
-        problems.append(f"short_boost must be an int >= 1 (got {short_boost!r})")
     try:
         validate_grad_clip(grad_clip)
     except ConfigurationError:
         problems.append(f"grad_clip must be a positive finite number or None (got {grad_clip!r})")
+    _refuse(problems)
+
+
+def validate_training_reference(*, reference, max_seq_length) -> None:
+    """Validate what the run trains on, once its reference is resolved and before the model is built:
+    :class:`TrainingConfigError` for an unusable or empty reference or a bad window."""
+    problems = []
+    if not (isinstance(max_seq_length, int) and not isinstance(max_seq_length, bool) and max_seq_length > 0):
+        problems.append(f"max_seq_length must be a positive int (got {max_seq_length!r})")
     reference_problem, reference_error = _reference_problem(reference)
     if reference_problem is not None:
         problems.append(reference_problem)
+    _refuse(problems, cause=reference_error)
+
+
+def _refuse(problems: list[str], cause: Exception | None = None) -> None:
     if problems:
         raise TrainingConfigError("invalid training request:\n  - " + "\n  - ".join(problems),
                                   context={"stage": "training_preflight", "problems": problems},
                                   hint="Correct the listed configuration problems before starting training."
-                                  ) from reference_error
+                                  ) from cause
 
 
 def _reference_problem(reference) -> tuple[str | None, Exception | None]:

@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from copy import deepcopy
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 
+from ..core.config import AlignAIRConfig
 from ..data.flanks import FlankPolicy
 from ..errors import ConfigurationError
-from .guards import validate_data_workers
+from .guards import validate_data_workers, validate_training_request
 from .records.novel import NovelAlleles
-from .records.streams import inverted_d_share
+from .records.streams import CurriculumStreamPolicy
 from .schedules import CosineSchedule
 
 _PRESETS = {
@@ -21,7 +22,9 @@ _PRESETS = {
 
 @dataclass(frozen=True)
 class TrainingConfig:
-    """Reference sources plus training and model settings.
+    """Reference sources plus training and model settings, every value validated here, at construction
+    (ConfigurationError; TrainingConfigError for the run's numbers): ``run_training`` checks only what needs the
+    resolved reference.
 
     Model options are copied on construction and validated by reference-bound model setup; the allele counts come
     from the bound reference.
@@ -42,8 +45,10 @@ class TrainingConfig:
     ``novel_alleles`` (``train.records.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and
     puts their rows in each batch's bank (``data.novel_bank``); None, the default, trains on the dataconfigs' alleles
     alone. The model and the saved reference stay the dataconfigs' either way.
-    ``inverted_d`` (0 to 1) inverts the D of that share of the curriculum's records
-    (``records.streams.CurriculumStreamPolicy``); 0, the default, trains on forward Ds alone.
+    ``inverted_d`` (0 to 1) inverts the D of that share of the curriculum's records; 0, the default, trains on forward
+    Ds alone.
+    ``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d`` are the run's settings of its record policy
+    (``record_policy``), the rest of which is the recipe's.
     """
     dataconfigs: tuple
     steps: int = 100_000
@@ -70,11 +75,15 @@ class TrainingConfig:
         if self.init_from and self.resume_path:
             raise ConfigurationError('choose init_from or resume_path')
         validate_data_workers(self.data_workers)
-        if self.flanks is not None and not isinstance(self.flanks, FlankPolicy):
-            raise ConfigurationError('flanks must be a FlankPolicy or None', context={'field': 'flanks'})
-        if self.novel_alleles is not None and not isinstance(self.novel_alleles, NovelAlleles):
-            raise ConfigurationError('novel_alleles must be a NovelAlleles or None', context={'field': 'novel_alleles'})
-        object.__setattr__(self, 'inverted_d', inverted_d_share(self.inverted_d))
+        validate_training_request(steps=self.steps, batch_size=self.batch_size, lr=self.lr, grad_clip=self.grad_clip)
+        if not _uint32(self.seed) or self.init_seed is not None and not _uint32(self.init_seed):
+            raise ConfigurationError('seed must be a uint32 and init_seed a uint32 or None',
+                                     context={'fields': ['seed', 'init_seed']})
+        if isinstance(self.val_every, bool) or not isinstance(self.val_every, int) or self.val_every < 0:
+            raise ConfigurationError('val_every must be a nonnegative integer', context={'field': 'val_every'})
+        policy = self.record_policy()                   # the policy validates its fields (short_boost .. inverted_d)
+        object.__setattr__(self, 'short_boost', policy.short_boost)
+        object.__setattr__(self, 'inverted_d', policy.inverted_d)
         if self.schedule is not None:
             if not isinstance(self.schedule, CosineSchedule):
                 raise ConfigurationError('schedule must be a CosineSchedule or None')
@@ -87,9 +96,6 @@ class TrainingConfig:
             raise ConfigurationError('dataconfigs must be an iterable of reference sources') from exc
         if not sources:
             raise ConfigurationError('dataconfigs must be nonempty')
-        if any(isinstance(value, bool) or not isinstance(value, int) or value <= 0
-               for value in (self.steps, self.batch_size, self.short_boost)):
-            raise ConfigurationError('steps, batch_size and short_boost must be positive integers')
         if not isinstance(self.model_options, Mapping):
             raise ConfigurationError('model_options must be a mapping of model configuration fields')
         object.__setattr__(self, 'dataconfigs', sources)
@@ -98,6 +104,15 @@ class TrainingConfig:
         if protected.intersection(self.model_options):
             raise ConfigurationError('model_options cannot set the window, the D gene or the locus count',
                                      context={'fields': sorted(protected.intersection(self.model_options))})
+        unknown = sorted(set(self.model_options) - {option.name for option in fields(AlignAIRConfig)})
+        if unknown:
+            raise ConfigurationError('invalid model configuration options', context={'fields': unknown})
+
+    def record_policy(self) -> CurriculumStreamPolicy:
+        """The curriculum record policy the run draws its records with: the recipe's, with this configuration's
+        ``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d``."""
+        return CurriculumStreamPolicy(short_boost=self.short_boost, flanks=self.flanks,
+                                      novel_alleles=self.novel_alleles, inverted_d=self.inverted_d)
 
     @classmethod
     def from_genairr(cls, *dataconfigs, preset: str | None = None, **overrides) -> TrainingConfig:
@@ -109,3 +124,7 @@ class TrainingConfig:
     def with_(self, **changes) -> TrainingConfig:
         """A copy with ``changes``."""
         return replace(self, **changes)
+
+
+def _uint32(value) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and 0 <= value < 2**32

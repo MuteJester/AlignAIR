@@ -99,13 +99,8 @@ def altered(cache, tmp_path, **changes):
 
 
 def test_the_recipe_is_the_curriculum_run_training_trains_on():
-    import inspect
-    from alignair.train.trainer import train
-    defaults = {name: parameter.default for name, parameter in inspect.signature(train).parameters.items()}
-    assert POLICY == CurriculumStreamPolicy(defaults['progresses'], defaults['heavy_shm'], 1, defaults['mutation_cap'],
-                                            indel_fraction=defaults['indel_fraction'],
-                                            indel_form=defaults['indel_form'],
-                                            selected_fraction=defaults['selected_fraction'])
+    from alignair_lab.recipe import training_config
+    assert dataclasses.replace(training_config(steps=1).record_policy(), flanks=None) == POLICY
     assert DATACONFIGS == ('HUMAN_IGH_OGRDB',) and (SEED, BATCH_SIZE) == (0, 64)
 
 

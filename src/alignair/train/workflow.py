@@ -22,10 +22,6 @@ class TrainingRun:
         return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
 
 
-def _uint32(value) -> bool:
-    return not isinstance(value, bool) and isinstance(value, int) and 0 <= value < 2**32
-
-
 def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_iteration=None,
                  record_source=None) -> TrainingRun:
     """Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.
@@ -34,7 +30,8 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     ``if __name__ == "__main__":`` guard. On an accelerator, the step and ``on_iteration`` must not draw from
     the CPU random generators: such a draw raises TrainingError, and
     ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``record_source`` replaces the
-    GenAIRR provider of the run's curriculum records (see ``trainer.train``).
+    GenAIRR provider of the run's curriculum records (see ``trainer._train``). ``config`` validated its values when it
+    was built; the run checks its reference before the model is built.
     """
     import numpy as np
     import torch
@@ -44,27 +41,22 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     from ..data.training import prepare_training_data
     from ..genairr import resolve_dataconfigs
     from ..reference.reference_set import ReferenceSet
-    from .guards import validate_training_request
-    from .trainer import train
+    from .guards import validate_training_reference
+    from .trainer import _train
 
     if not isinstance(config, TrainingConfig):
         raise ConfigurationError('run_training requires a TrainingConfig')
     if not (output_dir or out_path):
         raise ConfigurationError('pass output_dir=... or out_path=...')
+    if on_iteration is not None and not callable(on_iteration):
+        raise ConfigurationError('on_iteration must be callable or None')
     sources = resolve_dataconfigs(config.dataconfigs)
     reference = ReferenceSet.from_dataconfigs(*sources)
     setup = prepare_model(reference, max_seq_length=config.max_seq_length, has_d=config.has_d,
                           **config.model_options)
     device = resolve_device(config.device)
     prepare_training_data(setup, device=device)
-    validate_training_request(steps=config.steps, batch_size=config.batch_size, lr=config.lr,
-                              max_seq_length=setup.config.max_seq_length, reference=reference,
-                              short_boost=config.short_boost, grad_clip=config.grad_clip)
-    if (not _uint32(config.seed) or config.init_seed is not None and not _uint32(config.init_seed)
-            or isinstance(config.val_every, bool) or not isinstance(config.val_every, int) or config.val_every < 0
-            or on_iteration is not None and not callable(on_iteration)):
-        raise ConfigurationError('seed must be a uint32 and init_seed a uint32 or None; val_every nonnegative; '
-                                 'on_iteration callable or None')
+    validate_training_reference(reference=reference, max_seq_length=setup.config.max_seq_length)
     random.seed(config.seed)
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
@@ -83,12 +75,6 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     path = os.fspath(out_path or os.path.join(output_dir, 'model.alignair'))
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-    outcome = train(model, reference, sources, setup.config, steps=config.steps, batch_size=config.batch_size,
-          lr=config.lr, short_boost=config.short_boost, seed=config.seed, init_seed=config.init_seed, device=device,
-          save_path=path, grad_clip=config.grad_clip, val_every=config.val_every,
-          model_setup=setup, on_iteration=on_iteration, resume_path=config.resume_path,
-          schedule=config.schedule,
-          init_from=config.init_from,
-          data_workers=config.data_workers, record_source=record_source, flanks=config.flanks,
-          novel_alleles=config.novel_alleles, inverted_d=config.inverted_d)
+    outcome = _train(setup, model, sources, config, config.record_policy(), device=device, save_path=path,
+                     on_iteration=on_iteration, record_source=record_source)
     return TrainingRun(path, outcome.best_model_path, outcome.steps)

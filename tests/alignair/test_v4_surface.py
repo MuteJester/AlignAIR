@@ -153,7 +153,7 @@ def test_training_has_no_study_schedule():
     from alignair.train.workflow import TrainingRun
     assert not hasattr(train, "TrainingStudy") and _gone("alignair.train.study")
     assert "study" not in {field.name for field in dataclasses.fields(TrainingConfig)}
-    assert "study" not in inspect.signature(trainer.train).parameters
+    assert "study" not in inspect.signature(trainer._train).parameters
     assert {field.name for field in dataclasses.fields(TrainingRun)} == {"model_path", "best_model_path", "steps"}
 
 
@@ -161,8 +161,10 @@ def test_training_has_one_entry_point():
     """``run_training`` is the one way to train: ``train_model`` skipped its seeding and had defaults of its own."""
     import alignair
     from alignair import api
+    from alignair.train import trainer
     assert not hasattr(alignair, "train_model") and not hasattr(api, "train_model")
     assert "train_model" not in alignair.__all__
+    assert not hasattr(trainer, "train")             # its private _train takes the run's config and record policy
 
 
 def test_training_names_live_in_one_module_each():
@@ -180,7 +182,7 @@ def test_training_names_live_in_one_module_each():
     assert not hasattr(adapters, "build_nucleotide_batch")
     assert "evaluation_mode" not in train.__all__ and "build_targets" not in records.__all__
     assert _gone("alignair.train.gym") and "build_experiment" not in records.__all__
-    assert "start_step" not in inspect.signature(trainer.train).parameters
+    assert "start_step" not in inspect.signature(trainer._train).parameters
     assert "cfg" not in inspect.signature(checkpoints.save_checkpoint).parameters
     assert "cfg" not in inspect.signature(checkpoints.save_rotating).parameters
     assert "cfg" not in inspect.signature(engine.validate).parameters

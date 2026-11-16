@@ -108,7 +108,7 @@ def cooldown_config(config: TrainingConfig, checkpoint: str) -> TrainingConfig:
 
 
 def recipe_train_args(schedule: CosineSchedule | None = None) -> dict:
-    """The ``train_args`` entries a checkpoint of this recipe records (``alignair.train.trainer.train``), as its
+    """The ``train_args`` entries a checkpoint of this recipe records (``alignair.train.trainer._train``), as its
     model file's JSON header holds them: the record recipe, the optimization (under ``schedule``; None: the recipe's
     constant rate) and the stream policy."""
     return {"recipe": RECIPE, "batch_size": BATCH_SIZE, "lr": LR, "seed": SEED,

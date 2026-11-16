@@ -1,14 +1,14 @@
 """Trainer robustness — preflight rejection, grad-norm/clip, and (slow) validation/best/resume."""
 import glob
-from types import SimpleNamespace
 
 import pytest
 import torch
 
-from alignair.core.config import AlignAIRConfig
 from alignair.core import AlignAIR, prepare_model
+from alignair.train.config import TrainingConfig
 from alignair.train.guards import TrainingConfigError
-from alignair.train.trainer import train
+from alignair.train.records.streams import CurriculumStreamPolicy
+from alignair.train.trainer import _train
 
 pytestmark = pytest.mark.integration
 
@@ -20,56 +20,46 @@ def _bound(cfg, reference):
     return model
 
 
-def _tiny_model():
-    cfg = AlignAIRConfig(max_seq_length=576, has_d=True)
-    return cfg, AlignAIR(cfg)
+def _config(**fields):
+    return TrainingConfig(dataconfigs=("HUMAN_IGH_OGRDB",), batch_size=4, lr=1e-3, **fields)
 
 
-def test_train_rejects_bad_config_before_training():
-    """A bad request aborts up front (TrainingConfigError) — no long run on invalid hyperparameters."""
-    cfg, model = _tiny_model()
-    ref = SimpleNamespace(gene=lambda g: [0] * 4)          # non-empty V/J
+def test_a_bad_training_request_is_refused_when_its_config_is_built():
+    """A bad request aborts up front (TrainingConfigError), before any reference or model is built."""
     with pytest.raises(TrainingConfigError, match="steps"):
-        train(model, ref, [object()], cfg, steps=0)     # steps=0 -> invalid, raises immediately
-
-
-def test_train_rejects_empty_reference():
-    cfg, model = _tiny_model()
-    ref = SimpleNamespace(gene=lambda g: [])               # empty V/J allele set
-    with pytest.raises(TrainingConfigError, match="empty V"):
-        train(model, ref, [object()], cfg, steps=10)
+        _config(steps=0)
 
 
 @pytest.mark.slow
 def test_resume_below_checkpoint_step_is_rejected(tmp_path):
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
-    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    cfg = prepare_model(ref, max_seq_length=576).config
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576)
+    ref, cfg, policy = setup.reference, setup.config, CurriculumStreamPolicy()
     torch.manual_seed(0)
     out = str(tmp_path / "m.alignair")
-    train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=4, batch_size=4,
-          lr=1e-3, save_path=out, save_every=100, log_every=100)
+    _train(setup, _bound(cfg, ref), [gd.HUMAN_IGH_OGRDB], _config(steps=4), policy, save_path=out, save_every=100,
+           log_every=100)
     with pytest.raises(ValueError, match="not beyond the checkpoint"):   # steps <= checkpoint step
-        train(_bound(cfg, ref), ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=2, batch_size=4,
-              lr=1e-3, save_path=out, resume_path=out, log_every=100)
+        _train(setup, _bound(cfg, ref), [gd.HUMAN_IGH_OGRDB], _config(steps=2, resume_path=out), policy,
+               save_path=out, log_every=100)
 
 
 @pytest.mark.slow
 def test_train_saves_best_and_resumes(tmp_path):
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
-    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
-    cfg = prepare_model(ref, max_seq_length=576).config
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576)
+    ref, cfg, policy = setup.reference, setup.config, CurriculumStreamPolicy()
     torch.manual_seed(0)
     model = _bound(cfg, ref)
     out = str(tmp_path / "m.alignair")
-    train(model, ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=6, batch_size=4, lr=1e-3,
-          save_path=out, save_every=3, val_every=3, val_batches=1, grad_clip=1.0, log_every=100)
+    _train(setup, model, [gd.HUMAN_IGH_OGRDB], _config(steps=6, val_every=3, grad_clip=1.0), policy, save_path=out,
+           save_every=3, val_batches=1, log_every=100)
     # best-checkpoint selection wrote <stem>.best.alignair
     assert glob.glob(str(tmp_path / "m.best.alignair"))
     # resume continues from the saved step (exercises RNG restore + state load)
     model2 = _bound(cfg, ref)
-    train(model2, ref, [gd.HUMAN_IGH_OGRDB], cfg, steps=9, batch_size=4, lr=1e-3,
-          save_path=out, resume_path=out, save_every=3, log_every=100)
+    _train(setup, model2, [gd.HUMAN_IGH_OGRDB], _config(steps=9, resume_path=out), policy, save_path=out,
+           save_every=3, log_every=100)
     assert glob.glob(str(tmp_path / "m.step9.alignair"))

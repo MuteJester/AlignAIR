@@ -106,12 +106,8 @@ def test_workers_stop_when_training_finishes_fails_or_is_interrupted(tmp_path, m
 
 @pytest.mark.parametrize('value', [-1, True, 1.5, '2', None])
 def test_the_worker_count_is_a_non_negative_integer(value, tmp_path):
-    from alignair.train.trainer import train
     with pytest.raises(ConfigurationError) as caught:
         request(data_workers=value)
-    assert caught.value.context['field'] == 'data_workers'
-    with pytest.raises(ConfigurationError) as caught:
-        train(object(), object(), [], None, data_workers=value)
     assert caught.value.context['field'] == 'data_workers'
 
 
