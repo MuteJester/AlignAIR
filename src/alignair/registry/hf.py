@@ -40,7 +40,7 @@ def parse_hf_spec(spec: str) -> tuple[str, str | None, str | None]:
     """Parse ``hf://org/repo[/sub/file.alignair][@rev]`` (or the ``hf://``-less form) into
     ``(repo_id, revision, filename)``. ``repo_id`` is the first two path segments; anything after is a
     file path within the repo (default ``model.alignair``); ``@rev`` pins a branch/tag/commit."""
-    s = spec[len("hf://"):] if spec.startswith("hf://") else spec
+    s = spec.removeprefix("hf://")
     body, _, rev = s.partition("@")
     parts = [p for p in body.split("/") if p]
     if len(parts) < 2:

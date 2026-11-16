@@ -13,7 +13,7 @@ import sys
 import time
 
 from . import sources
-from .cache import version_key, cache_root, installed_models
+from .cache import cache_root, installed_models, version_key
 
 
 def _registry_cache_path(src: str):

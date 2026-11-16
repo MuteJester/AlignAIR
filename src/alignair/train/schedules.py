@@ -1,6 +1,6 @@
 """Serializable learning-rate schedules."""
-from dataclasses import asdict, dataclass
 import math
+from dataclasses import asdict, dataclass
 from numbers import Real
 
 from ..errors import ConfigurationError

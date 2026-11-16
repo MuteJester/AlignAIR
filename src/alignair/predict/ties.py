@@ -20,6 +20,7 @@ import functools
 import numpy as np
 
 from .germline.cigar import aligned_columns
+
 _NO_BASE = 0                                      # the code of a column an allele holds no base at
 
 

@@ -1,15 +1,15 @@
 """Per-read metadata normalization and unique-key in-memory or disk-backed lookup."""
 from __future__ import annotations
 
-from contextlib import contextmanager
 import csv
 import gzip
-from itertools import chain
 import json
 import os
 import sqlite3
 import tempfile
 import zlib
+from contextlib import contextmanager
+from itertools import chain
 
 from ..errors import DataContractError, InputError, OperationIOError, error_context
 from .airr import metadata_column

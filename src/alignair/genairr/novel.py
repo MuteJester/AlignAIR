@@ -8,7 +8,7 @@ and anchor as supplied. A variant of another length also needs gapping by templa
 ``alignair.reference.annotate`` has as its gapping hook."""
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from ..errors import ConfigurationError
 from ..reference.variants import NovelAllele, snp_variant

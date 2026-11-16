@@ -6,15 +6,13 @@ end-exclusive in the record; the AIRR writer emits them 1-based and closed.
 """
 from __future__ import annotations
 
-from typing import Optional
-
-from .translate import translate_nt
 from .constants import IMGT_REGIONS
+from .translate import translate_nt
 
 _FWR_CDR = ("fwr1", "cdr1", "fwr2", "cdr2", "fwr3")
 
 
-def extract_regions(seq_alignment: Optional[str], seq_alignment_aa: Optional[str]) -> dict:
+def extract_regions(seq_alignment: str | None, seq_alignment_aa: str | None) -> dict:
     """The FWR1-FWR3 and CDR1-CDR2 fields (sequence, amino acids, start, end) cut from the IMGT-gapped read alignment
     at the IMGT region columns; all None without an alignment."""
     result: dict = {}
@@ -38,7 +36,7 @@ READ_JUNCTION_KEYS = ("junction", "junction_aa", "junction_length", "junction_aa
                       "fwr4_end")
 
 
-def read_junction_fields(seq: str, js: int, je: int, j_seq_end: Optional[int], translate_fn) -> dict:
+def read_junction_fields(seq: str, js: int, je: int, j_seq_end: int | None, translate_fn) -> dict:
     """The junction ``seq[js:je]`` (read coordinates, 0-based, end-exclusive) and what follows from it: its
     translation (``translate_fn``), the CDR3 (the junction without its two anchor codons) and FWR4 (from the
     junction's end to the J end ``j_seq_end``), all in read coordinates."""
@@ -58,7 +56,7 @@ def read_junction_fields(seq: str, js: int, je: int, j_seq_end: Optional[int], t
     }
 
 
-def anchor_junction_fields(seq: str, call, j_seq_end: Optional[int]) -> dict:
+def anchor_junction_fields(seq: str, call, j_seq_end: int | None) -> dict:
     """The AIRR junction fields of a junction derived from the predicted anchors (``predict.junction.JunctionCall``):
     ``read_junction_fields`` with GenAIRR's translation convention (full codons from the junction's start, a partial
     last codon dropped, X for a codon with an N), and the frame, stop codon and productivity of the call. Every field

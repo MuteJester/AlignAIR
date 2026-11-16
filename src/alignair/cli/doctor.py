@@ -50,8 +50,8 @@ def diagnostics() -> dict:
     except Exception:                                  # noqa: BLE001
         pass
     try:    # the two kernels: each compiled (Cython) when built, else its pure-Python / torch fallback
-        from ..predict.germline.cigar import DERIVE_BACKEND
         from ..network.refine.v_rescore import VBAND_BACKEND
+        from ..predict.germline.cigar import DERIVE_BACKEND
         info["derive_backend"] = DERIVE_BACKEND
         info["vband_backend"] = VBAND_BACKEND
     except Exception:                                  # noqa: BLE001

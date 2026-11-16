@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import os
 
-
 # Vendored structural schema (AIRR Genotype/GenotypeSet).
 _REQUIRED = {
     "GenotypeSet": ["receptor_genotype_set_id", "genotype_class_list"],

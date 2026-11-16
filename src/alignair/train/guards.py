@@ -3,9 +3,9 @@ non-finite loss/gradients with a diagnostic, and bound gradient norms — so a r
 on a bad config or a diverging optimizer instead of silently producing a broken model."""
 from __future__ import annotations
 
-from alignair.errors import ConfigurationError, NumericalError, TrainingError
-
 import math
+
+from alignair.errors import ConfigurationError, NumericalError, TrainingError
 
 
 class TrainingConfigError(ConfigurationError, TrainingError):

@@ -5,22 +5,33 @@ import hashlib
 import itertools
 from dataclasses import dataclass, replace
 
-from ..errors import ConfigurationError, error_context
-from ..data.training import prepare_training_data
-from ..core.setup import ModelSetup
 from ..core.runtime import restore_model_state
+from ..core.setup import ModelSetup
+from ..data.training import prepare_training_data
+from ..errors import ConfigurationError, error_context
+from ..genairr.catalog import dataconfig_name
 from ..genairr.identity import recorded_genairr_source
 from ..tasks import TrainingTasks, build_tasks
-from .records.curriculum import INDEL_FRACTION
-from ..genairr.catalog import dataconfig_name
-from .records.streams import (SELECTED_FRACTION, CurriculumStreamPolicy, effective_mutation_caps,
-                          selection_supported, training_records)
-from .setup import build_training_engine
+from .checkpoints import (
+    best_checkpoint_path,
+    latest_checkpoint,
+    load_training_checkpoint,
+    save_checkpoint,
+    save_rotating,
+    validate_continuation,
+)
 from .loop import training_iterations
-from .checkpoints import (best_checkpoint_path, save_checkpoint, save_rotating, latest_checkpoint,
-                          load_training_checkpoint, validate_continuation)
 from .random_state import restore_rng_state as _restore_rng
+from .records.curriculum import INDEL_FRACTION
+from .records.streams import (
+    SELECTED_FRACTION,
+    CurriculumStreamPolicy,
+    effective_mutation_caps,
+    selection_supported,
+    training_records,
+)
 from .schedules import CosineSchedule
+from .setup import build_training_engine
 
 # The id of how a run's curriculum records and targets are built, recorded as ``train_args["recipe"]``; it changes
 # whenever the records or targets a run of the same options trains on change. "v4": every stream draws from its own

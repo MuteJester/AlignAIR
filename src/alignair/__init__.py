@@ -17,19 +17,19 @@ The lower-level functional façade (``load_model`` / ``predict_sequences`` / ``t
 back-compat. I/O + reference helpers: ``read_sequences``, ``write_airr``, ``ReferenceSet``,
 ``compare_airr``.
 """
-from .errors import AlignAIRError
-from .reference.reference_set import ReferenceSet
-from .io.sequence_reader import read_sequences, iter_sequences
-from .io.metadata import DuplicateMetadataIdError
-from .io.airr import write_airr, AirrWriter, PredictionCountMismatchError
+from .aligner import Aligner, PredictionResult, resolve_device
 from .analyze.compare import compare_airr
 from .api import load_model, predict_sequences, train_model
-from .aligner import Aligner, PredictionResult, resolve_device
-from .train.config import TrainingConfig
-from .train.workflow import TrainingRun, run_training
 from .core import AlignAIR
 from .core.config import AlignAIRConfig
+from .errors import AlignAIRError
+from .io.airr import AirrWriter, PredictionCountMismatchError, write_airr
+from .io.metadata import DuplicateMetadataIdError
+from .io.sequence_reader import iter_sequences, read_sequences
 from .predict import PredictConfig
+from .reference.reference_set import ReferenceSet
+from .train.config import TrainingConfig
+from .train.workflow import TrainingRun, run_training
 
 try:
     from importlib.metadata import version as _pkg_version

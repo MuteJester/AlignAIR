@@ -1,7 +1,7 @@
 """A donor's genotype as the chip's bank: the subset of a reference the chip reads its calls from."""
 from __future__ import annotations
 
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 from ..errors import InputError
 from ..reference.reference_set import ReferenceSet

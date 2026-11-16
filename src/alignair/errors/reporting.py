@@ -1,12 +1,12 @@
 """Opt-in text/JSON reporting and logging; never configures global logging."""
 from __future__ import annotations
 
-from contextlib import contextmanager
-from contextvars import ContextVar
 import json
 import logging
 import sys
 import traceback
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from .base import AlignAIRError
 

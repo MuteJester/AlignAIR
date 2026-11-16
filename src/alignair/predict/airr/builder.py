@@ -17,14 +17,20 @@ from collections.abc import Sequence
 
 from alignair.errors import InferenceError
 
-from . import quality
-from .alignment import (GermlineMaps, build_germline_alignment, build_sequence_alignment,
-                        compute_alignment_positions, compute_np_regions,
-                        extract_segment_alignments, translate_alignment)
 from ...core.d_presence import ABSENT, D_CLASSES, SHORT
 from ...reference.genes import GENES
 from ...reference.loci import FALLBACK_LOCUS
 from ..results import ReadResult, light_record
+from . import quality
+from .alignment import (
+    GermlineMaps,
+    build_germline_alignment,
+    build_sequence_alignment,
+    compute_alignment_positions,
+    compute_np_regions,
+    extract_segment_alignments,
+    translate_alignment,
+)
 from .regions import anchor_junction_fields, extract_regions
 
 # Exceptions edge-case *data* can legitimately raise inside assembly (bad coords, missing anchors,

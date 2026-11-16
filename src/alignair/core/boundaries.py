@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import torch
 
-
 # A forward's width in evaluation is rounded up to a multiple of this (``width_bucket``): reads predicted together are
 # batched with reads of their bucket, so a read's width is its bucket's and reads of other buckets never change its
 # outputs (``predict.forward.run_model``).

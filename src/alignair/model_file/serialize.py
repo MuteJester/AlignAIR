@@ -9,7 +9,8 @@ import json
 import pickle
 
 import torch
-from safetensors.torch import load as st_load, save as st_save
+from safetensors.torch import load as st_load
+from safetensors.torch import save as st_save
 
 from ..core.config import AlignAIRConfig
 from ..errors import ConfigurationError, ModelError, ModelIntegrityError

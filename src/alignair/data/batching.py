@@ -47,14 +47,14 @@ class TrainingBatch:
         """(B,) each read's length in tokens."""
         return self.token_mask.sum(-1)
 
-    def to(self, device, *, non_blocking=False) -> "TrainingBatch":
+    def to(self, device, *, non_blocking=False) -> TrainingBatch:
         """The batch with every tensor on ``device``."""
         return TrainingBatch(
             {key: value.to(device, non_blocking=non_blocking) for key, value in self.inputs.items()},
             {key: value.to(device, non_blocking=non_blocking) for key, value in self.targets.items()},
         )
 
-    def pin_memory(self) -> "TrainingBatch":
+    def pin_memory(self) -> TrainingBatch:
         """Let DataLoader pin a custom batch before a GPU transfer."""
         return TrainingBatch({key: value.pin_memory() for key, value in self.inputs.items()},
                              {key: value.pin_memory() for key, value in self.targets.items()})

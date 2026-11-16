@@ -6,16 +6,23 @@ model is available (suppressed for a pinned id / a path / ``--offline`` / ``--qu
 """
 from __future__ import annotations
 
-from contextlib import closing
 import json
 import os
 import sys
+from contextlib import closing
 from datetime import datetime, timezone
 
 from .. import __version__
 from ..aligner import Aligner
-from ..errors import (AlignAIRError, ConfigurationError, DataContractError, InputError, ModelError,
-                      RegistryError, report_error)
+from ..errors import (
+    AlignAIRError,
+    ConfigurationError,
+    DataContractError,
+    InputError,
+    ModelError,
+    RegistryError,
+    report_error,
+)
 from ..genotype.infer import EXPLAIN, MIN_READS
 from ..io.files import sha256_file
 from ..reference.loci import FALLBACK_LOCUS
@@ -117,8 +124,8 @@ def _stream_predict(aligner, io: RunIO, *, out_path, batch_size, rejects_out, po
     import csv
 
     from ..io.airr import AirrWriter, needs_assembly
-    from ..io.sequence_reader import iter_sequence_batches
     from ..io.metadata import lookup_metadata_rows
+    from ..io.sequence_reader import iter_sequence_batches
     do_airr = needs_assembly(io.columns)
     counts = RunCounts()
 
@@ -187,6 +194,7 @@ def _load_reporting_locus(model_path: str, *, device: str, reference):
     """``Aligner.from_pretrained``, its ``LocusMismatchWarning`` (a reference of another locus bound to a one-locus
     model) printed as one ``warning:`` line on stderr; any other warning passes through as it would."""
     import warnings
+
     from ..reference import LocusMismatchWarning
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -257,12 +265,13 @@ def run(args) -> int:
 
 
 def _run(args) -> int:
-    from ..registry import maybe_notify_updates, sources as _sources
     from ..core.runtime import resolve_device
+    from ..registry import maybe_notify_updates
+    from ..registry import sources as _sources
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     _check_args(args)
     if device == "cpu" and args.threads is not None and args.threads > 1:
-        from .. import parallel                     # the workers' forkserver imports while the model loads
+        from .. import parallel  # the workers' forkserver imports while the model loads
         parallel.prestart()
 
     # 1) resolve + load the model ONCE (before reading, so a 1M-read input never sits in memory)

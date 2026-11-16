@@ -1,10 +1,10 @@
 """Public exception contract, safe context snapshots, and worker-process serialization."""
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from copy import deepcopy
 from enum import IntEnum
-import json
 
 from .context import current_error_context, snapshot
 

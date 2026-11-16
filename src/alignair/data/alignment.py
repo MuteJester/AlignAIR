@@ -2,9 +2,9 @@
 ``data.chip_inputs``)."""
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-import re
 
 from ..errors import TrainingDataError
 from .coordinates import parse_coordinate, segment_spans
@@ -84,7 +84,7 @@ class RecordAlignment:
     _paths: dict[str, QueryReferenceMap] = field(default_factory=dict, init=False, repr=False, compare=False)
 
     @classmethod
-    def of(cls, record: Mapping) -> "RecordAlignment":
+    def of(cls, record: Mapping) -> RecordAlignment:
         """The alignment of a GenAIRR training ``record``."""
         sequence = str(record["sequence"]).upper()
         query, germline = segment_spans(record)

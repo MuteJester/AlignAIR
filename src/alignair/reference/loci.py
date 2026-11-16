@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List
 
 # GenAIRR chain-type value -> AIRR locus code
 LOCUS_OF_CHAIN = {
@@ -27,8 +26,8 @@ def locus_from_name(name: str):
     return m.group(1) if m else None
 
 
-def loci_from_membership(per_index: Dict[str, list], order: List[str],
-                          chain_of: Dict[str, str] | None = None) -> List[LocusInfo]:
+def loci_from_membership(per_index: dict[str, list], order: list[str],
+                          chain_of: dict[str, str] | None = None) -> list[LocusInfo]:
     """Build the per-locus schema from per-gene per-index locus membership. Each locus must occupy a
     single **contiguous** block within every gene head — same-locus dataconfigs merged adjacently are
     fine, but an *interleaved / split* locus (another locus's alleles inside its range) is refused
@@ -36,7 +35,7 @@ def loci_from_membership(per_index: Dict[str, list], order: List[str],
     order; ``chain_of`` maps a locus to its GenAIRR chain-type value (defaults to the locus code)."""
     loci = []
     for lc in order:
-        ranges: Dict[str, tuple] = {}
+        ranges: dict[str, tuple] = {}
         for G, loci_of in per_index.items():
             idx = [i for i, x in enumerate(loci_of) if x == lc]
             if not idx:
@@ -64,9 +63,9 @@ class LocusInfo:
     locus: str
     chain_type: str
     has_d: bool
-    ranges: Dict[str, tuple] = field(default_factory=dict)   # {"V": (s,e), "J": (s,e), ["D": (s,e)]}
+    ranges: dict[str, tuple] = field(default_factory=dict)   # {"V": (s,e), "J": (s,e), ["D": (s,e)]}
     species: str | None = None                                # the species of all its alleles, when they share one
-    shared: Dict[str, tuple] = field(default_factory=dict)   # {"V": (name, ...)}: other loci's alleles it lists too
+    shared: dict[str, tuple] = field(default_factory=dict)   # {"V": (name, ...)}: other loci's alleles it lists too
 
 
 FALLBACK_LOCUS = "IGH"   # the locus of a reference that declares none, or several

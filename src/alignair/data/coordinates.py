@@ -1,8 +1,8 @@
 """Validate observed simulator spans without inventing missing germline truth."""
 from operator import index
 
-from ..reference.genes import GENES
 from ..errors import TrainingDataError
+from ..reference.genes import GENES
 
 
 def parse_coordinate(value):

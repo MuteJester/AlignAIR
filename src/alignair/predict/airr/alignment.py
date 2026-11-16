@@ -25,7 +25,7 @@ class GermlineMaps:
     d: Mapping[str, str]
 
     @classmethod
-    def of(cls, reference) -> "GermlineMaps":
+    def of(cls, reference) -> GermlineMaps:
         """The germline maps of ``reference``."""
         v, j = reference.gene("V"), reference.gene("J")
         d = reference.gene("D") if "D" in reference.genes else None

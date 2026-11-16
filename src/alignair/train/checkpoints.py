@@ -83,7 +83,7 @@ def _ext(path) -> str:
 def _stem(path) -> str:
     path = os.fspath(path)
     extension = _ext(path)
-    return path[:-len(extension)] if path.endswith(extension) else path
+    return path.removesuffix(extension)
 
 
 def best_checkpoint_path(save_path) -> str:

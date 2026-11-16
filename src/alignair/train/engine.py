@@ -6,8 +6,8 @@ from typing import NamedTuple
 
 import torch
 
-from ..errors import ConfigurationError, TrainingError, error_context
 from ..core.runtime import evaluation_mode
+from ..errors import ConfigurationError, TrainingError, error_context
 from ..tasks import MetricReport, TrainingTasks, build_tasks
 from .guards import NonFiniteTrainingError, check_finite_loss, validate_grad_clip
 

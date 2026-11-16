@@ -1,14 +1,14 @@
 """Streaming sequence-file syntax, independent of alphabet validation and ID assignment."""
 from __future__ import annotations
 
-from contextlib import contextmanager
 import csv
 import gzip
-from itertools import chain
 import os
 import sys
-from typing import NamedTuple
 import zlib
+from contextlib import contextmanager
+from itertools import chain
+from typing import NamedTuple
 
 from ..errors import ConfigurationError, InputError, OperationIOError
 

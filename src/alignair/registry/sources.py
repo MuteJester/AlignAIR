@@ -14,11 +14,11 @@ so never colon-split) > ``~/.config/alignair/config.toml`` ``registries`` > the 
 """
 from __future__ import annotations
 
-from alignair.errors import RegistryError, error_context
-
 import json
 import os
 from urllib.parse import urljoin
+
+from alignair.errors import RegistryError, error_context
 
 try:
     import tomllib  # Python >= 3.11
@@ -69,8 +69,7 @@ def resolve_sources(cli: list[str] | None = None, *, config_path: str | None = N
 
 def _base(source: str) -> str:
     base = source
-    if base.endswith("registry.json"):
-        base = base[: -len("registry.json")]
+    base = base.removesuffix("registry.json")
     return base if base.endswith("/") else base + "/"
 
 

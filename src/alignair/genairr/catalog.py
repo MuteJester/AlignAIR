@@ -6,7 +6,7 @@ copy of a built-in keeps its name and a custom dataconfig has none."""
 from __future__ import annotations
 
 import functools
-from typing import Iterable
+from collections.abc import Iterable
 
 from ..errors import ConfigurationError
 from ..reference.loci import locus_of_chain
@@ -15,7 +15,7 @@ _HINT = "List them with `alignair reference list`."
 
 
 def _data():
-    import GenAIRR.data as data
+    from GenAIRR import data
     return data
 
 

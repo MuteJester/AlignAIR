@@ -10,14 +10,14 @@ from collections.abc import Mapping
 from copy import deepcopy
 
 import torch
-import torch.nn as nn
+from torch import nn
 
-from .config import AlignAIRConfig
-from .boundaries import boundary_masks
-from .components import build_component, architecture_components
 from ..errors import ConfigurationError
-from .runtime import restore_model_state
+from .boundaries import boundary_masks
+from .components import architecture_components, build_component
+from .config import AlignAIRConfig
 from .orientation import BankOrientation, apply_orientation
+from .runtime import restore_model_state
 
 
 class AlignAIR(nn.Module):
@@ -36,7 +36,7 @@ class AlignAIR(nn.Module):
 
     @classmethod
     def from_state_dict(cls, cfg: AlignAIRConfig, state_dict: Mapping[str, object], *,
-                        device: str | torch.device = "cpu", source=None) -> "AlignAIR":
+                        device: str | torch.device = "cpu", source=None) -> AlignAIR:
         """Restore decoded weights strictly, then place the model in evaluation mode.
 
         Construction uses the configured architecture on CPU before device placement. The model file's reader checks

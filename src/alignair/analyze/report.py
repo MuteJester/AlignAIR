@@ -4,11 +4,10 @@ from __future__ import annotations
 import statistics
 from collections import Counter
 
-from ..reference.genes import GENES
 from ..predict.germline.cigar import cigar_ops
+from ..reference.genes import GENES
 from .tables import first_call, num, read_airr_table, truthy
 from .validate import validate_airr
-
 
 
 def _has_indel(cigar) -> bool:

@@ -3,4 +3,4 @@ donor's V genotype from AIRR rows (``infer``), and the AIRR GenotypeSet it is wr
 from .bank import genotype_bank
 from .files import UnknownAlleleError, load_genotype
 
-__all__ = ["genotype_bank", "load_genotype", "UnknownAlleleError"]
+__all__ = ["UnknownAlleleError", "genotype_bank", "load_genotype"]

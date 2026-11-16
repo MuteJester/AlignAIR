@@ -7,12 +7,12 @@ path, hitting the network only when necessary (never for a pinned, already-cache
 """
 from __future__ import annotations
 
-from alignair.errors import ArtifactIntegrityError, ModelError, RegistryError
-
 import contextlib
 import hashlib
 import os
 from pathlib import Path
+
+from alignair.errors import ArtifactIntegrityError, ModelError, RegistryError
 
 from ..io.files import sha256_file
 from . import sources as registry_sources
@@ -80,7 +80,7 @@ def _excl_lock(path: Path, *, timeout: float = 600.0, stale_after: float = 3600.
             break
         except FileExistsError:
             permission_miss = False
-            pass                       # another holder owns the lockfile: contention
+            # another holder owns the lockfile: contention
         except PermissionError:
             # Windows raises PermissionError (a sharing violation: WinError 32/5 -> errno 13) instead
             # of FileExistsError when another holder has the lockfile open. Treat that as contention,

@@ -25,7 +25,6 @@ import torch
 
 from ...core.anchors import ANCHOR_LOGITS
 from ...core.tokens import is_base
-
 from ..parser import expected_slot
 from .ratios import OUTSIDE, RATE, pair_ratios
 

@@ -28,9 +28,9 @@ import math
 import numpy as np
 import torch
 
-from ..reference.genes import GENES
 from ..core.regions import REGIONS
 from ..core.tokens import IGNORE_INDEX
+from ..reference.genes import GENES
 from .alignment import RecordAlignment
 from .batching import PositionLabels
 

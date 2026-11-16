@@ -4,16 +4,16 @@ IUPAC ambiguity codes -> N; a read with more than 20% non-ACGTN characters is dr
 """
 from __future__ import annotations
 
+import os
 from contextlib import closing
 from dataclasses import dataclass
 from operator import index
-import os
-from typing import List, Tuple
 
-from .sequence_ids import UniqueSequenceIds
 from ..data.inputs import normalize_file_read
 from ..errors import ConfigurationError
-from .sequence_records import open_text, detect_sequence_format, iter_sequence_records
+from .sequence_ids import UniqueSequenceIds
+from .sequence_records import detect_sequence_format, iter_sequence_records, open_text
+
 
 def _detect_format(path: str, seq_column: str | None = None) -> str:
     if path == "-":
@@ -103,12 +103,12 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
 
 
 def read_sequences(path: str, seq_column: str | None = None, id_column: str | None = None,
-                   collect_rejects: bool = False) -> Tuple[List[str], List[str], dict]:
+                   collect_rejects: bool = False) -> tuple[list[str], list[str], dict]:
     """Eager read of all sequences (back-compat). For large files prefer ``iter_sequences``.
     Returns (ids, sequences, info) with info.n_read/n_dropped/format; when ``collect_rejects`` is set,
     info["rejects"] lists each dropped record ({id, position, reason, sequence})."""
-    ids: List[str] = []
-    seqs: List[str] = []
+    ids: list[str] = []
+    seqs: list[str] = []
     dropped = 0
     rejects: list | None = [] if collect_rejects else None
     for cids, cseqs, drp in iter_sequences(path, chunk_size=10 ** 9, seq_column=seq_column,

@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 from ..core.boundaries import read_window
-from ..reference.genes import model_genes
 from ..core.tokens import DEFAULT_WINDOW
+from ..reference.genes import model_genes
 
 
 @dataclass
@@ -19,7 +18,7 @@ class PredictConfig:
     cap: int = 3                      # max alleles per gene
     batch_size: int = 64
     airr: bool = True                 # assemble full AIRR fields (junction/CDR/FWR/np/identity); off = light records
-    loci: Optional[tuple] = None      # the reference's ordered locus names; one locus labels every record
+    loci: tuple | None = None      # the reference's ordered locus names; one locus labels every record
 
     @property
     def window(self) -> int:
@@ -32,7 +31,7 @@ class PredictConfig:
         return model_genes(self.has_d)
 
     @classmethod
-    def for_model(cls, model, reference, *, batch_size: int, **overrides) -> "PredictConfig":
+    def for_model(cls, model, reference, *, batch_size: int, **overrides) -> PredictConfig:
         """The configuration ``alignair.predict_sequences`` predicts ``model`` with: its window and D presence,
         ``batch_size``, and the reference's ordered loci (None for a schema-less reference) unless ``overrides`` names
         them."""

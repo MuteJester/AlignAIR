@@ -10,13 +10,12 @@ writes a publish artifact, the portable sections only.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from datetime import datetime, timezone
-
-from ..errors import ConfigurationError, DataContractError, ModelError, ModelIntegrityError, error_context
+from pathlib import Path
 
 from ..core import AlignAIR, validate_reference_binding
 from ..core.config import AlignAIRConfig
+from ..errors import ConfigurationError, DataContractError, ModelError, ModelIntegrityError, error_context
 from ..reference import annotate
 from ..reference.reference_set import ReferenceSet
 from . import container, serialize
@@ -46,6 +45,7 @@ def _resolve_dataconfigs(dataconfigs):
 
 def _versions():
     import torch
+
     from .. import __version__
     from ..genairr import genairr_identity
     return {"alignair_version": __version__, **genairr_identity(), "torch_version": torch.__version__}

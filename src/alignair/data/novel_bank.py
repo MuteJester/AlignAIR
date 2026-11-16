@@ -9,8 +9,8 @@ targets both (``BatchBank.ties``); each novel allele's base joins the bank mask 
 them apart; the extension's rows ship in the batch's inputs (``network.bank.extension_inputs``)."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Mapping
 
 import torch
 

@@ -2,14 +2,13 @@
 gene's equivalence set (``*_call_set``), the read's orientation and input, and the assembly's outcome."""
 from __future__ import annotations
 
-from alignair.reference.genes import GENES
-from alignair.core.orientation import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
-from alignair.errors import DataContractError
-from alignair.reference.loci import FALLBACK_LOCUS
-
 import csv
 import os
-from typing import List
+
+from alignair.core.orientation import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
+from alignair.errors import DataContractError
+from alignair.reference.genes import GENES
+from alignair.reference.loci import FALLBACK_LOCUS
 
 # The full AIRR rearrangement schema we emit (a superset of what predict()+build_airr produce), then
 # our extensions (each gene's equivalence set, orientation, input read, assembly outcome). Per the
@@ -258,8 +257,8 @@ class AirrWriter:
         self._w = csv.DictWriter(self._f, fieldnames=fields, delimiter="\t", extrasaction="ignore")
         self._w.writeheader()
 
-    def write(self, ids: List[str], sequences: List[str], preds: List[dict],
-              metas: List[dict] | None = None) -> None:
+    def write(self, ids: list[str], sequences: list[str], preds: list[dict],
+              metas: list[dict] | None = None) -> None:
         """`sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
         orientation convention per record. `metas`, if given, is a per-row dict of extra column values
         (barcode/UMI/sample/cell_id) merged into each output row without overwriting model fields.
@@ -304,8 +303,8 @@ class AirrWriter:
         self.close(commit=exc[0] is None)          # never commit a partial file on an exception
 
 
-def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
-               locus: str = FALLBACK_LOCUS, columns=None, metas: List[dict] | None = None,
+def write_airr(path: str, ids: list[str], sequences: list[str], preds: list[dict],
+               locus: str = FALLBACK_LOCUS, columns=None, metas: list[dict] | None = None,
                extra_columns=None) -> None:
     """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
     `sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR

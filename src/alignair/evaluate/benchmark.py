@@ -8,8 +8,8 @@ from collections.abc import Mapping
 
 from ..analyze.tables import first_call, num
 from ..api import predict_sequences
-from ..reference.genes import GENES
 from ..errors import ConfigurationError, DataContractError
+from ..reference.genes import GENES
 
 
 def default_strata() -> dict:

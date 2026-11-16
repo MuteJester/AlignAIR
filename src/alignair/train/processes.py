@@ -10,10 +10,7 @@ context, and its cause is a ``WorkerTraceback`` holding the worker's traceback a
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import multiprocessing
-from multiprocessing import util as process_util
-from multiprocessing.connection import wait as wait_for
 import os
 import pickle
 import queue as queues
@@ -22,6 +19,9 @@ import sys
 import threading
 import time
 import traceback
+from dataclasses import dataclass
+from multiprocessing import util as process_util
+from multiprocessing.connection import wait as wait_for
 
 from ..errors import AlignAIRError, ConfigurationError, TrainingError, current_error_context
 from ..errors.base import rescoped

@@ -20,17 +20,16 @@ The processes and their channels are ``train.processes``'s.
 """
 from __future__ import annotations
 
+import pickle
 from collections import deque
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, replace
 from itertools import islice, repeat
-import pickle
 
 from ...errors import ConfigurationError, TrainingError, error_context
 from ..checks import integer
-from .streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
 from ..processes import WorkerGroup, WorkerLink, pack_failure, raise_failure, receive
-
+from .streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
 
 # Measured on a 7-stream mix without selection (batch 64): the data side delivers
 # 27-28.5 batches/s for any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about

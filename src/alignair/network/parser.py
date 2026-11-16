@@ -27,7 +27,6 @@ from torch import nn
 
 from ..core.regions import REGIONS
 
-
 # Each gene's parser state (its region).
 GENE_STATE = {"v": REGIONS.index("V"), "d": REGIONS.index("D"), "j": REGIONS.index("J")}
 IMPOSSIBLE = -1e4          # the boundary logit of a slot no path uses (finite, so a softmax over the slots is defined)

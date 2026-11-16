@@ -1,18 +1,18 @@
 """Source adapters into the shared training sample/batch contract."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Mapping
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
 
-from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
-from ..core.orientation import NUM_ORIENTATIONS, apply_orientation
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, CODON
-from ..core.d_presence import ABSENT, D_PRESENCE
 from ..core.boundaries import read_window
+from ..core.d_presence import ABSENT, D_PRESENCE
+from ..core.orientation import NUM_ORIENTATIONS, apply_orientation
+from ..errors import AlignAIRError, ConfigurationError, TrainingDataError, error_context
 from ..reference.frames import gene_frames
 from .batching import PositionLabels, TrainingBatch, TrainingSample, collate_samples
 from .chip_inputs import chip_batch_inputs, chip_record_targets

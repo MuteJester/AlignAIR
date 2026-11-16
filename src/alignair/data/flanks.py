@@ -113,7 +113,7 @@ class FlankPolicy:
         return {key: list(value) if isinstance(value, tuple) else value for key, value in asdict(self).items()}
 
     @classmethod
-    def from_dict(cls, data: Mapping) -> "FlankPolicy":
+    def from_dict(cls, data: Mapping) -> FlankPolicy:
         return cls(**{key: tuple(value) if isinstance(value, list) else value for key, value in data.items()})
 
 

@@ -5,12 +5,12 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 
-from ..errors import ConfigurationError
 from ..data.flanks import FlankPolicy
+from ..errors import ConfigurationError
+from .guards import validate_data_workers
 from .records.novel import NovelAlleles
 from .records.streams import inverted_d_share
 from .schedules import CosineSchedule
-from .guards import validate_data_workers
 
 _PRESETS = {
     'quick': {'steps': 300, 'batch_size': 16, 'val_every': 100},

@@ -8,15 +8,22 @@ from __future__ import annotations
 import argparse
 
 from .. import __version__
-from ..errors import (AlignAIRError, InternalError, OperationCancelledError, OperationIOError,
-                      error_context, error_reporting, report_error)
+from ..errors import (
+    AlignAIRError,
+    InternalError,
+    OperationCancelledError,
+    OperationIOError,
+    error_context,
+    error_reporting,
+    report_error,
+)
 from . import analyze as _analyze_cmd
 from . import benchmark as _benchmark_cmd
 from . import compare as _compare_cmd
 from . import demo as _demo_cmd
 from . import doctor as _doctor_cmd
-from . import genotype as _genotype_cmd
 from . import export as _export_cmd
+from . import genotype as _genotype_cmd
 from . import info as _info_cmd
 from . import models as _models_cmd
 from . import predict as _predict_cmd

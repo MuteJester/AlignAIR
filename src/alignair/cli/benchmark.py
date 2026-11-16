@@ -5,11 +5,11 @@ with other aligners.
 """
 from __future__ import annotations
 
-from ..errors import AlignAIRError, ConfigurationError, ModelError, RegistryError, report_error
-from ._errors import fail
-
 import json
 import sys
+
+from ..errors import AlignAIRError, ConfigurationError, ModelError, RegistryError, report_error
+from ._errors import fail
 
 
 def register(sub) -> None:
@@ -48,10 +48,11 @@ def dataconfig_name(args, model_path) -> str | None:
 def run(args) -> int:
 
     from ..api import load_model
-    from ..genairr import resolve_dataconfig
-    from ..evaluate import format_text, run_benchmark
-    from ..registry import resolve_model, sources as _sources
     from ..core.runtime import resolve_device
+    from ..evaluate import format_text, run_benchmark
+    from ..genairr import resolve_dataconfig
+    from ..registry import resolve_model
+    from ..registry import sources as _sources
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     try:
         model_path = str(resolve_model(args.model, sources=_sources.resolve_sources(args.registry),

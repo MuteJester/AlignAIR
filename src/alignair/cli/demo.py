@@ -36,11 +36,10 @@ def _simulate_reads(dataconfig, n: int, seed: int = 7) -> list:
 
 def run(args) -> int:
     from ..api import load_model, predict_sequences, train_model
-    from ..reference.genes import model_genes
+    from ..core.runtime import resolve_device
     from ..genairr import resolve_dataconfig
     from ..io.airr import write_airr
-
-    from ..core.runtime import resolve_device
+    from ..reference.genes import model_genes
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
     out = args.out or __import__("tempfile").mkdtemp(prefix="alignair_demo_")  # zero-arg `alignair demo`
     os.makedirs(out, exist_ok=True)

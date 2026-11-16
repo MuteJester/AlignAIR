@@ -3,4 +3,4 @@ counts (``metrics``)."""
 from .metrics import MetricReport
 from .objective import TrainingTasks, build_tasks
 
-__all__ = ["TrainingTasks", "build_tasks", "MetricReport"]
+__all__ = ["MetricReport", "TrainingTasks", "build_tasks"]

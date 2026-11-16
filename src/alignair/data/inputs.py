@@ -9,7 +9,7 @@ import torch
 
 from ..core.tokens import encode
 from ..errors import InputError, error_context
-from .batching import positive_width, pad_vectors
+from .batching import pad_vectors, positive_width
 
 BASES = frozenset("ACGTN")
 # The IUPAC ambiguity codes: read as N, and not counted as unusable characters.

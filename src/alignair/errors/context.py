@@ -1,12 +1,12 @@
 """Bounded diagnostic snapshots and task-local operation context (standard library only)."""
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from enum import Enum
-import math
 from pathlib import PurePath
 from urllib.parse import urlsplit, urlunsplit
 

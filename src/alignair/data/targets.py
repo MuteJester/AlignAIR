@@ -6,14 +6,13 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..errors import AlignAIRError, TrainingDataError, error_context
-
 from ..core.anchors import ANCHOR_GENES, CODON
-from ..reference.genes import GENES
 from ..core.d_presence import ABSENT, CALLABLE, D_CALLABLE_MIN, SHORT
+from ..core.edit_states import EDIT_INDEX
 from ..core.regions import REGION_INDEX
 from ..core.tokens import encode
-from ..core.edit_states import EDIT_INDEX
+from ..errors import AlignAIRError, TrainingDataError, error_context
+from ..reference.genes import GENES
 from .alignment import RecordAlignment, parse_cigar
 
 # What ``read_d_presence`` and ``read_anchors`` give for a segment the record places in the read whose alignment cannot

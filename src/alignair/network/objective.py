@@ -26,12 +26,11 @@ from torch.nn import functional as F
 from ..core.anchors import ANCHOR_GENES, ANCHOR_KEYS, ANCHOR_LOGITS
 from ..core.d_presence import D_CLASSES, D_PRESENCE, D_PRESENCE_LOGITS
 from ..core.edit_states import EDIT_INDEX
-from ..core.regions import REGIONS
 from ..core.orientation import NUM_ORIENTATIONS
+from ..core.regions import REGIONS
 from ..core.tokens import IGNORE_INDEX
 from ..tasks.metrics import MetricReport, alignment_metrics
 from ..tasks.supervision import supervised_rows
-
 from .parser import GENE_STATE, ParserOutput, crf_nll
 from .reader import READ_EDITS
 from .scan import OUT

@@ -4,7 +4,19 @@ An ordered list of named stages over one typed state (``predict.pipeline``). Pub
 """
 from .config import PredictConfig
 from .pipeline import PIPELINE, STAGE_NAMES, Stage, Trace, predict, run_stages
-from .state import GeneCall, GermlineAlignment, PredictionState, Predictions, Segments
+from .state import GeneCall, GermlineAlignment, Predictions, PredictionState, Segments
 
-__all__ = ["predict", "PredictConfig", "GeneCall", "GermlineAlignment", "Predictions", "Segments", "PredictionState",
-           "Stage", "PIPELINE", "STAGE_NAMES", "run_stages", "Trace"]
+__all__ = [
+    "PIPELINE",
+    "STAGE_NAMES",
+    "GeneCall",
+    "GermlineAlignment",
+    "PredictConfig",
+    "PredictionState",
+    "Predictions",
+    "Segments",
+    "Stage",
+    "Trace",
+    "predict",
+    "run_stages",
+]

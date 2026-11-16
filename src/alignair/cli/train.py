@@ -2,11 +2,11 @@
 V/D/J germline FASTAs, and export a safe (pickle-free) distributable bundle."""
 from __future__ import annotations
 
-from ..errors import ConfigurationError, report_error
-from ._errors import fail
-
 import json
 import os
+
+from ..errors import ConfigurationError, report_error
+from ._errors import fail
 
 
 def register(sub) -> None:

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Optional
 
 from ..io.files import sha256_file
 
@@ -39,10 +38,10 @@ def _validation_report(model, ref, dcs, *, n_batches: int = 2, batch_size: int =
 
     import torch
 
-    from ..genairr.experiment import GENAIRR_INVERT_D_PROB, build_experiment
-    from .records import Curriculum
     from ..data.adapters import NucleotideBatchAdapter
+    from ..genairr.experiment import GENAIRR_INVERT_D_PROB, build_experiment
     from ..tasks import build_tasks
+    from .records import Curriculum
     tasks = build_tasks(model.cfg)
     agg: dict = {}
     for i, dc in enumerate(dcs):
@@ -95,8 +94,8 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
     return manifest
 
 
-def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: Optional[str] = None, model_version: Optional[str] = None, description: str = "",
-                  validate: bool = True, sources: Optional[dict] = None, report=None, overwrite: bool = False) -> str:
+def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: str | None = None, model_version: str | None = None, description: str = "",
+                  validate: bool = True, sources: dict | None = None, report=None, overwrite: bool = False) -> str:
     """Export a **pickle-free**, distributable model bundle from a (resumable) training checkpoint:
     ``model.alignair`` (no trusted pickle) + ``model_card.md`` + ``reference_manifest.json`` + (unless
     ``validate=False``) ``validation_report.json``. Returns the model path. ``model_id`` and ``model_version`` go
@@ -176,9 +175,9 @@ def checkpoint_dataconfigs(checkpoint_path: str) -> tuple[list, list[str]]:
     its schema digest matches the card's; any other (a custom FASTA reference) is read from the checkpoint's
     ``dataconfig/<i>`` section, which unpickles it: export only checkpoints you trust, as for resuming one.
     ConfigurationError when the card names none, or one is neither built-in nor stored."""
+    from .. import model_file as mf
     from ..errors import ConfigurationError
     from ..genairr import resolve_dataconfig
-    from .. import model_file as mf
     entries = mf.read_metadata(checkpoint_path).get("reference", {}).get("dataconfigs", [])
     if not entries:
         raise ConfigurationError(f"{checkpoint_path} records no dataconfig to export with",

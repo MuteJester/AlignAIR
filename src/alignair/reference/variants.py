@@ -34,7 +34,7 @@ class NovelAllele:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data) -> "NovelAllele":
+    def from_dict(cls, data) -> NovelAllele:
         """From ``to_dict``'s form: a ValueError for a missing name, base or sequence or a gene not V, D or J."""
         data = dict(data)
         missing = [key for key in ("name", "base", "sequence") if key not in data]

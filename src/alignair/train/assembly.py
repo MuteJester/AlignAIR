@@ -22,15 +22,23 @@ from collections import deque
 from dataclasses import dataclass
 from itertools import islice
 
-
 from ..data.training import TrainingDataSetup
 from ..errors import ConfigurationError, TrainingError, error_context
-from .records.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
+from .checks import device as checked_device
+from .checks import integer
 from .processes import WorkerGroup, raise_failure, receive
-from .records.workers import (CHUNK_SIZE, QUEUE_CHUNKS, ComponentChannels, RecordWorkers, component_plan, plan_signature,
-                              start_record_workers, worker_options)
-from .checks import device as checked_device, integer
 from .random_state import capture_rng_state, restore_rng_state, same_rng_state
+from .records.streams import CurriculumStreamPolicy, RecordSource, stream_records, training_records
+from .records.workers import (
+    CHUNK_SIZE,
+    QUEUE_CHUNKS,
+    ComponentChannels,
+    RecordWorkers,
+    component_plan,
+    plan_signature,
+    start_record_workers,
+    worker_options,
+)
 
 QUEUE_BATCHES = 4        # assembled batches in flight (about 1 MB each at batch 64): the assembler's lead
 

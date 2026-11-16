@@ -1,7 +1,7 @@
 """Publish individual files through a temporary sibling and atomic replacement."""
 import os
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from ..errors import error_context
 

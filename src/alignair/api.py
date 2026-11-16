@@ -11,11 +11,11 @@ model) in a few lines, without touching the internal config/pipeline machinery.
 """
 from __future__ import annotations
 
-from typing import Sequence
-
+from collections.abc import Sequence
 
 from .core import AlignAIR
-from .predict import PredictConfig, predict as _predict
+from .predict import PredictConfig
+from .predict import predict as _predict
 from .reference.reference_set import ReferenceSet
 
 __all__ = ["load_model", "predict_sequences", "train_model"]
@@ -61,10 +61,10 @@ def train_model(dataconfigs, *, out_path: str, steps: int = 100_000, device: str
     ``train_overrides`` forwards to :func:`alignair.train.trainer.train` (e.g. ``lr=``, ``batch_size=``,
     ``progresses=``, ``short_boost=``, ``resume_path=``). Like ``alignair train``, the curriculum's reads get library
     flanks (``data.flanks.FlankPolicy``) unless ``flanks=`` says otherwise (None: bare reads)."""
+    from .core import prepare_model
     from .data.flanks import FlankPolicy
     from .genairr import resolve_dataconfigs
     from .tasks import build_tasks
-    from .core import prepare_model
     from .train.guards import validate_training_request
     from .train.trainer import train as _train
 

@@ -1,9 +1,9 @@
 """``run_training``: build, train, checkpoint and reload a model in one call."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
 import random
+from dataclasses import dataclass
 
 from ..errors import ConfigurationError
 from .config import TrainingConfig
@@ -36,15 +36,16 @@ def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_i
     ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``record_source`` replaces the
     GenAIRR provider of the run's curriculum records (see ``trainer.train``).
     """
-    from ..core.runtime import resolve_device
+    import numpy as np
+    import torch
+
     from ..core import prepare_model
+    from ..core.runtime import resolve_device
     from ..data.training import prepare_training_data
+    from ..genairr import resolve_dataconfigs
     from ..reference.reference_set import ReferenceSet
     from .guards import validate_training_request
     from .trainer import train
-    import numpy as np
-    from ..genairr import resolve_dataconfigs
-    import torch
 
     if not isinstance(config, TrainingConfig):
         raise ConfigurationError('run_training requires a TrainingConfig')

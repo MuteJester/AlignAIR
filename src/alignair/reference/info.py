@@ -36,7 +36,7 @@ class AnchorEvidence:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "AnchorEvidence":
+    def from_dict(cls, data: dict) -> AnchorEvidence:
         """From ``to_dict``'s form; unknown keys are ignored."""
         return cls(**_known(cls, data))
 
@@ -63,7 +63,7 @@ class AlleleInfo:
         return out
 
     @classmethod
-    def from_dict(cls, data: dict) -> "AlleleInfo":
+    def from_dict(cls, data: dict) -> AlleleInfo:
         """Read leniently, as a newer v1 file may carry values this build does not know: an unknown functionality
         reads as None and evidence with an unknown status is dropped."""
         fields = _known(cls, data)

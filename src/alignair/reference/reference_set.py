@@ -4,26 +4,27 @@ from __future__ import annotations
 
 import dataclasses
 import re
-from numbers import Integral
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Dict, Iterable, List
+from numbers import Integral
 
 import numpy as np
 
 from ..errors import ConfigurationError, DataContractError, InputError
 from .info import AlleleInfo
-from .loci import (CHAIN_OF_LOCUS, FALLBACK_LOCUS, LocusInfo, loci_from_membership, locus_from_name)
+from .loci import CHAIN_OF_LOCUS, FALLBACK_LOCUS, LocusInfo, loci_from_membership, locus_from_name
 from .provenance import SourceProvenance
+
 
 @dataclass
 class GeneReference:
     """One gene's alleles, in order, with their sequences, anchors, IMGT-gapped forms and source information."""
-    names: List[str]          # ordered allele names
-    sequences: List[str]      # germline nucleotide seqs (uppercased), aligned with names
-    index: Dict[str, int]     # name -> row index
-    anchors: Dict[str, int] | None = None  # name -> conserved-anchor germline pos (Cys/Trp-Phe)
-    gapped: Dict[str, str] | None = None   # name -> IMGT-gapped germline (AIRR sequence_alignment)
-    info: Dict[str, AlleleInfo] | None = None  # name -> what its source told (functionality, species, label, evidence)
+    names: list[str]          # ordered allele names
+    sequences: list[str]      # germline nucleotide seqs (uppercased), aligned with names
+    index: dict[str, int]     # name -> row index
+    anchors: dict[str, int] | None = None  # name -> conserved-anchor germline pos (Cys/Trp-Phe)
+    gapped: dict[str, str] | None = None   # name -> IMGT-gapped germline (AIRR sequence_alignment)
+    info: dict[str, AlleleInfo] | None = None  # name -> what its source told (functionality, species, label, evidence)
 
     def __len__(self) -> int:
         return len(self.names)
@@ -34,7 +35,7 @@ class ReferenceSet:
     dataconfigs (``from_dataconfigs``), a FASTA file (``from_fasta``), a genotype mapping (``from_genotype``) or its
     JSON form (``from_serializable``)."""
 
-    def __init__(self, genes: Dict[str, GeneReference], has_d: bool, loci: List[LocusInfo] | None = None,
+    def __init__(self, genes: dict[str, GeneReference], has_d: bool, loci: list[LocusInfo] | None = None,
                  provenance: Iterable[SourceProvenance] = ()):
         self.genes = genes
         self.has_d = has_d
@@ -92,7 +93,7 @@ class ReferenceSet:
         return m
 
     @classmethod
-    def from_dataconfigs(cls, *dataconfigs) -> "ReferenceSet":
+    def from_dataconfigs(cls, *dataconfigs) -> ReferenceSet:
         """The annotated union of GenAIRR dataconfigs' alleles (``alignair.genairr.reference_from_dataconfigs``)."""
         from ..genairr.reference import reference_from_dataconfigs
         return reference_from_dataconfigs(*dataconfigs)
@@ -101,7 +102,7 @@ class ReferenceSet:
         """Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== model-head
         index), ungapped ``sequences``, IMGT-``gapped`` V, and junction ``anchors`` — with NO pickle.
         This is the safe reference the distributed ``.alignair`` embeds and inference rebuilds from."""
-        genes: Dict[str, dict] = {}
+        genes: dict[str, dict] = {}
         for G in ("V", "D", "J"):
             if G not in self.genes:
                 continue
@@ -131,9 +132,9 @@ class ReferenceSet:
         return out
 
     @classmethod
-    def from_serializable(cls, data: dict) -> "ReferenceSet":
+    def from_serializable(cls, data: dict) -> ReferenceSet:
         """Rebuild from :meth:`to_serializable` (the safe, no-pickle inference load path)."""
-        out: Dict[str, GeneReference] = {}
+        out: dict[str, GeneReference] = {}
         for G, gd in data["genes"].items():
             names = list(gd["names"])
             sequences = [str(s).upper() for s in gd["sequences"]]
@@ -157,9 +158,9 @@ class ReferenceSet:
         return cls(out, bool(data.get("has_d")), loci=loci, provenance=provenance)
 
     @classmethod
-    def from_genotype(cls, genes: Dict[str, Dict[str, str]],
-                      anchors: Dict[str, Dict[str, int]] | None = None, *,
-                      locus: str | None = None) -> "ReferenceSet":
+    def from_genotype(cls, genes: dict[str, dict[str, str]],
+                      anchors: dict[str, dict[str, int]] | None = None, *,
+                      locus: str | None = None) -> ReferenceSet:
         """Build a reference from a genotype mapping {gene_type: {allele_name: dna_seq}}.
 
         gene_type is V/J (+ D for heavy chains; omit D for light). ``anchors`` optionally supplies
@@ -194,13 +195,13 @@ class ReferenceSet:
             loci = []
         return cls(out, has_d, loci=loci)
 
-    def subset(self, allowed: Dict[str, Iterable[str]]) -> "ReferenceSet":
+    def subset(self, allowed: dict[str, Iterable[str]]) -> ReferenceSet:
         """Return a new ReferenceSet keeping only the named alleles per gene (a donor's
         reduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {V|D|J: allele
         names}; a segment it does not name keeps all its alleles. The kept alleles are in this reference's order, each
         once, whatever order (or set) they are named in: the chip's scores depend on its bank's row order."""
         want = {g.upper(): set(v) for g, v in allowed.items()}
-        out: Dict[str, GeneReference] = {}
+        out: dict[str, GeneReference] = {}
         for G, ref in self.genes.items():
             keep = [n for n in ref.names if n in want[G]] if G in want else list(ref.names)
             seqs = [ref.sequences[ref.index[n]] for n in keep]
@@ -214,7 +215,7 @@ class ReferenceSet:
         per_index = {G: [membership[G][self.genes[G].index[n]] for n in out[G].names] for G in out}
         return ReferenceSet(out, self.has_d, loci=self._loci_keeping_fields(per_index), provenance=self.provenance)
 
-    def membership(self) -> Dict[str, list]:
+    def membership(self) -> dict[str, list]:
         """Each gene's per-index locus (None for an allele no locus range holds), from the locus schema."""
         membership = {G: [None] * len(ref) for G, ref in self.genes.items()}
         for info in self.loci:
@@ -223,7 +224,7 @@ class ReferenceSet:
                     membership[G][start:end] = [info.locus] * (end - start)
         return membership
 
-    def _loci_keeping_fields(self, per_index: Dict[str, list], extra: List[LocusInfo] = ()) -> List[LocusInfo]:
+    def _loci_keeping_fields(self, per_index: dict[str, list], extra: list[LocusInfo] = ()) -> list[LocusInfo]:
         """This reference's loci (then ``extra`` ones) with ranges recomputed from ``per_index``, every other field kept;
         none when this reference has no schema."""
         if not self.loci:
@@ -243,7 +244,7 @@ class ReferenceSet:
                 return last + 1
         return 0
 
-    def extend(self, other: "ReferenceSet", *, on_conflict: str = "error") -> "ReferenceSet":
+    def extend(self, other: ReferenceSet, *, on_conflict: str = "error") -> ReferenceSet:
         """This reference with ``other``'s alleles added (a donor's novel or undocumented alleles), each at the end of
         its locus's block in its gene; this reference is unchanged.
 
@@ -307,17 +308,17 @@ class ReferenceSet:
         return letters.pop() if len(letters) == 1 else None
 
     @classmethod
-    def from_fasta(cls, path: str) -> "ReferenceSet":
+    def from_fasta(cls, path: str) -> ReferenceSet:
         """Load a genotype FASTA (``>allele_name`` headers + DNA). Each allele's segment (V/D/J) is read from its name
         (``_infer_segment``); an InputError names the alleles it cannot be read from, and those named twice with two
         sequences.
 
         Like :meth:`from_genotype`, the result can be bound to a model or trained against."""
-        genes: Dict[str, Dict[str, str]] = {"V": {}, "D": {}, "J": {}}
+        genes: dict[str, dict[str, str]] = {"V": {}, "D": {}, "J": {}}
         name = None
-        chunks: List[str] = []
-        twice: List[str] = []
-        unplaced: List[str] = []
+        chunks: list[str] = []
+        twice: list[str] = []
+        unplaced: list[str] = []
 
         def _flush():
             if name is not None:

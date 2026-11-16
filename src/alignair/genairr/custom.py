@@ -3,7 +3,6 @@ files."""
 from __future__ import annotations
 
 import os
-from typing import Optional
 
 from ..errors import ConfigurationError
 
@@ -11,9 +10,9 @@ from ..errors import ConfigurationError
 D_CHAIN_TYPES = frozenset({"BCR_HEAVY", "TCR_BETA", "TCR_DELTA"})
 
 
-def build_dataconfigs(*, dataconfig: Optional[list] = None, v_fasta: Optional[str] = None,
-                      d_fasta: Optional[str] = None, j_fasta: Optional[str] = None,
-                      chain_type: Optional[str] = None):
+def build_dataconfigs(*, dataconfig: list | None = None, v_fasta: str | None = None,
+                      d_fasta: str | None = None, j_fasta: str | None = None,
+                      chain_type: str | None = None):
     """``(dataconfigs, cartridge report or None)``: the built-in dataconfigs ``dataconfig`` names, or the one GenAIRR
     builds from the V, J (and, for a locus with a D, D) FASTA files of a ``chain_type``. ConfigurationError (with the
     offending field) for both or neither, an unknown name, a missing FASTA or chain type, a D FASTA a chain type does

@@ -26,8 +26,8 @@ def register(sub) -> None:
 
 
 def run(args) -> int:
-    from ..genotype.infer import GenotypeEvidence
     from ..genotype.airr import write_genotype_set
+    from ..genotype.infer import GenotypeEvidence
     if not (0.0 < args.explain <= 1.0) or args.min_reads < 1:
         return report_error(ConfigurationError("--explain must be in (0, 1] and --min-reads at least 1",
                                        context={"explain": args.explain, "min_reads": args.min_reads}))

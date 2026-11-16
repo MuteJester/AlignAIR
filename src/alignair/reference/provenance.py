@@ -23,7 +23,7 @@ class SourceProvenance:
         return dataclasses.asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> "SourceProvenance":
+    def from_dict(cls, data: dict) -> SourceProvenance:
         """From ``to_dict``'s form; unknown keys are ignored."""
         names = {field.name for field in dataclasses.fields(cls)}
         return cls(**{key: value for key, value in dict(data).items() if key in names})

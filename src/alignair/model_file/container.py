@@ -30,8 +30,14 @@ import hashlib
 import json
 import struct
 
-from ..errors import (MissingDependencyError, ModelError, ModelFormatError, ModelIntegrityError,
-                      ModelSectionError, error_context)
+from ..errors import (
+    MissingDependencyError,
+    ModelError,
+    ModelFormatError,
+    ModelIntegrityError,
+    ModelSectionError,
+    error_context,
+)
 
 MAGIC = b"ALGNAIR\x01"          # 7-char tag + 1-byte MAJOR format version
 MAJOR_VERSION = 1

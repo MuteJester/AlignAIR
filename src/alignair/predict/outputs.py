@@ -19,8 +19,8 @@ import numpy as np
 
 from ..core.anchors import ANCHOR_GENES, ANCHOR_LOGITS
 from ..core.d_presence import D_PRESENCE_LOGITS
-from ..reference.genes import GENES
 from ..errors import InferenceError
+from ..reference.genes import GENES
 
 _READ_KEYS = ("mutation_rate", "indel_count", "orientation", "orientation_logits", "start_mask", "end_mask",
               "read_locus")
@@ -52,7 +52,7 @@ class ModelOutputs:
     read_locus: np.ndarray | None = None                            # (B,) the read's locus index (several loci)
 
     @classmethod
-    def from_network(cls, outputs: Mapping[str, np.ndarray], genes: Sequence[str]) -> "ModelOutputs":
+    def from_network(cls, outputs: Mapping[str, np.ndarray], genes: Sequence[str]) -> ModelOutputs:
         """The typed outputs of one batch of ``run_model`` for a model calling ``genes`` (see the module docstring)."""
         known = {*(f"{g}_{part}" for g in genes for part in ("allele", "start", "end", "log_posterior")),
                  *(f"{g}_{side}_logits" for g in GENES for side in ("start", "end")),

@@ -10,12 +10,12 @@ Training is ``alignair.run_training`` (``alignair.train``).
 """
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
+
 from .core.runtime import resolve_device
 from .errors import MissingDependencyError, ModelError
 from .reference.loci import FALLBACK_LOCUS
-
-from dataclasses import dataclass
-from typing import Iterator, Optional, Sequence
 
 __all__ = ["Aligner", "PredictionResult", "resolve_device"]
 
@@ -35,7 +35,7 @@ class PredictionResult:
     list. The coordinates in each record refer to that record's canonical ``sequence``."""
     records: list
     locus: str = FALLBACK_LOCUS
-    ids: Optional[list] = None
+    ids: list | None = None
 
     def __iter__(self) -> Iterator[dict]:
         return iter(self.records)
@@ -66,8 +66,8 @@ class Aligner:
     """A loaded model bound to its germline reference, ready to predict. Construct with :meth:`from_pretrained` (a
     local path, a shipped catalog id, or ``id@revision``); ``alignair predict`` loads its model through it."""
 
-    def __init__(self, model, reference, *, device: str = "cpu", model_path: Optional[str] = None,
-                 source_commit: Optional[str] = None):
+    def __init__(self, model, reference, *, device: str = "cpu", model_path: str | None = None,
+                 source_commit: str | None = None):
         self.model = model
         self.reference = reference
         self.device = device
@@ -78,7 +78,7 @@ class Aligner:
     @classmethod
     def from_pretrained(cls, model: str, *, revision: str | None = None, device: str = "auto",
                         reference=None, registry=None, offline: bool = False,
-                        token: str | None = None) -> "Aligner":
+                        token: str | None = None) -> Aligner:
         """Load a model by local path, a Hugging Face repo (``hf://org/repo`` or ``org/repo`` — pulled
         via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``). ``revision`` pins a
         HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
@@ -141,12 +141,12 @@ class Aligner:
                                  commit_message=f"Upload {filename}")
 
     @classmethod
-    def from_model(cls, model, reference, *, device: str = "auto") -> "Aligner":
+    def from_model(cls, model, reference, *, device: str = "auto") -> Aligner:
         """Wrap an already-loaded ``(model, reference)`` pair (e.g. straight from training)."""
         dev = resolve_device(device)
         return cls(model.to(dev), reference, device=dev)
 
-    def bound_to(self, reference) -> "Aligner":
+    def bound_to(self, reference) -> Aligner:
         """An Aligner that predicts from ``reference`` (its bank, e.g. a donor genotype's subset of the reference): a
         copy of the model bound to it once, so later calls, and the workers a pool starts from it, use that bank
         with no per-call binding; the reference is annotated against this Aligner's own (``alignair.reference.
@@ -199,6 +199,7 @@ class Aligner:
         run_model``: reads batched by width bucket), so the arrays are the ones a read's row comes from.
         """
         import numpy as np
+
         from .predict import PredictConfig
         from .predict.forward import run_model
         cfg = self.model.cfg
@@ -206,7 +207,7 @@ class Aligner:
                                                                  batch_size=batch_size), self.device)
         return {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
 
-    def predict_iter(self, sequences: "Iterator[str]", *, batch_size="auto", chunk_size: int = 20000,
+    def predict_iter(self, sequences: Iterator[str], *, batch_size="auto", chunk_size: int = 20000,
                      **kw) -> Iterator[dict]:
         """Stream prediction over an iterable of sequences in bounded memory: yields per-read records,
         predicting ``chunk_size`` reads at a time. Same options as :meth:`predict`."""

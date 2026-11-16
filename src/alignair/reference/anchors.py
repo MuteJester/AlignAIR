@@ -29,6 +29,7 @@ from .info import ANCHORED, AlleleInfo, AnchorEvidence
 from .loci import CHAIN_OF_LOCUS, loci_from_membership, locus_from_name
 from .reference_set import GeneReference, ReferenceSet
 
+
 class LocusMismatchWarning(UserWarning):
     """A reference of another locus was bound to a model of one locus: allowed, but the model never trained on it."""
 

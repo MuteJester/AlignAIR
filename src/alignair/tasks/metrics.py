@@ -1,8 +1,8 @@
 """Alignment metrics with explicit support counts for aggregation across batches."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import math
+from dataclasses import dataclass, field
 
 import torch
 
@@ -26,7 +26,7 @@ class MetricReport:
             self.totals[name] = float(values.sum())
             self.counts[name] = count
 
-    def merge(self, other: "MetricReport") -> None:
+    def merge(self, other: MetricReport) -> None:
         """Add ``other``'s numerators and counts to this report's, so that across batches small batches and sparse
         genes keep their correct weight."""
         for name, total in other.totals.items():

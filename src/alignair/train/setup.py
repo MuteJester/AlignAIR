@@ -1,15 +1,15 @@
 """Assemble shared training state without selecting a source, checkpoint, or study policy."""
 from __future__ import annotations
 
-from collections.abc import Callable
 import math
+from collections.abc import Callable
 from typing import Protocol
 
 import torch
 from torch import nn
 
-from ..errors import ConfigurationError, error_context
 from ..core.config import AlignAIRConfig
+from ..errors import ConfigurationError, error_context
 from ..tasks import TrainingTasks, build_tasks
 from .engine import TrainingEngine
 from .guards import validate_grad_clip

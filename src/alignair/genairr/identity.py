@@ -7,7 +7,7 @@ import hashlib
 from pathlib import Path
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def tree_sha256(directory: str) -> str:
     """SHA-256 over every file under ``directory`` but ``__pycache__`` and ``.pyc``: in the sorted order of their
     POSIX paths relative to it, each path, its byte length and its bytes. Computed once per process."""

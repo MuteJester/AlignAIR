@@ -54,7 +54,7 @@ class NovelAlleles:
                 "epoch_records": self.epoch_records}
 
     @classmethod
-    def from_dict(cls, data) -> "NovelAlleles":
+    def from_dict(cls, data) -> NovelAlleles:
         data = dict(data)
         if data.get("generator") != GENERATOR:
             raise ConfigurationError(f"novel alleles of generator {data.get('generator')!r}; this build draws "
@@ -85,9 +85,9 @@ def epoch_alleles(reference, spec: NovelAlleles, epoch: int) -> tuple[NovelAllel
 def novel_records(dataconfig, parameters, seed: int, spec: NovelAlleles):
     """The records of the stream that starts at ``seed``, each epoch simulated from its novel alleles' genotype; a
     record's ``sequence_id`` counts from 0 across epochs, and a novel read carries its allele's definition."""
+    from ...genairr.experiment import build_experiment
     from ...genairr.novel import novel_genotype
     from ...reference.reference_set import ReferenceSet
-    from ...genairr.experiment import build_experiment
     reference = ReferenceSet.from_dataconfigs(dataconfig)
     size, k, x = spec.epoch_records, 0, int(seed)
     while True:

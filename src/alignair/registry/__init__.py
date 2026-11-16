@@ -10,6 +10,24 @@ from .sources import DEFAULT_REGISTRY, OfflineError, find_model, load_registry, 
 from .updates import maybe_notify_updates
 from .validate import validate_registry
 
-__all__ = ["sources", "cache", "hf", "updates", "DEFAULT_REGISTRY", "OfflineError", "DownloadIntegrityError",
-           "find_model", "load_registry", "resolve_sources", "resolve_model", "maybe_notify_updates",
-           "publish_local", "publish_bundle", "upload_version", "validate_registry", "is_hf_repo_spec", "parse_hf_spec", "download_from_hub"]
+__all__ = [
+    "DEFAULT_REGISTRY",
+    "DownloadIntegrityError",
+    "OfflineError",
+    "cache",
+    "download_from_hub",
+    "find_model",
+    "hf",
+    "is_hf_repo_spec",
+    "load_registry",
+    "maybe_notify_updates",
+    "parse_hf_spec",
+    "publish_bundle",
+    "publish_local",
+    "resolve_model",
+    "resolve_sources",
+    "sources",
+    "updates",
+    "upload_version",
+    "validate_registry",
+]
