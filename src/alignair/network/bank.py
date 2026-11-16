@@ -86,10 +86,10 @@ class BankCompiler(nn.Module):
         for gene, frame in gene_frames(reference).items():
             alleles = reference.gene(gene.upper())
             rows = [(index, sequence, frame.columns[name])
-                    for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences))]
+                    for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences, strict=True))]
             if gene == "d":           # a reverse complement row reads its own positions, as a forward D row does
                 rows += [(index, reverse_complement(sequence), frame.columns[name])
-                         for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences))]
+                         for index, (name, sequence) in enumerate(zip(alleles.names, alleles.sequences, strict=True))]
             table, cover, sequence_tokens = compile_rows([(sequence, columns) for _, sequence, columns in rows],
                                                          frame.width)
             self.register_buffer(f"table_{gene}", table, persistent=False)

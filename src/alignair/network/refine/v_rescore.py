@@ -98,7 +98,7 @@ def band_dp(pair: torch.Tensor, active: torch.Tensor) -> torch.Tensor:
     ramp = GAP_COST * torch.arange(pair.shape[-1], dtype=pair.dtype, device=pair.device)
     ramped = ramp.expand(*pair.shape[:2], -1).clone()
     inserted = torch.full_like(ramped, _NEG)
-    for pair_t, active_t in zip(pair.unbind(2), active.unbind(2)):
+    for pair_t, active_t in zip(pair.unbind(2), active.unbind(2), strict=True):
         inserted[..., :-1] = ramped[..., 1:] - 2 * GAP_COST
         ramped = torch.where(active_t, torch.maximum(torch.cummax(ramped, -1).values + pair_t, inserted), ramped)
     return (ramped - ramp).amax(-1)

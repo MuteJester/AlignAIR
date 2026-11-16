@@ -43,7 +43,7 @@ def collect(io: RunIO, rows) -> tuple:
     with closing(iter_sequence_batches(io.input_path, chunk_size=io.chunk_size, seq_column=io.seq_column,
                                        id_column=io.id_column)) as batches:
         for batch in batches:
-            for read_id, sequence, source in zip(batch.ids, batch.sequences, batch.source_ids):
+            for read_id, sequence, source in zip(batch.ids, batch.sequences, batch.source_ids, strict=True):
                 if index in wanted:
                     ids.append(read_id), sequences.append(sequence), sources.append(source)
                 index += 1

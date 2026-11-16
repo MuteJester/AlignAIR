@@ -94,7 +94,7 @@ def _evidence(out: dict, tokens: torch.Tensor, mask: torch.Tensor, bank) -> dict
     m = out["mutation_rate"].clamp(*RATE)
     scores = _path_scores(torch.cat(walks), torch.cat(germlines), m.repeat(len(walks), 1)).chunk(len(walks))
     evidence = {}
-    for (gene, (anchor, refinable)), ahead, behind in zip(anchors.items(), scores[0::2], scores[1::2]):
+    for (gene, (anchor, refinable)), ahead, behind in zip(anchors.items(), scores[0::2], scores[1::2], strict=True):
         # the bases within WINDOW of the anchor count, the anchor's own on its 3' side
         offset = torch.arange(length, device=tokens.device) - anchor[:, None]
         ahead = ahead.gather(1, offset.clamp(0, WINDOW + 1))

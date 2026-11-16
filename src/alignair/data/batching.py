@@ -149,6 +149,6 @@ def _collate_target(values: list, rows: list, width: int):
             raise TrainingDataError("target shapes differ between samples") from exc
     if any(value.padding != values[0].padding for value in values):
         raise TrainingDataError("positional targets use different padding values")
-    if any(value.ndim != 1 or value.numel() != row.numel() for value, row in zip(tensors, rows)):
+    if any(value.ndim != 1 or value.numel() != row.numel() for value, row in zip(tensors, rows, strict=True)):
         raise TrainingDataError("positional labels must align with their encoded tokens")
     return pad_vectors(tensors, width=width, dtype=tensors[0].dtype, padding=values[0].padding)

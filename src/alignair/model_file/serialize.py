@@ -138,7 +138,7 @@ def reference_fasta(reference) -> str:
     for g in _GENES:
         if g in reference.genes:
             ref = reference.gene(g)
-            for name, seq in zip(ref.names, ref.sequences):
+            for name, seq in zip(ref.names, ref.sequences, strict=True):
                 lines.append(f">{name}\n{str(seq).upper()}")
     return "\n".join(lines) + ("\n" if lines else "")
 

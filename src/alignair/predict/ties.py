@@ -76,7 +76,7 @@ def better_v_alleles(sequences, alignments, reference, candidates, allowed=None)
     to its locus's alleles (``refine.locus``): no other allele is better."""
     bank = None
     out = []
-    for i, (sequence, aln, named) in enumerate(zip(sequences, alignments, candidates)):
+    for i, (sequence, aln, named) in enumerate(zip(sequences, alignments, candidates, strict=True)):
         if aln is None:
             out.append(None)
             continue
@@ -99,7 +99,7 @@ def tied_alleles(sequences, alignments, reference, allowed=None) -> list:
     None) keeps a read's ties to its locus's alleles (``refine.locus``)."""
     bank = None
     out = []
-    for i, (sequence, aln) in enumerate(zip(sequences, alignments)):
+    for i, (sequence, aln) in enumerate(zip(sequences, alignments, strict=True)):
         if aln is None:
             out.append(())
             continue

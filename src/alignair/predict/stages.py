@@ -57,7 +57,7 @@ def decode_outputs(state: PredictionState) -> PredictionState:
     if state.orientation_given is not None:
         own = predictions.orientation
         predictions = replace(predictions, orientation=np.array(
-            [int(p) if o is None else int(o) for o, p in zip(state.orientation_given, own)], dtype=int))
+            [int(p) if o is None else int(o) for o, p in zip(state.orientation_given, own, strict=True)], dtype=int))
     return replace(state, predictions=predictions)
 
 
@@ -168,7 +168,7 @@ def record_loci(v_alignments, reference, no_v, loci, read_locus=None) -> list[st
     called = called_loci(v_alignments, reference, no_v)
     if called is not None and read_locus is not None:
         names = reference.locus_names()
-        called = [names[int(k)] if label else "" for label, k in zip(called, read_locus)]
+        called = [names[int(k)] if label else "" for label, k in zip(called, read_locus, strict=True)]
     if called is not None:
         return called
     one = loci[0] if loci is not None and len(loci) == 1 else None

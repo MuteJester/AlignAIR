@@ -128,7 +128,7 @@ def realign_v(sequences, segments, alignments, alleles, reference, *, indel_coun
                          v_limits=[limits[i] for i in redo])["v"]
     gene = reference.gene("V")
     out = list(alignments)
-    for i, aln in zip(redo, new):
+    for i, aln in zip(redo, new, strict=True):
         current = alignments[i]
         if current is None or _matched(sequences[i], aln, _germline_seq(gene, aln.allele)) > _matched(
                 sequences[i], current, _germline_seq(gene, current.allele)):

@@ -96,8 +96,8 @@ class ProcessPool:
         shares = [[i for batch in batches[k::parts] for i in batch] for k in range(parts)]
         jobs = [([sequences[i] for i in share], batch_size, options) for share in shares]
         records: list = [None] * len(sequences)
-        for share, part in zip(shares, self._pool.starmap(_predict, jobs)):
-            for i, record in zip(share, part):
+        for share, part in zip(shares, self._pool.starmap(_predict, jobs), strict=True):
+            for i, record in zip(share, part, strict=True):
                 records[i] = record
         return records
 

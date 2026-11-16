@@ -52,7 +52,7 @@ def v_absent(sequences, alignments, reference) -> list:
     of any V allele of ``reference``. A read without a V call (alignment ``None``) has no V to drop."""
     germlines = kmers = None
     out = []
-    for sequence, aln in zip(sequences, alignments):
+    for sequence, aln in zip(sequences, alignments, strict=True):
         if aln is None:
             out.append(False)
             continue

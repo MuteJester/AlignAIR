@@ -273,7 +273,7 @@ class AirrWriter:
                 f"predictions={len(preds)} — refusing to write (would silently drop reads)")
         if metas is not None and len(metas) != len(ids):
             raise PredictionCountMismatchError(f"metas={len(metas)} != records={len(ids)}")
-        for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds)):
+        for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds, strict=True)):
             row = _build_row(sid, seq, p, self.locus)
             if metas and metas[i]:
                 for k, v in metas[i].items():      # metadata may NOT clobber a populated model field
