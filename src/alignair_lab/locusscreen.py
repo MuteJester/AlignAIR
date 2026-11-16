@@ -107,24 +107,24 @@ def _check_builds(arms: Mapping, per: Mapping[str, str], loci: Mapping, names: M
 
 
 def _reads_per_second(checkpoint: str, reads: Sequence[str], device: str) -> float:
-    """Reads per second of the product pipeline (``alignair.api.predict_sequences``) on ``reads`` on ``device``: the
+    """Reads per second of the product pipeline (``alignair.Aligner.predict``, batch 64) on ``reads`` on ``device``: the
     median of ``SPEED_PASSES`` timed passes after a warm-up on the first 64."""
     import statistics
 
     import torch
-    from alignair import api
-    model, reference = api.load_model(checkpoint, device=device)
+    from alignair import Aligner
+    aligner = Aligner.from_pretrained(checkpoint, device=device)
 
     def synchronize():
         if device.startswith("cuda"):
             torch.cuda.synchronize()
 
-    api.predict_sequences(model, reference, reads[:64], device=device)
+    aligner.predict(reads[:64], batch_size=64)
     rates = []
     for _ in range(SPEED_PASSES):
         synchronize()
         start = time.perf_counter()
-        api.predict_sequences(model, reference, reads, device=device)
+        aligner.predict(reads, batch_size=64)
         synchronize()
         rates.append(len(reads) / (time.perf_counter() - start))
     return statistics.median(rates)

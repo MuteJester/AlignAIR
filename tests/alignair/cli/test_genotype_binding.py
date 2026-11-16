@@ -70,14 +70,13 @@ def path_genotype(path):
 
 def test_a_genotype_run_binds_its_bank_once(golden, fasta, binds, tmp_path):
     from alignair.aligner import PredictionResult
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     path, genotype = _genotype(golden, tmp_path)
     assert _predict(fasta, tmp_path / "cli.tsv", "--genotype", str(path)) == 0
     assert len(binds) == 1 and set(binds[0].gene("V").names) == set(genotype["V"])
     loaded = load_model(str(TEST_CHIP))
     # the API on the CLI's chunks of two: a read's row depends on the batch it is predicted in
-    records = [record for i in range(0, 6, 2) for record in predict_sequences(
-        loaded.model, loaded.reference, golden[0][i:i + 2], device="cpu", batch_size=4, genotype=genotype)]
+    records = [record for i in range(0, 6, 2) for record in Aligner.from_model(loaded.model, loaded.reference, device="cpu").with_genotype(genotype).predict(golden[0][i:i + 2], batch_size=4).records]
     PredictionResult(records, ids=[f"r{i}" for i in range(len(records))]).write_airr(str(tmp_path / "api.tsv"))
     cli, api = _rows(tmp_path / "cli.tsv"), _rows(tmp_path / "api.tsv")
     common = sorted(set(cli[0]) & set(api[0]))

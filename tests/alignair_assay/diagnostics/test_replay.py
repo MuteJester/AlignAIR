@@ -14,7 +14,7 @@ import pytest
 pytest.importorskip("GenAIRR")
 
 import torch  # noqa: E402
-from alignair import api  # noqa: E402
+from alignair import Aligner, api  # noqa: E402
 from alignair.model_file import save_model  # noqa: E402
 from alignair.predict import forward, pipeline, stages  # noqa: E402
 from alignair.data import prepare_nucleotide_inputs  # noqa: E402
@@ -60,10 +60,9 @@ def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_mod
     ids, seqs = _inputs(s0_reads)
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
 
-    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
+    assert out.airr_rows == Aligner.from_model(model, reference_set, device="cpu").predict(seqs, batch_size=BATCH).records
     # The light records too: what _to_records gave before the AIRR assembly (which must not have changed them).
-    assert out.records == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH,
-                                                airr=False)
+    assert out.records == Aligner.from_model(model, reference_set, device="cpu").predict(seqs, batch_size=BATCH, airr=False).records
     # What the variant exercises.
     cropped = [row.get("length_cropped", False) for row in out.airr_rows]
     assert cropped == [i == len(seqs) - 3 for i in range(len(seqs))]
@@ -94,7 +93,7 @@ def test_replay_equals_product_pipeline_on_a_multi_locus_reference(make_small_mo
     model, reference_set = make_small_model("HUMAN_IGK_OGRDB", "HUMAN_IGL_OGRDB", seed=0)
     ids, seqs = _inputs(s0_reads)
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
+    assert out.airr_rows == Aligner.from_model(model, reference_set, device="cpu").predict(seqs, batch_size=BATCH).records
     assert {row["locus"] for row in out.airr_rows} <= {"IGK", "IGL", ""}
 
 
@@ -108,7 +107,7 @@ def test_replay_equals_product_pipeline_on_a_read_longer_than_the_window(make_sm
     ids, seqs = _inputs(s0_reads)
     seqs[-3] = seqs[0] * 3   # longer than the window: cropped to leave the terminal slot
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
+    assert out.airr_rows == Aligner.from_model(model, reference_set, device="cpu").predict(seqs, batch_size=BATCH).records
     assert max(len(read) for read in out.canonical) == model.cfg.max_seq_length - 1
 
 
@@ -118,7 +117,7 @@ def test_replay_and_product_share_unknown_base_whitespace_and_crop_normalization
     sequences = [' acgr?p ', 'acgt' * 150, ' nN ']
     prepared, _ = prepare_nucleotide_inputs(sequences, model.cfg.max_seq_length - 1)     # the model's window
     out = replay(model, reference_set, sequences, ['one', 'two', 'three'], device='cpu', batch_size=2)
-    assert out.airr_rows == api.predict_sequences(model, reference_set, sequences, device='cpu', batch_size=2)
+    assert out.airr_rows == Aligner.from_model(model, reference_set, device='cpu').predict(sequences, batch_size=2).records
     assert [record['input_sequence'] for record in out.records] == prepared
 
 
@@ -132,7 +131,7 @@ def test_replay_equals_product_pipeline_real_checkpoint(reference, s1_layout, de
 
     out = replay(model, reference_set, seqs, ids, device=device, batch_size=64)
     assert len(out.airr_rows) == 200
-    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device=device, batch_size=64)
+    assert out.airr_rows == Aligner.from_model(model, reference_set, device=device).predict(seqs, batch_size=64).records
 
 
 def test_predict_sequences_runs_the_product_pipeline():
@@ -145,7 +144,7 @@ def test_predict_config_is_the_one_predict_sequences_builds(small_model, monkeyp
     seen = []
     monkeypatch.setattr(api, "_predict", lambda model, sequences, reference, cfg, device: seen.append(cfg) or [])
     for overrides in ({}, {"threshold": 0.3, "cap": 5, "airr": False}, {"loci": ("X",)}):
-        api.predict_sequences(model, reference_set, ["ACGT"], device="cpu", batch_size=7, **overrides)
+        Aligner.from_model(model, reference_set, device="cpu").predict(["ACGT"], batch_size=7, **overrides).records
         assert predict_config(model, reference_set, batch_size=7, **overrides) == seen[-1]
     assert seen[0].loci == ("IGH",)
 
@@ -472,7 +471,7 @@ def test_a_product_stage_change_reaches_the_replay(small_model, s0_reads, monkey
     product = stages.select_alleles
     monkeypatch.setattr(stages, "select_alleles", lambda p, n, threshold, cap: product(p, n, threshold, 1))
     out = replay(model, reference_set, seqs, ids, device="cpu", batch_size=BATCH)
-    assert out.airr_rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=BATCH)
+    assert out.airr_rows == Aligner.from_model(model, reference_set, device="cpu").predict(seqs, batch_size=BATCH).records
     assert all(len(call.names) == 1 for call in out.calls["v"])
 
 

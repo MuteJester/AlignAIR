@@ -30,9 +30,9 @@ def _dj_read(reference):
 
 
 def test_a_read_without_a_v_has_no_v_call_and_keeps_its_d_and_j(golden):
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference = golden
-    (row,) = predict_sequences(model, reference, [_dj_read(reference)], device="cpu")
+    (row,) = Aligner.from_model(model, reference, device="cpu").predict([_dj_read(reference)]).records
     assert row["v_presence"] == "absent"
     assert (row["v_call"], row["v_calls"], row["v_likelihoods"]) == ("", [], [])
     assert all(row.get(key) is None for key in V_FIELDS)
@@ -42,9 +42,9 @@ def test_a_read_without_a_v_has_no_v_call_and_keeps_its_d_and_j(golden):
 
 
 def test_a_light_record_without_a_v_has_no_v_call(golden):
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference = golden
-    (row,) = predict_sequences(model, reference, [_dj_read(reference)], device="cpu", airr=False)
+    (row,) = Aligner.from_model(model, reference, device="cpu").predict([_dj_read(reference)], airr=False).records
     assert row["v_presence"] == "absent" and row["v_call"] == "" and row["j_call"]
     assert all(row.get(key) is None for key in V_FIELDS)
 
@@ -52,9 +52,9 @@ def test_a_light_record_without_a_v_has_no_v_call(golden):
 def test_only_a_read_holding_no_v_kmer_is_gated(golden):
     """On the golden reads: every read holding an exact V k-mer in its forward frame keeps its V call; the gated ones
     (CDR3 fragments, and a read the random-init model turns into a frame without its V) hold none."""
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference = golden
-    rows = predict_sequences(model, reference, json.loads(FIXTURE.read_text())["reads"], device="cpu")
+    rows = Aligner.from_model(model, reference, device="cpu").predict(json.loads(FIXTURE.read_text())["reads"]).records
     v_kmers = set().union(*(_kmers(s) for s in reference.gene("V").sequences))
     holds = [bool(_kmers(row["sequence"].upper()) & v_kmers) for row in rows]
     assert all(row["v_call"] and "v_presence" not in row for row, held in zip(rows, holds) if held)
@@ -65,11 +65,11 @@ def test_only_a_read_holding_no_v_kmer_is_gated(golden):
 def test_a_read_without_a_v_whose_d_is_short_keeps_its_d_span_without_a_call(golden):
     """The two gates on one read: no V call and the D presence head's short class: the D's span is kept without a
     call, and the row is a partial no-V assembly."""
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from tests.alignair.predict.test_d_gate import DPresenceStub, _encoded
     model, reference = golden
     read = _dj_read(reference)
-    (row,) = predict_sequences(DPresenceStub(model, {_encoded(read): 1}), reference, [read], device="cpu")
+    (row,) = Aligner.from_model(DPresenceStub(model, {_encoded(read): 1}), reference, device="cpu").predict([read]).records
     assert (row["v_presence"], row["d_presence"], row["d_call"]) == ("absent", "short", "")
     assert row["d_sequence_start"] is not None
     assert (row["airr_assembly_status"], row["airr_assembly_reason"]) == ("partial", "no_v")

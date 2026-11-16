@@ -117,7 +117,6 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: str |
     import tempfile
 
     from .. import model_file as mf
-    from ..api import load_model
     bundle_dir = os.path.abspath(bundle_dir)
     parent = os.path.dirname(bundle_dir) or "."
     os.makedirs(parent, exist_ok=True)
@@ -129,7 +128,8 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: str |
     # build in a secure sibling temp dir on the SAME filesystem (so the final rename is atomic)
     tmp = tempfile.mkdtemp(dir=parent, prefix=os.path.basename(bundle_dir) + ".building.")
     try:
-        model, ref = load_model(checkpoint_path, device="cpu")   # safe inference load (no pickle needed)
+        loaded = mf.load_model(checkpoint_path, device="cpu")   # safe inference load (no pickle needed)
+        model, ref = loaded.model, loaded.reference
         metrics = _validation_report(model, ref, dcs) if validate else {}
         if validate and not metrics:                             # empty report is NOT success
             raise ValueError("validation produced no metrics (too few held-out records for a full "
@@ -139,7 +139,7 @@ def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: str |
                       include_trusted_pickle=False, model_id=model_id, model_version=model_version,
                       description=description,
                       card={"training": training, "validation": metrics})
-        load_model(model_path, device="cpu")                     # verify the export reloads
+        mf.load_model(model_path, device="cpu")                  # verify the export reloads
 
         manifest = _reference_manifest(ref, sources, report, model_path)
         with open(os.path.join(tmp, "reference_manifest.json"), "w") as f:

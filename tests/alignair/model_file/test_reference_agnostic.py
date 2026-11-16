@@ -6,7 +6,7 @@ import pytest
 from alignair.core import prepare_model
 from torch import nn
 
-from alignair import api
+from alignair import Aligner
 from alignair import model_file as mf
 from alignair.core import AlignAIR, ModelComponents, register_architecture
 from alignair.core import components
@@ -65,8 +65,9 @@ def test_a_model_loads_with_another_reference(saved):
     assert loaded.reference.gene("V").names == other.gene("V").names
     assert loaded.model.core.reference is loaded.reference
     assert len(loaded.reference.gene("V")) == 11
-    model, reference = api.load_model(path, reference=other)
-    assert reference.gene("V").names == other.gene("V").names and model.core.reference is reference
+    aligner = Aligner.from_pretrained(path, reference=other, device="cpu")
+    assert aligner.reference.gene("V").names == other.gene("V").names
+    assert aligner.model.core.reference is aligner.reference
 
 
 def test_a_reference_bound_at_load_is_annotated_against_the_models_own(saved):
@@ -78,7 +79,7 @@ def test_a_reference_bound_at_load_is_annotated_against_the_models_own(saved):
     novel = other.gene("V").sequences[other.gene("V").index["IGHV-novel*01"]]
     trained = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB).gene("V")
     for _, reference in (("model_file", mf.load_model(path, reference=other).reference),
-                         ("api", api.load_model(path, reference=other)[1])):
+                         ("api", Aligner.from_pretrained(path, reference=other, device="cpu").reference)):
         v = reference.gene("V")
         assert v.anchors["IGHV-novel*01"] == 288 and v.gapped["IGHV-novel*01"].replace(".", "") == novel
         assert v.info["IGHV-novel*01"].anchor_evidence == AnchorEvidence(

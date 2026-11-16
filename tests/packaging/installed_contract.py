@@ -20,7 +20,7 @@ def main():
     import alignair
     import GenAIRR.data as gd
     import torch
-    from alignair import Aligner, load_model
+    from alignair import Aligner
     from alignair.cli.main import build_parser
     from alignair.core import prepare_model
     from alignair.reference.reference_set import ReferenceSet
@@ -44,9 +44,9 @@ def main():
         assert "reference_json" in header["sections"]
         assert not any(name.startswith("dataconfig/") or name == "train_state"
                        for name in header["sections"])
-        restored, reference = load_model(str(artifact), device="cpu")
-        assert reference.gene("V").names
-        result = Aligner.from_model(restored, reference, device="cpu").predict(["ACGT" * 20])
+        aligner = Aligner.from_pretrained(str(artifact), device="cpu")
+        assert aligner.reference.gene("V").names
+        result = aligner.predict(["ACGT" * 20])
         assert len(result) == 1
         output = root / "predictions.tsv"
         result.write_airr(str(output))

@@ -37,14 +37,14 @@ def test_a_multi_locus_reference_labels_each_row_with_its_called_vs_locus():
     """IGK + IGL: a row's locus is the locus of its V call (never IGH), and blank without a V call."""
     import GenAIRR.data as gd
     import torch
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from alignair.core import prepare_model
     from alignair.reference.reference_set import ReferenceSet
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
     torch.manual_seed(0)
     model = prepare_model(reference, embed_dim=4, trunk_channels=8).build_model().eval()
     reads = [reference.gene("V").sequences[i] + reference.gene("J").sequences[0] for i in (0, 5, -1)]
-    rows = predict_sequences(model, reference, reads, device="cpu")
+    rows = Aligner.from_model(model, reference, device="cpu").predict(reads).records
     of = {locus: set(np.asarray(reference.gene("V").names)[reference.locus_mask(locus, "V")]) for locus in ("IGK", "IGL")}
     for row in rows:
         call = row["v_call"].split(",")[0]
@@ -71,7 +71,7 @@ def test_every_rows_v_d_and_j_are_of_its_locus_and_a_light_row_has_no_d():
     row's), and an IGK row has no D call and no D placement (``refine.locus``)."""
     import GenAIRR.data as gd
     import torch
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from alignair.core import prepare_model
     from alignair.reference.reference_set import ReferenceSet
     reference = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB)
@@ -87,7 +87,7 @@ def test_every_rows_v_d_and_j_are_of_its_locus_and_a_light_row_has_no_d():
 
     reads = ([germline("IGH", "V", k) + germline("IGH", "D", k) + germline("IGH", "J", 0) for k in (0, 7, 20)]
              + [germline("IGK", "V", k) + germline("IGK", "J", 0) for k in (0, 7, 20)])
-    rows = predict_sequences(model, reference, reads, device="cpu")
+    rows = Aligner.from_model(model, reference, device="cpu").predict(reads).records
     assert {row["locus"] for row in rows} <= {"IGH", "IGK", ""}
     for row in rows:
         if not row["locus"]:

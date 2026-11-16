@@ -41,7 +41,7 @@ def test_train_cli_refuses_existing_bundle_before_training(tmp_path):
 @pytest.mark.skipif(not _have_fasta, reason="custom_reference example FASTAs not present")
 def test_custom_fasta_train_and_pickle_free_export(tmp_path):
     from alignair import model_file as mf
-    from alignair.api import load_model
+    from alignair import Aligner
     from alignair.cli.main import main
     out = tmp_path / "run"
     rc = main(["train", "--v-fasta", _V, "--j-fasta", _J, "--d-fasta", _D, "--chain-type", "BCR_HEAVY",
@@ -53,7 +53,7 @@ def test_custom_fasta_train_and_pickle_free_export(tmp_path):
         assert (bundle / f).exists(), f
     secs = mf.read_metadata(str(bundle / "model.alignair")).get("sections", {})
     assert not any(k.startswith("dataconfig/") or k == "train_state" for k in secs)   # pickle-free
-    model, ref = load_model(str(bundle / "model.alignair"), device="cpu")             # loads w/o trust
+    ref = Aligner.from_pretrained(str(bundle / "model.alignair"), device="cpu").reference   # loads w/o trust
     assert len(ref.gene("V")) == 8
     import json
     manifest = json.load(open(bundle / "reference_manifest.json"))                    # richer manifest

@@ -48,10 +48,10 @@ def dataconfig_name(args, model_path) -> str | None:
 
 def run(args) -> int:
 
-    from ..api import load_model
     from ..core.runtime import resolve_device
     from ..evaluate import format_text, run_benchmark
     from ..genairr import resolve_dataconfig
+    from ..model_file import load_model
     from ..registry import resolve_model
     from ..registry import sources as _sources
     device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
@@ -67,12 +67,12 @@ def run(args) -> int:
             "--dataconfig is required to generate benchmark data (the model card has none)"))
     dataconfig = resolve_dataconfig(name)
     try:
-        model, reference = load_model(model_path, device=device)
+        loaded = load_model(model_path, device=device)
     except ValueError as e:
         return fail(e, error_type=ModelError, context={"path": model_path})
 
     strata = [s.strip() for s in args.strata.split(",")] if args.strata else None
-    results = run_benchmark(model, reference, dataconfig, n=args.n, seed=args.seed, strata_names=strata,
+    results = run_benchmark(loaded.model, loaded.reference, dataconfig, n=args.n, seed=args.seed, strata_names=strata,
                             device=device, batch_size=args.batch_size)
     text = json.dumps(results, indent=2) if args.format == "json" else format_text(results)
     if args.out:

@@ -36,7 +36,7 @@ def _simulate_reads(dataconfig, n: int, seed: int = 7) -> list:
 
 
 def run(args) -> int:
-    from ..api import load_model, predict_sequences
+    from ..aligner import Aligner
     from ..core.runtime import resolve_device
     from ..genairr import resolve_dataconfig
     from ..io.airr import write_airr
@@ -59,16 +59,16 @@ def run(args) -> int:
     print("[demo] simulating reads + predicting (default reference)...")
     reads = _simulate_reads(dc, args.reads)
     ids = [f"demo{i}" for i in range(len(reads))]
-    model, ref = load_model(model_path, device=device)
-    records = predict_sequences(model, ref, reads, device=device)
-    write_airr(os.path.join(out, "demo.tsv"), ids, reads, records, locus=ref.default_locus)
+    aligner = Aligner.from_pretrained(model_path, device=device)
+    ref = aligner.reference
+    records = aligner.predict(reads).records
+    write_airr(os.path.join(out, "demo.tsv"), ids, reads, records, locus=aligner.default_locus)
 
     print("[demo] predicting under a donor (genotype-subset) reference...")
     donor = {g: set(list(ref.gene(g.upper()).names)[: max(2, len(ref.gene(g.upper())) // 3)])
              for g in model_genes(ref.has_d)}
-    donor_records = predict_sequences(model, ref, reads, device=device,
-                                      genotype=donor)
-    write_airr(os.path.join(out, "demo_donor.tsv"), ids, reads, donor_records, locus=ref.default_locus)
+    donor_records = aligner.with_genotype(donor).predict(reads).records
+    write_airr(os.path.join(out, "demo_donor.tsv"), ids, reads, donor_records, locus=aligner.default_locus)
 
     print(f"[demo] done -> {out}  (bundle/, demo.tsv, demo_donor.tsv)")
     return 0

@@ -17,7 +17,7 @@ import pytest
 
 pytest.importorskip("GenAIRR")
 
-from alignair import api  # noqa: E402
+from alignair import Aligner  # noqa: E402
 from alignair.io.airr import write_airr  # noqa: E402
 from alignair.predict.state import GeneCall, GermlineAlignment  # noqa: E402
 
@@ -450,7 +450,7 @@ def test_variants_on_the_released_checkpoint(reference, s1_layout):
     results = run_variants(model, reference_set, cases, truths, reference=reference, device="cpu", batch_size=64)
     assert list(results) == list(DEFAULT_VARIANTS)
     ids, seqs = _ids_seqs(cases)
-    assert results["baseline"].rows == api.predict_sequences(model, reference_set, seqs, device="cpu", batch_size=64)
+    assert results["baseline"].rows == Aligner.from_model(model, reference_set, device="cpu").predict(seqs, batch_size=64).records
     # true calls make every applicable call metric perfect
     for name in ("v.top1_in_set", "j.top1_in_set"):
         values = [s[name] for s in results["true_calls"].scores.values() if name in s]

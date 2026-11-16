@@ -22,8 +22,9 @@ READS = json.loads(FIXTURE.read_text())["reads"][:4]
 
 
 def _chip():
-    from alignair.api import load_model
-    return load_model(str(TEST_CHIP), device="cpu")
+    from alignair import Aligner
+    aligner = Aligner.from_pretrained(str(TEST_CHIP), device="cpu")
+    return aligner.model, aligner.reference
 
 
 def _small(reference, **options):
@@ -110,8 +111,8 @@ def test_a_light_chain_keeps_its_parsers_d_logits():
 
 
 def test_a_core_without_the_optional_heads_predicts_rows_without_them():
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference = _small(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))
-    rows = predict_sequences(_WithoutOptionalHeads(model), reference, READS, device="cpu")
+    rows = Aligner.from_model(_WithoutOptionalHeads(model), reference, device="cpu").predict(READS).records
     assert rows and all(row["productive"] is None for row in rows)
     assert not any("v_anchor" in row or "d_presence" in row for row in rows)

@@ -1,11 +1,11 @@
-"""AlignAIR 3 checkpoints are refused with the version that reads them, by ``api.load_model`` and by ``alignair
-predict``; a safe model file needs no pickle consent."""
+"""AlignAIR 3 checkpoints are refused with the version that reads them, by ``Aligner.from_pretrained`` and by
+``alignair predict``; a safe model file needs no pickle consent."""
 
 import GenAIRR.data as gd
 import pytest
 import torch
 
-from alignair import api
+from alignair import Aligner
 from alignair import model_file as mf
 from alignair.core import prepare_model
 from alignair.errors import ModelError
@@ -26,18 +26,18 @@ def _v3_pt(tmp_path):
     return path
 
 
-def test_api_load_refuses_a_pt_checkpoint(tmp_path):
+def test_from_pretrained_refuses_a_pt_checkpoint(tmp_path):
     with pytest.raises(ModelError, match=r"AlignAIR 3 checkpoint .*alignair<4"):
-        api.load_model(_v3_pt(tmp_path))
+        Aligner.from_pretrained(_v3_pt(tmp_path), device="cpu")
 
 
-def test_api_load_no_pickle_alignair_needs_no_trust(tmp_path):
+def test_from_pretrained_needs_no_trust_for_a_pickle_free_model_file(tmp_path):
     p = str(tmp_path / "m.alignair")
     mf.save_model(p, _model(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
                   dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
-    m, ref = api.load_model(p)                                       # no trust, no dataconfig needed
-    assert m is not None and ref.gene("V").gapped
+    aligner = Aligner.from_pretrained(p, device="cpu")               # no trust, no dataconfig needed
+    assert aligner.model is not None and aligner.reference.gene("V").gapped
 
 
 def test_predict_refuses_a_pt_checkpoint_with_the_version_that_runs_it(tmp_path, capsys):
@@ -51,7 +51,7 @@ def test_predict_refuses_a_pt_checkpoint_with_the_version_that_runs_it(tmp_path,
     assert not (tmp_path / "out.tsv").exists()
 
 
-@pytest.mark.parametrize("payload,message", [(None, "no such model file"), (b"", "not an AlignAIR model file"),
+@pytest.mark.parametrize("payload,message", [(None, "model file does not exist"), (b"", "not an AlignAIR model file"),
                                              (b">read\nACGT\n", "not an AlignAIR model file")],
                          ids=["missing", "empty", "fasta"])
 def test_a_file_that_is_no_checkpoint_is_not_called_an_alignair_3_one(tmp_path, payload, message):
@@ -59,5 +59,5 @@ def test_a_file_that_is_no_checkpoint_is_not_called_an_alignair_3_one(tmp_path, 
     if payload is not None:
         path.write_bytes(payload)
     with pytest.raises(ModelError, match=message) as caught:
-        api.load_model(str(path))
+        Aligner.from_pretrained(str(path), device="cpu")
     assert "alignair<4" not in str(caught.value)

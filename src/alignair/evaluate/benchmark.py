@@ -6,8 +6,8 @@ import math
 import statistics
 from collections.abc import Mapping
 
+from ..aligner import Aligner
 from ..analyze.tables import first_call, num
-from ..api import predict_sequences
 from ..errors import ConfigurationError, DataContractError
 from ..reference.genes import GENES
 
@@ -88,11 +88,11 @@ def run_benchmark(model, reference, dataconfig, *, n: int = 200, seed: int = 0,
             raise ConfigurationError(f"unknown benchmark strata {unknown}", context={"strata": unknown},
                                      hint=f"the strata are {sorted(strata)}")
         strata = {k: strata[k] for k in strata_names}
+    aligner = Aligner.from_model(model, reference, device=device)
     out: dict = {}
     for i, (name, params) in enumerate(strata.items()):
         truth = generate_labeled(dataconfig, params, n, seed + i)
-        preds = predict_sequences(model, reference, [r["sequence"] for r in truth],
-                                  device=device, batch_size=batch_size)
+        preds = aligner.predict([r["sequence"] for r in truth], batch_size=batch_size).records
         out[name] = {"n": len(truth), **score(truth, preds)}
     return out
 

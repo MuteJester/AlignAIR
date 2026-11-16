@@ -72,18 +72,18 @@ def heldout_scores(checkpoint, suite, *, device: str, batch_size: int, exclude=f
     """The held-out reads' V top-1 exact in the ``extended`` and ``genotype`` banks (see the module docstring): a read
     is exact when the first allele of its ``v_call`` is its truth's row. Novel reads of a sequence in ``exclude``
     (one training also drew) go under ``excluded``."""
-    from alignair import api
+    from alignair import Aligner
     from alignair_assay.core.cases import read_cases
     from alignair_assay.suites.donors import donors_from_json
     suite = Path(suite)
     cases = read_cases(suite / "cases.jsonl.gz")
     donors = donors_from_json(json.loads((suite / "donors.json").read_text(encoding="utf-8")))
-    _, own = api.load_model(str(checkpoint), device=device)
+    own = Aligner.from_pretrained(str(checkpoint), device=device).reference
     extended, mapping = heldout_reference(own, donors)
-    model, reference = api.load_model(str(checkpoint), reference=extended, device=device)
+    aligner = Aligner.from_pretrained(str(checkpoint), reference=extended, device=device)
+    reference = aligner.reference
     sequences = [case["sequence"] for case in cases]
-    calls = {"extended": [record["v_call"] for record in
-                          api.predict_sequences(model, reference, sequences, device=device, batch_size=batch_size)],
+    calls = {"extended": [record["v_call"] for record in aligner.predict(sequences, batch_size=batch_size).records],
              "genotype": [None] * len(cases)}
     by_donor: dict[str, list[int]] = {}
     for i, case in enumerate(cases):
@@ -99,8 +99,7 @@ def heldout_scores(checkpoint, suite, *, device: str, batch_size: int, exclude=f
                 letter = next((g for g in reference.genes if row in reference.gene(g).index), None)
                 if letter is not None:
                     genotype.setdefault(letter, set()).add(row)
-        records = api.predict_sequences(model, reference, [sequences[i] for i in reads], device=device,
-                                        batch_size=batch_size, genotype=genotype)
+        records = aligner.with_genotype(genotype).predict([sequences[i] for i in reads], batch_size=batch_size).records
         for i, record in zip(reads, records):
             calls["genotype"][i] = record["v_call"]
     novel_of = {(donor.subject_id, name): allele for donor in donors for name, allele in donor.novel.items()}

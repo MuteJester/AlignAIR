@@ -149,9 +149,10 @@ def test_a_none_orientation_is_the_models_own_from_an_unforced_eval_forward():
 @pytest.fixture(scope="module")
 def chip_and_reads():
     import json
-    from alignair.api import load_model
+    from alignair import Aligner
     from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP
-    model, reference = load_model(str(TEST_CHIP), device="cpu")
+    aligner = Aligner.from_pretrained(str(TEST_CHIP), device="cpu")
+    model, reference = aligner.model, aligner.reference
     return model, reference, json.loads(FIXTURE.read_text())["reads"]
 
 

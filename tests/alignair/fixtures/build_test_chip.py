@@ -63,7 +63,7 @@ def write_tie_reads(model_path: Path = TEST_CHIP, path: Path = TIE_READS) -> int
     """The first ``TIE_COUNT`` GenAIRR reads (amplicon components first, then full length) whose complete row's V call
     lists ties under the test chip, written as ``{"reads"}``; the number written."""
     import GenAIRR.data as gd
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from alignair.model_file import load_model
     from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     loaded = load_model(str(model_path))
@@ -72,7 +72,7 @@ def write_tie_reads(model_path: Path = TEST_CHIP, path: Path = TIE_READS) -> int
     for index in TIE_COMPONENTS:
         reads = [r["sequence"] for r in itertools.islice(stream_records(gd.HUMAN_IGH_OGRDB, components[index],
                                                                         TIE_SEED), TIE_DRAW)]
-        rows = predict_sequences(loaded.model.eval(), loaded.reference, reads, device="cpu", batch_size=16)
+        rows = Aligner.from_model(loaded.model.eval(), loaded.reference, device="cpu").predict(reads, batch_size=16).records
         found += [read for read, row in zip(reads, rows)
                   if "," in (row["v_call"] or "") and row.get("airr_assembly_status") == "complete"]
         if len(found) >= TIE_COUNT:

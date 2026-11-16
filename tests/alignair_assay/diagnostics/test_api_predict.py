@@ -72,7 +72,7 @@ def test_rows_are_the_clis(checkpoint, inputs, tmp_path):
     assert record["counts"]["written_records"] == record["counts"]["input_records"] == 50
     assert (record["device"], record["torch"], record["cuda_device"]) == ("cpu", torch.__version__, None)
     assert (record["batch_size"], record["chunk_size"], record["locus"]) == (8, CHUNK_SIZE, "IGH")
-    assert record["api"] == "alignair.predict_sequences" and record["genotype"] is None
+    assert record["api"] == "alignair.Aligner.predict" and record["genotype"] is None
 
 
 def test_a_genotype_constrains_the_calls(checkpoint, inputs, reference, tmp_path):
@@ -118,18 +118,18 @@ def test_a_genotype_keyed_by_gene_names_is_a_genotype_failure(checkpoint, inputs
                                     AttributeError("'tuple' object has no attribute 'items'"), KeyError("v")])
 def test_a_genotype_of_the_wrong_type_is_a_genotype_failure(checkpoint, inputs, reference, tmp_path, capsys,
                                                             monkeypatch, raised):
-    # The errors a genotype of another type raises where it is applied, reading it or building its bank before any
+    # The errors a genotype of another type raises where it is applied, reading it or binding its bank before any
     # read is predicted, are the genotype path's.
-    import alignair_assay.diagnostics.api_predict as api_predict
+    from alignair import Aligner
 
-    def bank(*args, **kwargs):
+    def bind(*args, **kwargs):
         raise raised
 
     fasta, truth = inputs
     genotype = tmp_path / "genotype.json"
     genotype.write_text(json.dumps({"v": sorted(reference.alleles["v"])[:3], "d": sorted(reference.alleles["d"]),
                                     "j": sorted(reference.alleles["j"])}))
-    monkeypatch.setattr(api_predict, "genotype_bank", bank)
+    monkeypatch.setattr(Aligner, "with_genotype", bind)
     assert main(_args(checkpoint, truth, fasta, tmp_path / "out.tsv", "--genotype", str(genotype))) == GENOTYPE_FAILED
     assert capsys.readouterr().err.strip().splitlines()[-1].startswith(f"{GENOTYPE_NOTE}: {type(raised).__name__}")
 
@@ -138,7 +138,7 @@ def test_a_genotype_of_the_wrong_type_is_a_genotype_failure(checkpoint, inputs, 
                                     KeyError("j")])
 def test_the_same_error_types_from_the_prediction_are_the_tools(checkpoint, inputs, reference, tmp_path, capsys,
                                                                  monkeypatch, raised):
-    # Once the genotype is read and its mask computed, an error of the same types inside the prediction is the
+    # Once the genotype is read and its bank bound, an error of the same types inside the prediction is the
     # tool's: it propagates as it would without a genotype, with no note.
     import alignair_assay.diagnostics.api_predict as api_predict
 

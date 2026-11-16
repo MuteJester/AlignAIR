@@ -12,7 +12,7 @@ pytestmark = pytest.mark.integration
 
 
 def test_the_same_read_in_two_files_gets_the_same_row():
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from alignair.core.boundaries import width_bucket
     torch.set_num_threads(8)                        # the harness's two threads hide width effects (it restores them)
     model, reference = golden_model()
@@ -22,6 +22,6 @@ def test_the_same_read_in_two_files_gets_the_same_row():
     short = [read[:60] for read in reads[:5]]
     long_ = [(read + read)[:150] for read in reads[:5]] + [(read + read)[:400] for read in reads[:5]]
     assert not {bucket(r) for r in reads} & {bucket(r) for r in short + long_}
-    rows_one = predict_sequences(model, reference, [*reads, *short], device="cpu", batch_size=8)[:len(reads)]
-    rows_other = predict_sequences(model, reference, [*long_, *reads], device="cpu", batch_size=8)[len(long_):]
+    rows_one = Aligner.from_model(model, reference, device="cpu").predict([*reads, *short], batch_size=8).records[:len(reads)]
+    rows_other = Aligner.from_model(model, reference, device="cpu").predict([*long_, *reads], batch_size=8).records[len(long_):]
     assert rows_one == rows_other

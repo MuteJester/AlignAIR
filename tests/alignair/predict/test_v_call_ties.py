@@ -17,10 +17,10 @@ def golden():
 
 
 def test_v_call_lists_the_call_then_its_ties(golden):
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference = golden
     reads = json.loads(FIXTURE.read_text())["reads"] + json.loads(TIE_READS.read_text())["reads"]
-    rows = predict_sequences(model, reference, reads, device="cpu")
+    rows = Aligner.from_model(model, reference, device="cpu").predict(reads).records
     names = set(reference.gene("V").names)
     called = [row for row in rows if row["v_call"]]
     assert called

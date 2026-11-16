@@ -21,14 +21,14 @@ def golden():
 
 
 def test_rows_keep_their_key_order(golden):
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference = golden
     reads = json.loads(FIXTURE.read_text())["reads"]
     keys = json.loads(ROW_KEYS.read_text())
-    light = predict_sequences(model, reference, reads, device="cpu", batch_size=8, airr=False)
+    light = Aligner.from_model(model, reference, device="cpu").predict(reads, batch_size=8, airr=False).records
     assert [list(row) for row in light] == keys["light"]
-    rows = predict_sequences(model, reference, reads, device="cpu", batch_size=8)
+    rows = Aligner.from_model(model, reference, device="cpu").predict(reads, batch_size=8).records
     assert [list(row) for row in rows] == keys["airr"]
     short = DPresenceStub(model, {_encoded(read): 1 for read in reads[:5]})
-    rows = predict_sequences(short, reference, reads[:5], device="cpu", batch_size=8)
+    rows = Aligner.from_model(short, reference, device="cpu").predict(reads[:5], batch_size=8).records
     assert [list(row) for row in rows] == keys["short_d"]

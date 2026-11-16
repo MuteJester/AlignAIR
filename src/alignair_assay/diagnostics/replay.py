@@ -1,15 +1,15 @@
 """AlignAIR's predict pipeline run stage by stage, with every stage's output captured.
 
 ``replay`` runs the product's own pipeline (``alignair.predict.pipeline.PIPELINE``, ``run_stages``), the one
-``alignair.api.predict_sequences`` runs, under the ``PredictConfig`` it builds (``PredictConfig.for_model``), with two
+``alignair.Aligner.predict`` runs, under the ``PredictConfig`` it builds (``PredictConfig.for_model``), with two
 hooks: ``Trace``, which keeps each stage's output and seconds, and ``_SubstitutionHook``, which feeds the substitutions
 in. Nothing is re-implemented here, so a change to a product stage reaches the replay as it reaches the product. The
 stages, in order (``STAGES``): ``input_policy``, ``forward``, ``clean``, ``canonicalize``, ``segments``, ``alleles``,
 ``germline``, ``better_v`` (an allele the read matches better than its V call becomes the call), ``v_presence``,
 ``ties``, ``records``, ``airr``.
 
-A genotype is the bank the model is bound to (``predict_sequences``' ``genotype``): the replay takes the model as it
-is bound, so a genotype run is replayed by binding its bank first.
+A genotype is the bank the model is bound to (``Aligner.with_genotype``): the replay takes the model as it is bound,
+so a genotype run is replayed by binding its bank first.
 
 **Substitutions**, each fed in between two stages (``Substitutions`` documents the fields):
 
@@ -39,7 +39,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from alignair.api import load_model
+from alignair.model_file import load_model
 from alignair.core.orientation import NUM_ORIENTATIONS
 from alignair.predict import PredictConfig
 from alignair.predict.clean import expectations
@@ -74,7 +74,7 @@ class StageOutputs:
     germline: dict[str, list]
     # each read's light record (alignair.predict.results.light_record)
     records: list[dict]
-    # build_airr output: the records predict_sequences returns
+    # build_airr output: the records Aligner.predict returns
     airr_rows: list[dict]
     # wall time per stage, keyed by STAGES in order
     seconds: dict[str, float]
@@ -121,15 +121,16 @@ class Substitutions:
 def load_model_checked(checkpoint_or_model, truth_reference: Reference, *, device: str) -> tuple[object, object]:
     """``(model, reference_set)`` on ``device`` whose germline reference is the truth reference.
 
-    A path (``str`` or path-like) is loaded with ``alignair.api.load_model`` (a ``.alignair`` model file; the model
-    comes back in eval mode). A ``(model, reference_set)`` pair, for example from a training loop, is passed through:
-    the model is unwrapped (``unwrap_model``), its reference checked, and only then moved to ``device`` in place;
-    moving it back is the caller's (``workflow.diagnose.evaluate`` does). ValueError when the reference does not
-    hold the truth reference (``check_reference``: every truth allele with its sequence and, in the truth's loci, no
-    other), naming both references' allele counts and the first allele, in name order, that is missing from the
-    model's reference, extra in a truth locus, or has a different sequence there."""
+    A path (``str`` or path-like) is loaded with ``alignair.model_file.load_model`` (a ``.alignair`` model file;
+    the model comes back in eval mode). A ``(model, reference_set)`` pair, for example from a training loop, is
+    passed through: the model is unwrapped (``unwrap_model``), its reference checked, and only then moved to
+    ``device`` in place; moving it back is the caller's (``workflow.diagnose.evaluate`` does). ValueError when the
+    reference does not hold the truth reference (``check_reference``: every truth allele with its sequence and, in
+    the truth's loci, no other), naming both references' allele counts and the first allele, in name order, that is
+    missing from the model's reference, extra in a truth locus, or has a different sequence there."""
     if isinstance(checkpoint_or_model, (str, os.PathLike)):
-        model, reference_set = load_model(str(Path(checkpoint_or_model).expanduser()), device=device)
+        loaded = load_model(str(Path(checkpoint_or_model).expanduser()), device=device)
+        model, reference_set = loaded.model, loaded.reference
         check_reference(reference_set, truth_reference)
         return model, reference_set
     model, reference_set = checkpoint_or_model
@@ -203,7 +204,7 @@ def check_reference(reference_set, truth_reference: Reference) -> None:
 
 
 def predict_config(model, reference_set, *, batch_size: int, **overrides) -> PredictConfig:
-    """The ``PredictConfig`` that ``alignair.api.predict_sequences`` builds for ``model``, ``reference_set``,
+    """The ``PredictConfig`` that ``alignair.Aligner.predict`` builds for ``model``, ``reference_set``,
     ``batch_size`` and ``overrides`` (``PredictConfig.for_model``)."""
     return PredictConfig.for_model(model, reference_set, batch_size=batch_size, **overrides)
 
@@ -212,7 +213,7 @@ def replay(model, reference_set, sequences: list[str], ids: list[str], *, device
            substitutions: Substitutions = Substitutions()) -> StageOutputs:
     """Run AlignAIR's predict pipeline on ``sequences`` (named by ``ids``) stage by stage and return every stage's
     output, with ``substitutions`` fed in between the stages (see the module docstring). Without substitutions,
-    ``airr_rows`` equals what ``predict_sequences(model, reference_set, sequences, device=device,
+    ``airr_rows`` equals the records ``Aligner.from_model(model, reference_set, device=device).predict(sequences,
     batch_size=batch_size)`` returns. The model must be on ``device``; it runs in eval mode and is put back in its
     previous mode. ValueError when the ids and sequences differ in number, there is no sequence, or a substitution
     does not fit the reads or the model (a list of another length, a gene the model lacks, an orientation id outside

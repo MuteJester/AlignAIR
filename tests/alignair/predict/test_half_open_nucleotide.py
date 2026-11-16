@@ -5,7 +5,7 @@ import math
 import pytest
 import torch
 
-from alignair.api import predict_sequences
+from alignair import Aligner
 from alignair.core import AlignAIR, AlignAIRConfig
 from alignair.data import NucleotideBatchAdapter
 from alignair.reference.reference_set import GeneReference, ReferenceSet
@@ -61,7 +61,7 @@ def test_prediction_reports_an_end_at_the_read_length_when_the_logits_say_so():
         return {**output, "j_end_logits": peaked}
 
     model.core.register_forward_hook(peak_at_the_slot_after_the_last_base)
-    row = predict_sequences(model, _reference(), [READ], device="cpu", batch_size=1)[0]
+    row = Aligner.from_model(model, _reference(), device="cpu").predict([READ], batch_size=1).records[0]
     assert row["j_sequence_end"] == len(READ)
     # the toy V germline (12 nt) holds no 15-mer, so its read holds no V (predict.v_presence)
     assert row["v_presence"] == "absent" and row["v_call"] == ""
@@ -69,7 +69,7 @@ def test_prediction_reports_an_end_at_the_read_length_when_the_logits_say_so():
         if f"{gene}_sequence_start" in row:
             assert 0 <= row[f"{gene}_sequence_start"] <= row[f"{gene}_sequence_end"] <= len(READ)
     # a read longer than the window is cropped to leave the terminal slot
-    assert len(predict_sequences(model, _reference(), [READ * 8], device="cpu", batch_size=1)) == 1
+    assert len(Aligner.from_model(model, _reference(), device="cpu").predict([READ * 8], batch_size=1).records) == 1
 
 
 def test_a_logit_peak_on_slot_n_is_reported_as_the_end():

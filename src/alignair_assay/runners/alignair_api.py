@@ -2,7 +2,7 @@
 
 AlignAIR 3.0.0's ``predict --genotype`` crashes (``cli/predict.py`` passes ``load_genotype``'s ``(genotype,
 unknown)`` pair on as the genotype), and this branch never changes ``src/alignair``. This runner therefore calls
-``alignair.predict_sequences(..., genotype=...)`` itself, in a subprocess that runs the diagnostics layer's
+``alignair.Aligner.with_genotype(...).predict(...)`` itself, in a subprocess that runs the diagnostics layer's
 ``api_predict`` module by name (``DRIVER_MODULE``): runners may not import ``alignair``, and the assay process never
 imports torch. The module loads the checkpoint with the diagnostics' loader, reads the FASTA and writes the AIRR TSV
 as the CLI does (see its docstring), so on the shared arm its rows are alignair-local's, and the genotype arm runs

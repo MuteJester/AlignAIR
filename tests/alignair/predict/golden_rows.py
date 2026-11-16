@@ -42,8 +42,8 @@ def draw_reads() -> list[str]:
 
 def predict_rows(model, reference, reads) -> list[dict]:
     """The rows ``predict_sequences`` gives, as JSON gives them back (numbers and strings, sorted keys)."""
-    from alignair.api import predict_sequences
-    rows = predict_sequences(model, reference, reads, device="cpu", batch_size=8)
+    from alignair import Aligner
+    rows = Aligner.from_model(model, reference, device="cpu").predict(reads, batch_size=8).records
     return json.loads(json.dumps(rows, default=str, sort_keys=True))
 
 

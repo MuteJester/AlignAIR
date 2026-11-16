@@ -105,7 +105,7 @@ def test_an_anchor_model_row_takes_its_junction_from_the_anchors(golden):
     call, since no head learned it. An anchor the stub calls not observed, or reversed anchors, give a row whose
     junction and flags are unknown, assembled without error."""
     import GenAIRR.data as gd
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     model, reference = golden
     components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
@@ -115,7 +115,7 @@ def test_an_anchor_model_row_takes_its_junction_from_the_anchors(golden):
     anchors = {_encoded(read): (r["junction_start"], r["junction_end"] - 3) for read, r in zip(reads, records)}
     anchors[_encoded(reads[4])] = (None, anchors[_encoded(reads[4])][1])                 # V not observed
     anchors[_encoded(reads[5])] = (anchors[_encoded(reads[5])][1] + 3, anchors[_encoded(reads[5])][0])   # reversed
-    rows = predict_sequences(AnchorStub(model, anchors), reference, reads, device="cpu", batch_size=4)
+    rows = Aligner.from_model(AnchorStub(model, anchors), reference, device="cpu").predict(reads, batch_size=4).records
     for k, (row, record) in enumerate(zip(rows, records)):
         assert row["airr_assembly_status"] != "failed", row.get("airr_assembly_error")
         v_anchor, j_anchor = anchors[_encoded(reads[k])]
@@ -144,7 +144,7 @@ def test_a_reverse_complemented_read_takes_its_junction_from_anchors_in_the_forw
     for it carries the presented read with rev_comp T, its CDR3 positions on the reverse complement of that read (the
     forward read), as AIRR places them."""
     import GenAIRR.data as gd
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from alignair.io.airr import _build_row
     from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     model, reference = golden
@@ -156,7 +156,7 @@ def test_a_reverse_complemented_read_takes_its_junction_from_anchors_in_the_forw
     presented = [read.translate(complement)[::-1] for read in forward]
     anchors = {_encoded(read): (r["junction_start"], r["junction_end"] - 3) for read, r in zip(presented, records)}
     stub = AnchorStub(model, anchors, orientations={_encoded(read): 1 for read in presented})
-    rows = predict_sequences(stub, reference, presented, device="cpu", batch_size=4)
+    rows = Aligner.from_model(stub, reference, device="cpu").predict(presented, batch_size=4).records
     for row, record, read, shown in zip(rows, records, forward, presented):
         start, end = record["junction_start"], record["junction_end"]
         assert row["orientation_id"] == 1 and row["sequence"] == read and row["input_sequence"] == shown
@@ -173,7 +173,7 @@ def test_an_anchor_models_light_records_carry_the_derived_productivity(golden):
     """Without the AIRR assembly, a record still carries its anchors and the productivity they give, never a head's
     call (there is none)."""
     import GenAIRR.data as gd
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     from alignair.train.records.streams import CurriculumStreamPolicy, stream_records
     model, reference = golden
     components = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGH_OGRDB)
@@ -181,7 +181,7 @@ def test_an_anchor_models_light_records_carry_the_derived_productivity(golden):
                if r["junction_start"] is not None][:3]
     reads = [r["sequence"].upper() for r in records]
     anchors = {_encoded(read): (r["junction_start"], r["junction_end"] - 3) for read, r in zip(reads, records)}
-    rows = predict_sequences(AnchorStub(model, anchors), reference, reads, device="cpu", airr=False)
+    rows = Aligner.from_model(AnchorStub(model, anchors), reference, device="cpu").predict(reads, airr=False).records
     for row, read in zip(rows, reads):
         v_anchor, j_anchor = anchors[_encoded(read)]
         call = derive_junction(row["sequence"], v_anchor, j_anchor,

@@ -38,13 +38,12 @@ def test_the_pipeline_is_the_stages_in_their_order():
 
 
 def test_predict_is_the_pipeline_run_without_hooks(golden):
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference, reads = golden
     cfg = PredictConfig.for_model(model, reference, batch_size=8)
     trace = Trace()
     traced = run_stages(PredictionState.start(model, reference, cfg, "cpu", reads), hooks=(trace,))
-    assert traced.rows == predict(model, reads, reference, cfg, "cpu") == predict_sequences(
-        model, reference, reads, device="cpu", batch_size=8)
+    assert traced.rows == predict(model, reads, reference, cfg, "cpu") == Aligner.from_model(model, reference, device="cpu").predict(reads, batch_size=8).records
     assert list(trace.seconds) == list(STAGE_NAMES) and min(trace.seconds.values()) >= 0
     assert all(getattr(trace.states[stage.name], name) is not None for stage in PIPELINE for name in stage.sets)
 

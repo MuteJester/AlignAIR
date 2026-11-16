@@ -4,7 +4,7 @@ import itertools
 
 import pytest
 
-from alignair.api import predict_sequences
+from alignair import Aligner
 from alignair.core import prepare_model
 from alignair.data.flanks import FlankPolicy
 from alignair.reference.reference_set import ReferenceSet
@@ -31,7 +31,7 @@ def test_a_light_chain_reference_prepares_a_chip_without_d_and_predicts():
     model.bind_reference(reference)
     component = CurriculumStreamPolicy().parameters_for(gd.HUMAN_IGK_OGRDB)[1]
     reads = [r["sequence"] for r in itertools.islice(stream_records(gd.HUMAN_IGK_OGRDB, component, 5), 3)]
-    rows = predict_sequences(model, reference, reads, device="cpu", batch_size=4)
+    rows = Aligner.from_model(model, reference, device="cpu").predict(reads, batch_size=4).records
     assert len(rows) == 3 and all(not row.get("d_call") for row in rows)
 
 

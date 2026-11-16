@@ -40,16 +40,17 @@ def _variant(row, reference):
 
 def test_an_allele_the_read_matches_better_than_the_call_becomes_the_call(monkeypatch):
     import alignair.predict.stages as stages
-    from alignair.api import load_model, predict_sequences
+    from alignair import Aligner
     from alignair.reference.reference_set import ReferenceSet
-    model, reference = load_model(str(TEST_CHIP), device="cpu")
+    reference = Aligner.from_pretrained(str(TEST_CHIP), device="cpu").reference
     reads = json.loads(FIXTURE.read_text())["reads"]
-    rows = predict_sequences(model, reference, reads, device="cpu")
+    rows = Aligner.from_pretrained(str(TEST_CHIP), device="cpu").predict(reads).records
     i, novel = next((i, v) for i, row in enumerate(rows) if (v := _variant(row, reference)) is not None)
     base = rows[i]["v_call"].split(",")[0]
     NOVEL = base.split("*")[0] + "*99"
     bound = reference.extend(ReferenceSet.from_genotype({"V": {NOVEL: novel}, "J": {}}))
-    model, bound = load_model(str(TEST_CHIP), reference=bound, device="cpu")
+    aligner = Aligner.from_pretrained(str(TEST_CHIP), reference=bound, device="cpu")
+    bound = aligner.reference
     index = bound.gene("V").index
     clean = stages.clean
 
@@ -62,7 +63,7 @@ def test_an_allele_the_read_matches_better_than_the_call_becomes_the_call(monkey
         return preds
 
     monkeypatch.setattr(stages, "clean", favouring_the_base)
-    row = predict_sequences(model, bound, [reads[i]], device="cpu")[0]
+    row = aligner.predict([reads[i]]).records[0]
     assert row["v_calls"][0] == base                    # the model's scores still favour the base allele
     assert row["v_call"].split(",")[0] == NOVEL
     assert row["v_germline_end"] <= len(bound.gene("V").sequences[index[NOVEL]])

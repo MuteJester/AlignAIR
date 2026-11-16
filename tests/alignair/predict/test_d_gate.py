@@ -64,12 +64,12 @@ def _alignments_line_up_as_before(row, before):
 
 
 def _rows(golden, klass, **options):
-    from alignair.api import predict_sequences
+    from alignair import Aligner
     model, reference = golden
     reads = _reads()
     stub = DPresenceStub(model, {_encoded(read): klass for read in reads})
-    return (predict_sequences(model, reference, reads, device="cpu", **options),
-            predict_sequences(stub, reference, reads, device="cpu", **options))
+    return (Aligner.from_model(model, reference, device="cpu").predict(reads, **options).records,
+            Aligner.from_model(stub, reference, device="cpu").predict(reads, **options).records)
 
 
 def test_an_absent_d_row_has_no_d_and_valid_alignments(golden):
