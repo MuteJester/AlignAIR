@@ -112,8 +112,8 @@ test-command = "python {project}/tests/packaging/wheel_smoke.py"
 
 # ── Lint (ruff) ─────────────────────────────────────────────────────────────
 # The shipped package only; tests/quality/test_lint.py fails on any finding. Ruff's default rules (pinned by the
-# `test` extra's ruff version), plus pycodestyle's error and warning rules (long lines, one statement per line,
-# unambiguous names) and complexity.
+# `test` extra's ruff version), plus pycodestyle's whole E4/E7/E9 families, its warnings (W), long lines (E501) and
+# complexity (C901).
 [tool.ruff]
 line-length = 120
 target-version = "py310"
