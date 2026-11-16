@@ -54,6 +54,7 @@ test = [
     "pytest-cov>=4.1",     # statement/branch evidence and CI artifacts
     "pytest-timeout>=2.2", # bound test and fixture hangs, including concurrency tests
     "pytest-xdist>=3.5",   # verify component tests in separate concurrent workers
+    "ruff>=0.17.1,<0.18",  # the lint gate (tests/quality/test_lint.py); a minor release may add default rules
     "scipy>=1.11",         # the architecture lab's noise statistics (alignair_lab, outside the wheel)
 ]
 dev = [
