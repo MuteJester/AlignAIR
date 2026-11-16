@@ -113,7 +113,9 @@ def read_sequences(path: str, seq_column: str | None = None, id_column: str | No
     rejects: list | None = [] if collect_rejects else None
     for cids, cseqs, drp in iter_sequences(path, chunk_size=10 ** 9, seq_column=seq_column,
                                            id_column=id_column, rejects=rejects):
-        ids += cids; seqs += cseqs; dropped += drp
+        ids += cids
+        seqs += cseqs
+        dropped += drp
     info = {"n_read": len(ids) + dropped, "n_dropped": dropped, "format": _detect_format(path, seq_column)}
     if collect_rejects:
         info["rejects"] = rejects

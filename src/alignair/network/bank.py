@@ -1,4 +1,5 @@
-"""The bank compiler: the reference as rows of one-hot bases on each gene's frame columns (``alignair.reference.frames``).
+"""The bank compiler: the reference as rows of one-hot bases on each gene's frame columns
+(``alignair.reference.frames``).
 
 The bank is the chip's input, not its weights: the buffers are rebuilt from whichever reference the model is bound to
 (``AlignAIR.bind_reference``), are not saved with the weights, and a genotype is a mask over the rows. Per gene g:

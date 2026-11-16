@@ -101,20 +101,23 @@ def _table(lines, head, first_line, seq_column, id_column, path):
         if seq_column is not None and seq_column not in fields:
             raise _failure(f"sequence column '{seq_column}' not in {path} (have {fields})",
                            path, "table", first_line)
-        column = seq_column if seq_column is not None else next((field for field in fields if field.lower() in _SEQUENCE_COLUMNS), None)
+        column = seq_column if seq_column is not None else next(
+            (field for field in fields if field.lower() in _SEQUENCE_COLUMNS), None)
         if column is None:
             raise _failure(f"no sequence column in {path}; expected one of {_SEQUENCE_COLUMNS} "
                            "or select the sequence column explicitly", path, "table", first_line)
         if id_column is not None and id_column not in fields:
             raise _failure(f"id column '{id_column}' not in {path} (have {fields})",
                            path, "table", first_line)
-        idcol = id_column if id_column is not None else next((field for field in fields if field.lower() in ("sequence_id", "id", "name")), None)
+        idcol = id_column if id_column is not None else next(
+            (field for field in fields if field.lower() in ("sequence_id", "id", "name")), None)
         for row in reader:
             if row[column] is None:
                 raise _failure(f"missing sequence field in {path}", path, "table", first_line + reader.line_num - 1)
             yield RawSequenceRecord(row.get(idcol) if idcol else None, row[column])
     except csv.Error as exc:
-        raise _failure(f"malformed sequence table: {exc}", path, "table", first_line + reader.reader.line_num - 1) from exc
+        raise _failure(f"malformed sequence table: {exc}", path, "table",
+                       first_line + reader.reader.line_num - 1) from exc
 
 
 def iter_sequence_records(path: str | os.PathLike[str], *, format: str = "auto",
@@ -152,6 +155,8 @@ def iter_sequence_records(path: str | os.PathLike[str], *, format: str = "auto",
                     if line.strip():
                         yield RawSequenceRecord(None, line.rstrip("\r\n"))
     except (UnicodeError, EOFError, gzip.BadGzipFile, zlib.error) as exc:
-        raise InputError("cannot decode sequence input", context={"stage": "sequence_file_parsing", "path": path}) from exc
+        raise InputError("cannot decode sequence input",
+                         context={"stage": "sequence_file_parsing", "path": path}) from exc
     except OSError as exc:
-        raise OperationIOError("cannot read sequence input", context={"stage": "sequence_file_parsing", "path": path}) from exc
+        raise OperationIOError("cannot read sequence input",
+                               context={"stage": "sequence_file_parsing", "path": path}) from exc

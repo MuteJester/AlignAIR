@@ -77,10 +77,10 @@ def serve_components(payload, inputs, link: WorkerLink):
                     if streams[slot] is None:
                         streams[slot] = iter(provider(component.reference, component.parameters, component.seed))
                     for record in islice(streams[slot], chunk_size):
-                        chunk.append(record)
+                        chunk.append(record)  # noqa: PERF402 - keeps the records drawn before an error
                     if len(chunk) < chunk_size:
                         ending = ('end', None)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - a stream's failure is sent to the parent
                     ending = ('error', pack_failure(exc))
             if chunk and not link.send(slot, ('records', chunk)):
                 return

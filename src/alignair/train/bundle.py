@@ -76,7 +76,7 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
         anchored = sum(1 for n in gr.names if gr.anchors and n in gr.anchors)
         genes[G] = {"n": len(gr), "anchored": anchored, "names": list(gr.names)}
     manifest = {
-        "loci": [{"locus": l.locus, "chain_type": l.chain_type, "has_d": l.has_d} for l in ref.loci],
+        "loci": [{"locus": info.locus, "chain_type": info.chain_type, "has_d": info.has_d} for info in ref.loci],
         "genes": genes,
         # canonical fingerprint of the reconstructed reference itself — identifies the exact allele set
         # independently of source-file layout (matches the container's embedded-reference check).
@@ -94,8 +94,9 @@ def _reference_manifest(ref, sources, report, model_path) -> dict:
     return manifest
 
 
-def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: str | None = None, model_version: str | None = None, description: str = "",
-                  validate: bool = True, sources: dict | None = None, report=None, overwrite: bool = False) -> str:
+def export_bundle(checkpoint_path: str, dcs, bundle_dir: str, *, model_id: str | None = None,
+                  model_version: str | None = None, description: str = "", validate: bool = True,
+                  sources: dict | None = None, report=None, overwrite: bool = False) -> str:
     """Export a **pickle-free**, distributable model bundle from a (resumable) training checkpoint:
     ``model.alignair`` (no trusted pickle) + ``model_card.md`` + ``reference_manifest.json`` + (unless
     ``validate=False``) ``validation_report.json``. Returns the model path. ``model_id`` and ``model_version`` go
@@ -208,7 +209,10 @@ def _reference_line(dc) -> str:
     reference set, date, species and chain type, those it has."""
     from ..genairr import name_of
     md = getattr(dc, "metadata", None)
-    value = lambda x: str(getattr(x, "value", x)) if x is not None else None
+
+    def value(x):
+        return str(getattr(x, "value", x)) if x is not None else None
+
     source = getattr(md, "reference_set", None)
     updated = getattr(md, "last_updated", None)
     what = " ".join(v for v in (value(getattr(md, "species", None)), value(getattr(md, "chain_type", None))) if v)
@@ -223,7 +227,7 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=
     """The bundle's ``model_card.md``: the model, its reference by name and version, allele counts, training, intended
     use, usage (genotype and reference swap), the validation metrics (a "pending" sentence without them) and
     where the licence and citation are."""
-    loci = ", ".join(l["locus"] for l in manifest.get("loci", [])) or "n/a"
+    loci = ", ".join(entry["locus"] for entry in manifest.get("loci", [])) or "n/a"
     title = " ".join(v for v in (model_id, model_version) if v)
     lines = ["# AlignAIR model card", ""]
     if title:
@@ -242,11 +246,11 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=
         lines.append(f"- heavy-SHM stream (requested): {training['heavy_shm']}")
     model = model_id or "model.alignair"
     lines += ["", "## Intended use", "",
-              f"Aligning single-end {loci} reads (full-length or fragments, any orientation) to AIRR rearrangements. "
-              "The embedded reference is the default callable set. The model reads its alleles from the bound "
-              "reference, so other alleles of the same genes (a donor's genotype, novel alleles) are called by "
-              "binding another reference (alignair predict --reference) without retraining. Not paired-read "
-              "assembly; another locus or species needs a model trained for it.", "",
+              (f"Aligning single-end {loci} reads (full-length or fragments, any orientation) to AIRR rearrangements. "
+               "The embedded reference is the default callable set. The model reads its alleles from the bound "
+               "reference, so other alleles of the same genes (a donor's genotype, novel alleles) are called by "
+               "binding another reference (alignair predict --reference) without retraining. Not paired-read "
+               "assembly; another locus or species needs a model trained for it."), "",
               "## Usage", "", "```bash",
               f"alignair predict --input reads.fasta --out out.tsv --model {model}",
               "# restrict calls to a donor's genotype (YAML/JSON keyed by V, D, J)",
@@ -261,7 +265,7 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=
     else:
         lines += ["Validation metrics are pending: this bundle was exported without validation."]
     lines += ["", "## License and citation", "",
-              "GPL-3.0-or-later: see LICENSE, and cite AlignAIR as CITATION.cff gives, in the AlignAIR repository "
-              "(https://github.com/MuteJester/AlignAIR)."]
+              ("GPL-3.0-or-later: see LICENSE, and cite AlignAIR as CITATION.cff gives, in the AlignAIR repository "
+               "(https://github.com/MuteJester/AlignAIR).")]
     with open(path, "w") as f:
         f.write("\n".join(lines) + "\n")

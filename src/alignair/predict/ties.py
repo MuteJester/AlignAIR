@@ -45,7 +45,8 @@ class _Bank:
     def __init__(self, reference):
         gene = reference.gene("V")
         self.names, forms = list(gene.names), gene.gapped or {}
-        self.bases, self.columns = _table(tuple(forms.get(name) or seq for name, seq in zip(self.names, gene.sequences)))
+        self.bases, self.columns = _table(tuple(forms.get(name) or seq
+                                                for name, seq in zip(self.names, gene.sequences)))
         self.index = {name: i for i, name in enumerate(self.names)}
 
     def matches(self, sequence, aln) -> tuple:

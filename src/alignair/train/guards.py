@@ -57,21 +57,27 @@ def validate_training_request(*, steps, batch_size, lr, max_seq_length, referenc
         validate_grad_clip(grad_clip)
     except ConfigurationError:
         problems.append(f"grad_clip must be a positive finite number or None (got {grad_clip!r})")
-    # reference must be non-empty for the genes the model will train (V and J are always required)
-    reference_error = None
+    reference_problem, reference_error = _reference_problem(reference)
+    if reference_problem is not None:
+        problems.append(reference_problem)
+    if problems:
+        raise TrainingConfigError("invalid training request:\n  - " + "\n  - ".join(problems),
+                                  context={"stage": "training_preflight", "problems": problems},
+                                  hint="Correct the listed configuration problems before starting training."
+                                  ) from reference_error
+
+
+def _reference_problem(reference) -> tuple[str | None, Exception | None]:
+    """What is wrong with ``reference`` for training (V and J are always required, and must not be empty), and the
+    error that showed it; ``(None, None)`` for a usable one."""
     try:
         n_v = len(reference.gene("V"))
         n_j = len(reference.gene("J"))
     except Exception as e:                              # noqa: BLE001 - any malformed reference
-        reference_error = e
-        problems.append(f"reference is unusable: {e}")
-    else:
-        if n_v == 0 or n_j == 0:
-            problems.append(f"reference has empty V ({n_v}) or J ({n_j}) allele set")
-    if problems:
-        raise TrainingConfigError("invalid training request:\n  - " + "\n  - ".join(problems),
-                                  context={"stage": "training_preflight", "problems": problems},
-                                  hint="Correct the listed configuration problems before starting training.") from reference_error
+        return f"reference is unusable: {e}", e
+    if n_v == 0 or n_j == 0:
+        return f"reference has empty V ({n_v}) or J ({n_j}) allele set", None
+    return None, None
 
 
 def check_finite_loss(step: int, total: float, parts: dict) -> None:

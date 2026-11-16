@@ -16,7 +16,8 @@ from ._errors import fail
 
 def register(sub) -> None:
     p = sub.add_parser("export", help="export a training checkpoint as a pickle-free, distributable bundle")
-    p.add_argument("checkpoint", help="a resumable training checkpoint (.alignair with dataconfig/train_state sections)")
+    p.add_argument("checkpoint",
+                   help="a resumable training checkpoint (.alignair with dataconfig/train_state sections)")
     p.add_argument("out_dir", help="the bundle directory to write (refused if it exists, unless --overwrite)")
     p.add_argument("--model-id", default=None, help="the model id recorded in the card (the catalog id)")
     p.add_argument("--model-version", default=None, help="the model version recorded in the card")

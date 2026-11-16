@@ -49,7 +49,7 @@ def pack_failure(error: BaseException) -> bytes:
     try:
         payload = pickle.dumps(error)
         pickle.loads(payload)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any error that cannot be pickled crosses as a TrainingError
         payload = pickle.dumps(TrainingError(f'{type(error).__name__}: {error}',
                                              context={'exception_type': type(error).__name__}))
     return pickle.dumps((payload, text, current_error_context()))
@@ -165,7 +165,7 @@ def _run(task, inbox, outputs, inputs, stop, genairr):
         task(receive(inbox, link.check), inputs, link)
     except WorkerStopped:
         pass
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - a worker's failure is sent to the parent, which raises it
         link.broadcast(('error', pack_failure(exc)))
     finally:
         link.wait()

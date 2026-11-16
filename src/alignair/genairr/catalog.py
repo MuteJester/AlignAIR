@@ -81,7 +81,7 @@ def dataconfig_name(dataconfig) -> str:
         builtin = name_of(dataconfig)
         if builtin is not None:
             return builtin
-    except Exception:  # noqa: BLE001 - naming must not prevent a source from being built
+    except Exception:  # noqa: BLE001, S110 - naming must not prevent a source from being built
         pass
     name = getattr(dataconfig, 'name', None)
     if name and str(name).strip().lower() not in ('none', 'unnamed'):

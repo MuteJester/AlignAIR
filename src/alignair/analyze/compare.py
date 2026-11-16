@@ -72,10 +72,12 @@ def compare_airr(a: dict[str, dict], b: dict[str, dict], a_name="model_a", b_nam
     for sid in common:
         ja, jb = (a[sid].get("junction") or "").upper(), (b[sid].get("junction") or "").upper()
         if ja and jb:
-            jt += 1; jn += (ja == jb)
+            jt += 1
+            jn += (ja == jb)
         pa, pb = a[sid].get("productive"), b[sid].get("productive")
         if pa not in (None, "") and pb not in (None, ""):
-            pt += 1; pn += (truthy(pa) == truthy(pb))
+            pt += 1
+            pn += (truthy(pa) == truthy(pb))
     out["junction_nt_agreement"] = round(jn / jt, 4) if jt else None
     out["productive_agreement"] = round(pn / pt, 4) if pt else None
     return out
@@ -86,22 +88,25 @@ def format_report_md(r: dict) -> str:
     a, b = r["model_a"], r["model_b"]
     c = r["coverage"]
     lines = [f"# AIRR agreement: {a} vs {b}", "",
-             f"Matched **{c['matched']}** sequences by `sequence_id` "
-             f"({a}: {c['a_total']}, {b}: {c['b_total']}; {a}-only {c['a_only']}, {b}-only {c['b_only']}).",
+             (f"Matched **{c['matched']}** sequences by `sequence_id` "
+              f"({a}: {c['a_total']}, {b}: {c['b_total']}; {a}-only {c['a_only']}, {b}-only {c['b_only']})."),
              "", "## Call agreement (rows where both tools called the gene)", "",
              "| gene | n | allele agreement | gene agreement | set-rescue of disagreements |",
              "| --- | --- | --- | --- | --- |"]
+
+    def pct(x):
+        return f"{x*100:.1f}%" if x is not None else "n/a"
+
     for g in GENES:
         m = r["genes"][g]
-        def pct(x): return f"{x*100:.1f}%" if x is not None else "n/a"
         lines.append(f"| {g.upper()} | {m['both_called']} | {pct(m['allele_agreement'])} | "
                      f"{pct(m['gene_agreement'])} | {pct(m['set_rescue_rate'])} |")
-    jn = r["junction_nt_agreement"]; pr = r["productive_agreement"]
+    jn, pr = r["junction_nt_agreement"], r["productive_agreement"]
     lines += ["", f"- junction (nt) agreement: {jn*100:.1f}%" if jn is not None else "- junction: n/a",
               f"- productivity agreement: {pr*100:.1f}%" if pr is not None else "- productivity: n/a",
               "",
-              f"**set-rescue** = of the cases where the top-1 allele differs, how often {b}'s call is "
-              f"inside {a}'s equivalence set (i.e. shared ambiguity, not a true conflict).",
+              (f"**set-rescue** = of the cases where the top-1 allele differs, how often {b}'s call is "
+               f"inside {a}'s equivalence set (i.e. shared ambiguity, not a true conflict)."),
               "", "## Example allele disagreements", ""]
     for g in GENES:
         ex = r["examples_disagree"][g]

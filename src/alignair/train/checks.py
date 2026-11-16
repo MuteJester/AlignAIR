@@ -14,7 +14,7 @@ def integer(value, field: str, minimum: int = 1) -> int:
     """``value`` as an int: an integer (any ``__index__``, not a bool) of at least ``minimum``."""
     try:
         if isinstance(value, bool):
-            raise ValueError
+            raise ValueError  # noqa: TRY004 - caught below: every refusal is one ConfigurationError
         value = index(value)
         if value < minimum:
             raise ValueError

@@ -186,6 +186,24 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
     A pinned + already-cached version returns immediately (no network).
     """
     explicit_path = isinstance(spec, os.PathLike)
+    spec = _spec_text(spec)
+    local = _local_file(spec, explicit_path)
+    if local is not None:
+        return local
+    from . import hf
+    if hf.is_hf_repo_spec(spec):  # direct one-repo-per-model HF loading
+        return hf.download_from_hub(spec, revision=revision, token=token, offline=offline)
+    model_id, _, version = spec.partition("@")
+    version = version or revision or None
+    srcs = sources if sources is not None else registry_sources.resolve_sources()
+    cached = _cached_without_lookup(model_id, version, offline)
+    if cached is not None:
+        return cached
+    return _from_registry(spec, model_id, version, srcs, offline)
+
+
+def _spec_text(spec) -> str:
+    """``spec`` as a non-empty string; a ModelError otherwise."""
     try:
         spec = os.fspath(spec)
     except TypeError as exc:
@@ -194,6 +212,12 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
     if not isinstance(spec, str) or not spec.strip():
         raise ModelError("model must be a path or non-empty model specification",
                          context={"stage": "model_resolution"})
+    return spec
+
+
+def _local_file(spec: str, explicit_path: bool) -> Path | None:
+    """The model file ``spec`` names when it exists; a ModelError when it names a file (a path object, an absolute or
+    relative path, a model file name) that does not exist or is not a file; None for a repo or catalog id."""
     local = Path(spec).expanduser()
     if local.exists():
         if not local.is_file():
@@ -205,23 +229,25 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
             or not spec.startswith("hf://") and hf.names_model_file(spec)):
         raise ModelError("model file does not exist",
                          context={"stage": "model_resolution", "path": local})
-    if hf.is_hf_repo_spec(spec):  # direct one-repo-per-model HF loading
-        return hf.download_from_hub(spec, revision=revision, token=token, offline=offline)
-    model_id, _, version = spec.partition("@")
-    version = version or revision or None
-    srcs = sources if sources is not None else registry_sources.resolve_sources()
-    if version:                                                    # pinned + cached -> no network
+    return None
+
+
+def _cached_without_lookup(model_id: str, version: str | None, offline: bool) -> Path | None:
+    """The cached artifact returned without a registry lookup: a pinned version already cached (pinned + cached -> no
+    network), or offline, the latest cached version; else None."""
+    if version:
         cached = cache_path(model_id, version)
         # return a cached pinned version without the network ONLY if its integrity sidecar still checks
-        # out (or there is no sidecar to check: a cache written without one). A tampered/corrupt file falls through to
-        # a registry re-resolve instead of loading the wrong model.
-        if cached.exists() and _sidecar_ok(cached) is not False:
-            return cached
-    elif offline:                                     # unpinned + offline -> the latest cached version at once
-        cached = _latest_cached(model_id)
-        if cached is not None:
-            return cached
+        # out (or there is no sidecar to check: a cache written without one). A tampered/corrupt file falls through
+        # to a registry re-resolve instead of loading the wrong model.
+        return cached if cached.exists() and _sidecar_ok(cached) is not False else None
+    return _latest_cached(model_id) if offline else None
 
+
+def _from_registry(spec: str, model_id: str, version: str | None, srcs: list[str], offline: bool) -> Path:
+    """The verified artifact of ``model_id`` (``version`` or the latest) from the first registry in ``srcs`` that
+    lists it, downloaded unless already cached; when none does, the latest cached version of an unpinned id, else
+    the lookup's error or an unknown-model ModelError naming the known ids."""
     lookup_error = None
     try:
         found = registry_sources.find_model(model_id, version, srcs, offline=offline)
@@ -319,6 +345,6 @@ def _known_ids(srcs, offline) -> list[str]:
     for src in srcs:
         try:
             ids += list(registry_sources.load_registry(src, offline=offline).get("models", {}))
-        except Exception:
+        except Exception:  # noqa: BLE001, S112 - the ids an error message suggests; an unreadable registry has none
             continue
     return sorted(set(ids))

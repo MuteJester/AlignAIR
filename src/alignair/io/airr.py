@@ -251,7 +251,8 @@ class AirrWriter:
         self._to_stdout = path == "-"
         self._final_path = None if self._to_stdout else path
         self._tmp_path = None if self._to_stdout else f"{path}.tmp.{os.getpid()}"
-        self._f = sys.stdout if self._to_stdout else open(self._tmp_path, "w", newline="")
+        # a streaming writer: ``close`` closes the file, then publishes or removes it
+        self._f = sys.stdout if self._to_stdout else open(self._tmp_path, "w", newline="")  # noqa: SIM115
         base = resolve_columns(columns)
         fields = base + [c for c in self.extra_columns if c not in base]
         self._w = csv.DictWriter(self._f, fieldnames=fields, delimiter="\t", extrasaction="ignore")

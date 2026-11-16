@@ -55,8 +55,8 @@ def _validate_optimizer(optimizer, parameters):
     trainable = {id(parameter) for parameter in parameters if parameter.requires_grad}
     actual = [id(parameter) for group in optimizer.param_groups for parameter in group['params']]
     if len(actual) != len(set(actual)) or not trainable <= set(actual) or not set(actual) <= expected:
-        raise ConfigurationError('optimizer must own every trainable model parameter exactly once without foreign parameters',
-                                 context={'field': 'optimizer_factory'})
+        raise ConfigurationError('optimizer must own every trainable model parameter exactly once without foreign '
+                                 'parameters', context={'field': 'optimizer_factory'})
 
 
 def build_training_engine(model: nn.Module, *, tasks: TrainingTasks | None = None,
@@ -80,8 +80,8 @@ def build_training_engine(model: nn.Module, *, tasks: TrainingTasks | None = Non
         target = _target_device(model, device)
         if tasks is None:
             if not isinstance(getattr(model, 'cfg', None), AlignAIRConfig):
-                raise ConfigurationError('default tasks require an AlignAIRConfig; supply explicit tasks for other models',
-                                         context={'field': 'tasks'})
+                raise ConfigurationError('default tasks require an AlignAIRConfig; supply explicit tasks for other '
+                                         'models', context={'field': 'tasks'})
             tasks = build_tasks(model.cfg)
         if not callable(getattr(tasks, 'loss', None)):
             raise ConfigurationError('tasks must supply loss', context={'field': 'tasks'})

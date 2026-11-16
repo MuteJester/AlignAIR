@@ -1,8 +1,8 @@
 """Curriculum streams whose reads come from novel alleles: synthetic SNP variants of the reference's V alleles.
 
 A stream's seeds are cut into epochs of ``NovelAlleles.epoch_records`` seeds. Epoch e (``epoch_alleles``) makes
-``round(gene_fraction x eligible V genes)`` genes homozygous for variants drawn from e alone (a seeded generator keyed by
-the generator version and e), so a record depends only on its own seed: record k of seed s is record k - a of seed
+``round(gene_fraction x eligible V genes)`` genes homozygous for variants drawn from e alone (a seeded generator keyed
+by the generator version and e), so a record depends only on its own seed: record k of seed s is record k - a of seed
 s + a, and a stream drawn in segments, or by another worker, joins the serial one. ``novel_records`` simulates each
 epoch's records from GenAIRR under that genotype; a read whose V is a novel allele carries its definition under
 ``alignair.reference.variants.NOVEL_FIELD``. GenAIRR is imported only inside functions."""

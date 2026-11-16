@@ -1,10 +1,11 @@
 """The parser: one ordered path of recombination regions per read.
 
-A read is an ordered concatenation of regions, ``core.regions.REGIONS`` = (pre, V, N1, D, N2, J, post); any region may be empty, so
-a read without a D, a light chain or a fragment is the same path with regions skipped. The parser is a linear-chain
-CRF over those states whose transitions only move forward (b >= a): per base, an emission score for each state (a 1x1
-convolution of the trunk's features), and per base a score for each transition from the previous base's state (a 1x1
-convolution to S x S, so a boundary's evidence sits where it is). It cannot put V after J or two Vs in one read.
+A read is an ordered concatenation of regions, ``core.regions.REGIONS`` = (pre, V, N1, D, N2, J, post); any region may
+be empty, so a read without a D, a light chain or a fragment is the same path with regions skipped. The parser is a
+linear-chain CRF over those states whose transitions only move forward (b >= a): per base, an emission score for each
+state (a 1x1 convolution of the trunk's features), and per base a score for each transition from the previous base's
+state (a 1x1 convolution to S x S, so a boundary's evidence sits where it is). It cannot put V after J or two Vs in one
+read.
 
 Inference is exact. With ``M_i(a, b) = transitions_i(a, b) + emissions_i(b)`` (pads: the log-semiring identity, so
 padding changes nothing), the prefix products ``M_1 ⊗ ... ⊗ M_i`` in the log semiring come from a Hillis-Steele scan

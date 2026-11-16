@@ -20,7 +20,8 @@ def register(sub) -> None:
     p.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB", help="GenAIRR dataconfig to demo on")
     p.add_argument("--steps", type=int, default=5, help="training steps (tiny; 1 in the smoke test)")
     p.add_argument("--reads", type=int, default=8, help="number of simulated reads to predict")
-    p.add_argument("--device", default=None, help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
+    p.add_argument("--device", default=None,
+                   help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
     p.set_defaults(func=run)
 
 

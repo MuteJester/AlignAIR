@@ -218,7 +218,8 @@ def parallel_training_data(stream: TrainingStream, *, batch_size: int, workers: 
     if assemble_in_worker is None:
         assemble_in_worker = device.type != 'cpu'
     elif type(assemble_in_worker) is not bool:
-        raise ConfigurationError('assemble_in_worker must be a boolean or None', context={'field': 'assemble_in_worker'})
+        raise ConfigurationError('assemble_in_worker must be a boolean or None',
+                                 context={'field': 'assemble_in_worker'})
     options = {'workers': workers, 'device': device, 'provider': provider, 'chunk_size': chunk_size,
                'queue_chunks': queue_chunks}
     if assemble_in_worker:

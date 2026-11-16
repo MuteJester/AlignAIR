@@ -72,9 +72,8 @@ def validate_airr_file(path: str) -> dict:
                     if q > L:
                         errors.append((sid, f"{g}_cigar consumes {q} query bases > sequence length {L}"))
                 s, e = _int(row.get(f"{g}_sequence_start")), _int(row.get(f"{g}_sequence_end"))
-                if s is not None and e is not None:
-                    if not (1 <= s <= e <= L):
-                        errors.append((sid, f"{g} coordinates out of bounds: start={s} end={e} len={L}"))
+                if s is not None and e is not None and not (1 <= s <= e <= L):
+                    errors.append((sid, f"{g} coordinates out of bounds: start={s} end={e} len={L}"))
             # productivity cross-field invariant: a productive rearrangement must be in-frame and have
             # no stop codon (when those derived fields are present).
             prod, inframe, stop = (_bool(row.get("productive")), _bool(row.get("vj_in_frame")),

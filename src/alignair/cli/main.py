@@ -78,10 +78,11 @@ def main(argv=None) -> int:
             error = OperationIOError("A file or network operation failed.",
                                      context={"errno": exc.errno, "path": exc.filename,
                                               "exception_type": type(exc).__name__},
-                                     hint="Check input/output paths, permissions, and connectivity; use --debug for details.")
+                                     hint="Check input/output paths, permissions, and connectivity; "
+                                          "use --debug for details.")
             error.__cause__ = exc
             return report_error(error)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - the application boundary
             # The application boundary alone classifies unexpected defects. Library
             # callers still receive the original exception and traceback.
             error = InternalError("An unexpected failure interrupted the operation.",

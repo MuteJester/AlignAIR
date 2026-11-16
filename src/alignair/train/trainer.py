@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import itertools
+import math
 from dataclasses import dataclass, replace
 
 from ..core.runtime import restore_model_state
@@ -147,7 +148,7 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
                 _log_iteration(iteration, steps)
             if val_set and step % val_every == 0:  # validation + best-checkpoint selection
                 vscore = _validate(engine, val_set, step, steps)
-                if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
+                if save_path and not math.isnan(vscore) and vscore > best_score:
                     best_score, best_path = vscore, best_checkpoint_path(save_path)
                     save_checkpoint(best_path, model, reference_set, step, engine.optimizer, dataconfigs=dataconfigs,
                                     train_args={**train_args, "val_score": vscore}, scheduler=engine.scheduler)

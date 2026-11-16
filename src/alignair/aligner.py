@@ -2,7 +2,8 @@
 wrapper over ``alignair.api``.
 
     from alignair import Aligner
-    aligner = Aligner.from_pretrained("alignair4-igh-human", device="auto")   # catalog id (PENDING-V4-PUBLISH), path, or id@version
+    # a catalog id (PENDING-V4-PUBLISH), a path, or id@version
+    aligner = Aligner.from_pretrained("alignair4-igh-human", device="auto")
     result = aligner.predict(["CAGGTGCAGCTG..."])
     result.write_airr("predictions.tsv")
 
@@ -150,8 +151,8 @@ class Aligner:
         """An Aligner that predicts from ``reference`` (its bank, e.g. a donor genotype's subset of the reference): a
         copy of the model bound to it once, so later calls, and the workers a pool starts from it, use that bank
         with no per-call binding; the reference is annotated against this Aligner's own (``alignair.reference.
-        annotate``), as one given at load is. This Aligner is unchanged. The copy is not a model file (``model_path`` is unset),
-        and its label schema names the bank's alleles."""
+        annotate``), as one given at load is. This Aligner is unchanged. The copy is not a model file (``model_path``
+        is unset), and its label schema names the bank's alleles."""
         import copy
 
         from .reference import annotate

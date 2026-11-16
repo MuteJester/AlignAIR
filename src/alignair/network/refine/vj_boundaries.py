@@ -8,12 +8,12 @@ rate m, against being an N base: ``log(4(1-m))`` on a match, ``log(4m/3)`` on a 
 has no base (past its germline end, before its start); a base inserted into the read or deleted from it costs ``GAP``,
 within ``BAND`` diagonals of the anchor's. With ``F(k)`` the best score of the k read bases from the anchor 3'-ward and
 ``R(k)`` of the k bases 5' of it (the germline's far end free), a V end at slot b gains ``F(b - a)`` for b >= a (the
-bases from the anchor to b are V) and ``-R(a - b)`` for b < a, and a J start at slot b gains ``R(a - b)`` for b <= a (the
-bases from b to the anchor are J) and ``-F(b - a)`` for b > a, times ``EVIDENCE_WEIGHT``, on the parser's
-log-probability, its distribution the prior. An edge so moves outward over N bases that continue the germline and
-inward over mutated edge bases, the freedom the training targets give a boundary (``data.chip_inputs``). A read without
-the anchor, or whose called allele has none annotated, keeps the parser's boundary. The evidence carries no gradient:
-the parser trains on its own loss.
+bases from the anchor to b are V) and ``-R(a - b)`` for b < a, and a J start at slot b gains ``R(a - b)`` for b <= a
+(the bases from b to the anchor are J) and ``-F(b - a)`` for b > a, times ``EVIDENCE_WEIGHT``, on the parser's
+log-probability, its distribution the prior. An edge so moves outward over N bases that continue the germline and inward
+over mutated edge bases, the freedom the training targets give a boundary (``data.chip_inputs``). A read without the
+anchor, or whose called allele has none annotated, keeps the parser's boundary. The evidence carries no gradient: the
+parser trains on its own loss.
 
 The gaps let a boundary pass an indel. Without them (``GAP`` -inf) the comparison is ungapped, read base i <->
 germline base ``anchor_base + (i - a)``: an indel between the anchor and a boundary stops the boundary at the indel,
@@ -72,8 +72,8 @@ def _path_scores(read: torch.Tensor, germline: torch.Tensor, m: torch.Tensor) ->
 
 @torch.no_grad()
 def _evidence(out: dict, tokens: torch.Tensor, mask: torch.Tensor, bank) -> dict:
-    """``{gene: (evidence (B, L) per slot, refinable (B,))}`` for each refined boundary; the four walks (V and J, 3'- and
-    5'-ward of the anchor) are aligned as one batch."""
+    """``{gene: (evidence (B, L) per slot, refinable (B,))}`` for each refined boundary; the four walks (V and J, 3'-
+    and 5'-ward of the anchor) are aligned as one batch."""
     length = tokens.shape[1]
     read = torch.where(mask, tokens, 0)
     k = torch.arange(WINDOW + 1, device=tokens.device)
@@ -99,9 +99,11 @@ def _evidence(out: dict, tokens: torch.Tensor, mask: torch.Tensor, bank) -> dict
         offset = torch.arange(length, device=tokens.device) - anchor[:, None]
         ahead = ahead.gather(1, offset.clamp(0, WINDOW + 1))
         behind = behind.gather(1, (-offset).clamp(0, WINDOW))
-        if gene == "v":        # a V end at b: the bases from the anchor to b are V, those from b to the anchor are not
+        if gene == "v":
+            # a V end at b: the bases from the anchor to b are V, those from b to the anchor are not
             evidence[gene] = torch.where(offset >= 0, ahead, -behind), refinable
-        else:                  # a J start at b: the bases from b to the anchor are J, those from the anchor to b are not
+        else:
+            # a J start at b: the bases from b to the anchor are J, those from the anchor to b are not
             evidence[gene] = torch.where(offset <= 0, behind, -ahead), refinable
     return evidence
 

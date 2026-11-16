@@ -16,16 +16,15 @@ refinement below reads them, a read of a locus without D is called D-absent, and
 locus index.
 
 Outputs, under the product's keys: the parser's boundary logits and their expectations, the V end and J start refined
-by the called alleles' germlines from the anchors (``refine.boundaries``, with the anchor heads); at inference, the D posterior
-times the junction's local alignment to every D row (``dlocal``), the D start and end refined on the called D's
-germline (``drefine``), and the V posterior times the banded gapped alignment of the V span to its top rows
-(``vrescore``); ``{gene}_allele``, the
-allele's likelihood relative to the best (1 for the best, 0 out of the bank) so the product's set thresholds keep
-near ties; the anchor logits; ``d_presence_logits`` from detached evidence (how much of the read the parser puts in
-D, how concentrated the D posterior is), so presence reads the evidence without reshaping it; ``mutation_rate`` and
-``indel_count`` derived from the reader over the V, D and J bases (no loss). A batch from the chip's adapter
-(``teacher_region`` present) also gets the tensors the objective reads, under ``chip_*`` keys; a prediction batch does
-not, so prediction moves no per-base logits to the CPU.
+by the called alleles' germlines from the anchors (``refine.vj_boundaries``, with the anchor heads); at inference, the
+D posterior times the junction's local alignment to every D row (``refine.d_local``), the D start and end refined on
+the called D's germline (``refine.d_boundaries``), and the V posterior times the banded gapped alignment of the V span
+to its top rows (``refine.v_rescore``); ``{gene}_allele``, the allele's likelihood relative to the best (1 for the best,
+0 out of the bank) so the product's set thresholds keep near ties; the anchor logits; ``d_presence_logits`` from
+detached evidence (how much of the read the parser puts in D, how concentrated the D posterior is), so presence reads
+the evidence without reshaping it; ``mutation_rate`` and ``indel_count`` derived from the reader over the V, D and J
+bases (no loss). A batch from the chip's adapter (``teacher_region`` present) also gets the tensors the objective reads,
+under ``chip_*`` keys; a prediction batch does not, so prediction moves no per-base logits to the CPU.
 
 Teacher forcing: while training, each read uses the true regions and columns (``teacher_*`` inputs) in place of the
 parser's and the reader's with probability ``P_TEACHER``.

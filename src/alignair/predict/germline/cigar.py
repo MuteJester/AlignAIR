@@ -23,7 +23,8 @@ def _run_length_encode(ops: str) -> str:
         if op == prev:
             count += 1
         else:
-            out.append(f"{count}{prev}"); prev, count = op, 1
+            out.append(f"{count}{prev}")
+            prev, count = op, 1
     out.append(f"{count}{prev}")
     return "".join(out)
 
@@ -77,7 +78,8 @@ def _band_dp(read: str, germ: str, band: int) -> dict[tuple[int, int], str]:
                 if c < best:
                     best, op = c, "D"
             if op is not None:
-                cost[(i, j)] = best; back[(i, j)] = op
+                cost[(i, j)] = best
+                back[(i, j)] = op
     return back
 
 

@@ -47,7 +47,7 @@ def complement(tokens: torch.Tensor) -> torch.Tensor:
 
 def reverse_valid(tokens: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
     """Reverse only the valid (unpadded) prefix of each row; pad stays at the end."""
-    B, L = tokens.shape
+    L = tokens.shape[1]
     lengths = mask.sum(dim=1, keepdim=True)                   # (B,1)
     ar = torch.arange(L, device=tokens.device).unsqueeze(0)   # (1,L)
     valid = ar < lengths
@@ -135,7 +135,8 @@ class BankOrientation(nn.Module):
         return torch.stack(counts, -1)
 
     def vote(self, tokens: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """``(transform ids (B,), won (B,) bool)``: each read's transform with most hits, and whether it won outright."""
+        """``(transform ids (B,), won (B,) bool)``: each read's transform with most hits, and whether it won
+        outright."""
         hits = self.hits(tokens, mask)
         best = hits.max(-1)
         won = (best.values > 0) & ((hits == best.values[:, None]).sum(-1) == 1)

@@ -59,7 +59,8 @@ def restore_rng_state(state: dict, *, include_cuda: bool = True, require_process
     if not isinstance(state, Mapping):
         raise TrainingError("checkpoint RNG state must be a mapping",
                             context={"stage": "training_resume_rng", "field": "rng"})
-    missing = [name for name in ("python", "numpy", "torch") if state.get(name) is None] if require_process_state else []
+    missing = ([name for name in ("python", "numpy", "torch") if state.get(name) is None]
+               if require_process_state else [])
     if missing:
         raise TrainingError("checkpoint RNG state is incomplete",
                             context={"stage": "training_resume_rng", "fields": missing})

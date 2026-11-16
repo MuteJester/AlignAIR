@@ -153,5 +153,6 @@ def find_model(model_id: str, version: str | None, sources: list[str], *, offlin
             else "could not resolve model because registry sources failed"
         raise error_type(message, context={"model_id": model_id, "version": version,
                                           "failed_sources": [s for s, _ in failures]},
-                         hint="Check registry connectivity, configuration, and offline/cache settings.") from failures[-1][1]
+                         hint="Check registry connectivity, configuration, and offline/cache settings."
+                         ) from failures[-1][1]
     return None

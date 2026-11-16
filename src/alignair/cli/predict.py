@@ -53,7 +53,8 @@ def register(sub) -> None:
     p.add_argument("--columns", default=None,
                    help="output columns: a preset (full/core/minimal/airr) or a comma-separated "
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
-    p.add_argument("--device", default=None, help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
+    p.add_argument("--device", default=None,
+                   help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
     p.add_argument("--batch-size", type=int, default=None,
                    help="reads per batch (default: 256 on a GPU, 16 per worker with --threads on the CPU, else 64)")
     p.add_argument("--threads", type=int, default=None,
@@ -74,7 +75,8 @@ def register(sub) -> None:
                         "reads whose V call is a single allele) and re-call the reads whose call it excludes while "
                         "they tie an allele it allows; writes the genotype to --genotype-out. Reads the input twice")
     p.add_argument("--genotype-out", default=None,
-                   help="where --infer-genotype writes the genotype, an AIRR GenotypeSet (default: <out>.genotype.json)")
+                   help="where --infer-genotype writes the genotype, an AIRR GenotypeSet "
+                        "(default: <out>.genotype.json)")
     p.add_argument("--genotype-explain", type=float, default=EXPLAIN,
                    help=f"--infer-genotype: the share of a gene's single-allele reads its alleles explain "
                         f"(default {EXPLAIN})")
@@ -131,16 +133,15 @@ def _stream_predict(aligner, io: RunIO, *, out_path, batch_size, rejects_out, po
 
     rejects_buf = [] if rejects_out else None
     rej_f = rej_w = rej_tmp = None
-    if rejects_out:                                  # stream rejects to a temp file, rename atomically
-        rej_tmp = f"{rejects_out}.tmp.{os.getpid()}"
-        rej_f = open(rej_tmp, "w", newline="")
-        rej_w = csv.DictWriter(rej_f, fieldnames=["sequence_id", "position", "reason", "sequence"],
-                               delimiter="\t")
-        rej_w.writeheader()
-
     writer = AirrWriter(out_path, locus=io.out_locus, columns=io.columns, extra_columns=io.extra_cols)
     committed = False
     try:
+        if rejects_out:                              # stream rejects to a temp file, rename atomically
+            rej_tmp = f"{rejects_out}.tmp.{os.getpid()}"
+            rej_f = open(rej_tmp, "w", newline="")  # noqa: SIM115 - closed, then published or removed, below
+            rej_w = csv.DictWriter(rej_f, fieldnames=["sequence_id", "position", "reason", "sequence"],
+                                   delimiter="\t")
+            rej_w.writeheader()
         with closing(iter_sequence_batches(io.input_path, chunk_size=io.chunk_size,
                                             seq_column=io.seq_column, id_column=io.id_column,
                                             rejects=rejects_buf)) as batches:
@@ -237,7 +238,8 @@ def _write_run_metadata(out: str, model_path: str, args, device: str, counts: Ru
         "alignair_version": __version__, "model_created_by_alignair": md.get("created_by_alignair"),
         "loci": list(loci) if loci else [],  # the bound reference's locus mapping
         "command": {"input": args.input, "out": args.out, "columns": args.columns,
-                    "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size, "threads": args.threads,
+                    "locus": args.locus, "batch_size": args.batch_size, "chunk_size": args.chunk_size,
+                    "threads": args.threads,
                     "device": device, "reference": args.reference, "genotype": args.genotype},
         "counts": counts.record(),
         "airr_assembly_fail_reasons": counts.fail_reasons, "airr_assembly_partial_reasons": counts.partial_reasons,

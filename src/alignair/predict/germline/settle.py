@@ -130,8 +130,8 @@ def _end_is_doubtful(read: str, germ: str, seq_end: int, ref_end: int, cigar: st
             break
     after = read[seq_end:seq_end + _END_ANCHOR]
     for shift in range(-3, 4):
-        if ref_end + shift >= 0 and sum(
-                a == b for a, b in zip(after, germ[ref_end + shift:ref_end + shift + _END_ANCHOR])) >= _END_GATE_MATCHES:
+        window = germ[ref_end + shift:ref_end + shift + _END_ANCHOR]
+        if ref_end + shift >= 0 and sum(a == b for a, b in zip(after, window)) >= _END_GATE_MATCHES:
             return True
     return False
 
@@ -163,7 +163,8 @@ def settle_end(read: str, germ: str, seq_start: int, seq_end: int, ref_start: in
     about ``_END_REACH + _END_ANCHOR`` read bases before its end and extended by a banded DP (+1 a match, -1 a
     mismatch, -2 a gap column; ``_END_BAND``, ``_end_scores``) over the read and germline bases within ``_END_REACH``
     of the end, the read no further than ``limit`` (the next segment's start); the best-scoring end (the nearest on a
-    tie) replaces the model's only when it gains at least ``_END_GAIN``. Without a doubtful end (``_end_is_doubtful``) nothing is searched."""
+    tie) replaces the model's only when it gains at least ``_END_GAIN``. Without a doubtful end (``_end_is_doubtful``)
+    nothing is searched."""
     if seq_end - seq_start < _SETTLE_MIN_LENGTH or not _end_is_doubtful(read, germ, seq_end, ref_end, cigar):
         return seq_end, ref_end
     rp, gp = _tail_anchor(seq_start, seq_end, ref_start, cigar, _END_REACH + _END_ANCHOR)

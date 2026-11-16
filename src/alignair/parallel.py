@@ -10,8 +10,9 @@ platform without a forkserver spawns the workers instead, each importing torch i
 to a private temporary file that each worker loads: handed to the workers directly it would be written down each
 one's start-up pipe in turn. A chunk is cut into parts of whole batches, the batches one process runs
 (``forward.bucket_batches``) dealt round-robin, a few parts per worker so a slow part does not hold the rest back;
-each worker batches its part the same way, so the records are one process's, and they come back in input order. Closing stops the workers outright: their predictions
-are all in by then, and each would otherwise spend half a second tearing torch down.
+each worker batches its part the same way, so the records are one process's, and they come back in input order. Closing
+stops the workers outright: their predictions are all in by then, and each would otherwise spend half a second tearing
+torch down.
 """
 from __future__ import annotations
 

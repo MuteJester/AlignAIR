@@ -41,7 +41,7 @@ def _list(args) -> int:
     for src in _srcs(args):
         try:
             reg = sources.load_registry(src, offline=args.offline)
-        except Exception as e:                                     # unreachable registry: note + continue
+        except Exception as e:  # noqa: BLE001 - a registry that cannot be read is listed as unreachable
             print(f"# registry {src} unreachable: {e}")
             continue
         for mid, m in reg.get("models", {}).items():

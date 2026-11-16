@@ -47,21 +47,21 @@ def diagnostics() -> dict:
     try:                                               # the device "auto" resolves to
         from ..core.runtime import resolve_device
         info["device_auto"] = resolve_device("auto")
-    except Exception:                                  # noqa: BLE001
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass
     try:    # the two kernels: each compiled (Cython) when built, else its pure-Python / torch fallback
         from ..network.refine.v_rescore import VBAND_BACKEND
         from ..predict.germline.cigar import DERIVE_BACKEND
         info["derive_backend"] = DERIVE_BACKEND
         info["vband_backend"] = VBAND_BACKEND
-    except Exception:                                  # noqa: BLE001
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass
     try:
         from ..registry.cache import cache_root
         from ..registry.sources import config_dir
         info["cache_dir"] = str(cache_root())
         info["config_dir"] = config_dir()
-    except Exception:                                  # noqa: BLE001
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass
     return info
 

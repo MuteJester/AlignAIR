@@ -9,7 +9,7 @@ def parse_coordinate(value):
     """A record coordinate as an int: an integer or an integer string. A bool, a float or any other value is refused,
     as ``int(1.9)`` or ``int(True)`` would silently turn an invalid annotation into a label."""
     if isinstance(value, bool):
-        raise ValueError("boolean coordinate")
+        raise ValueError("boolean coordinate")  # noqa: TRY004 - its callers report a ValueError as bad data
     return int(value) if isinstance(value, str) else index(value)
 
 

@@ -82,7 +82,8 @@ class _Donors:
         best = min(name for name, d in zip(names, different) if d == fewest)
         gapped = _carry_gaps(self.known.gapped[best], sequence)
         anchor = (self.known.anchors or {}).get(best)
-        return gapped, anchor, AnchorEvidence("nearest_known_allele", "inferred" if anchor is not None else "unresolved",
+        status = "inferred" if anchor is not None else "unresolved"
+        return gapped, anchor, AnchorEvidence("nearest_known_allele", status,
                                               f"{fewest} of {len(sequence)} bases differ", best)
 
 

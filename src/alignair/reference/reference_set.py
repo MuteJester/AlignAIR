@@ -63,7 +63,7 @@ class ReferenceSet:
 
     def locus_names(self) -> tuple:
         """Ordered AIRR locus codes, in the order the union was built (empty if unknown)."""
-        return tuple(l.locus for l in self.loci)
+        return tuple(info.locus for info in self.loci)
 
     @property
     def default_locus(self) -> str:
@@ -80,7 +80,7 @@ class ReferenceSet:
         n = len(self.gene(gene))
         if not self.loci:                                # no locus schema -> unconstrained
             return np.ones(n, dtype=bool)
-        info = next((l for l in self.loci if l.locus == locus), None)
+        info = next((entry for entry in self.loci if entry.locus == locus), None)
         m = np.zeros(n, dtype=bool)
         if info is not None and gene.upper() in info.ranges:
             s, e = info.ranges[gene.upper()]
@@ -118,13 +118,13 @@ class ReferenceSet:
             if info:                                     # optional in v1: left out when no allele has any
                 genes[G]["info"] = info
         loci = []
-        for l in self.loci:
-            locus = {"locus": l.locus, "chain_type": l.chain_type, "has_d": l.has_d,
-                     "ranges": {G: list(se) for G, se in l.ranges.items()}}
-            if l.species is not None:
-                locus["species"] = l.species
-            if l.shared:                                 # additive: written only for loci that share alleles
-                locus["shared"] = {G: list(names) for G, names in l.shared.items()}
+        for entry in self.loci:
+            locus = {"locus": entry.locus, "chain_type": entry.chain_type, "has_d": entry.has_d,
+                     "ranges": {G: list(se) for G, se in entry.ranges.items()}}
+            if entry.species is not None:
+                locus["species"] = entry.species
+            if entry.shared:                                 # additive: written only for loci that share alleles
+                locus["shared"] = {G: list(names) for G, names in entry.shared.items()}
             loci.append(locus)
         out = {"schema": "alignair.reference.v1", "has_d": self.has_d, "genes": genes, "loci": loci}
         if self.provenance:
@@ -148,12 +148,12 @@ class ReferenceSet:
                 info[name] = AlleleInfo.from_dict(entry)
             out[G.upper()] = GeneReference(names, sequences, {n: i for i, n in enumerate(names)},
                                            anchors=anchors, gapped=gapped, info=info or None)
-        loci = [LocusInfo(locus=l["locus"], chain_type=l.get("chain_type", l["locus"]),
-                          has_d=bool(l.get("has_d")),
-                          ranges={G: tuple(se) for G, se in (l.get("ranges") or {}).items()},
-                          species=l.get("species"),
-                          shared={G: tuple(names) for G, names in (l.get("shared") or {}).items()})
-                for l in data.get("loci", [])]
+        loci = [LocusInfo(locus=raw["locus"], chain_type=raw.get("chain_type", raw["locus"]),
+                          has_d=bool(raw.get("has_d")),
+                          ranges={G: tuple(se) for G, se in (raw.get("ranges") or {}).items()},
+                          species=raw.get("species"),
+                          shared={G: tuple(names) for G, names in (raw.get("shared") or {}).items()})
+                for raw in data.get("loci", [])]
         provenance = [SourceProvenance.from_dict(source) for source in data.get("provenance") or ()]
         return cls(out, bool(data.get("has_d")), loci=loci, provenance=provenance)
 
@@ -225,12 +225,12 @@ class ReferenceSet:
         return membership
 
     def _loci_keeping_fields(self, per_index: dict[str, list], extra: list[LocusInfo] = ()) -> list[LocusInfo]:
-        """This reference's loci (then ``extra`` ones) with ranges recomputed from ``per_index``, every other field kept;
-        none when this reference has no schema."""
+        """This reference's loci (then ``extra`` ones) with ranges recomputed from ``per_index``, every other field
+        kept; none when this reference has no schema."""
         if not self.loci:
             return []
         known = [*self.loci, *extra]
-        rebuilt = loci_from_membership(per_index, [l.locus for l in known])
+        rebuilt = loci_from_membership(per_index, [entry.locus for entry in known])
         return [dataclasses.replace(info, ranges=new.ranges, has_d=info.has_d or new.has_d)
                 for info, new in zip(known, rebuilt)]
 
@@ -291,7 +291,7 @@ class ReferenceSet:
                                      gapped=_pick(source, names, "gapped") or None,
                                      info=_pick(source, names, "info") or None)
             per_index[G] = [x for _, x in order]
-        extra = [next((dataclasses.replace(l, ranges={}) for l in other.loci if l.locus == loc), None)
+        extra = [next((dataclasses.replace(entry, ranges={}) for entry in other.loci if entry.locus == loc), None)
                  or LocusInfo(loc, CHAIN_OF_LOCUS.get(loc, loc), False) for loc in new_loci]
         provenance = [*self.provenance, *(src for src in other.provenance if src not in self.provenance)]
         return ReferenceSet(genes, self.has_d or other.has_d, loci=self._loci_keeping_fields(per_index, extra),

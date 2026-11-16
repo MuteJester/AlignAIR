@@ -247,8 +247,9 @@ def embedded_allele_counts(path) -> dict[str, int]:
 def read_model_state(path) -> ModelStateData:
     """Decode weights and verify the reference binding without model construction or RNG use.
 
-    The reference comes from the no-pickle ``reference_json``, the weights from safetensors. This does not decode training state, require architecture factories, or
-    check architecture-specific weight keys/shapes; restoration owns those checks.
+    The reference comes from the no-pickle ``reference_json``, the weights from safetensors. This does not decode
+    training state, require architecture factories, or check architecture-specific weight keys/shapes; restoration
+    owns those checks.
     """
     md = container.read_header(path)
     cfg = serialize.config_from_bytes(container.read_section(path, "config"))

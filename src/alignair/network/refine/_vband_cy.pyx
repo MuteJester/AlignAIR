@@ -2,7 +2,7 @@
 """Compiled kernel for the V re-score's band (``alignair.network.refine.v_rescore``).
 
 Each candidate row's banded semi-global score against the read's span, with the pair scores computed per cell
-instead of as a (B, K, T, W) tensor. Bit-for-bit the torch band (``vrescore._torch_banded_scores``): the same float32
+instead of as a (B, K, T, W) tensor. Bit-for-bit the torch band (``v_rescore._torch_banded_scores``): the same float32
 values (``match`` and ``mismatch`` come in computed by torch) are selected, added and maxed in the same order. Built
 as an optional extension; without the ``.so`` the torch band is used.
 """

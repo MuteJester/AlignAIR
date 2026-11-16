@@ -151,7 +151,7 @@ def build_airr(reads: Sequence[ReadResult], reference, has_d: bool = True, stric
     says whether a read of a locus the reference does not describe is assembled with a D."""
     germlines = GermlineMaps.of(reference)
     # each read is assembled with its own locus's D: a reference of several loci may mix loci with and without one
-    locus_hasd = {l.locus: l.has_d for l in getattr(reference, "loci", [])}
+    locus_hasd = {info.locus: info.has_d for info in getattr(reference, "loci", [])}
     out = []
     for i, read in enumerate(reads):
         ident = f"record[{i}]"

@@ -33,7 +33,7 @@ def cached_registry(src: str, *, ttl: int = 86400, offline: bool = False) -> dic
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(reg))
         return reg
-    except Exception:
+    except Exception:  # noqa: BLE001 - the update check is best effort: fall back to the cached copy
         return json.loads(p.read_text()) if p.exists() else None
 
 
@@ -66,5 +66,5 @@ def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool
                     notices.append((mid, latest))
             break                                              # first reachable registry decides
         return notices
-    except Exception:
+    except Exception:  # noqa: BLE001 - the update notice never fails a command
         return []

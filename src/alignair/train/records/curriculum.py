@@ -41,7 +41,8 @@ def indel_fraction_range(value) -> tuple:
             raise TypeError
         low, high = value
     except (TypeError, ValueError) as exc:
-        raise ConfigurationError("indel_fraction must be a (low, high) pair", context={"field": "indel_fraction"}) from exc
+        raise ConfigurationError("indel_fraction must be a (low, high) pair",
+                                 context={"field": "indel_fraction"}) from exc
     if (any(isinstance(v, bool) or not isinstance(v, Real) or not math.isfinite(v) for v in (low, high))
             or not 0 <= low <= high <= 1):
         raise ConfigurationError("indel_fraction must satisfy 0 <= low <= high <= 1",
@@ -71,7 +72,7 @@ class Curriculum:
         ``INDEL_COUNT_WEIGHTS``; counts of zero weight are left out."""
         p = max(0.0, min(1.0, p))
         if self.indel_form == "uniform":
-            return (0, int(round(_lerp(0, 5, p))))
+            return (0, round(_lerp(0, 5, p)))
         share = self.indel_share(p)
         pairs = ((0, 1.0 - share),) + tuple((count, share * weight) for count, weight in INDEL_COUNT_WEIGHTS)
         return tuple(pair for pair in pairs if pair[1] > 0)
@@ -85,11 +86,11 @@ class Curriculum:
             # small so the bulk of the molecule survives. Read LENGTH / short-read amplicons are a
             # separate, orthogonal axis modelled by GenAIRR end-loss profiles in the training mix
             # (V-anchored / J-anchored / fragment); see train.records.streams.CurriculumStreamPolicy.
-            "end_loss_5": (0, int(round(_lerp(0, 40, p)))),
-            "end_loss_3": (0, int(round(_lerp(0, 40, p)))),
+            "end_loss_5": (0, round(_lerp(0, 40, p))),
+            "end_loss_3": (0, round(_lerp(0, 40, p))),
             "indel_count": self.indel_count(p),
             "seq_error_rate": _lerp(0.0, 0.02, p) * SEQUENCING_ERROR_SCALE,
-            "ambiguous_count": (0, int(round(_lerp(0, 5, p)))),
+            "ambiguous_count": (0, round(_lerp(0, 5, p))),
         }
 
     def stage(self, p: float) -> int:

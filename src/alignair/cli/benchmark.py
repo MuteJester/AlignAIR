@@ -20,7 +20,8 @@ def register(sub) -> None:
     p.add_argument("--n", type=int, default=200, help="reads per stratum")
     p.add_argument("--strata", default=None, help="comma-list subset (default: all)")
     p.add_argument("--seed", type=int, default=0, help="seed of the generated reads (default 0)")
-    p.add_argument("--device", default=None, help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
+    p.add_argument("--device", default=None,
+                   help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
     p.add_argument("--batch-size", type=int, default=64, help="reads per batch (default 64)")
     p.add_argument("--out", default=None, help="write the report here (default: stdout)")
     p.add_argument("--format", choices=["text", "json"], default="text", help="report format (default: text)")

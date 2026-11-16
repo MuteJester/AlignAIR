@@ -106,9 +106,11 @@ class CurriculumStreamPolicy:
                 raise TypeError
             progresses = tuple(self.progresses)
         except TypeError as exc:
-            raise ConfigurationError('progresses must be an iterable of curriculum values', context={'field': 'progresses'}) from exc
+            raise ConfigurationError('progresses must be an iterable of curriculum values',
+                                     context={'field': 'progresses'}) from exc
         if not progresses and self.mode == 'auto':
-            raise ConfigurationError('auto source mode requires at least one progress value', context={'field': 'progresses'})
+            raise ConfigurationError('auto source mode requires at least one progress value',
+                                     context={'field': 'progresses'})
         object.__setattr__(self, 'progresses', tuple(probability(value, 'progresses') for value in progresses))
         object.__setattr__(self, 'heavy_shm', probability(self.heavy_shm, 'heavy_shm'))
         object.__setattr__(self, 'short_boost', integer(self.short_boost, 'short_boost', 1))
@@ -242,7 +244,9 @@ def _resolve_reference(value):
     return value
 
 
-def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = CurriculumStreamPolicy(), seed: int = 0,
+def training_records(dataconfigs: Iterable, *,
+                     policy: CurriculumStreamPolicy = CurriculumStreamPolicy(),  # noqa: B008 - frozen, so shared safely
+                     seed: int = 0,
                      record_source: RecordSource | None = None,
                      purpose: str = 'training', start_step: int = 0) -> Iterator[Mapping]:
     """Build lazy, deterministic curriculum records; reference panels and components use complete rounds.
@@ -250,8 +254,8 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
     Component i of reference panel j interleaves its streams (``policy.substreams_for``: record k comes from its
     stream k % n, so a component ends with its last complete period); stream s draws the seed block
     ``seed_block(seed, purpose, start_step, j, i, s)``. The ``purpose`` is ``"training"``, ``"validation"`` or
-    ``"probe"`` (a held-out stream of its own), and a training stream that starts at ``start_step`` (a resumed run) draws blocks
-    of its own. Multiple panels always use the amplicon mixture.
+    ``"probe"`` (a held-out stream of its own), and a training stream that starts at ``start_step`` (a resumed run)
+    draws blocks of its own. Multiple panels always use the amplicon mixture.
     """
     if not isinstance(policy, CurriculumStreamPolicy):
         raise ConfigurationError('supply a CurriculumStreamPolicy')
@@ -266,7 +270,8 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
             raise TypeError
         references = tuple(dataconfigs)
     except TypeError as exc:
-        raise ConfigurationError('dataconfigs must be an iterable of references or names', context={'field': 'dataconfigs'}) from exc
+        raise ConfigurationError('dataconfigs must be an iterable of references or names',
+                                 context={'field': 'dataconfigs'}) from exc
     if not references:
         raise ConfigurationError('at least one source reference is required', context={'field': 'dataconfigs'})
 

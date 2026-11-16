@@ -136,7 +136,8 @@ def upload_version(registry_dir: str, model_id: str, version: str, *, repo_id: s
     entry = reg.get("models", {}).get(model_id, {}).get("versions", {}).get(version)
     if entry is None:
         raise RegistryError(f"{model_id}@{version} is not in {registry_dir / 'registry.json'}",
-                            context={"model_id": model_id, "version": version}, hint="Publish it first (publish_bundle).")
+                            context={"model_id": model_id, "version": version},
+                            hint="Publish it first (publish_bundle).")
     one = {"models": {model_id: {"latest": version, "versions": {version: entry}}}}
     problems = validate_registry(one, lambda r: str(registry_dir / r))
     if problems:

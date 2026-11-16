@@ -125,7 +125,8 @@ def reference_from_dataconfigs(*dataconfigs) -> ReferenceSet:
     if collisions:
         sources = [locator[id(dc)] for dc in dataconfigs]
         raise ConfigurationError(f"the dataconfigs name {len(collisions)} alleles with two sequences: "
-                                 f"{', '.join(collisions[:5])}", context={"alleles": collisions, "dataconfigs": sources},
+                                 f"{', '.join(collisions[:5])}",
+                                 context={"alleles": collisions, "dataconfigs": sources},
                                  hint="Use one of these dataconfigs, or rename the alleles of one.")
     loci = [dataclasses.replace(info, species=next(iter(locus_species[info.locus]))
                                 if len(locus_species[info.locus]) == 1 else None,

@@ -70,7 +70,8 @@ class ModelOutputs:
         for a, b in pairs:
             if (a in outputs) != (b in outputs):
                 present, missing = (a, b) if a in outputs else (b, a)
-                raise InferenceError(f"model output {present} without {missing}", context={"fields": [present, missing]})
+                raise InferenceError(f"model output {present} without {missing}",
+                                     context={"fields": [present, missing]})
         anchors = None
         if ANCHOR_LOGITS[ANCHOR_GENES[0]] in outputs:
             if "start_mask" not in outputs:
