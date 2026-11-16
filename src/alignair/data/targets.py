@@ -17,8 +17,8 @@ from ..core.edit_states import EDIT_INDEX
 from .alignment import RecordAlignment, parse_cigar
 
 # What ``read_d_presence`` and ``read_anchors`` give for a segment the record places in the read whose alignment cannot
-# be mapped (no CIGAR, or one that disagrees with the segment's read and germline spans): the assay's truth calls such a
-# segment unscorable, so the adapter trains no term on it, rather than calling it absent or its anchor not observed.
+# be mapped (no CIGAR, or one that disagrees with the segment's read and germline spans): the segment is unscorable, so
+# the adapter trains no term on it, rather than calling it absent or its anchor not observed.
 UNSCORABLE = -1
 
 
@@ -32,9 +32,9 @@ def d_presence_class(alignment: RecordAlignment, width: int | None = None) -> in
     """The read's D class (``core.d_presence``): ``ABSENT`` when no D base inside the first ``width`` read bases (the
     window the model sees; the whole read for None) is aligned to the D germline, else ``SHORT`` or ``CALLABLE`` by
     its observed germline length: from the first to the last aligned germline base, so an internal deletion counts
-    and an edge gap or an insertion does not, as the AlignAIR assay's truth measures a segment's observed length. An
-    inverted D is a D like any other (its alignment spans the reverse-complemented germline). ``UNSCORABLE`` when the
-    record places a D in the read but its alignment cannot be mapped. Only a model with a D presence head needs it."""
+    and an edge gap or an insertion does not. An inverted D is a D like any other (its alignment spans the
+    reverse-complemented germline). ``UNSCORABLE`` when the record places a D in the read but its alignment cannot be
+    mapped. Only a model with a D presence head needs it."""
     with error_context(stage="build_targets", record_id=alignment.record.get("sequence_id")):
         if "d" not in alignment.query_spans:
             return ABSENT
@@ -70,10 +70,10 @@ def _anchor(alignment: RecordAlignment, gene: str, reference_set) -> int | None:
     AIRR assembly reads), mapped to the read through the segment's alignment (``query_reference_map``: its CIGAR, read
     and germline spans), so an indel before the anchor moves it with the read. It is observed when the segment is in
     the read, the codon's defining base is an aligned base (not deleted, not trimmed away), and the codon lies wholly
-    inside the read. The defining base is the V codon's first base and the J codon's last, as the assay's truth defines
-    the junction (``[V anchor, J codon's last base + 1)``), so a codon a recombination trim cut keeps its anchor where
-    GenAIRR places the junction. Each anchor is found whether or not the other is. ``UNSCORABLE`` when the segment is
-    in the read but its alignment cannot be mapped."""
+    inside the read. The defining base is the V codon's first base and the J codon's last, as the junction runs from
+    the V anchor through the J codon's last base (``predict.junction``), so a codon a recombination trim cut keeps its
+    anchor where GenAIRR places the junction. Each anchor is found whether or not the other is. ``UNSCORABLE`` when the
+    segment is in the read but its alignment cannot be mapped."""
     if gene not in alignment.query_spans:
         return None
     anchor = (reference_set.gene(gene.upper()).anchors or {}).get(alignment.primary(gene))
@@ -133,11 +133,10 @@ def _names(value) -> set[str]:
 
 def allele_set(record: dict, gene: str, reference_set) -> set[str]:
     """The record's allele-set target of ``gene``: its call (the generating allele) and the alleles GenAIRR re-calls
-    from the read (``recalled_{gene}_call``) that ``reference_set`` holds (the owner's decision 9, 2026-11-06). A
-    recalled name outside the reference is dropped: in a novel batch the reference is the batch bank's, so a novel
-    allele its bank aliases to a reference allele drops out and that allele is the call. The call itself is not
-    filtered (a call the reference lacks is refused where the target is encoded). A record without recalled calls
-    (GenAIRR before 2.4) targets its call alone."""
+    from the read (``recalled_{gene}_call``) that ``reference_set`` holds. A recalled name outside the reference is
+    dropped: in a novel batch the reference is the batch bank's, so a novel allele its bank aliases to a reference
+    allele drops out and that allele is the call. The call itself is not filtered (a call the reference lacks is refused
+    where the target is encoded). A record without recalled calls (GenAIRR before 2.4) targets its call alone."""
     index = reference_set.gene(gene.upper()).index
     recalled = {name for name in _names(record.get(f"recalled_{gene}_call")) if name in index}
     return _names(record[f"{gene}_call"]) | recalled
@@ -146,9 +145,9 @@ def allele_set(record: dict, gene: str, reference_set) -> set[str]:
 def observed_mutation_rate(record: dict, germline: dict) -> float:
     """The record's mutation-rate target: its observable mutations (``n_observable_mutations``, the hypermutation
     substitutions still visible in the read) per observed germline base, ``germline_end - germline_start`` summed over
-    the read's segments (``germline``: gene -> (start, end), the assay's observed length) — the owner's decision 10,
-    2026-11-06, in place of GenAIRR 2.4's ``mutation_rate``, a mutation burden per input-molecule base. 0.0 for a read
-    with no observed germline; a record without the count (GenAIRR before 2.4, whose ``mutation_rate`` counted
+    the read's segments (``germline``: gene -> (start, end), the observed length). GenAIRR 2.4's own ``mutation_rate``
+    is a mutation burden per input-molecule base, which counts mutations the read does not show. 0.0 for a read with
+    no observed germline; a record without the count (GenAIRR before 2.4, whose ``mutation_rate`` counted
     mutations per read base) keeps its ``mutation_rate``. The chip's loss reads no rate target (its ``mutation_rate``
     is the reader's, ``network.chip``): this is the batch's target and the ``mutation_mae`` training metric."""
     if record.get("n_observable_mutations") is None:
@@ -180,10 +179,13 @@ class TargetBundle:
 
     @property
     def d_inverted(self) -> bool:
+        """Whether the read's D is inverted."""
         return self.alignment.d_inverted
 
 
 def build_targets(record: dict, reference_set, has_d: bool) -> TargetBundle:
+    """The ``TargetBundle`` of a GenAIRR training ``record`` against ``reference_set``; a TrainingDataError for a
+    record that does not hold the fields the targets need."""
     with error_context(stage="build_targets", record_id=record.get("sequence_id")):
         try:
             return _build_targets(record, reference_set, has_d)

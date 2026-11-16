@@ -5,7 +5,7 @@ from numbers import Real
 from ...errors import ConfigurationError
 
 # How a curriculum draws its polymerase-indel count per read:
-# - "uniform", the historical form and the default: a uniform count in [0, round(5p)]. The benchmark and evaluation
+# - "uniform", the default: a uniform count in [0, round(5p)]. The benchmark and evaluation
 #   strata are generated from it, so it never changes.
 # - "weighted": indels are rare in real reads (GenAIRR: under 1% per read at standard fidelity), so this form gives
 #   them only the share of reads the indel head needs to learn from. The weight of reads with at least one indel
@@ -16,10 +16,10 @@ INDEL_FORMS = ("uniform", "weighted")
 INDEL_FRACTION = (0.05, 0.25)
 # Requested weights of 1, 2 and 3 indels among the weight of reads with indels; GenAIRR draws the realised counts.
 INDEL_COUNT_WEIGHTS = ((1, 0.75), (2, 0.20), (3, 0.05))
-# Since GenAIRR 8ed62e9 a sequencing-error, PCR-error or uniform-mutate replacement base is drawn from the 3 other
-# bases, so the realised rate is the requested one; the chip trained when a quarter of those draws were silent, at about
-# 1/1.32 of the requested rate. The curriculum's sequencing-error rate is scaled by this to keep the chip's level (the
-# owner's decision 11, 2026-11-06); S5F mutation is unchanged, and the curriculum sets no PCR or uniform-mutate rate.
+# GenAIRR draws a sequencing-error, PCR-error or uniform-mutate replacement base from the 3 other bases, so the realised
+# rate is the requested one. The chip's sequencing-error level is about 1/1.32 of the requested rate (the level of a
+# draw from all 4 bases, some of them silent), so the curriculum scales its sequencing-error rate by this; S5F mutation
+# is unchanged, and the curriculum sets no PCR or uniform-mutate rate.
 SEQUENCING_ERROR_SCALE = 0.757
 
 
@@ -52,8 +52,8 @@ def indel_fraction_range(value) -> tuple:
 class Curriculum:
     """Ramps corruption from clean (p=0) to fully corrupted (p=1).
 
-    ``indel_form`` (``INDEL_FORMS``) selects how the polymerase-indel count is drawn: the historical
-    ``"uniform"`` range (default) or the ``"weighted"`` form, whose weight of reads with at least one
+    ``indel_form`` (``INDEL_FORMS``) selects how the polymerase-indel count is drawn: the ``"uniform"`` range (the
+    default) or the ``"weighted"`` form, whose weight of reads with at least one
     indel is ``indel_fraction`` ``(low, high)`` at p=0 and p=1 (default ``INDEL_FRACTION``)."""
 
     def __init__(self, stages: int = 5, indel_form: str = "uniform", indel_fraction=INDEL_FRACTION):
@@ -77,6 +77,7 @@ class Curriculum:
         return tuple(pair for pair in pairs if pair[1] > 0)
 
     def params(self, p: float) -> dict:
+        """The GenAIRR corruption settings at progress ``p`` (clamped to [0, 1])."""
         p = max(0.0, min(1.0, p))
         return {
             "mutation_rate": _lerp(0.005, 0.15, p),
@@ -92,10 +93,12 @@ class Curriculum:
         }
 
     def stage(self, p: float) -> int:
+        """The stage (0 to ``stages - 1``) progress ``p`` falls in."""
         p = max(0.0, min(1.0, p))
         return min(self.stages - 1, int(p * self.stages))
 
     def describe(self, p: float) -> str:
+        """A one-line summary of the settings at progress ``p``."""
         pr = self.params(p)
         indel = (f"indel≤{pr['indel_count'][1]}" if self.indel_form == "uniform"
                  else f"indel {100 * self.indel_share(p):.0f}%")

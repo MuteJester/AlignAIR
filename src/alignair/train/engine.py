@@ -13,12 +13,14 @@ from .guards import NonFiniteTrainingError, check_finite_loss, validate_grad_cli
 
 
 class StepResult(NamedTuple):
+    """One update's total loss, its terms and the gradient norm before clipping."""
     total: float
     parts: dict[str, float]
     gradient_norm: float
 
 
 class ValidationResult(NamedTuple):
+    """A validation pass's metrics and the score that selects the best checkpoint."""
     metrics: dict[str, float]
     score: float
 
@@ -92,6 +94,7 @@ class TrainingEngine:
             return StepResult(total_value, part_values, gradient_norm)
 
     def validate(self, batches) -> ValidationResult:
+        """The model's metrics and score on ``batches`` (``validate``)."""
         return validate(self.model, batches, tasks=self.tasks)
 
 

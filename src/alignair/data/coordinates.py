@@ -6,8 +6,8 @@ from ..errors import TrainingDataError
 
 
 def parse_coordinate(value):
-    # Native simulator integers and serialized integer strings are supported.
-    # int(1.9) and int(True) would silently turn invalid annotations into labels.
+    """A record coordinate as an int: an integer or an integer string. A bool, a float or any other value is refused,
+    as ``int(1.9)`` or ``int(True)`` would silently turn an invalid annotation into a label."""
     if isinstance(value, bool):
         raise ValueError("boolean coordinate")
     return int(value) if isinstance(value, str) else index(value)

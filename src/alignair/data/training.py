@@ -9,6 +9,7 @@ from .adapters import NucleotideBatchAdapter
 
 @dataclass(frozen=True)
 class TrainingDataSetup:
+    """The training batch adapter (orientation augmented) and the validation one (reads as given)."""
     batch_adapter: object
     validation_adapter: object
 

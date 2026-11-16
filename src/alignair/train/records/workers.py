@@ -32,11 +32,11 @@ from .streams import CurriculumStreamPolicy, RecordSource, stream_records, train
 from ..processes import WorkerGroup, WorkerLink, pack_failure, raise_failure, receive
 
 
-# Measured on the 1.0.0 recipe's mix before selection (7 streams, batch 64): the data side delivers
+# Measured on a 7-stream mix without selection (batch 64): the data side delivers
 # 27-28.5 batches/s for any chunk size from 8 to 256 records and any depth from 1 to 8 messages, about
 # twice what the GPU update consumes. 64 records keeps the message count low; 4 held-back messages,
 # plus the one being written, bound the records in flight at 320 per stream (8,960, about 30 MB, for
-# the 28 streams of the selected mix). With selection (recipe v3) the 12 selected streams, each simulated
+# the 28 streams of the selected mix). With selection, the 12 selected streams, each simulated
 # serially, bound the data side: about 5.8 batches/s with 7 workers on 8 cores, and 14 workers are no faster.
 CHUNK_SIZE = 64          # records per message
 QUEUE_CHUNKS = 4         # messages a worker holds back per component: the memory bound

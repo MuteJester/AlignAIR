@@ -1,4 +1,5 @@
-"""Validated segment-local CIGAR paths shared by training target and residue projection code."""
+"""A training record's segment alignments, read once and validated, for its targets (``data.targets``,
+``data.chip_inputs``)."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -32,6 +33,8 @@ def parse_cigar(cigar) -> tuple[tuple[int, str], ...]:
 
 @dataclass(frozen=True)
 class QueryReferenceMap:
+    """A segment's read-to-germline map: from read base ``query_start`` on, each base's germline base (None for an
+    insertion); ``reason`` says why a segment could not be mapped (its positions then empty)."""
     query_start: int
     positions: tuple[int | None, ...]
     reason: str | None = None
@@ -82,6 +85,7 @@ class RecordAlignment:
 
     @classmethod
     def of(cls, record: Mapping) -> "RecordAlignment":
+        """The alignment of a GenAIRR training ``record``."""
         sequence = str(record["sequence"]).upper()
         query, germline = segment_spans(record)
         return cls(record, sequence, query, germline)

@@ -29,7 +29,7 @@ class TrainingSample:
 
 @dataclass(frozen=True)
 class TrainingBatch:
-    """Model inputs and targets; unpacking retains the existing (inputs, targets) interface."""
+    """Model inputs and targets; unpacks as ``(inputs, targets)``."""
     inputs: dict[str, torch.Tensor]
     targets: dict[str, torch.Tensor]
 
@@ -39,13 +39,16 @@ class TrainingBatch:
 
     @property
     def token_mask(self) -> torch.Tensor:
+        """(B, L) True on the read's tokens, False on padding."""
         return self.inputs["tokenized_sequence"] != 0
 
     @property
     def lengths(self) -> torch.Tensor:
+        """(B,) each read's length in tokens."""
         return self.token_mask.sum(-1)
 
     def to(self, device, *, non_blocking=False) -> "TrainingBatch":
+        """The batch with every tensor on ``device``."""
         return TrainingBatch(
             {key: value.to(device, non_blocking=non_blocking) for key, value in self.inputs.items()},
             {key: value.to(device, non_blocking=non_blocking) for key, value in self.targets.items()},
@@ -63,6 +66,7 @@ class BatchAdapter(Protocol):
 
 
 def positive_width(value) -> int:
+    """``value`` as a positive int; a ConfigurationError otherwise."""
     try:
         if isinstance(value, bool) or index(value) <= 0:
             raise ValueError

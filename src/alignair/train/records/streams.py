@@ -78,8 +78,8 @@ def _selected_fraction(value) -> float:
 class CurriculumStreamPolicy:
     """The training mix of curriculum components. ``indel_form`` is the curriculum's indel form (``Curriculum``):
     ``"weighted"`` by default, whose weight of reads with a polymerase indel is ``indel_fraction`` ``(low, high)`` at
-    curriculum progress 0 and 1, giving about 85% indel-free reads over the default mix; ``"uniform"`` is the
-    historical form of the 1.0.0 recipe. ``selected_fraction`` (``SELECTED_FRACTION``) of each full-length
+    curriculum progress 0 and 1, giving about 85% indel-free reads over the default mix; ``"uniform"`` draws a uniform
+    count. ``selected_fraction`` (``SELECTED_FRACTION``) of each full-length
     component's records are drawn under GenAIRR's ``productive_only()`` (``substreams_for``); amplicon records never
     are. ``flanks`` (a ``data.flanks.FlankPolicy``) puts library flanks around every stream's records, drawn from the
     stream's own seed block after its provider (``training_records``); None leaves the simulated reads bare.
@@ -289,7 +289,7 @@ def training_records(dataconfigs: Iterable, *, policy: CurriculumStreamPolicy = 
             return records if policy.flanks is None else flank_records(records, policy.flanks, block)
 
         def panel_records(reference, plan):
-            # zip preserves complete rounds and periods, including the historical finite-source tail policy.
+            # zip yields complete rounds and periods only: a finite source's incomplete last round is dropped.
             components = [chain.from_iterable(zip(*[iter(flanked(provider(reference, params, block), block))
                                                     for params, block in streams]))
                           for streams in plan]

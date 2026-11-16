@@ -12,8 +12,7 @@ Per record (``chip_record_targets``, over its ``data.alignment.RecordAlignment``
   flank bases that happen to equal the trimmed germline), and its start left over the bases that precede its
   germline, up to the neighbouring gene or the read's edge; and each edge may move inward over its run of bases that
   mismatch the germline (a mutated edge base reads like an N base), V's start into the 5' flank (pre) and J's end
-  into the 3' flank (post). The boundary the read can identify is any of those: the assay's boundary intervals
-  (``alignair_assay.truth.boundaries``).
+  into the 3' flank (post). Any boundary in that interval is one the read cannot tell from the true one.
 
 Per batch (``chip_batch_inputs``), into the model's inputs:
 
@@ -111,7 +110,7 @@ def _mismatch_run(pairs, sequence, germline) -> int:
 def _shrinkable_edges(allowed, sequence, germline, gene, path) -> None:
     """Add the neighbouring N region's bit on the gene's edge bases that mismatch its germline: a mutated edge base
     reads like an N base, so the boundary may move inward over that run. At least one aligned base stays, and the
-    end gets the shrink first (the assay's boundary intervals, ``alignair_assay.truth.boundaries``)."""
+    end gets the shrink first."""
     if path.reason is not None:
         return
     pairs = [(path.query_start + offset, base) for offset, base in enumerate(path.positions)]

@@ -24,6 +24,7 @@ _GENES = ("V", "J")
 
 @dataclass(frozen=True)
 class BatchBank:
+    """A batch's bank when its reads include novel alleles: the training reference plus a row per novel allele."""
     reference: ReferenceSet                              # the training reference extended with the batch's novel rows
     base: ReferenceSet                                   # the training reference
     novel: Mapping[str, tuple]                           # gene -> the novel alleles given a row

@@ -1,4 +1,4 @@
-"""Serializable learning-rate policies for the shared training lifecycle."""
+"""Serializable learning-rate schedules."""
 from dataclasses import asdict, dataclass
 import math
 from numbers import Real
@@ -8,6 +8,7 @@ from ..errors import ConfigurationError
 
 @dataclass(frozen=True)
 class CosineSchedule:
+    """Cosine annealing from the initial learning rate to ``min_lr`` over ``total_steps`` updates."""
     total_steps: int
     min_lr: float = 1e-5
 
@@ -20,10 +21,12 @@ class CosineSchedule:
         object.__setattr__(self, 'min_lr', float(self.min_lr))
 
     def validate(self, lr):
+        """Refuse an initial learning rate below ``min_lr`` or not finite."""
         if not isinstance(lr, Real) or isinstance(lr, bool) or not math.isfinite(lr) or lr < self.min_lr:
             raise ConfigurationError('initial learning rate must be finite and at least cosine min_lr')
 
     def build(self, optimizer):
+        """The torch scheduler of ``optimizer``."""
         from torch.optim.lr_scheduler import CosineAnnealingLR
         return CosineAnnealingLR(optimizer, T_max=self.total_steps, eta_min=self.min_lr)
 

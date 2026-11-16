@@ -7,11 +7,11 @@ import json
 # GenAIRR draws record k of the stream of seed s from seed s + k, so streams whose seeds lie close together repeat each
 # other's draws a few records apart (and the same seed under other parameters repeats the V/D/J draw). Every record
 # stream of a training run therefore draws from a reserved block of SEED_BLOCK_RECORDS consecutive seeds. The block is
-# placed by a SHA-256 of what the stream is for (``seed_block``), in [2**62, 2**63): far above the assay's suite seeds
-# ([0, 2**31)) and below GenAIRR's limit (2**63 + 1 works, 2**64 - 1 overflows). Blocks are aligned, so two blocks
-# either coincide or are disjoint. Each purpose has its own quarter of the range, so training, validation and probe
-# blocks never meet. Within one call of ``training_records`` the streams are checked to draw distinct blocks. Across
-# calls of one purpose, such as a resume at another start_step against the original run, disjointness is only
+# placed by a SHA-256 of what the stream is for (``seed_block``), in [2**62, 2**63): far above the seeds a user or a
+# benchmark picks ([0, 2**31)) and below GenAIRR's limit (2**63 + 1 works, 2**64 - 1 overflows). Blocks are aligned, so
+# two blocks either coincide or are disjoint. Each purpose has its own quarter of the range, so training, validation and
+# probe blocks never meet. Within one call of ``training_records`` the streams are checked to draw distinct blocks.
+# Across calls of one purpose, such as a resume at another start_step against the original run, disjointness is only
 # probable: two calls of 28 streams share no block with probability about 1 - 28 * 28 / 2**28 (1 - 3e-6).
 STREAM_PURPOSES = ('training', 'validation', 'probe')
 SEED_BLOCK_RECORDS = 2 ** 32

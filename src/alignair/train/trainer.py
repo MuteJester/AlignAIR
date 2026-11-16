@@ -22,11 +22,11 @@ from .checkpoints import (best_checkpoint_path, save_checkpoint, save_rotating, 
 from .random_state import restore_rng_state as _restore_rng
 from .schedules import CosineSchedule
 
-# How a run's curriculum records and targets are built, recorded as ``train_args["recipe"]``: "v3" draws every stream
-# from its own reserved seed block and a selected fraction of each full-length component under productive_only(); "v4"
-# is v3 with the sequencing errors at the chip's level under GenAIRR 2.4 (``SEQUENCING_ERROR_SCALE``) and the allele-set
-# and mutation-rate targets of the owner's decisions 9 and 10 (``data.targets``). The options recorded beside it
-# (indel form and fraction, selected fraction) are the recipe's parameters.
+# The id of how a run's curriculum records and targets are built, recorded as ``train_args["recipe"]``; it changes
+# whenever the records or targets a run of the same options trains on change. "v4": every stream draws from its own
+# reserved seed block, a selected fraction of each full-length component is drawn under productive_only(), the
+# sequencing errors are at the chip's level (``SEQUENCING_ERROR_SCALE``), and the allele-set and mutation-rate targets
+# are ``data.targets``'. The options recorded beside it (indel form and fraction, selected fraction) are its parameters.
 RECIPE = 'v4'
 
 
@@ -65,12 +65,11 @@ def train(model, reference_set, dataconfigs, cfg, *, steps=2000, batch_size=32,
 
     ``indel_form`` and ``indel_fraction`` select the curriculum's polymerase-indel counts
     (``records.streams.CurriculumStreamPolicy``): ``"weighted"``, whose weight of reads with an indel is
-    ``indel_fraction`` ``(low, high)`` at progress 0 and 1, or the historical ``"uniform"`` form of the 1.0.0
-    recipe. ``selected_fraction`` of each full-length component's records are drawn under GenAIRR's
-    ``productive_only()``. The run records them in ``train_args`` with its ``recipe`` (``RECIPE``) and each
-    component's selected share. When GenAIRR cannot draw productive records from one of ``dataconfigs``
-    (``records.streams.selection_supported``), the run draws no selected records, says so, and lists those references
-    in ``train_args["selection_unavailable"]``.
+    ``indel_fraction`` ``(low, high)`` at progress 0 and 1, or ``"uniform"``, a uniform count. ``selected_fraction`` of
+    each full-length component's records are drawn under GenAIRR's ``productive_only()``. The run records them in
+    ``train_args`` with its ``recipe`` (``RECIPE``) and each component's selected share. When GenAIRR cannot draw
+    productive records from one of ``dataconfigs`` (``records.streams.selection_supported``), the run draws no selected
+    records, says so, and lists those references in ``train_args["selection_unavailable"]``.
 
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks around every curriculum stream's reads
     (``CurriculumStreamPolicy.flanks``): training and validation; ``train_args["flanks"]`` records it.

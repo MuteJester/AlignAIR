@@ -109,6 +109,7 @@ def _d_presence_targets(bundle: TargetBundle, config) -> dict:
 
 @dataclass(frozen=True)
 class NucleotideBatchAdapter:
+    """Turns GenAIRR training records into one ``TrainingBatch`` for ``config``'s model against ``reference``."""
     reference: object
     config: AlignAIRConfig
     device: str = "cpu"

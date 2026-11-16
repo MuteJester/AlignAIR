@@ -15,8 +15,8 @@ def _checkpoint_training(checkpoint_path: str) -> dict:
     heavy_shm, seed, and ``train_args`` incl. the effective per-locus SHM caps).
 
     The checkpoint is the source of truth: a caller that hand-rebuilds a training dict silently drops
-    every field it does not know about — which is how the distributable bundle used to lose
-    ``effective_mutation_caps``. Returns ``{}`` for a legacy/unreadable artifact so export still works."""
+    every field it does not know about. Returns ``{}`` for an unreadable artifact or one without training provenance,
+    so export still works."""
     try:
         from .. import model_file as mf
         return dict(mf.read_metadata(checkpoint_path).get("training") or {})

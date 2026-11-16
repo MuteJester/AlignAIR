@@ -1,4 +1,4 @@
-"""One public build/train/checkpoint/reload workflow."""
+"""``run_training``: build, train, checkpoint and reload a model in one call."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,12 +11,13 @@ from .config import TrainingConfig
 
 @dataclass
 class TrainingRun:
+    """A finished run: its last model, its best model (with validation) and its number of updates."""
     model_path: str
     best_model_path: str | None = None
     steps: int = 0
 
     def best_aligner(self, *, device='auto'):
-        """The best (or last) model, reloaded through the shared model owner."""
+        """The best (or last) model, loaded as an ``Aligner``."""
         from ..aligner import Aligner
         return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
 

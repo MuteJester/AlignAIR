@@ -3,8 +3,8 @@
 GenAIRR simulates the rearrangement alone, so its reads start in V and end in J; a model trained on them alone learns
 that V starts at the read's first base and that nothing follows J. A 5'RACE read starts in the 5' UTR and leader, a
 multiplex read starts at its V primer masked to N, and a read may end in the constant region. A 5'RACE consensus
-read's leader also holds uncalled bases (N) here and there (about 12% of the pilot RACE reads, up to 20 or more);
-a model that has only seen N as one masked run before V reads them as a primer and starts V among them.
+read's leader also holds uncalled bases (N) here and there (about 12% of the reads of a real 5'RACE repertoire, up to 20
+or more); a model that has only seen N as one masked run before V reads them as a primer and starts V among them.
 ``add_flanks`` puts such sequence around a record's read and moves every read coordinate with it
 (``READ_COORDINATES``; germline coordinates stay), so the record's region, boundary and alignment targets hold for
 the flanked read. A mask reaching into V starts V at its first unmasked base (its germline start and CIGAR move with

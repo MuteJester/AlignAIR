@@ -30,6 +30,8 @@ def save_checkpoint(path, model, reference, step, opt=None, *, dataconfigs=None,
 
 @dataclasses.dataclass(frozen=True)
 class ResumeState:
+    """What a training checkpoint holds to resume a run: the weights, the optimizer, the step, the random state, the
+    configuration, the reference identity and the schedule."""
     model_state: dict
     optimizer_state: dict | None
     step: int
@@ -115,6 +117,8 @@ def save_rotating(base_path, model, reference, step, opt, keep=3, *, dataconfigs
 
 
 def latest_checkpoint(base_path):
+    """The newest rotating checkpoint of ``base_path`` (its highest ``.step<N>`` file), else ``base_path`` itself
+    when it exists, else None."""
     stem = glob.escape(_stem(base_path))
     files = [path for extension in (".alignair", ".pt") for path in glob.glob(f"{stem}.step*{extension}")
              if _step_of(path) >= 0]
