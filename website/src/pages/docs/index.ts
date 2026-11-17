@@ -1,4 +1,5 @@
 import type { DocPage } from "./doc-kit";
+import { adjacent, sectionsFor } from "./nav";
 import { getStartedPages, conceptsPages } from "./pages-getstarted";
 import { migratePages } from "./pages-migrate";
 import { tutorialPages } from "./pages-tutorial";
@@ -51,30 +52,16 @@ export const DOCS: DocPage[] = [
   ...communityPages, // citation-support  [Community]
 ];
 
-const SECTION_ORDER = ["Get started", "Using AlignAIR", "Reference", "Training", "Evaluation", "Design", "Maintainer", "Community"];
-
-export interface DocSection {
-  title: string;
-  pages: DocPage[];
-}
-
-export const DOC_SECTIONS: DocSection[] = SECTION_ORDER.map((title) => ({
-  title,
-  pages: DOCS.filter((p) => p.section === title),
-})).filter((s) => s.pages.length > 0);
+export { audienceOf, sectionsFor } from "./nav";
 
 export function getDoc(slug: string | undefined): DocPage | undefined {
   return DOCS.find((p) => p.slug === slug);
 }
 
 export function firstDocSlug(): string {
-  return DOCS[0].slug;
+  return sectionsFor(DOCS, "user")[0].pages[0].slug;
 }
 
 export function adjacentDocs(slug: string): { prev?: DocPage; next?: DocPage } {
-  const i = DOCS.findIndex((p) => p.slug === slug);
-  return {
-    prev: i > 0 ? DOCS[i - 1] : undefined,
-    next: i >= 0 && i + 1 < DOCS.length ? DOCS[i + 1] : undefined,
-  };
+  return adjacent(DOCS, slug);
 }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="AlignAIR: documentation, reference, and interactive lessons for the end-to-end neural V(D)J aligner for immune-receptor repertoires."
+      content="AlignAIR: V(D)J allele assignment for IG and TCR repertoires. Install, align your reads, choose a model, every option and output column."
     />
     <link rel="icon" href="%BASE_URL%favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -15,6 +15,14 @@
       rel="stylesheet"
     />
     <title>AlignAIR</title>
+    <script>
+      /* Set the theme before the first paint: the saved choice, else the system's. */
+      try {
+        var saved = localStorage.getItem("aa-theme");
+        var dark = saved ? saved === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+        document.documentElement.classList.toggle("dark", dark);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

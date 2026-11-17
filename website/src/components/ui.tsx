@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, Info, AlertTriangle, Lightbulb } from "lucide-react";
 import { cn } from "../lib/util";
+import { commandText } from "../lib/tabs";
 
 /* -------------------------------------------------------------------------- */
 /* Button                                                                     */
@@ -137,7 +138,7 @@ export function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard?.writeText(code).then(() => {
+    navigator.clipboard?.writeText(commandText(code)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });

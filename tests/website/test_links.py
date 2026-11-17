@@ -11,7 +11,7 @@ pytestmark = pytest.mark.component
 SRC = Path(__file__).resolve().parents[2] / "website" / "src"
 _PAGE = re.compile(r'slug:\s*"([^"]+)"')
 _HEADING_ID = re.compile(r'<H[23]\s+id="([^"]+)"')
-_LINKS = re.compile(r'DocLink\s+to="([^"]+)"|to="/docs/([^"]+)"|href="#/docs/([^"]+)"')
+_LINKS = re.compile(r'DocLink\s+to="([^"]+)"|to[=:]\s*"/docs/([^"]+)"|href="#/docs/([^"]+)"')
 
 
 def _pages() -> dict[str, set[str]]:
