@@ -6,16 +6,14 @@ from ._options import add_model_source, add_registry, model_sources, resolve_mod
 
 
 def register(sub) -> None:
-    # `model` is a documented alias of `models` (README/CI use both) — one command surface, two names.
-    p = sub.add_parser("models", aliases=["model"], help="download / manage shipped AlignAIR models")
+    p = sub.add_parser("models", help="download / manage shipped AlignAIR models")
     ms = p.add_subparsers(dest="models_cmd", required=True)
 
     lp = ms.add_parser("list", help="list available models + install/update status")
     add_registry(lp)
     lp.set_defaults(func=_list)
     for name, fn, help_ in (("get", _get, "download a model (id[@version]) into the cache"),
-                            ("path", _path, "print a model's local path (id[@version])"),
-                            ("info", _info, "print a model's card (id[@version])")):
+                            ("path", _path, "print a model's local path (id[@version])")):
         sp = ms.add_parser(name, help=help_)
         sp.add_argument("model", help="model id or id@version")
         add_model_source(sp)
@@ -59,14 +57,6 @@ def _get(args) -> int:
 
 def _path(args) -> int:
     print(resolve_model_path(args))
-    return 0
-
-
-def _info(args) -> int:
-    from ..model_file import read_metadata
-    from .info import print_card
-    path = resolve_model_path(args)
-    print_card(path, read_metadata(path))
     return 0
 
 

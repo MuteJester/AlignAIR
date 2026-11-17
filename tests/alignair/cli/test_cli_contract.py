@@ -12,7 +12,7 @@ pytestmark = pytest.mark.component
 # The contract surface. Every command here is referenced by a maintained wrapper (README / ci.yml /
 # Dockerfile / tests/packaging/release_smoke.sh). Add here only alongside the wrapper that uses it.
 CONTRACT_COMMANDS = {
-    "predict", "train", "demo", "doctor", "info", "models", "model", "reference",
+    "predict", "train", "demo", "doctor", "info", "models", "reference",
     "validate-airr", "compare", "analyze", "benchmark", "genotype",
 }
 

@@ -1,17 +1,20 @@
 """One set of CLI options (P2-D9): ``--device`` defaults to auto with one help text; every command that resolves a
 model takes the same model-source options and passes them on; machine output is ``--json`` everywhere (``--format``
-is gone)."""
+is gone); ``info`` takes a path or a registry id (``models info`` and the ``model`` alias are gone)."""
 import argparse
+import hashlib
 import json
+import shutil
 
 import pytest
 
 from alignair.cli.main import build_parser, main
+from tests.alignair.predict.golden_rows import TEST_CHIP
 
 pytestmark = pytest.mark.component
 
 DEVICE = (("predict",), ("demo",), ("benchmark",), ("train",))
-RESOLVERS = (("predict",), ("benchmark",), ("models", "get"), ("models", "path"))
+RESOLVERS = (("predict",), ("benchmark",), ("info",), ("models", "get"), ("models", "path"))
 CATALOG = (("models", "list"), ("models", "update"), ("models", "verify"))
 SOURCE = ("--registry", "--offline", "--revision", "--hf-token")
 JSON = (("analyze",), ("benchmark",), ("compare",), ("info",), ("doctor",), ("reference", "list"))
@@ -59,9 +62,11 @@ def test_machine_output_is_json_everywhere(path):
 
 
 @pytest.mark.parametrize("argv", [
+    ["models", "info", "some-model"],
+    ["model", "list"],
     ["analyze", "rows.tsv", "--format", "json"],
     ["benchmark", "--model", "m.alignair", "--format", "json"],
-], ids=["analyze --format", "benchmark --format"])
+], ids=["models info", "model alias", "analyze --format", "benchmark --format"])
 def test_the_removed_spellings_are_refused(argv, capsys):
     with pytest.raises(SystemExit) as caught:
         build_parser().parse_args(argv)
@@ -71,6 +76,7 @@ def test_the_removed_spellings_are_refused(argv, capsys):
 @pytest.mark.parametrize("argv", [
     ["predict", "--model", "hf://org/repo", "--input", "reads.fasta", "--out", "out.tsv", "--quiet"],
     ["benchmark", "--model", "hf://org/repo", "--dataconfig", "HUMAN_IGH_OGRDB"],
+    ["info", "hf://org/repo"],
     ["models", "get", "hf://org/repo"],
     ["models", "path", "hf://org/repo"],
 ], ids=lambda argv: " ".join(argv[:2]) if argv[0] == "models" else argv[0])
@@ -89,3 +95,30 @@ def test_every_command_that_resolves_a_model_passes_the_revision_and_token_on(ar
     assert main(["--error-format", "json", *argv, "--revision", "v1", "--hf-token", "secret"]) != 0
     assert seen["repo_id"] == "org/repo" and seen["revision"] == "v1" and seen["token"] == "secret"
     assert json.loads(capsys.readouterr().err)["code"] == "ALIGNAIR_REGISTRY_UNAVAILABLE"
+
+
+def _chip_registry(tmp_path, monkeypatch) -> str:
+    """A local registry listing the test chip as ``chip@1.0.0``, and an empty model cache; returns its url."""
+    monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.delenv("ALIGNAIR_REGISTRY", raising=False)
+    registry = tmp_path / "registry"
+    (registry / "chip").mkdir(parents=True)
+    shutil.copyfile(TEST_CHIP, registry / "chip" / "1.0.0.alignair")
+    sha = hashlib.sha256(TEST_CHIP.read_bytes()).hexdigest()
+    (registry / "registry.json").write_text(json.dumps({"schema": "alignair.registry.v1", "models": {"chip": {
+        "latest": "1.0.0", "versions": {"1.0.0": {"file": "chip/1.0.0.alignair", "artifact_sha256": sha}}}}}))
+    return f"file://{registry}"
+
+
+def test_info_takes_a_registry_id_and_prints_the_card_of_its_file(tmp_path, monkeypatch, capsys):
+    registry = _chip_registry(tmp_path, monkeypatch)
+    assert main(["info", str(TEST_CHIP)]) == 0
+    card = capsys.readouterr().out
+    assert main(["info", "chip@1.0.0", "--registry", registry]) == 0
+    assert capsys.readouterr().out == card and "alleles:" in card
+
+
+def test_info_on_a_model_file_that_does_not_exist_is_model_not_found(tmp_path, capsys):
+    assert main(["--error-format", "json", "info", str(tmp_path / "missing.alignair")]) != 0
+    assert json.loads(capsys.readouterr().err)["code"] == "ALIGNAIR_MODEL_NOT_FOUND"
+

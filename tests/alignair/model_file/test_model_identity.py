@@ -3,12 +3,11 @@ label schema and no one-value input or label space, and a file that stores them 
 import contextlib
 import io
 import json
-from types import SimpleNamespace
 
 import GenAIRR.data as gd
 import pytest
 
-from alignair.cli import info
+from alignair.cli.main import main
 from alignair.core import prepare_model
 from alignair.errors import ModelError
 from alignair.model_file import (LoadedModel, ModelStateData, TrainingState, TrainingStateData, container,
@@ -79,7 +78,7 @@ def test_info_counts_the_alleles_of_the_embedded_reference(tmp_path, reference):
     _save(tmp_path / "m.alignair", reference)
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        info.run(SimpleNamespace(model=str(tmp_path / "m.alignair"), json=False))
+        assert main(["info", str(tmp_path / "m.alignair")]) == 0
     v, d, j = (len(reference.gene(gene)) for gene in "VDJ")
     assert f"V={v} D={d} J={j}" in out.getvalue()
 
