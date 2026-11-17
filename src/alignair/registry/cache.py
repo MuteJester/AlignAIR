@@ -327,6 +327,7 @@ def verify_installed(registry: str | Iterable[str], *, offline: bool = False,
                      model_id: str | None = None) -> list[tuple[str, str, bool | None]]:
     """Re-hash each installed artifact against the registry: a list of (id, version, ok, or None when the registry
     does not know it)."""
+    registry = registry_sources.registry_list(registry)       # read once per version below: not a one-shot iterator
     out = []
     for mid, vers in installed_models().items():
         if model_id and mid != model_id:

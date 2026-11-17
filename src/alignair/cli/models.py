@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..registry import cache, sources
-from ._options import add_model_source, add_registry, model_sources, resolve_model_path
+from ._options import MODEL_HELP, add_model_source, add_registry, model_sources, resolve_model_path
 
 
 def register(sub) -> None:
@@ -15,7 +15,7 @@ def register(sub) -> None:
     for name, fn, help_ in (("get", _get, "download a model (id[@version]) into the cache"),
                             ("path", _path, "print a model's local path (id[@version])")):
         sp = ms.add_parser(name, help=help_)
-        sp.add_argument("model", help="model id or id@version")
+        sp.add_argument("model", help=MODEL_HELP)
         add_model_source(sp)
         sp.set_defaults(func=fn)
     for name, fn, help_ in (("update", _update, "update installed models to the latest version"),

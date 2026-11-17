@@ -25,14 +25,13 @@ from ..genotype.infer import EXPLAIN, MIN_READS
 from ..io.files import sha256_file
 from ..reference.loci import FALLBACK_LOCUS
 from ._errors import fail
-from ._options import add_device, add_model_source, model_sources, resolve_model_path
+from ._options import MODEL_HELP, add_device, add_model_source, model_sources, resolve_model_path
 from .predict_run import RunCounts, RunIO
 
 
 def register(sub) -> None:
     p = sub.add_parser("predict", help="align reads with a trained model -> AIRR TSV")
-    p.add_argument("--model", required=True,
-                   help="trained model: a .alignair path, or a shipped registry id / id@version")
+    p.add_argument("--model", required=True, help=MODEL_HELP)
     p.add_argument("--input", required=True, help="reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)")
     p.add_argument("--out", required=True, help="output AIRR TSV path")
     p.add_argument("--sequence-column", default=None, help="sequence column name (CSV/TSV input)")

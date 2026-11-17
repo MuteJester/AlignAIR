@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from ..core.runtime import restore_model_state
 from ..core.setup import ModelSetup
 from ..data.training import prepare_training_data
-from ..errors import ConfigurationError, error_context
+from ..errors import ConfigurationError, ModelNotFoundError, error_context
 from ..genairr.catalog import dataconfig_name
 from ..genairr.identity import recorded_genairr_source
 from ..tasks import TrainingTasks, build_tasks
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 # whenever the records or targets a run of the same options trains on change. "v4": every stream draws from its own
 # reserved seed block, a selected fraction of each full-length component is drawn under productive_only(), the
 # sequencing errors are at the chip's level (``SEQUENCING_ERROR_SCALE``), and the allele-set and mutation-rate targets
-# are ``data.targets``'. The options recorded beside it (indel form and fraction, selected fraction) are its parameters.
+# are ``data.targets``'. The record mix it draws is ``records.streams.CurriculumStreamPolicy``'s.
 RECIPE = 'v4'
 
 
@@ -76,9 +76,12 @@ def _check_novel_alleles(dataconfigs, reference_set, spec) -> None:
     is of one and the same species (one species per model); prints what each epoch draws."""
     from .records.novel import novel_support
     species = {info.species for info in reference_set.loci}
-    if len(species) != 1 or None in species:
+    if None in species:
+        raise ConfigurationError("novel alleles train a model of one named species; the reference names none (a "
+                                 "custom reference)", context={"field": "novel_alleles"})
+    if len(species) != 1:
         raise ConfigurationError(f"novel alleles train a model of one species; the reference's loci are of "
-                                 f"{sorted(str(s) for s in species)}", context={"field": "novel_alleles"})
+                                 f"{sorted(species)}", context={"field": "novel_alleles"})
     for dataconfig in dataconfigs:
         genes = novel_support(dataconfig, spec)
         print(f"novel alleles: {dataconfig_name(dataconfig)}: {max(1, round(spec.gene_fraction * genes))} of {genes} "
@@ -197,7 +200,8 @@ def _restore_or_warm_start(model, engine, setup: ModelSetup, config: TrainingCon
     schedule, short_boost, reference_set, cfg = config.schedule, config.short_boost, setup.reference, setup.config
     resume_from = latest_checkpoint(resume_path) if resume_path else None
     if resume_path and resume_from is None:
-        raise ConfigurationError('resume checkpoint does not exist', context={'path': str(resume_path)})
+        raise ModelNotFoundError('resume checkpoint does not exist',
+                                 context={'field': 'resume_path', 'path': str(resume_path)})
     if resume_from:
         state = load_training_checkpoint(resume_from, device=device)
         validate_continuation(state, cfg, reference_set, schedule=schedule_metadata, lr=lr)

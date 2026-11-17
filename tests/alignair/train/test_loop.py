@@ -7,7 +7,8 @@ import torch
 
 from alignair.data.batching import TrainingBatch
 from alignair.errors import ConfigurationError, TrainingDataError, TrainingError, current_error_context
-from alignair.train import TrainingEngine, StepResult, training_iterations
+from alignair.train.engine import StepResult, TrainingEngine
+from alignair.train.loop import training_iterations
 
 pytestmark = pytest.mark.component
 

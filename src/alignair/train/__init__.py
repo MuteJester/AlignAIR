@@ -1,10 +1,11 @@
-"""Shared training mechanics: the engine, the loop, the run configuration and its workflow."""
+"""Training: the run configuration (``TrainingConfig``, with its ``CosineSchedule`` and ``NovelAlleles`` settings),
+``run_training`` and its ``TrainingRun``, and what a run's ``on_iteration`` callback receives (``TrainingIteration``,
+whose ``result`` is a ``StepResult``). The engine and the loop are internal (``train.engine``, ``train.loop``)."""
 from .config import TrainingConfig
-from .engine import StepResult, TrainingEngine, ValidationResult
-from .loop import TrainingIteration, training_iterations
+from .engine import StepResult
+from .loop import TrainingIteration
 from .records.novel import NovelAlleles
 from .schedules import CosineSchedule
-from .setup import build_training_engine
 from .workflow import TrainingRun, run_training
 
 __all__ = [
@@ -12,11 +13,7 @@ __all__ = [
     "NovelAlleles",
     "StepResult",
     "TrainingConfig",
-    "TrainingEngine",
     "TrainingIteration",
     "TrainingRun",
-    "ValidationResult",
-    "build_training_engine",
     "run_training",
-    "training_iterations",
 ]

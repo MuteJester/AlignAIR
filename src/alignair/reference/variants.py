@@ -36,12 +36,13 @@ class NovelAllele:
 
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> NovelAllele:
-        """From ``to_dict``'s form: a ValueError for a missing name, base or sequence or a gene not V, D or J."""
+        """From ``to_dict``'s form (the gene in either case): a ValueError for a missing name, base or sequence or a
+        gene not V, D or J."""
         data = dict(data)
         missing = [key for key in ("name", "base", "sequence") if key not in data]
         if missing:
             raise ValueError(f"a novel allele needs {', '.join(missing)}")
-        gene = data.get("gene", "V")
+        gene = str(data.get("gene", "V")).upper()
         if gene not in _GENES:
             raise ValueError(f"a novel allele's gene is V, D or J, got {gene!r}")
         return cls(str(data["name"]), str(data["base"]), str(data["sequence"]).upper(), gene)

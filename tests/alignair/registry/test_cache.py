@@ -181,3 +181,15 @@ def test_unpinned_offline_cached_resolution_fallback(monkeypatch, tmp_path):
     p = cache.resolve_model("human-igh", registry=["hf://unreachable/x"], offline=True)
     assert p == dest
     assert p.read_bytes() == payload
+
+
+def test_verify_installed_reads_a_registry_given_as_an_iterator_for_every_version(monkeypatch, tmp_path):
+    monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "c"))
+    src, sha = _registry(tmp_path)
+    catalog_path = tmp_path / "registry" / "registry.json"
+    catalog = json.loads(catalog_path.read_text())
+    catalog["models"]["human-igh"]["versions"]["2.0.0"] = dict(catalog["models"]["human-igh"]["versions"]["2.1.0"])
+    catalog_path.write_text(json.dumps(catalog))
+    for version in ("2.0.0", "2.1.0"):
+        cache.resolve_model(f"human-igh@{version}", registry=[src])
+    assert cache.verify_installed(iter([src])) == [("human-igh", "2.0.0", True), ("human-igh", "2.1.0", True)]

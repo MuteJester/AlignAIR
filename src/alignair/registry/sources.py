@@ -78,7 +78,7 @@ def _config_registries(config_path: str | None) -> list[str]:
     with open(path, "rb") as f:
         data = tomllib.load(f)
     regs = data.get("registries")
-    return [str(r) for r in regs] if regs else []
+    return [str(r) for r in registry_list(regs)] if regs else []
 
 
 def registry_list(registry: str | Iterable[str]) -> list[str]:
@@ -185,6 +185,10 @@ def find_model(model_id: str, version: str | None, registry: str | Iterable[str]
             continue
         ver = version or model.get("latest")
         entry = model.get("versions", {}).get(ver)
+        if entry is not None and not (isinstance(entry, dict) and isinstance(entry.get("file"), str) and entry["file"]):
+            failures.append((src, RegistryInvalidError("invalid model version entry: it names no artifact file",
+                                                       context={"model_id": model_id, "version": ver})))
+            continue
         if entry is not None:
             return src, ver, entry, model
     if failures:

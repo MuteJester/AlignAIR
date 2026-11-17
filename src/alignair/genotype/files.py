@@ -29,6 +29,17 @@ def check_segment_keys(keys, *, source: str = "the genotype", context=None) -> N
                              hint=FORMAT_HINT)
 
 
+def check_segment_values(genotype, *, source: str = "the genotype is not {V|D|J: allele names}",
+                         context=None) -> None:
+    """ConfigurationError unless each segment's entry is a collection of allele names: not one string (which would be
+    read as its characters), not None or a number. ``source`` begins the message."""
+    for segment, names in genotype.items():
+        if isinstance(names, (str, bytes)) or not hasattr(names, "__iter__"):
+            raise ConfigurationError(f"{source}: its {segment} entry is {type(names).__name__} {names!r}, not a list "
+                                     "of allele names", context={**(context or {}), "segment": str(segment)},
+                                     hint=FORMAT_HINT)
+
+
 def load_genotype(path: str) -> dict[str, set[str]]:
     """Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment
     works too; the sequences are ignored). Returns ``{segment: set(names)}``, segments lower-case. ConfigurationError
@@ -38,11 +49,7 @@ def load_genotype(path: str) -> dict[str, set[str]]:
         text = f.read()
     data = _parse(text, path)
     check_segment_keys(data, source=f"{path}", context={"path": path})
-    for segment, names in data.items():
-        if isinstance(names, (str, bytes)) or not hasattr(names, "__iter__"):
-            raise ConfigurationError(f"{path} is not a YAML or JSON genotype: its {segment} entry is "
-                                     f"{type(names).__name__} {names!r}, not a list of allele names",
-                                     context={"path": path, "segment": str(segment)}, hint=FORMAT_HINT)
+    check_segment_values(data, source=f"{path} is not a YAML or JSON genotype", context={"path": path})
     return {str(g).lower(): {str(n) for n in names} for g, names in data.items()}
 
 

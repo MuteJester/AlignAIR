@@ -37,4 +37,5 @@ class CosineSchedule:
         return CosineAnnealingLR(optimizer, T_max=self.total_steps, eta_min=self.min_lr)
 
     def to_dict(self) -> dict:
+        """The schedule as a plain dict, with its policy's name (a checkpoint records it)."""
         return {'policy': 'cosine-v1', **asdict(self)}

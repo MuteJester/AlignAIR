@@ -55,3 +55,13 @@ def test_with_genotype_calls_only_the_genotypes_alleles_and_leaves_this_aligner_
 def test_with_genotype_refuses_an_allele_the_reference_lacks(aligner):
     with pytest.raises(UnknownAlleleError, match="IGHV-missing"):
         aligner.with_genotype({"V": ["IGHV-missing*01"]})
+
+
+@pytest.mark.parametrize("genotype", [{"V": "IGHV1-2*02"}, {"v": None}, {"J": 3}])
+def test_with_genotype_refuses_a_segment_given_one_string_or_no_list_as_a_genotype_file_is(aligner, genotype):
+    """A segment's entry is a list of allele names; one string is not split into characters (as the CLI's genotype file
+    refuses it)."""
+    from alignair.errors import ConfigurationError
+    with pytest.raises(ConfigurationError, match="entry is .*not a list of allele names") as caught:
+        aligner.with_genotype(genotype)
+    assert not isinstance(caught.value, UnknownAlleleError) and caught.value.hint

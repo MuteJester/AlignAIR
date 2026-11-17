@@ -4,7 +4,8 @@ import random
 import numpy as np
 import torch
 
-from alignair.train import StepResult, training_iterations
+from alignair.train.engine import StepResult
+from alignair.train.loop import training_iterations
 from alignair.train.records.streams import training_records
 from alignair.train.random_state import capture_rng_state
 

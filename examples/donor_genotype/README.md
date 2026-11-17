@@ -22,7 +22,7 @@ until it is, pass an AlignAIR 4 `.alignair` path to `--model`. <!-- PENDING-V4-P
 Use `small_donor.yaml` in the same command to try the smaller subset: its V alleles are all
 of one family, so most of the example reads get no V call (their rows are tagged `partial`,
 reason `no_v`). Both files require a model whose reference holds these allele names; an
-unknown name is refused (`ALIGNAIR_GENOTYPE_UNKNOWN_ALLELE`). A genotype cannot add
+unknown name is refused (`ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND`). A genotype cannot add
 alleles: bind a FASTA with `--reference` that holds them (for example the model's own
 reference from `alignair reference export`, plus the novel alleles), and the genotype can then
 name them. To infer the genotype from the reads instead, use `--infer-genotype`.

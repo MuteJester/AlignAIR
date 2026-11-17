@@ -97,7 +97,7 @@ class ReferenceSet:
         return m
 
     @classmethod
-    def from_dataconfigs(cls, *dataconfigs: str | DataConfig) -> ReferenceSet:
+    def from_dataconfigs(cls, *dataconfigs: DataConfig) -> ReferenceSet:
         """The annotated union of GenAIRR dataconfigs' alleles (``alignair.genairr.reference_from_dataconfigs``)."""
         from ..genairr.reference import reference_from_dataconfigs
         return reference_from_dataconfigs(*dataconfigs)

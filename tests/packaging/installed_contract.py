@@ -81,7 +81,7 @@ def main():
         # shipped self-evaluator must work without importing that harness.
         assert importlib.util.find_spec("alignair_lab") is None
         from alignair.evaluate import run_benchmark
-        evaluation = run_benchmark(restored, reference, gd.HUMAN_IGH_OGRDB,
+        evaluation = run_benchmark(aligner.model, aligner.reference, gd.HUMAN_IGH_OGRDB,
                                    n=2, seed=101, strata_names=["clean"], device="cpu", batch_size=2)
         assert evaluation["clean"]["n"] == 2
         assert 0 <= evaluation["clean"]["v_call_acc"] <= 1

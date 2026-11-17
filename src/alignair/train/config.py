@@ -1,12 +1,14 @@
 """The shared public training request, independent of sequence alphabet and result presentation."""
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field, fields, replace
 from typing import TYPE_CHECKING, Any
 
 from ..core.config import AlignAIRConfig
+from ..core.runtime import check_device
 from ..data.flanks import FlankPolicy
 from ..errors import ConfigurationError
 from .guards import validate_data_workers, validate_training_request
@@ -30,8 +32,8 @@ class TrainingConfig:
     (ConfigurationError; TrainingConfigError for the run's numbers): ``run_training`` checks only what needs the
     resolved reference.
 
-    Model options are copied on construction and validated by reference-bound model setup; the allele counts come
-    from the bound reference.
+    Model options are copied on construction and checked with ``max_seq_length`` and ``has_d`` as the model
+    configuration they build (``AlignAIRConfig``); the allele counts come from the bound reference.
     ``data_workers`` > 0 generates training data in that many worker processes (one per curriculum
     stream at most: 28 for the default mix, 7 components of 4 streams); the batches are those of
     ``data_workers=0``, so it is not part of model identity.
@@ -49,8 +51,9 @@ class TrainingConfig:
     ``novel_alleles`` (``train.records.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and
     puts their rows in each batch's bank (``data.novel_bank``), so the model does not memorise the training alleles:
     by default ``NovelAlleles()``, the shipped models' recipe; None trains on the dataconfigs' alleles alone, as does a
-    run whose reference they cannot be drawn for (a dataconfig with no eligible V, or loci of several species), which
-    says so. The model and the saved reference stay the dataconfigs' either way.
+    run whose reference they cannot be drawn for (a dataconfig with no eligible V, loci of several species, or a custom
+    reference, which names no species), which says so. The model and the saved reference stay the dataconfigs' either
+    way.
     ``inverted_d`` (0 to 1) inverts the D of that share of the curriculum's records; 0, the default, trains on forward
     Ds alone.
     ``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d`` are the run's settings of its record policy
@@ -69,9 +72,9 @@ class TrainingConfig:
     max_seq_length: int | None = None
     has_d: bool | None = None
     model_options: Mapping = field(default_factory=dict)
-    resume_path: str | None = None
+    resume_path: str | os.PathLike[str] | None = None
     schedule: CosineSchedule | None = None
-    init_from: str | None = None
+    init_from: str | os.PathLike[str] | None = None
     data_workers: int = 0
     flanks: FlankPolicy | None = field(default_factory=FlankPolicy)
     novel_alleles: NovelAlleles | None = field(default_factory=NovelAlleles)
@@ -80,6 +83,12 @@ class TrainingConfig:
     def __post_init__(self):
         if self.init_from and self.resume_path:
             raise ConfigurationError('choose init_from or resume_path')
+        check_device(self.device)
+        for name in ('resume_path', 'init_from'):
+            value = getattr(self, name)
+            if value is not None and not isinstance(value, (str, os.PathLike)):
+                raise ConfigurationError(f'{name} must be a model file path or None (got {type(value).__name__})',
+                                         context={'field': name})
         validate_data_workers(self.data_workers)
         validate_training_request(steps=self.steps, batch_size=self.batch_size, lr=self.lr, grad_clip=self.grad_clip)
         if not _uint32(self.seed) or self.init_seed is not None and not _uint32(self.init_seed):
@@ -102,9 +111,14 @@ class TrainingConfig:
             raise ConfigurationError('dataconfigs must be an iterable of reference sources') from exc
         if not sources:
             raise ConfigurationError('dataconfigs must be nonempty')
+        object.__setattr__(self, 'dataconfigs', sources)
+        self._check_model_settings()
+
+    def _check_model_settings(self) -> None:
+        """``model_options`` (copied), ``max_seq_length`` and ``has_d``, checked as the model configuration they build
+        (``AlignAIRConfig``); the window, the D gene and the locus count are not model options."""
         if not isinstance(self.model_options, Mapping):
             raise ConfigurationError('model_options must be a mapping of model configuration fields')
-        object.__setattr__(self, 'dataconfigs', sources)
         object.__setattr__(self, 'model_options', deepcopy(dict(self.model_options)))
         protected = {'max_seq_length', 'has_d', 'num_chain_types'}
         if protected.intersection(self.model_options):
@@ -113,6 +127,9 @@ class TrainingConfig:
         unknown = sorted(set(self.model_options) - {option.name for option in fields(AlignAIRConfig)})
         if unknown:
             raise ConfigurationError('invalid model configuration options', context={'fields': unknown})
+        window = {} if self.max_seq_length is None else {'max_seq_length': self.max_seq_length}
+        d_gene = {} if self.has_d is None else {'has_d': self.has_d}
+        AlignAIRConfig(**self.model_options, **window, **d_gene)    # the model settings' own checks, before any build
 
     def record_policy(self) -> CurriculumStreamPolicy:
         """The curriculum record policy the run draws its records with: the recipe's, with this configuration's

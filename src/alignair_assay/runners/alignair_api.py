@@ -1,7 +1,7 @@
 """AlignAIR through its public Python API (``alignair-api``): a model checkpoint run on both arms by one code path.
 
-AlignAIR 3.0.0's ``predict --genotype`` crashes (``cli/predict.py`` passes ``load_genotype``'s ``(genotype,
-unknown)`` pair on as the genotype), and this branch never changes ``src/alignair``. This runner therefore calls
+It is the comparison's Python-API arm (the pinned AlignAIR 3.0.0 image's ``predict --genotype`` crashes: its
+``cli/predict.py`` passes ``load_genotype``'s ``(genotype, unknown)`` pair on as the genotype). This runner calls
 ``alignair.Aligner.with_genotype(...).predict(...)`` itself, in a subprocess that runs the diagnostics layer's
 ``api_predict`` module by name (``DRIVER_MODULE``): runners may not import ``alignair``, and the assay process never
 imports torch. The module loads the checkpoint with the diagnostics' loader, reads the FASTA and writes the AIRR TSV

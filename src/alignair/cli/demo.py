@@ -4,7 +4,7 @@ network: train a tiny model, predict a few simulated reads, and also predict the
 
 Produces, under ``--out``:  ``bundle/`` (the trained model), ``demo.tsv`` (default-reference
 predictions), and ``demo_donor.tsv`` (donor-constrained predictions). Kept small on purpose so it runs
-on CPU in seconds (``--steps 1`` in the release smoke test); it exercises train → save → load →
+on CPU in under a minute (``--steps 1`` in the release smoke test); it exercises train → save → load →
 predict → genotype-constrain in one command.
 """
 from __future__ import annotations

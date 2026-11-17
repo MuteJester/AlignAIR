@@ -142,3 +142,38 @@ def test_info_on_a_model_file_that_does_not_exist_is_model_not_found(tmp_path, c
     assert main(["--error-format", "json", "info", str(tmp_path / "missing.alignair")]) != 0
     assert json.loads(capsys.readouterr().err)["code"] == "ALIGNAIR_MODEL_NOT_FOUND"
 
+
+
+def test_a_disk_error_while_caching_a_hub_model_is_io_failed(tmp_path, monkeypatch, capsys):
+    pytest.importorskip("huggingface_hub")
+    import huggingface_hub
+    from huggingface_hub import constants
+    monkeypatch.setattr(constants, "HF_HUB_OFFLINE", False)
+
+    def full(**kwargs):
+        raise OSError(28, "No space left on device", str(tmp_path / "hub"))
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", full)
+    assert main(["--error-format", "json", "info", "hf://org/repo"]) != 0
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "ALIGNAIR_IO_FAILED" and payload["context"]["errno"] == 28
+
+
+@pytest.mark.parametrize("argv", [
+    ["predict", "--model", "m.alignair", "--input", "reads.fasta", "--out", "out.tsv", "--device", "gpu"],
+    ["train", "--dataconfig", "HUMAN_IGH_OGRDB", "--out", "run", "--device", "gpu", "--plan"],
+], ids=lambda argv: argv[0])
+def test_an_unknown_device_is_a_configuration_error_not_an_internal_one(argv, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert main(["--error-format", "json", *argv]) not in (0, 70)
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "ALIGNAIR_CONFIG_INVALID" and payload["context"]["field"] == "device"
+
+
+def _model_argument(path):
+    parser = _parser(*path)
+    return next(a for a in parser._actions if a.dest == "model")
+
+
+def test_every_command_that_resolves_a_model_describes_its_model_argument_once():
+    helps = {_model_argument(path).help for path in RESOLVERS}
+    assert len(helps) == 1 and "hf://" in helps.pop()

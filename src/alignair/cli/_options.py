@@ -5,6 +5,8 @@ from __future__ import annotations
 from ..errors import AlignAIRError, RegistryError
 from ._errors import classify
 
+MODEL_HELP = "a model file (.alignair), a registry id or id@version, or hf://org/repo"
+
 
 def add_device(parser) -> None:
     """``--device``: the torch device, ``auto`` by default (as the API's ``device="auto"``)."""
@@ -15,7 +17,7 @@ def add_device(parser) -> None:
 def add_registry(parser) -> None:
     """``--registry`` (repeatable) and ``--offline``: where catalog ids are looked up, and whether the network may
     be used."""
-    parser.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
+    parser.add_argument("--registry", action="append", help="a registry url to look model ids up in (repeatable)")
     parser.add_argument("--offline", action="store_true", help="never touch the network")
 
 

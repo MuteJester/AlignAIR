@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 
 from ..model_file import embedded_allele_counts, read_metadata
-from ._options import add_model_source, resolve_model_path
+from ._options import MODEL_HELP, add_model_source, resolve_model_path
 
 
 def register(sub) -> None:
     p = sub.add_parser("info", help="print a model's metadata / model card")
-    p.add_argument("model", help="a model file (.alignair), a registry id or id@version, or hf://org/repo")
+    p.add_argument("model", help=MODEL_HELP)
     p.add_argument("--json", action="store_true", help="print the raw metadata JSON")
     add_model_source(p)
     p.set_defaults(func=run)

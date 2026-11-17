@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 import torch
 
-from ..errors import ModelIntegrityError
+from ..errors import ConfigurationError, ModelIntegrityError
 
 
 def restore_model_state(model: torch.nn.Module, state_dict: Mapping[str, torch.Tensor], *,
@@ -40,9 +40,23 @@ def evaluation_mode(model: torch.nn.Module) -> Iterator[None]:
             module.training = training
 
 
+def check_device(device: str | torch.device | None) -> None:
+    """ConfigurationError unless ``device`` is ``"auto"``, None or a device torch can name (``cpu``, ``cuda``,
+    ``cuda:1``, ``mps``...); whether it is available here is ``resolve_device``'s question."""
+    if device is None or device == "auto" or isinstance(device, torch.device):
+        return
+    try:
+        torch.device(device)
+    except (RuntimeError, TypeError, ValueError) as exc:
+        raise ConfigurationError(f"unknown device {device!r}: use auto, cpu, cuda (or cuda:N) or mps",
+                                 context={"field": "device"}) from exc
+
+
 def resolve_device(device: str | None = "auto") -> str:
     """Resolve a device request to a concrete backend. ``"auto"`` picks CUDA, else Apple MPS, else CPU.
-    An explicit ``"cuda"``/``"mps"`` that is unavailable falls back to CPU (reported by the caller)."""
+    An explicit ``"cuda"``/``"mps"`` that is unavailable falls back to CPU (reported by the caller); a device torch
+    cannot name is a ConfigurationError (``check_device``)."""
+    check_device(device)
     if device in (None, "auto"):
         if torch.cuda.is_available():
             return "cuda"

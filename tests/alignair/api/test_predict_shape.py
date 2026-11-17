@@ -109,3 +109,23 @@ def test_a_bad_chunk_size_is_refused(aligner, reads, chunk_size):
     with pytest.raises(ConfigurationError) as caught:
         list(aligner.predict_iter(reads, chunk_size=chunk_size))
     assert caught.value.context["field"] == "chunk_size"
+
+
+def test_batch_size_none_means_auto_as_every_option_s_none_means_its_default(aligner, reads):
+    """As in AlignAIR 3, and as a wrapper that forwards an optional ``batch_size`` (the CLI's ``--batch-size``) does."""
+    assert aligner.predict(reads, batch_size=None).records == aligner.predict(reads).records
+    assert aligner.predict_raw(reads, batch_size=None).keys() == aligner.predict_raw(reads).keys()
+    assert [r["v_call"] for r in aligner.predict_iter(reads, batch_size=None)] == [
+        r["v_call"] for r in aligner.predict(reads).records]
+
+
+def test_a_batch_size_string_other_than_auto_is_refused_naming_auto(aligner, reads):
+    with pytest.raises(ConfigurationError, match='positive integer or "auto"') as caught:
+        aligner.predict(reads, batch_size="AUTO")
+    assert caught.value.context["field"] == "batch_size"
+
+
+def test_predict_iter_with_ids_refuses_a_read_that_is_not_a_string_as_the_input_s_error(aligner, reads):
+    import numpy as np
+    with pytest.raises(InputError):
+        list(aligner.predict_iter([reads[0], np.array(list(reads[1]))], ids=["a", "b"]))

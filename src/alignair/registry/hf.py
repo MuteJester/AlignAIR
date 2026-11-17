@@ -10,7 +10,15 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from ..errors import MissingDependencyError, ModelNotFoundError, OfflineError, RegistryError, RegistryUnavailableError
+from ..errors import (
+    AlignAIRError,
+    InputError,
+    MissingDependencyError,
+    ModelNotFoundError,
+    OfflineError,
+    RegistryError,
+    RegistryUnavailableError,
+)
 from .sources import retryable_status
 
 DEFAULT_FILENAME = "model.alignair"
@@ -40,12 +48,14 @@ def names_model_file(spec: str) -> bool:
 def parse_hf_spec(spec: str) -> tuple[str, str | None, str | None]:
     """Parse ``hf://org/repo[/sub/file.alignair][@rev]`` (or the ``hf://``-less form) into
     ``(repo_id, revision, filename)``. ``repo_id`` is the first two path segments; anything after is a
-    file path within the repo (default ``model.alignair``); ``@rev`` pins a branch/tag/commit."""
+    file path within the repo (default ``model.alignair``); ``@rev`` pins a branch/tag/commit. An InputError when it
+    names no ``org/repo``."""
     s = spec.removeprefix("hf://")
     body, _, rev = s.partition("@")
     parts = [p for p in body.split("/") if p]
     if len(parts) < 2:
-        raise ValueError(f"not a Hugging Face repo spec: {spec!r} (expected org/repo)")
+        raise InputError(f"not a Hugging Face repo spec: {spec!r} (expected org/repo)", context={"model": spec},
+                         hint="A Hugging Face model is hf://org/repo[@revision][/file.alignair].")
     repo_id = "/".join(parts[:2])
     filename = "/".join(parts[2:]) or None
     return repo_id, (rev or None), filename
@@ -71,8 +81,8 @@ def download_from_hub(spec: str, *, revision: str | None = None, filename: str |
                       token: str | None = None, offline: bool = False) -> Path:
     """Download a model's ``.alignair`` from a HF repo and return the local cached path. ``offline`` uses
     the local cache directly (no network; a cache miss is an OfflineError). A repo, revision or file the hub does not
-    have is a ModelNotFoundError; a hub that cannot be reached a retryable RegistryUnavailableError. Requires
-    ``huggingface_hub``."""
+    have is a ModelNotFoundError; a hub that cannot be reached a retryable RegistryUnavailableError; a disk error
+    while the hub writes its cache stays an OSError (``_hub_failure``). Requires ``huggingface_hub``."""
     repo_id, spec_rev, spec_file = parse_hf_spec(spec)
     rev = revision or spec_rev
     fname = filename or spec_file or DEFAULT_FILENAME
@@ -95,27 +105,49 @@ def download_from_hub(spec: str, *, revision: str | None = None, filename: str |
         path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=hf_token(token),
                                library_name="alignair", library_version=__version__)
     except Exception as e:                               # normalize hub errors to an actionable message
-        raise _hub_failure(e, repo_id=repo_id, revision=rev, filename=fname, offline=offline) from e
+        failure = _hub_failure(e, repo_id=repo_id, revision=rev, filename=fname, offline=offline)
+        if failure is None:
+            raise
+        raise failure from e
     return Path(path)
 
 
+def _is_transport_error(error: Exception) -> bool:
+    """Whether ``error`` is a network failure: a connection or timeout error, or one of the HTTP clients' own."""
+    return isinstance(error, (ConnectionError, TimeoutError)) or any(
+        cls.__module__.split(".")[0] in ("httpx", "requests", "urllib3") for cls in type(error).__mro__)
+
+
 def _hub_failure(error: Exception, *, repo_id: str, revision: str | None, filename: str,
-                 offline: bool) -> RegistryError | ModelNotFoundError:
+                 offline: bool) -> AlignAIRError | None:
     """The error a failed hub download raises (``download_from_hub``), classified by what the hub said; the hub's own
-    offline mode (``HF_HUB_OFFLINE``) counts as offline."""
+    offline mode (``HF_HUB_OFFLINE``) counts as offline. An invalid repo id or revision is an InputError, a gated repo
+    a RegistryError (access is needed), a network failure a RegistryUnavailableError (retryable unless the hub
+    answered that the request is wrong), and any other failure a RegistryError that is not retryable. None for a disk
+    error (an OSError that is not the network's): it is not the hub's failure and propagates as it is."""
     from huggingface_hub import constants, utils
     offline = offline or bool(getattr(constants, "HF_HUB_OFFLINE", False))
     message = f"could not fetch {filename!r} from Hugging Face repo {repo_id!r} (revision {revision or 'main'})"
     context = {"stage": "model_download", "repo_id": repo_id, "revision": revision, "filename": filename,
                "offline": offline}
     hint = "Check repository access, revision, connectivity, and local cache availability."
+    def hub(*names):
+        return tuple(getattr(utils, name) for name in names if hasattr(utils, name))
     if offline:
         return OfflineError(f"{message} (offline: not in the local HF cache)", context=context, hint=hint)
-    if isinstance(error, getattr(utils, "LocalEntryNotFoundError", ())):     # the hub unreachable, the file not cached
+    if isinstance(error, hub("HFValidationError")):
+        return InputError(f"{message}: {error}", context=context,
+                          hint="A Hugging Face model is hf://org/repo[@revision][/file.alignair].")
+    if isinstance(error, hub("GatedRepoError")):
+        return RegistryError(f"{message}: the repo is gated", context=context,
+                             hint="Request access on the hub, then pass a token (--hf-token, token= or $HF_TOKEN).")
+    if isinstance(error, hub("LocalEntryNotFoundError")):     # the hub unreachable, the file not cached
         return RegistryUnavailableError(message, context=context, hint=hint)
-    missing = tuple(getattr(utils, name) for name in ("RepositoryNotFoundError", "RevisionNotFoundError",
-                                                      "EntryNotFoundError") if hasattr(utils, name))
-    if isinstance(error, missing):
+    if isinstance(error, hub("RepositoryNotFoundError", "RevisionNotFoundError", "EntryNotFoundError")):
         return ModelNotFoundError(message, context=context, hint=hint)
-    status = getattr(getattr(error, "response", None), "status_code", None)
-    return RegistryUnavailableError(message, context=context, hint=hint, retryable=retryable_status(status))
+    if isinstance(error, hub("HfHubHTTPError")) or _is_transport_error(error):
+        status = getattr(getattr(error, "response", None), "status_code", None)
+        return RegistryUnavailableError(message, context=context, hint=hint, retryable=retryable_status(status))
+    if isinstance(error, OSError):
+        return None
+    return RegistryError(message, context=context, hint=hint)

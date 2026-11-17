@@ -80,7 +80,7 @@ def test_a_training_step_rejects_non_finite_loss_or_gradient_before_optimizer(mo
     """Invalid loss or gradient must abort the real training step before weights change."""
     import torch
 
-    from alignair.train import TrainingEngine
+    from alignair.train.engine import TrainingEngine
 
     class _M(torch.nn.Module):
         def __init__(self):

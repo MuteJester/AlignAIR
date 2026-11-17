@@ -232,7 +232,8 @@ def _on_the_models_loci(reference: ReferenceSet, known: ReferenceSet) -> Referen
     loci = [info.locus for info in known.loci]
     extra = _extra_loci(reference, loci)
     if extra:
-        raise ConfigurationError(f"the reference holds alleles of {', '.join(extra)}, a locus the model does not call "
+        which = "a locus" if len(extra) == 1 else "loci"
+        raise ConfigurationError(f"the reference holds alleles of {', '.join(extra)}, {which} the model does not call "
                                  f"(it calls {', '.join(loci)})",
                                  context={"field": "reference", "loci": extra, "model_loci": loci},
                                  hint="Bind a subset of the reference of the model's loci only, or align each locus "

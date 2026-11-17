@@ -60,3 +60,10 @@ def test_an_artifact_opens_as_a_stream_from_a_local_source_and_never_offline_fro
     assert sources.fetch_bytes(str(tmp_path), "models/m.alignair") == b"model bytes"
     with pytest.raises(sources.OfflineError):
         sources.open_artifact("hf://a/b", "models/m.alignair", offline=True)
+
+
+def test_a_config_file_naming_one_registry_as_a_string_is_that_registry(tmp_path, monkeypatch):
+    monkeypatch.delenv("ALIGNAIR_REGISTRY", raising=False)
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('registries = "file:///srv/reg"\n')
+    assert sources.resolve_sources(config_path=str(cfg)) == ["file:///srv/reg"]

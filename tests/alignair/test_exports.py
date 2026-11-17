@@ -146,3 +146,32 @@ def _unhinted(function) -> list[str]:
 def test_the_public_api_is_type_hinted():
     missing = {name: _unhinted(value) for name, value in public_api() if inspect.isfunction(value)}
     assert {name: gaps for name, gaps in missing.items() if gaps} == {}
+
+
+def test_alignair_train_exports_the_run_and_its_settings_and_not_the_engine():
+    """The engine and the loop are internal (``alignair.train.engine``, ``.loop``); a run's callback receives a
+    ``TrainingIteration`` (its ``result`` a ``StepResult``), so those two stay."""
+    from alignair import train
+    assert set(train.__all__) == {"CosineSchedule", "NovelAlleles", "StepResult", "TrainingConfig",
+                                  "TrainingIteration", "TrainingRun", "run_training"}
+    assert not [name for name in ("TrainingEngine", "ValidationResult", "build_training_engine",
+                                  "training_iterations") if hasattr(train, name)]
+
+
+def test_run_trainings_callback_is_hinted_with_what_it_receives():
+    from alignair import run_training
+    assert "TrainingIteration" in str(inspect.signature(run_training).parameters["on_iteration"].annotation)
+
+
+@pytest.mark.parametrize("function, parameter", [
+    ("alignair.reference.reference_set:ReferenceSet.from_dataconfigs", "dataconfigs"),
+    ("alignair.evaluate.benchmark:generate_labeled", "dataconfig"),
+    ("alignair.evaluate.benchmark:run_benchmark", "dataconfig")])
+def test_a_function_that_needs_a_dataconfig_object_is_not_hinted_to_take_a_name(function, parameter):
+    """These read the dataconfig's own fields: a name (``"HUMAN_IGH_OGRDB"``) fails there, so the hint says
+    ``DataConfig``."""
+    module, _, qualname = function.partition(":")
+    value = importlib.import_module(module)
+    for part in qualname.split("."):
+        value = getattr(value, part)
+    assert "str" not in str(inspect.signature(value).parameters[parameter].annotation)

@@ -1,5 +1,7 @@
 """The domain hierarchy: every error class AlignAIR raises is defined here, so ``alignair.errors`` exports them
 all."""
+from typing import Any
+
 from .base import AlignAIRError, ExitCode
 
 
@@ -86,7 +88,7 @@ class RegistryUnavailableError(RegistryError):
     there). Retryable unless the server answered that the request itself is wrong or the source is local."""
     code = "ALIGNAIR_REGISTRY_UNAVAILABLE"
 
-    def __init__(self, message: str = "", *, retryable: bool = True, **kwargs):
+    def __init__(self, message: str = "", *, retryable: bool = True, **kwargs: Any) -> None:
         super().__init__(message, retryable=retryable, **kwargs)
 
 

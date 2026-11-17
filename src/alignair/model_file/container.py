@@ -38,6 +38,7 @@ from ..errors import (
     ModelError,
     ModelFormatError,
     ModelIntegrityError,
+    ModelNotFoundError,
     ModelSectionError,
     error_context,
 )
@@ -124,12 +125,14 @@ def _not_a_model_file(path, head: bytes) -> ModelError:
 
 
 def read_header(path: str | os.PathLike[str]) -> dict:
-    """The model file's JSON header. A ModelError for a missing file; a ModelFormatError for a file that is not a model
-    file (an AlignAIR 3 checkpoint named as such), a damaged one or a newer one."""
+    """The model file's JSON header. A ModelNotFoundError for a missing file, a ModelError for a path that is not a
+    file; a ModelFormatError for a file that is not a model file (an AlignAIR 3 checkpoint named as such), a damaged
+    one or a newer one."""
 
+    if not os.path.exists(path):
+        raise ModelNotFoundError(f"no such model file: {path}", context={"path": str(path)}, hint="Check the path.")
     if not os.path.isfile(path):
-        raise ModelError(f"no such model file: {path}", context={"path": str(path)},
-                         hint="Check the path, or name a shipped model by its id (alignair models list).")
+        raise ModelError(f"model path must be a file: {path}", context={"path": str(path)})
     with error_context(path=path, stage="model_header"), open(path, "rb") as f:
         magic = f.read(8)
         if magic[:7] != MAGIC[:7]:

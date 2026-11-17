@@ -3,7 +3,7 @@ among them (``forward`` aside: torch's hook, not a user call)."""
 import importlib
 import inspect
 
-PACKAGES = ("alignair", "alignair.errors", "alignair.io", "alignair.registry", "alignair.reference",
+PACKAGES = ("alignair", "alignair.errors", "alignair.io", "alignair.registry", "alignair.reference", "alignair.train",
             "alignair.model_file", "alignair.analyze", "alignair.evaluate")
 
 

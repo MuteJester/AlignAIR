@@ -20,10 +20,11 @@ from ..model_file import container, pickle_sections, read_metadata, serialize
 REQUIRED_CARD_FIELDS = ("model_id", "model_version", "model_format_version", "created_by_alignair")
 
 
-def validate_registry(registry: dict, artifact_path: Callable[[str], str | None]) -> list[str]:
-    """``artifact_path(relpath)`` -> local path of an artifact. Returns problem strings."""
+def validate_registry(catalog: dict, artifact_path: Callable[[str], str | None]) -> list[str]:
+    """The problems of a registry's ``catalog`` (its parsed ``registry.json``, as ``load_registry`` returns it);
+    ``artifact_path(relpath)`` is the local path of one of its artifacts. Returns problem strings."""
     problems: list[str] = []
-    for mid, m in registry.get("models", {}).items():
+    for mid, m in catalog.get("models", {}).items():
         versions = m.get("versions", {})
         if not versions:
             problems.append(f"{mid}: no versions")

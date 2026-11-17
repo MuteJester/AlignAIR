@@ -8,7 +8,7 @@ from alignair.data import TrainingBatch
 from alignair.errors import ConfigurationError
 from alignair.tasks import MetricReport
 from alignair.core.runtime import evaluation_mode
-from alignair.train import TrainingEngine
+from alignair.train.engine import TrainingEngine
 from alignair.train.guards import NonFiniteTrainingError
 
 pytestmark = pytest.mark.component

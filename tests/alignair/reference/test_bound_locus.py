@@ -130,3 +130,10 @@ def test_a_mixed_reference_is_refused_at_load_and_when_bound():
         Aligner.from_pretrained(str(TEST_CHIP), device="cpu", reference=mixed)
     with pytest.raises(ConfigurationError, match="IGK"):
         Aligner.from_pretrained(str(TEST_CHIP), device="cpu").bound_to(mixed)
+
+
+def test_a_reference_of_two_loci_the_model_does_not_call_names_them_as_loci(igh):
+    from alignair.errors import ConfigurationError
+    mixed = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB, gd.HUMAN_IGK_OGRDB, gd.HUMAN_IGL_OGRDB)
+    with pytest.raises(ConfigurationError, match=r"alleles of IGK, IGL, loci the model does not call"):
+        annotate(mixed, igh)

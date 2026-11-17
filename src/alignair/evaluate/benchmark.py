@@ -32,7 +32,7 @@ def default_strata() -> dict:
     }
 
 
-def generate_labeled(dataconfig: str | DataConfig, params: dict, n: int, seed: int) -> list[dict]:
+def generate_labeled(dataconfig: DataConfig, params: dict, n: int, seed: int) -> list[dict]:
     """``n`` labelled records (truth calls + coords + junction) from the GenAIRR experiment the training records use."""
     from ..genairr.experiment import build_experiment
     p = dict(params)
@@ -84,7 +84,7 @@ def score(truth: list[dict], preds: list[dict]) -> dict:
     return m
 
 
-def run_benchmark(model: AlignAIR, reference: ReferenceSet, dataconfig: str | DataConfig, *, n: int = 200,
+def run_benchmark(model: AlignAIR, reference: ReferenceSet, dataconfig: DataConfig, *, n: int = 200,
                   seed: int = 0, strata_names: list[str] | None = None, device: str = "cpu",
                   batch_size: int = 64) -> dict:
     """Score ``model`` on ``n`` reads per stratum (``default_strata``, or the named ones) generated from

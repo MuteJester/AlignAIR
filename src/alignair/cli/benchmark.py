@@ -10,12 +10,12 @@ import sys
 
 from ..errors import ConfigurationError, ModelError, report_error
 from ._errors import fail
-from ._options import add_device, add_model_source, add_report_output, emit, resolve_model_path
+from ._options import MODEL_HELP, add_device, add_model_source, add_report_output, emit, resolve_model_path
 
 
 def register(sub) -> None:
     p = sub.add_parser("benchmark", help="evaluate a model on generated GenAIRR reads (per stratum)")
-    p.add_argument("--model", required=True, help="a .alignair path or a shipped registry id")
+    p.add_argument("--model", required=True, help=MODEL_HELP)
     p.add_argument("--dataconfig", default=None,
                    help="the GenAIRR dataconfig to generate reads from (default: the model card's first)")
     p.add_argument("--n", type=int, default=200, help="reads per stratum")

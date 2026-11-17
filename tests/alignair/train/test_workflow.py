@@ -313,3 +313,12 @@ def test_a_flank_policy_trains_on_flanked_reads_and_is_recorded(tmp_path, monkey
     assert read_metadata(run.model_path)['training']['train_args']['flanks'] == flanks.to_dict()
     with pytest.raises(ConfigurationError, match='flanks'):
         TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', flanks={'p_prefix': 1.0})
+
+
+def test_a_resume_path_with_no_checkpoint_is_model_not_found(tmp_path):
+    from alignair.errors import ModelNotFoundError
+    config = TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", steps=1, batch_size=2, device="cpu",
+                                         resume_path=str(tmp_path / "none.alignair"))
+    with pytest.raises(ModelNotFoundError) as caught:
+        run_training(config, output_dir=tmp_path / "run")
+    assert caught.value.context["field"] == "resume_path"

@@ -9,7 +9,7 @@ from alignair.errors import ConfigurationError, NonFiniteTrainingError, Training
 
 
 def validate_grad_clip(grad_clip) -> None:
-    """Validate the shared engine/factory clipping contract without allocating training state."""
+    """ConfigurationError unless ``grad_clip`` is a positive finite number or None, before any training state."""
     if grad_clip is not None and (isinstance(grad_clip, bool) or not isinstance(grad_clip, (int, float))
                                   or not math.isfinite(grad_clip) or grad_clip <= 0):
         raise ConfigurationError("grad_clip must be a positive finite number or None",

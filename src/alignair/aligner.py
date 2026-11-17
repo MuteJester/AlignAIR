@@ -11,6 +11,7 @@ Training is ``alignair.run_training`` (``alignair.train``).
 """
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -87,7 +88,7 @@ class Aligner:
 
     # ------------------------------------------------------------------ constructors
     @classmethod
-    def from_pretrained(cls, model: str, *, revision: str | None = None, device: str = "auto",
+    def from_pretrained(cls, model: str | os.PathLike[str], *, revision: str | None = None, device: str = "auto",
                         reference: ReferenceSet | None = None, registry: str | Iterable[str] | None = None,
                         offline: bool = False,
                         token: str | None = None) -> Aligner:
@@ -95,7 +96,8 @@ class Aligner:
         via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``), looked up in the registries of
         ``registry`` (a string is one registry; default: the configured ones). ``revision`` pins a
         HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
-        ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU)."""
+        ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU). A
+        ``reference`` that holds alleles of a locus the model does not call is refused (ConfigurationError)."""
         from .model_file import load_model
         from .registry import hf, resolve_model
         path = str(resolve_model(model, registry=registry, offline=offline, token=token, revision=revision))
@@ -163,8 +165,9 @@ class Aligner:
         """An Aligner that predicts from ``reference`` (its bank, e.g. a donor genotype's subset of the reference): a
         copy of the model bound to it once, so later calls, and the workers a pool starts from it, use that bank
         with no per-call binding; the reference is annotated against this Aligner's own (``alignair.reference.
-        annotate``), as one given at load is. This Aligner is unchanged. The copy is not a model file (``model_path``
-        is unset), and its label schema names the bank's alleles."""
+        annotate``), as one given at load is; one that holds alleles of a locus the model does not call is refused
+        (ConfigurationError). This Aligner is unchanged. The copy is not a model file (``model_path`` is unset), and
+        its label schema names the bank's alleles."""
         import copy
 
         from .reference import annotate
@@ -178,7 +181,7 @@ class Aligner:
         Aligner bound once to the genotype's subset of its reference (``bound_to``); a gene it does not name keeps all
         its alleles. This Aligner is unchanged. UnknownAlleleError for an allele the reference does not hold (give its
         sequence in the reference), InputError for a gene left with no allele, ConfigurationError for a key that is
-        not V, D or J."""
+        not V, D or J or an entry that is not a list of allele names."""
         from .genotype.bank import genotype_bank
         return self.bound_to(genotype_bank(self.reference, genotype))
 
@@ -200,20 +203,28 @@ class Aligner:
         return self.reference.default_locus
 
     # ------------------------------------------------------------------ inference
-    def _batch_size(self, batch_size: int | str) -> int | str:
-        return auto_batch_size(self.device) if batch_size == "auto" else batch_size
+    def _batch_size(self, batch_size: int | str | None) -> int:
+        """``batch_size`` as a number: ``"auto"`` or None is the device's size (``auto_batch_size``); any other string
+        is refused here, and any other value by ``PredictConfig``."""
+        if batch_size is None or batch_size == "auto":
+            return auto_batch_size(self.device)
+        if isinstance(batch_size, str):
+            raise ConfigurationError(f'batch_size must be a positive integer or "auto" (got {batch_size!r})',
+                                     context={"field": "batch_size"})
+        return batch_size
 
-    def predict(self, sequences: Sequence[str], *, ids: Sequence[str] | None = None, batch_size: int | str = "auto",
-                threshold: float | None = None, cap: int | None = None, airr: bool = True) -> PredictionResult:
+    def predict(self, sequences: Sequence[str], *, ids: Sequence[str] | None = None,
+                batch_size: int | str | None = "auto", threshold: float | None = None, cap: int | None = None,
+                airr: bool = True) -> PredictionResult:
         """Align nucleotide strings, returning a :class:`PredictionResult` of one record per sequence, in order: every
         sequence given is predicted (``read_sequences`` and the CLI drop the reads of a file that are mostly not
         bases; an empty one is refused here).
 
         ``ids`` (one string per sequence) fill each record's ``sequence_id`` and the result's ``ids``.
-        ``batch_size="auto"`` picks a device-appropriate size. ``threshold`` and ``cap`` set the called alleles of each
-        gene (``v_calls``...): those scoring at least ``threshold`` relative to the best (default 0.5), at most ``cap``
-        of them (default 3), never none. ``airr=False`` returns light records without the AIRR assembly. To call from a
-        donor's genotype, predict with :meth:`with_genotype`'s Aligner."""
+        ``batch_size="auto"`` (or None) picks a device-appropriate size. ``threshold`` and ``cap`` set the called
+        alleles of each gene (``v_calls``...): those scoring at least ``threshold`` relative to the best (default 0.5),
+        at most ``cap`` of them (default 3), never none. ``airr=False`` returns light records without the AIRR
+        assembly. To call from a donor's genotype, predict with :meth:`with_genotype`'s Aligner."""
         if ids is not None:
             sequences, ids = _named_reads(sequences, ids)
         cfg = PredictConfig.for_model(self.model, self.reference, batch_size=self._batch_size(batch_size),
@@ -223,7 +234,7 @@ class Aligner:
             records = [{"sequence_id": name, **record} for name, record in zip(ids, records)]
         return PredictionResult(records, locus=self.default_locus, ids=ids)
 
-    def predict_raw(self, sequences: Sequence[str], *, batch_size: int | str = "auto") -> dict:
+    def predict_raw(self, sequences: Sequence[str], *, batch_size: int | str | None = "auto") -> dict:
         """The model's raw head arrays; label_schema describes column identity.
 
         This method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the
@@ -239,7 +250,7 @@ class Aligner:
         return {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
 
     def predict_iter(self, sequences: Iterable[str], *, ids: Iterable[str] | None = None,
-                     batch_size: int | str = "auto", chunk_size: int = 20000, threshold: float | None = None,
+                     batch_size: int | str | None = "auto", chunk_size: int = 20000, threshold: float | None = None,
                      cap: int | None = None, airr: bool = True) -> Iterator[dict]:
         """Stream prediction over an iterable of sequences in bounded memory: yields per-read records, predicting
         ``chunk_size`` reads at a time (a positive integer). Same options as :meth:`predict`; ``ids`` may be an
@@ -259,7 +270,7 @@ class Aligner:
                 chunk, chunk_ids = list(islice(reads, chunk_size)), None
             else:
                 pairs = list(islice(zip_longest(reads, names, fillvalue=_MISSING), chunk_size))
-                if any(_MISSING in pair for pair in pairs):
+                if any(item is _MISSING for pair in pairs for item in pair):
                     raise InputError("ids and sequences differ in number", context={"field": "ids"})
                 chunk, chunk_ids = [read for read, _ in pairs], [name for _, name in pairs]
             if not chunk:

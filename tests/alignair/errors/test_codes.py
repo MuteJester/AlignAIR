@@ -13,6 +13,7 @@ import pytest
 
 from alignair.errors import (
     AlignAIRError,
+    InputError,
     ModelError,
     ModelNotFoundError,
     OfflineError,
@@ -126,6 +127,15 @@ def test_a_registry_that_cannot_be_read_is_invalid_and_not_retryable(tmp_path, t
         sources.find_model("m", None, [f"file://{tmp_path}/"])
 
 
+@pytest.mark.parametrize("entry", [{}, "m/1.alignair", {"file": 3}], ids=["no file", "a string", "file not a string"])
+def test_a_malformed_version_entry_is_registry_invalid_not_an_internal_error(tmp_path, entry):
+    from alignair.registry.cache import resolve_model
+    source = _registry(tmp_path, {"m": {"latest": "1", "versions": {"1": entry}}})
+    with pytest.raises(RegistryInvalidError) as caught:
+        resolve_model("m@1", registry=[source])
+    assert caught.value.code == "ALIGNAIR_REGISTRY_INVALID" and caught.value.retryable is False
+
+
 def _unreachable(error):
     def urlopen(url, timeout=None):
         raise error
@@ -229,7 +239,11 @@ def _hub_error(name: str):
     (lambda: _hub_error("EntryNotFoundError"), ModelNotFoundError, False),
     (lambda: _hub_error("LocalEntryNotFoundError"), RegistryUnavailableError, True),
     (lambda: ConnectionError("hub unreachable"), RegistryUnavailableError, True),
-], ids=["no repo", "no revision", "no file", "unreachable, not cached", "connection"])
+    (lambda: _hub_error("HFValidationError"), InputError, False),
+    (lambda: _hub_error("GatedRepoError"), RegistryError, False),
+    (lambda: RuntimeError("something else"), RegistryError, False),
+], ids=["no repo", "no revision", "no file", "unreachable, not cached", "connection", "invalid repo id", "gated",
+        "unknown"])
 def test_a_hub_download_failure_is_not_found_or_unavailable(monkeypatch, raised, expected, retryable):
     pytest.importorskip("huggingface_hub")
     import huggingface_hub
@@ -283,3 +297,26 @@ def test_the_cli_reports_a_missing_model_as_not_found(tmp_path, capsys):
                  "--input", str(reads), "--out", str(tmp_path / "out.tsv")]) == 1
     payload = json.loads(capsys.readouterr().err)
     assert payload["code"] == "ALIGNAIR_MODEL_NOT_FOUND" and payload["retryable"] is False
+
+
+def test_a_disk_error_while_the_hub_writes_its_cache_is_not_the_hubs_failure(monkeypatch):
+    """A full or unwritable Hugging Face cache stays an OSError (the CLI's IO_FAILED), not a retryable unreachable
+    hub."""
+    pytest.importorskip("huggingface_hub")
+    import huggingface_hub
+
+    from alignair.registry import hf
+
+    def download(**kwargs):
+        raise OSError(28, "No space left on device")
+    monkeypatch.setattr(huggingface_hub, "hf_hub_download", download)
+    with pytest.raises(OSError) as caught:
+        hf.download_from_hub("hf://org/repo")
+    assert not isinstance(caught.value, AlignAIRError) and caught.value.errno == 28
+
+
+@pytest.mark.parametrize("spec", ["hf://org", "hf://"])
+def test_a_malformed_hub_spec_is_an_input_error(spec):
+    from alignair.registry import hf
+    with pytest.raises(InputError):
+        hf.parse_hf_spec(spec)

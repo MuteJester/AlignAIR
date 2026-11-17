@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass
 from numbers import Real
 
@@ -50,11 +51,13 @@ class NovelAlleles:
         object.__setattr__(self, "snps", (low, high))
 
     def to_dict(self) -> dict:
+        """The settings as a plain dict, with the generator they draw with (``train_args`` records it)."""
         return {"generator": GENERATOR, "gene_fraction": self.gene_fraction, "snps": list(self.snps),
                 "epoch_records": self.epoch_records}
 
     @classmethod
-    def from_dict(cls, data) -> NovelAlleles:
+    def from_dict(cls, data: Mapping[str, object]) -> NovelAlleles:
+        """From ``to_dict``'s form: a ConfigurationError for settings of another generator."""
         data = dict(data)
         if data.get("generator") != GENERATOR:
             raise ConfigurationError(f"novel alleles of generator {data.get('generator')!r}; this build draws "

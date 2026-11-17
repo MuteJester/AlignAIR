@@ -12,6 +12,7 @@ from .config import TrainingConfig
 
 if TYPE_CHECKING:
     from ..aligner import Aligner
+    from .loop import TrainingIteration
     from .records.streams import RecordSource
 
 
@@ -29,16 +30,19 @@ class TrainingRun:
 
 
 def run_training(config: TrainingConfig, *, output_dir: str | os.PathLike[str] | None = None,
-                 out_path: str | os.PathLike[str] | None = None, on_iteration: Callable[[int], object] | None = None,
+                 out_path: str | os.PathLike[str] | None = None,
+                 on_iteration: Callable[[TrainingIteration], object] | None = None,
                  record_source: RecordSource | None = None) -> TrainingRun:
     """Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.
 
     With ``config.data_workers`` > 0, worker processes are spawned: call this under an
     ``if __name__ == "__main__":`` guard. On an accelerator, the step and ``on_iteration`` must not draw from
     the CPU random generators: such a draw raises TrainingError, and
-    ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``record_source`` replaces the
-    GenAIRR provider of the run's curriculum records (see ``trainer._train``). ``config`` validated its values when it
-    was built; the run checks its reference before the model is built.
+    ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``on_iteration`` is called after each update
+    with its ``TrainingIteration`` (``step``, ``result``: the ``StepResult``, and the batch's ``records``).
+    ``record_source`` (``train.records.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces
+    the GenAIRR provider of the run's curriculum records. ``config`` validated its values when it was built; the run
+    checks its reference before the model is built.
     """
     import numpy as np
     import torch
