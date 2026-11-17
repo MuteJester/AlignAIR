@@ -35,13 +35,13 @@ def model_sources(args) -> list[str]:
     return sources.resolve_sources(args.registry)
 
 
-def resolve_model_path(args, sources: list[str] | None = None) -> str:
+def resolve_model_path(args, registry: list[str] | None = None) -> str:
     """The local path of the model ``args.model`` names (a path, a registry id or a Hub repo), resolved with the
-    ``add_model_source`` options against ``sources`` (default: ``model_sources``). A failure is raised classified: an
+    ``add_model_source`` options against ``registry`` (default: ``model_sources``). A failure is raised classified: an
     AlignAIRError as it is, a ValueError as a RegistryError; a disk error stays an OSError (the CLI's IO_FAILED)."""
     from ..registry import resolve_model
     try:
-        return str(resolve_model(args.model, sources=model_sources(args) if sources is None else sources,
+        return str(resolve_model(args.model, registry=model_sources(args) if registry is None else registry,
                                  offline=args.offline, token=args.hf_token, revision=args.revision))
     except (AlignAIRError, ValueError) as error:
         raise classify(error, error_type=RegistryError, message=f"could not resolve model '{args.model}'",

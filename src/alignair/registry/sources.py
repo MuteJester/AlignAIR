@@ -19,6 +19,7 @@ import http.client
 import json
 import os
 import urllib.error
+from collections.abc import Iterable
 from urllib.parse import urljoin
 
 from alignair.errors import (
@@ -80,11 +81,17 @@ def _config_registries(config_path: str | None) -> list[str]:
     return [str(r) for r in regs] if regs else []
 
 
-def resolve_sources(cli: list[str] | None = None, *, config_path: str | None = None) -> list[str]:
-    """Registry sources in precedence order (first non-empty wins): the CLI, ``ALIGNAIR_REGISTRY``, the config
-    file, then the built-in catalog."""
-    if cli:
-        return list(cli)
+def registry_list(registry: str | Iterable[str]) -> list[str]:
+    """``registry`` as a list of registry sources: a string is one registry."""
+    return [registry] if isinstance(registry, str) else list(registry)
+
+
+def resolve_sources(registry: str | Iterable[str] | None = None, *, config_path: str | None = None) -> list[str]:
+    """Registry sources in precedence order (first non-empty wins): ``registry`` (the CLI's ``--registry``; a string
+    is one registry), ``ALIGNAIR_REGISTRY``, the config file, then the built-in catalog."""
+    registry = registry_list(registry or [])
+    if registry:
+        return registry
     env = os.environ.get("ALIGNAIR_REGISTRY")
     if env:
         return [s.strip() for s in env.split(",") if s.strip()]
@@ -156,14 +163,15 @@ def load_registry(source: str, *, offline: bool = False) -> dict:
         return registry
 
 
-def find_model(model_id: str, version: str | None, sources: list[str], *, offline: bool = False):
-    """Search ``sources`` in order for ``model_id`` (``version`` or the registry's ``latest``).
-    Returns ``(source, version, version_entry, model_entry)`` or None. Failed sources are
+def find_model(model_id: str, version: str | None, registry: str | Iterable[str], *,
+               offline: bool = False) -> tuple[str, str, dict, dict] | None:
+    """Search the registries of ``registry`` in order (a string is one registry) for ``model_id`` (``version`` or the
+    registry's ``latest``). Returns ``(source, version, version_entry, model_entry)`` or None. Failed sources are
     tried in order; if no match is found, failures are reported rather than called 'unknown model': an OfflineError
     when every source failed for being offline, a RegistryUnavailableError when one could not be reached or read
     (retryable when one of those is), else a RegistryInvalidError."""
     failures = []
-    for src in sources:
+    for src in registry_list(registry):
         try:
             reg = load_registry(src, offline=offline)
         except (OSError, RegistryError) as exc:

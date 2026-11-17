@@ -66,7 +66,7 @@ def _update(args) -> int:
         print("no models installed")
         return 0
     for mid in targets:
-        p = cache.resolve_model(mid, sources=model_sources(args), offline=args.offline)   # latest -> download if new
+        p = cache.resolve_model(mid, registry=model_sources(args), offline=args.offline)   # latest -> download if new
         print(f"{mid}: {p.name}")
     return 0
 

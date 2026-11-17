@@ -1,7 +1,13 @@
-"""What the package exports (P2-D10). The top level is the supported API; every error class lives in and is
-exported by ``alignair.errors``; ``alignair.io`` exports what the product uses (``load_metadata`` is gone, U-06)."""
+"""What the package exports (P2-D10). The top level is the supported API; every error class lives in and is exported by
+``alignair.errors``; ``alignair.io`` and ``alignair.registry`` export what a user calls (``load_metadata`` is gone,
+U-06; the publish tools stay in ``alignair.registry.publish``); a registry list is ``registry=`` everywhere, and one
+registry may be given as a string."""
+import hashlib
 import importlib
+import inspect
+import json
 import pkgutil
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +19,8 @@ TOP_LEVEL = {"AirrWriter", "AlignAIRError", "Aligner", "PredictionResult", "Refe
              "TrainingRun", "__version__", "compare_airr", "iter_sequences", "read_sequences", "run_training",
              "write_airr"}
 IO = {"MetadataIndex", "SequenceReadBatch", "build_metadata_index", "iter_sequence_batches", "lookup_metadata_rows"}
+REGISTRY = {"DEFAULT_REGISTRY", "download_from_hub", "find_model", "is_hf_repo_spec", "load_registry",
+            "maybe_notify_updates", "parse_hf_spec", "resolve_model", "resolve_sources", "validate_registry"}
 
 
 def test_the_top_level_exports_the_supported_api():
@@ -50,8 +58,74 @@ def test_alignair_errors_defines_and_exports_every_error_class():
                   or c.__name__ not in errors.__all__) == []
 
 
+def test_an_error_class_is_exported_from_alignair_errors_only():
+    from alignair import io, registry
+    moved = {"DuplicateMetadataIdError", "PredictionCountMismatchError", "DownloadIntegrityError", "OfflineError"}
+    for package in (alignair, io, registry):
+        assert not moved & set(package.__all__) and not [name for name in moved if hasattr(package, name)]
+
+
 def test_alignair_io_exports_what_the_product_uses_and_load_metadata_is_gone():
     from alignair import io
     from alignair.io import metadata
     assert set(io.__all__) == IO
     assert not hasattr(io, "load_metadata") and not hasattr(metadata, "load_metadata")
+
+
+def test_alignair_registry_exports_user_calls_and_the_publish_tools_stay_in_publish():
+    from alignair import registry
+    from alignair.registry import publish
+    assert set(registry.__all__) == REGISTRY
+    assert not [name for name in ("publish_bundle", "publish_local", "upload_version") if hasattr(registry, name)]
+    assert callable(publish.publish_bundle) and callable(publish.publish_local) and callable(publish.upload_version)
+
+
+def _registry_functions():
+    from alignair import Aligner
+    from alignair.registry import cache, find_model, maybe_notify_updates, resolve_model, resolve_sources
+    return [resolve_model, find_model, maybe_notify_updates, resolve_sources, cache.verify_installed,
+            Aligner.from_pretrained]
+
+
+@pytest.mark.parametrize("function", _registry_functions(), ids=lambda f: f.__qualname__)
+def test_a_registry_list_is_called_registry_everywhere(function):
+    parameters = inspect.signature(function).parameters
+    assert "registry" in parameters and not {"sources", "sources_list", "srcs", "cli"} & set(parameters)
+
+
+def _one_model_registry(tmp_path, monkeypatch) -> str:
+    """A local registry listing one artifact as ``m@1.0.0``, with an empty model cache; returns its url."""
+    monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.delenv("ALIGNAIR_REGISTRY", raising=False)
+    registry = tmp_path / "registry"
+    (registry / "m").mkdir(parents=True)
+    (registry / "m" / "1.0.0.alignair").write_bytes(b"model bytes")
+    sha = hashlib.sha256(b"model bytes").hexdigest()
+    (registry / "registry.json").write_text(json.dumps({"schema": "alignair.registry.v1", "models": {"m": {
+        "latest": "1.0.0", "versions": {"1.0.0": {"file": "m/1.0.0.alignair", "artifact_sha256": sha}}}}}))
+    return f"file://{registry}"
+
+
+def test_one_registry_may_be_given_as_a_string(tmp_path, monkeypatch):
+    from alignair.registry import find_model, resolve_model, resolve_sources
+    url = _one_model_registry(tmp_path, monkeypatch)
+    assert resolve_sources(url) == [url]
+    assert find_model("m", None, url)[0] == url
+    path = resolve_model("m@1.0.0", registry=url)
+    assert path.read_bytes() == b"model bytes" and resolve_model("m@1.0.0", registry=[url]) == path
+
+
+def test_from_pretrained_looks_an_id_up_in_one_registry_given_as_a_string(tmp_path, monkeypatch):
+    import shutil
+
+    from alignair import Aligner
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    url = _one_model_registry(tmp_path, monkeypatch)
+    registry = tmp_path / "registry"
+    shutil.copyfile(TEST_CHIP, registry / "m" / "1.0.0.alignair")
+    sha = hashlib.sha256(TEST_CHIP.read_bytes()).hexdigest()
+    catalog = json.loads((registry / "registry.json").read_text())
+    catalog["models"]["m"]["versions"]["1.0.0"]["artifact_sha256"] = sha
+    (registry / "registry.json").write_text(json.dumps(catalog))
+    aligner = Aligner.from_pretrained("m@1.0.0", registry=url, device="cpu")
+    assert hashlib.sha256(Path(aligner.model_path).read_bytes()).hexdigest() == sha

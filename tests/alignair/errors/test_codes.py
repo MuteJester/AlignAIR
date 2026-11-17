@@ -112,7 +112,7 @@ def test_an_id_no_registry_lists_is_model_not_found(tmp_path):
     from alignair.registry.cache import resolve_model
     source = _registry(tmp_path, {"other": {"latest": "1", "versions": {"1": {"file": "o.alignair"}}}})
     with pytest.raises(ModelNotFoundError, match="unknown model 'absent'") as caught:
-        resolve_model("absent", sources=[source])
+        resolve_model("absent", registry=[source])
     assert caught.value.context["model_id"] == "absent"
 
 

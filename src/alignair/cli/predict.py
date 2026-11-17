@@ -322,7 +322,7 @@ def _run(args) -> int:
     # a path, a pinned id/revision, or a direct HF repo: no catalog-update noise
     pinned = (os.path.exists(args.model) or "@" in args.model or bool(args.revision)
               or args.model.startswith("hf://"))
-    maybe_notify_updates(sources_list=srcs, offline=args.offline, quiet=args.quiet, pinned=pinned)
+    maybe_notify_updates(registry=srcs, offline=args.offline, quiet=args.quiet, pinned=pinned)
     return 0
 
 

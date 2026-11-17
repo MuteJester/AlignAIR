@@ -5,7 +5,8 @@ import shutil
 
 import pytest
 
-from alignair.registry import cache, OfflineError
+from alignair.errors import OfflineError
+from alignair.registry import cache
 from alignair.errors import ModelError, RegistryError
 
 pytestmark = pytest.mark.integration
@@ -53,10 +54,10 @@ def test_resolve_model_path_passthrough_and_id_download(monkeypatch, tmp_path):
     f = tmp_path / "local.alignair"
     f.write_bytes(b"x")
     assert cache.resolve_model(str(f)) == f                         # a filesystem path passes through
-    p = cache.resolve_model("human-igh@2.1.0", sources=[src])       # id@version -> verified download
+    p = cache.resolve_model("human-igh@2.1.0", registry=[src])       # id@version -> verified download
     assert p.exists() and hashlib.sha256(p.read_bytes()).hexdigest() == sha
     with pytest.raises(ValueError, match="unknown"):
-        cache.resolve_model("nope", sources=[src])
+        cache.resolve_model("nope", registry=[src])
 
 
 @pytest.mark.parametrize("spec", [None, b"model.alignair", "", " ", 5])
@@ -85,7 +86,7 @@ def test_invalid_local_paths_fail_before_hub_or_catalog_lookup(kind, tmp_path, m
     spec = {"absolute": str(tmp_path / "missing"), "relative": "./missing",
             "pathlike": tmp_path / "missing", "directory": str(tmp_path)}[kind]
     with pytest.raises(ModelError, match="model (file does not exist|path must be a file)") as caught:
-        cache.resolve_model(spec, sources=[])
+        cache.resolve_model(spec, registry=[])
     assert caught.value.context["stage"] == "model_resolution"
     assert "path" in caught.value.context
 
@@ -93,7 +94,7 @@ def test_invalid_local_paths_fail_before_hub_or_catalog_lookup(kind, tmp_path, m
 @pytest.mark.parametrize("spec,revision", [("human-igh", "2.1.0"), ("human-igh@2.1.0", "0.0.0")])
 def test_catalog_revision_and_inline_version_precedence(spec, revision, tmp_path):
     src, sha = _registry(tmp_path)
-    path = cache.resolve_model(spec, sources=[src], revision=revision)
+    path = cache.resolve_model(spec, registry=[src], revision=revision)
     assert path.name == "2.1.0.alignair"
     assert hashlib.sha256(path.read_bytes()).hexdigest() == sha
 
@@ -103,7 +104,7 @@ def test_a_configured_registry_resolves_the_model(configuration, tmp_path, monke
     src, sha = _registry(tmp_path)
     kwargs = {}
     if configuration == "argument":
-        kwargs["sources"] = [src]
+        kwargs["registry"] = [src]
     elif configuration == "environment":
         monkeypatch.setenv("ALIGNAIR_REGISTRY", src)
     else:
@@ -126,7 +127,7 @@ def test_without_configuration_the_default_catalog_resolves_the_model(tmp_path, 
 
 def test_explicit_empty_sources_disables_the_default_catalog():
     with pytest.raises(ModelError, match="unknown model"):
-        cache.resolve_model("human-igh", sources=[])
+        cache.resolve_model("human-igh", registry=[])
 
 
 def test_a_configured_registry_failure_is_raised(tmp_path, monkeypatch):
@@ -142,7 +143,7 @@ def test_pinned_cached_needs_no_network(monkeypatch, tmp_path):
     dest.parent.mkdir(parents=True)
     shutil.copy(src[len("file://"):] + "/human-igh/2.1.0.alignair", dest)
     # pinned + already cached (no sidecar -> legacy, can't verify) -> returns without the registry
-    assert cache.resolve_model("human-igh@2.1.0", sources=["hf://unreachable/x"], offline=True) == dest
+    assert cache.resolve_model("human-igh@2.1.0", registry=["hf://unreachable/x"], offline=True) == dest
 
 
 def test_pinned_cache_with_valid_sidecar_returns(monkeypatch, tmp_path):
@@ -152,7 +153,7 @@ def test_pinned_cache_with_valid_sidecar_returns(monkeypatch, tmp_path):
     dest.parent.mkdir(parents=True)
     dest.write_bytes(payload)
     cache._write_sidecar(dest, hashlib.sha256(payload).hexdigest())
-    assert cache.resolve_model("human-igh@2.1.0", sources=["hf://unreachable/x"], offline=True) == dest
+    assert cache.resolve_model("human-igh@2.1.0", registry=["hf://unreachable/x"], offline=True) == dest
 
 
 def test_pinned_cache_tampered_file_is_not_returned(monkeypatch, tmp_path):
@@ -164,7 +165,7 @@ def test_pinned_cache_tampered_file_is_not_returned(monkeypatch, tmp_path):
     dest.write_bytes(b"TAMPERED-OR-CORRUPTED-BYTES")
     cache._write_sidecar(dest, hashlib.sha256(b"the-original-artifact").hexdigest())   # != file
     with pytest.raises(OfflineError, match="offline"):
-        cache.resolve_model("human-igh@2.1.0", sources=["hf://unreachable/x"], offline=True)
+        cache.resolve_model("human-igh@2.1.0", registry=["hf://unreachable/x"], offline=True)
 
 
 def test_unpinned_offline_cached_resolution_fallback(monkeypatch, tmp_path):
@@ -177,6 +178,6 @@ def test_unpinned_offline_cached_resolution_fallback(monkeypatch, tmp_path):
 
     # Try resolving 'human-igh' (unpinned) in offline mode
     # Since it is in the cache, it should fall back to using the latest installed version
-    p = cache.resolve_model("human-igh", sources=["hf://unreachable/x"], offline=True)
+    p = cache.resolve_model("human-igh", registry=["hf://unreachable/x"], offline=True)
     assert p == dest
     assert p.read_bytes() == payload

@@ -11,6 +11,8 @@ import json
 import os
 import sys
 import time
+from collections.abc import Iterable
+from typing import TextIO
 
 from . import sources
 from .cache import cache_root, installed_models, version_key
@@ -37,9 +39,10 @@ def cached_registry(src: str, *, ttl: int = 86400, offline: bool = False) -> dic
         return json.loads(p.read_text()) if p.exists() else None
 
 
-def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool = False,
-                         quiet: bool = False, pinned: bool = False, stream=None) -> list[tuple[str, str]]:
-    """Print (to stderr) one line per installed model that has a newer registry ``latest``. Returns the
+def maybe_notify_updates(*, registry: str | Iterable[str] | None = None, offline: bool = False, quiet: bool = False,
+                         pinned: bool = False, stream: TextIO | None = None) -> list[tuple[str, str]]:
+    """Print (to ``stream``, default stderr) one line per installed model that has a newer ``latest`` in the first
+    reachable registry of ``registry`` (a string is one registry; default: the configured ones). Returns the
     (id, version) notices. Suppressed and swallows all errors per the conditions above."""
     stream = stream or sys.stderr
     if offline or quiet or pinned or os.environ.get("ALIGNAIR_NO_NETWORK"):
@@ -49,7 +52,7 @@ def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool
         if not installed:
             return []
         notices: list[tuple[str, str]] = []
-        for src in (sources_list or sources.resolve_sources()):
+        for src in sources.resolve_sources(registry):
             reg = cached_registry(src)
             if not reg:
                 continue

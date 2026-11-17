@@ -20,7 +20,7 @@ def test_resolve_precedence_cli_env_config_default(tmp_path, monkeypatch):
     monkeypatch.setenv("ALIGNAIR_REGISTRY", "https://x.org/registry.json, hf://a/b")
     assert sources.resolve_sources(config_path=str(cfg)) == ["https://x.org/registry.json", "hf://a/b"]
     # explicit CLI wins over everything
-    assert sources.resolve_sources(cli=["file:///override"], config_path=str(cfg)) == ["file:///override"]
+    assert sources.resolve_sources(registry=["file:///override"], config_path=str(cfg)) == ["file:///override"]
 
 
 def test_artifact_url_per_scheme():

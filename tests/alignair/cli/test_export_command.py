@@ -11,7 +11,7 @@ from alignair.cli.main import build_parser, main
 from alignair.core import prepare_model
 from alignair.errors import ModelError
 from alignair.reference import ReferenceSet
-from alignair.registry import publish_local
+from alignair.registry.publish import publish_local
 
 pytestmark = pytest.mark.integration
 

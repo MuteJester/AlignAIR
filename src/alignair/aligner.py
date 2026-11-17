@@ -85,17 +85,17 @@ class Aligner:
     # ------------------------------------------------------------------ constructors
     @classmethod
     def from_pretrained(cls, model: str, *, revision: str | None = None, device: str = "auto",
-                        reference: ReferenceSet | None = None, registry: Iterable[str] | None = None,
+                        reference: ReferenceSet | None = None, registry: str | Iterable[str] | None = None,
                         offline: bool = False,
                         token: str | None = None) -> Aligner:
         """Load a model by local path, a Hugging Face repo (``hf://org/repo`` or ``org/repo`` — pulled
-        via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``). ``revision`` pins a
+        via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``), looked up in the registries of
+        ``registry`` (a string is one registry; default: the configured ones). ``revision`` pins a
         HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
         ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU)."""
         from .model_file import load_model
         from .registry import hf, resolve_model
-        path = str(resolve_model(model, sources=list(registry) if registry is not None else None,
-                                 offline=offline, token=token, revision=revision))
+        path = str(resolve_model(model, registry=registry, offline=offline, token=token, revision=revision))
         dev = resolve_device(device)
         loaded = load_model(path, reference=reference, device=dev)
         return cls(loaded.model, loaded.reference, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
@@ -130,7 +130,8 @@ class Aligner:
         """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo of its own, in one commit with the
         bundle's ``model_card.md`` and ``reference_manifest.json`` when they sit beside the model file (as
         ``alignair export`` writes them). Requires ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). For
-        the shared catalog repo, use ``alignair.registry.publish_bundle`` and ``upload_version``. Returns the commit."""
+        the shared catalog repo, use ``alignair.registry.publish``'s ``publish_bundle`` and ``upload_version``.
+        Returns the commit."""
         import os
         self._assert_distributable()  # never upload a pickle checkpoint
         try:

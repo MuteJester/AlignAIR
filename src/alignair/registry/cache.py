@@ -10,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
+from collections.abc import Iterable
 from pathlib import Path
 
 from alignair.errors import DownloadIntegrityError, ModelError, ModelNotFoundError, RegistryError
@@ -170,14 +171,15 @@ def download_verified(source: str, relpath: str, dest: Path, expected_sha256: st
     return dest
 
 
-def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = None,
+def resolve_model(spec: str | os.PathLike[str], *, registry: str | Iterable[str] | None = None,
                   offline: bool = False, token: str | None = None, revision: str | None = None) -> Path:
     """Resolve a model spec to a local artifact path:
 
     * a filesystem path -> that path;
     * a Hugging Face repo (``hf://org/repo`` or ``org/repo``) -> the ``.alignair`` pulled straight from
       that repo via ``huggingface_hub`` (revision/token/offline honored — the one-repo-per-model path);
-    * a catalog ``id`` / ``id@version`` -> the verified cached artifact from a registry source.
+    * a catalog ``id`` / ``id@version`` -> the verified cached artifact from the first registry of ``registry`` (a
+      string is one registry; default: the configured ones, ``resolve_sources``) that lists it.
 
     ``revision`` supplies a catalog version when no inline ``@version`` is present; for Hub repos
     it overrides the inline revision. Local paths ignore it.
@@ -193,7 +195,7 @@ def resolve_model(spec: str | os.PathLike[str], *, sources: list[str] | None = N
         return hf.download_from_hub(spec, revision=revision, token=token, offline=offline)
     model_id, _, version = spec.partition("@")
     version = version or revision or None
-    srcs = sources if sources is not None else registry_sources.resolve_sources()
+    srcs = registry_sources.registry_list(registry) if registry is not None else registry_sources.resolve_sources()
     cached = _cached_without_lookup(model_id, version, offline)
     if cached is not None:
         return cached
@@ -321,7 +323,8 @@ def prune(keep: int = 1) -> list[Path]:
     return removed
 
 
-def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | None = None):
+def verify_installed(registry: str | Iterable[str], *, offline: bool = False,
+                     model_id: str | None = None) -> list[tuple[str, str, bool | None]]:
     """Re-hash each installed artifact against the registry: a list of (id, version, ok, or None when the registry
     does not know it)."""
     out = []
@@ -329,7 +332,7 @@ def verify_installed(srcs: list[str], *, offline: bool = False, model_id: str | 
         if model_id and mid != model_id:
             continue
         for ver in vers:
-            found = registry_sources.find_model(mid, ver, srcs, offline=offline)
+            found = registry_sources.find_model(mid, ver, registry, offline=offline)
             if not found:
                 out.append((mid, ver, None))
                 continue

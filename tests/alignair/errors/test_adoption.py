@@ -77,7 +77,7 @@ def test_registry_failure_is_not_misreported_as_unknown_model(tmp_path, monkeypa
     cause = OSError("network unavailable")
     monkeypatch.setattr(sources, "load_registry", lambda *a, **k: (_ for _ in ()).throw(cause))
     with pytest.raises(RegistryError) as caught:
-        cache.resolve_model("some-model", sources=["https://example.com/registry"])
+        cache.resolve_model("some-model", registry=["https://example.com/registry"])
     assert caught.value.__cause__ is cause
     assert caught.value.context["model_id"] == "some-model"
     assert "unknown model" not in str(caught.value)
@@ -88,7 +88,7 @@ def test_registry_defects_are_not_silently_reclassified(tmp_path, monkeypatch):
     monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path))
     monkeypatch.setattr(sources, "load_registry", lambda *a, **k: (_ for _ in ()).throw(AssertionError("bug")))
     with pytest.raises(AssertionError, match="bug"):
-        cache.resolve_model("some-model", sources=["file://registry"])
+        cache.resolve_model("some-model", registry=["file://registry"])
 
 
 def test_registry_fallback_still_works(tmp_path, monkeypatch):
