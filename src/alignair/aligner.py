@@ -22,6 +22,8 @@ from .predict import predict as _predict
 from .reference.loci import FALLBACK_LOCUS
 
 if TYPE_CHECKING:
+    from huggingface_hub import CommitInfo
+
     from .core.model import AlignAIR
     from .reference.reference_set import ReferenceSet
 
@@ -60,8 +62,9 @@ class PredictionResult:
             return list(self.ids)
         return [r.get("sequence_id") or f"seq{i}" for i, r in enumerate(self.records)]
 
-    def write_airr(self, path: str, *, columns=None) -> str:
-        """Write the records as an AIRR rearrangement TSV. Returns ``path``."""
+    def write_airr(self, path: str, *, columns: str | Sequence[str] | None = None) -> str:
+        """Write the records as an AIRR rearrangement TSV; ``columns`` selects the fields to emit (a preset name or
+        the field names; default: all). Returns ``path``."""
         from .io.airr import write_airr as _write
         # the record-owned post-crop pre-orientation read (falls back to canonical); the writer prefers
         # each record's own `input_sequence`, so this equals the CLI's orientation output exactly.
@@ -126,7 +129,7 @@ class Aligner:
         return dest
 
     def push_to_hub(self, repo_id: str, *, token: str | None = None, private: bool = True,
-                    filename: str = "model.alignair", create: bool = True, revision: str | None = None):
+                    filename: str = "model.alignair", create: bool = True, revision: str | None = None) -> CommitInfo:
         """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo of its own, in one commit with the
         bundle's ``model_card.md`` and ``reference_manifest.json`` when they sit beside the model file (as
         ``alignair export`` writes them). Requires ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). For

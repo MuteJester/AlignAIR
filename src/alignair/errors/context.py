@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
@@ -104,7 +104,7 @@ def current_error_context() -> dict:
 
 
 @contextmanager
-def error_context(**context):
+def error_context(**context: object) -> Iterator[None]:
     """Attach context to errors created inside this scope; nesting and async tasks are isolated.
 
     This neither catches exceptions nor changes their type. Explicit exception context

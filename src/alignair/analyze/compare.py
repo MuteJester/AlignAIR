@@ -31,7 +31,7 @@ def _gene(call):
     return call.split("*")[0] if call else None
 
 
-def compare_airr(a: dict[str, dict], b: dict[str, dict], a_name="model_a", b_name="model_b",
+def compare_airr(a: dict[str, dict], b: dict[str, dict], a_name: str = "model_a", b_name: str = "model_b",
                  n_examples: int = 10) -> dict:
     """Compare two {sequence_id: row} maps. `a` is treated as AlignAIR for set-rescue (the fraction
     of allele disagreements where b's call is inside a's equivalence set)."""

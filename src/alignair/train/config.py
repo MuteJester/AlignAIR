@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field, fields, replace
+from typing import TYPE_CHECKING, Any
 
 from ..core.config import AlignAIRConfig
 from ..data.flanks import FlankPolicy
@@ -12,6 +13,9 @@ from .guards import validate_data_workers, validate_training_request
 from .records.novel import NovelAlleles
 from .records.streams import CurriculumStreamPolicy
 from .schedules import CosineSchedule
+
+if TYPE_CHECKING:
+    from GenAIRR import DataConfig
 
 _PRESETS = {
     'quick': {'steps': 300, 'batch_size': 16, 'val_every': 100},
@@ -117,13 +121,14 @@ class TrainingConfig:
                                       novel_alleles=self.novel_alleles, inverted_d=self.inverted_d)
 
     @classmethod
-    def from_genairr(cls, *dataconfigs, preset: str | None = None, **overrides) -> TrainingConfig:
+    def from_genairr(cls, *dataconfigs: str | DataConfig, preset: str | None = None,
+                     **overrides: Any) -> TrainingConfig:
         """A configuration training on GenAIRR ``dataconfigs``, from a named ``preset`` and ``overrides``."""
         if preset is not None and preset not in _PRESETS:
             raise ConfigurationError(f'unknown preset {preset!r}; choose from {sorted(_PRESETS)}')
         return cls(dataconfigs=tuple(dataconfigs), **{**_PRESETS.get(preset, {}), **overrides})
 
-    def with_(self, **changes) -> TrainingConfig:
+    def with_(self, **changes: Any) -> TrainingConfig:
         """A copy with ``changes``."""
         return replace(self, **changes)
 

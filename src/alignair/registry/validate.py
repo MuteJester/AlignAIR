@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from ..io.files import sha256_file
@@ -19,7 +20,7 @@ from ..model_file import container, pickle_sections, read_metadata, serialize
 REQUIRED_CARD_FIELDS = ("model_id", "model_version", "model_format_version", "created_by_alignair")
 
 
-def validate_registry(registry: dict, artifact_path) -> list[str]:
+def validate_registry(registry: dict, artifact_path: Callable[[str], str | None]) -> list[str]:
     """``artifact_path(relpath)`` -> local path of an artifact. Returns problem strings."""
     problems: list[str] = []
     for mid, m in registry.get("models", {}).items():

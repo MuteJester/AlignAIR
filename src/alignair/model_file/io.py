@@ -10,9 +10,11 @@ writes a publish artifact, the portable sections only.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..core import AlignAIR, validate_reference_binding
 from ..core.config import AlignAIRConfig
@@ -20,6 +22,10 @@ from ..errors import ConfigurationError, DataContractError, ModelError, ModelInt
 from ..reference import annotate
 from ..reference.reference_set import ReferenceSet
 from . import container, serialize
+
+if TYPE_CHECKING:
+    import torch
+    from GenAIRR import DataConfig
 
 _DEFAULT_CODECS = {"config": "zlib", "weights": "none",
                    "reference": "zlib", "train_state": "zstd", "dataconfig": "zstd"}
@@ -103,10 +109,12 @@ def reference_identity(reference: ReferenceSet) -> dict:
             "allele_order_sha256": serialize.allele_order_sha256(reference)}
 
 
-def save_model(path: str | os.PathLike[str], model: AlignAIR, reference: ReferenceSet, *, dataconfigs=(),
-               training: dict, optimizer=None, rng=None, description: str = "", include_trusted_pickle: bool = True,
+def save_model(path: str | os.PathLike[str], model: AlignAIR, reference: ReferenceSet, *,
+               dataconfigs: Iterable[str | DataConfig] = (), training: dict,
+               optimizer: torch.optim.Optimizer | None = None, rng: dict | None = None, description: str = "",
+               include_trusted_pickle: bool = True,
                model_id: str | None = None, model_version: str | None = None, card: dict | None = None,
-               scheduler=None) -> None:
+               scheduler: torch.optim.lr_scheduler.LRScheduler | None = None) -> None:
     """Write ``model``, bound to ``reference``, as an .alignair model file: its weights, its configuration and
     ``reference`` (``reference_json``, and a FASTA), whose digests identify the model. ``dataconfigs`` (names or GenAIRR
     DataConfigs) are the sources the model was trained from, recorded by name. ``include_trusted_pickle=True`` (the
@@ -349,7 +357,7 @@ def load_training_state(path: str | os.PathLike[str], *, device: str = "cpu") ->
                          metadata=data.metadata, scheduler_state=data.scheduler_state)
 
 
-def read_dataconfig(path: str | os.PathLike[str], index: int):
+def read_dataconfig(path: str | os.PathLike[str], index: int) -> DataConfig:
     """The pickled GenAIRR DataConfig section ``dataconfig/<index>`` of a training checkpoint (trusted input only: it
     is unpickled)."""
     return serialize.dataconfig_from_bytes(container.read_section(path, f"dataconfig/{index}"))

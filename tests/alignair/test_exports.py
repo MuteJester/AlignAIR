@@ -1,7 +1,7 @@
 """What the package exports (P2-D10). The top level is the supported API; every error class lives in and is exported by
 ``alignair.errors``; ``alignair.io`` and ``alignair.registry`` export what a user calls (``load_metadata`` is gone,
 U-06; the publish tools stay in ``alignair.registry.publish``); a registry list is ``registry=`` everywhere, and one
-registry may be given as a string."""
+registry may be given as a string; the public API is type-hinted."""
 import hashlib
 import importlib
 import inspect
@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import alignair
+from tests.support.public_api import public_api
 
 pytestmark = pytest.mark.component
 
@@ -129,3 +130,19 @@ def test_from_pretrained_looks_an_id_up_in_one_registry_given_as_a_string(tmp_pa
     (registry / "registry.json").write_text(json.dumps(catalog))
     aligner = Aligner.from_pretrained("m@1.0.0", registry=url, device="cpu")
     assert hashlib.sha256(Path(aligner.model_path).read_bytes()).hexdigest() == sha
+
+
+def _unhinted(function) -> list[str]:
+    """The parameters of ``function`` without a type hint, and ``return`` when its return has none (``__init__``
+    aside)."""
+    signature = inspect.signature(inspect.unwrap(function))
+    missing = [name for name, parameter in signature.parameters.items()
+               if name not in ("self", "cls") and parameter.annotation is inspect.Parameter.empty]
+    if signature.return_annotation is inspect.Signature.empty and function.__name__ != "__init__":
+        missing.append("return")
+    return missing
+
+
+def test_the_public_api_is_type_hinted():
+    missing = {name: _unhinted(value) for name, value in public_api() if inspect.isfunction(value)}
+    assert {name: gaps for name, gaps in missing.items() if gaps} == {}

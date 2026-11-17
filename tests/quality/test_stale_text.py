@@ -15,6 +15,7 @@ import alignair.core.config
 import alignair.genotype.infer
 import alignair.train.records.streams
 from alignair.core.tokens import TOKEN_DICT
+from tests.support.public_api import public_api
 
 pytestmark = pytest.mark.component
 
@@ -80,27 +81,6 @@ def test_the_model_file_docstrings_name_the_reference_section_and_the_publish_ar
         assert "reference_json" in doc and "include_trusted_pickle=False" in doc
 
 
-def _public_api():
-    import alignair.analyze
-    import alignair.evaluate
-    import alignair.model_file
-    import alignair.reference
-    import alignair.registry
-    for package in (alignair, alignair.reference, alignair.model_file, alignair.registry, alignair.analyze,
-                    alignair.evaluate):
-        for name in package.__all__:
-            value = getattr(package, name)
-            if inspect.isclass(value) or inspect.isfunction(value):
-                yield f"{package.__name__}.{name}", value
-                if inspect.isclass(value):
-                    for attribute, member in vars(value).items():
-                        if attribute.startswith("_") or attribute == "forward":
-                            continue
-                        function = member.fget if isinstance(member, property) else getattr(member, "__func__", member)
-                        if inspect.isfunction(function):
-                            yield f"{package.__name__}.{name}.{attribute}", function
-
-
 def _own_docstring(value) -> str:
     """``value``'s own docstring: not a base class's, and not the signature a dataclass writes for a class without."""
     doc = (vars(value).get("__doc__") if inspect.isclass(value) else value.__doc__) or ""
@@ -108,5 +88,5 @@ def _own_docstring(value) -> str:
 
 
 def test_the_public_api_has_docstrings():
-    missing = sorted({name for name, value in _public_api() if not _own_docstring(value)})
+    missing = sorted({name for name, value in public_api() if not _own_docstring(value)})
     assert not missing, missing

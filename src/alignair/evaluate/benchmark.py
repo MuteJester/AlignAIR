@@ -5,11 +5,18 @@ import itertools
 import math
 import statistics
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from ..aligner import Aligner
 from ..analyze.tables import first_call, num
 from ..errors import ConfigurationError, DataContractError
 from ..reference.genes import GENES
+
+if TYPE_CHECKING:
+    from GenAIRR import DataConfig
+
+    from ..core.model import AlignAIR
+    from ..reference.reference_set import ReferenceSet
 
 
 def default_strata() -> dict:
@@ -25,7 +32,7 @@ def default_strata() -> dict:
     }
 
 
-def generate_labeled(dataconfig, params: dict, n: int, seed: int) -> list[dict]:
+def generate_labeled(dataconfig: str | DataConfig, params: dict, n: int, seed: int) -> list[dict]:
     """``n`` labelled records (truth calls + coords + junction) from the GenAIRR experiment the training records use."""
     from ..genairr.experiment import build_experiment
     p = dict(params)
@@ -77,8 +84,9 @@ def score(truth: list[dict], preds: list[dict]) -> dict:
     return m
 
 
-def run_benchmark(model, reference, dataconfig, *, n: int = 200, seed: int = 0,
-                  strata_names: list[str] | None = None, device: str = "cpu", batch_size: int = 64) -> dict:
+def run_benchmark(model: AlignAIR, reference: ReferenceSet, dataconfig: str | DataConfig, *, n: int = 200,
+                  seed: int = 0, strata_names: list[str] | None = None, device: str = "cpu",
+                  batch_size: int = 64) -> dict:
     """Score ``model`` on ``n`` reads per stratum (``default_strata``, or the named ones) generated from
     ``dataconfig``: ``{stratum: {"n": ..., metric: value}}`` (``score``)."""
     strata = default_strata()

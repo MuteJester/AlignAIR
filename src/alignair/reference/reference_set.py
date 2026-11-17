@@ -7,6 +7,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from numbers import Integral
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -14,6 +15,9 @@ from ..errors import ConfigurationError, DataContractError, InputError
 from .info import AlleleInfo
 from .loci import CHAIN_OF_LOCUS, FALLBACK_LOCUS, LocusInfo, loci_from_membership, locus_from_name
 from .provenance import SourceProvenance
+
+if TYPE_CHECKING:
+    from GenAIRR import DataConfig
 
 
 @dataclass
@@ -46,7 +50,7 @@ class ReferenceSet:
         """The ``GeneReference`` of gene ``g`` (V, D or J, either case)."""
         return self.genes[g.upper()]
 
-    def validate(self, *, genes=None) -> None:
+    def validate(self, *, genes: Iterable[str] | None = None) -> None:
         """Validate selected ordered vocabularies before model construction."""
         selected = (('V', 'J', 'D') if self.has_d else ('V', 'J')) if genes is None else genes
         for gene in selected:
@@ -93,7 +97,7 @@ class ReferenceSet:
         return m
 
     @classmethod
-    def from_dataconfigs(cls, *dataconfigs) -> ReferenceSet:
+    def from_dataconfigs(cls, *dataconfigs: str | DataConfig) -> ReferenceSet:
         """The annotated union of GenAIRR dataconfigs' alleles (``alignair.genairr.reference_from_dataconfigs``)."""
         from ..genairr.reference import reference_from_dataconfigs
         return reference_from_dataconfigs(*dataconfigs)

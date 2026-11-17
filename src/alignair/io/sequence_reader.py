@@ -92,7 +92,8 @@ def iter_sequence_batches(path: str, chunk_size: int = 20000, seq_column: str | 
 
 
 def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = None,
-                   id_column: str | None = None, rejects: list | None = None):
+                   id_column: str | None = None,
+                   rejects: list | None = None) -> Iterator[tuple[list[str], list[str], int]]:
     """The reads of ``path`` in chunks of ``chunk_size``: ``(ids, cleaned nucleotide sequences, n_dropped)`` per chunk.
 
     Use ``alignair.io.iter_sequence_batches`` when joining source metadata or retaining original source positions.

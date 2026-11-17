@@ -5,8 +5,10 @@ import json
 import logging
 import sys
 import traceback
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from typing import TextIO
 
 from .base import AlignAIRError
 
@@ -14,7 +16,7 @@ _OPTIONS: ContextVar[tuple[bool, bool]] = ContextVar("alignair_error_reporting",
 
 
 @contextmanager
-def error_reporting(*, debug: bool = False, json_output: bool = False):
+def error_reporting(*, debug: bool = False, json_output: bool = False) -> Iterator[None]:
     """Task-local CLI reporting options, restored even when an operation fails."""
     token = _OPTIONS.set((debug, json_output))
     try:
@@ -36,7 +38,7 @@ def format_error(error: AlignAIRError, *, json_output: bool = False) -> str:
     return "\n".join(lines)
 
 
-def report_error(error: AlignAIRError, *, stream=None, debug: bool | None = None,
+def report_error(error: AlignAIRError, *, stream: TextIO | None = None, debug: bool | None = None,
                  json_output: bool | None = None) -> int:
     """Write to stderr and return the exit code. Debug tracebacks are opt-in.
 

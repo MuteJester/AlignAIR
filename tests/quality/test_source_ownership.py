@@ -45,15 +45,23 @@ def test_the_product_imports_neither_the_assay_nor_the_lab():
     assert not failures, '\n'.join(failures)
 
 
+def _type_checking(node) -> bool:
+    """Whether ``node`` is an ``if TYPE_CHECKING:`` block, whose body never runs."""
+    test = node.test if isinstance(node, ast.If) else None
+    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING"
+            or isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING")
+
+
 def _module_level_imports(tree):
-    """The import nodes a module runs when it is imported: its body's, and those of top-level ``if``/``try`` blocks."""
+    """The import nodes a module runs when it is imported: its body's, and those of top-level ``if``/``try`` blocks
+    (not an ``if TYPE_CHECKING:`` body, which only a type checker reads)."""
     pending = list(tree.body)
     while pending:
         node = pending.pop(0)
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             yield node
         elif isinstance(node, (ast.If, ast.Try)):
-            pending += [*node.body, *node.orelse, *getattr(node, "finalbody", []),
+            pending += [*([] if _type_checking(node) else node.body), *node.orelse, *getattr(node, "finalbody", []),
                         *(child for handler in getattr(node, "handlers", []) for child in handler.body)]
 
 

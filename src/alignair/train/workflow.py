@@ -3,10 +3,16 @@ from __future__ import annotations
 
 import os
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ..errors import ConfigurationError
 from .config import TrainingConfig
+
+if TYPE_CHECKING:
+    from ..aligner import Aligner
+    from .records.streams import RecordSource
 
 
 @dataclass
@@ -16,14 +22,15 @@ class TrainingRun:
     best_model_path: str | None = None
     steps: int = 0
 
-    def best_aligner(self, *, device='auto'):
+    def best_aligner(self, *, device: str = 'auto') -> Aligner:
         """The best (or last) model, loaded as an ``Aligner``."""
         from ..aligner import Aligner
         return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
 
 
-def run_training(config: TrainingConfig, *, output_dir=None, out_path=None, on_iteration=None,
-                 record_source=None) -> TrainingRun:
+def run_training(config: TrainingConfig, *, output_dir: str | os.PathLike[str] | None = None,
+                 out_path: str | os.PathLike[str] | None = None, on_iteration: Callable[[int], object] | None = None,
+                 record_source: RecordSource | None = None) -> TrainingRun:
     """Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.
 
     With ``config.data_workers`` > 0, worker processes are spawned: call this under an
