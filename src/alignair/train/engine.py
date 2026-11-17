@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, NamedTuple
 import torch
 
 from ..core.runtime import evaluation_mode
-from ..errors import ConfigurationError, TrainingError, error_context
+from ..errors import ConfigurationError, NonFiniteTrainingError, TrainingError, error_context
 from ..tasks import MetricReport, TrainingTasks
-from .guards import NonFiniteTrainingError, check_finite_loss, validate_grad_clip
+from .guards import check_finite_loss, validate_grad_clip
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

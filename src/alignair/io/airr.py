@@ -7,7 +7,7 @@ import os
 from collections.abc import Sequence
 
 from alignair.core.orientation import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
-from alignair.errors import DataContractError
+from alignair.errors import PredictionCountMismatchError
 from alignair.reference.genes import GENES
 from alignair.reference.loci import FALLBACK_LOCUS
 
@@ -61,11 +61,6 @@ def metadata_column(column: str) -> str:
         return column
     return f"meta_{column}" if column in _PROTECTED_FIELDS else column
 
-
-class PredictionCountMismatchError(DataContractError):
-    """The writer was given a different number of ids / sequences / predictions — a pipeline or model
-    defect. Raised instead of silently truncating (and losing reads) via ``zip``."""
-    code = "ALIGNAIR_PREDICTION_COUNT_MISMATCH"
 
 # Named column presets users can pick from (or pass their own list / comma-string). `full` is the
 # default; `airr` is the MiAIRR-minimal required rearrangement set; `core`/`minimal` are compact.

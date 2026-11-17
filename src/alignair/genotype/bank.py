@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from ..errors import InputError
+from ..errors import InputError, UnknownAlleleError
 from ..reference.reference_set import ReferenceSet
-from .files import UnknownAlleleError, check_segment_keys
+from .files import check_segment_keys
 
 
 def genotype_bank(reference: ReferenceSet, genotype: Mapping[str, Iterable[str]]) -> ReferenceSet:

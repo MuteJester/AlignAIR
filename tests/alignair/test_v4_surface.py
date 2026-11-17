@@ -302,14 +302,15 @@ def test_the_bundle_export_reads_its_provenance_from_the_checkpoint_only():
 
 
 def test_every_renamed_error_class_carries_the_error_suffix():
-    """The error classes are named for what failed, with the ``Error`` suffix: the old names are gone."""
+    """The error classes are named for what failed, with the ``Error`` suffix: the old names are gone (and every class
+    is in ``alignair.errors``)."""
     import alignair
-    from alignair import io, registry
+    from alignair import errors, io, registry
     from alignair.registry import cache
     from alignair.train import guards
     gone = [(alignair, "DuplicateMetadataId"), (alignair, "PredictionCountMismatch"), (io, "DuplicateMetadataId"),
-            (registry, "IntegrityError"), (cache, "IntegrityError"), (guards, "NonFiniteLossError")]
+            (registry, "IntegrityError"), (cache, "IntegrityError"), (guards, "NonFiniteLossError"),
+            (errors, "IntegrityError"), (errors, "NonFiniteLossError")]
     assert not [name for module, name in gone if hasattr(module, name)]
-    assert all(hasattr(module, name) for module, name in (
-        (alignair, "DuplicateMetadataIdError"), (alignair, "PredictionCountMismatchError"),
-        (registry, "DownloadIntegrityError"), (guards, "NonFiniteTrainingError")))
+    assert all(hasattr(errors, name) for name in ("DuplicateMetadataIdError", "PredictionCountMismatchError",
+                                                  "DownloadIntegrityError", "NonFiniteTrainingError"))

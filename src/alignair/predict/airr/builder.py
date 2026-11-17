@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from alignair.errors import InferenceError
+from alignair.errors import AirrAssemblyError
 
 from ...core.d_presence import ABSENT, D_CLASSES, SHORT
 from ...reference.genes import GENES
@@ -41,19 +41,6 @@ if TYPE_CHECKING:
 # out-of-range slices). These are tagged as per-record assembly failures and tracked; anything else is
 # treated as a programming defect and re-raised loudly (see build_airr).
 _EXPECTED_ASSEMBLY_ERRORS = (ValueError, IndexError, KeyError)
-
-
-class AirrAssemblyError(InferenceError):
-    """AIRR assembly failed for one record. Carries the record identifier and the originating error so
-    an unexpected (non-data) failure surfaces with context instead of silently dropping AIRR fields."""
-    code = "ALIGNAIR_AIRR_ASSEMBLY_FAILED"
-
-    def __init__(self, ident, original):
-        self.ident = ident
-        self.original = original
-        super().__init__(f"AIRR assembly failed for {ident}: "
-                         f"{type(original).__name__}: {original}",
-                         context={"stage": "airr_assembly", "record_id": ident})
 
 
 def _partial(out: dict, reason: str) -> dict:

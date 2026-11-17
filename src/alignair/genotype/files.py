@@ -6,17 +6,12 @@ from __future__ import annotations
 
 import re
 
-from ..errors import ConfigurationError, InputError
+from ..errors import ConfigurationError
 
 SEGMENTS = ("V", "D", "J")
 FORMAT_HINT = ("A genotype is YAML or JSON keyed by segment (V, D, J), each listing allele names of the bound "
                "reference, e.g. 'V: [IGHV1-2*02, IGHV3-23*01]'. Germline sequences (a FASTA) go to --reference.")
 _GENE_NAME = re.compile(r"^(IG[HKL]|TR[ABGD])[VDJ]", re.IGNORECASE)
-
-
-class UnknownAlleleError(InputError):
-    """A genotype names alleles the reference does not hold; their sequences belong in the reference."""
-    code = "ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND"
 
 
 def check_segment_keys(keys, *, source: str = "the genotype", context=None) -> None:

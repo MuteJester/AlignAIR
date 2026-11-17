@@ -21,7 +21,13 @@ import os
 import urllib.error
 from urllib.parse import urljoin
 
-from alignair.errors import RegistryError, RegistryInvalidError, RegistryUnavailableError, error_context
+from alignair.errors import (
+    OfflineError,
+    RegistryError,
+    RegistryInvalidError,
+    RegistryUnavailableError,
+    error_context,
+)
 
 try:
     import tomllib  # Python >= 3.11
@@ -30,12 +36,6 @@ except ModuleNotFoundError:  # Python 3.10
 
 DEFAULT_REGISTRY = "hf://AlignAIR/AlignAIR-pretrained"
 _HF = "https://huggingface.co"
-
-
-class OfflineError(RegistryError):
-    """A fetch was needed while offline: the model is not available from the cache. Not retryable: the same call
-    fails the same way until offline mode is off."""
-    code = "ALIGNAIR_MODEL_UNAVAILABLE"
 
 
 # What a remote fetch raises when the network or the server fails (URLError includes an HTTP error answer).

@@ -11,14 +11,14 @@ pytestmark = pytest.mark.component
 
 
 @pytest.mark.parametrize("module,name,builtin", [
-    ("io.metadata", "DuplicateMetadataIdError", ValueError),
-    ("io.airr", "PredictionCountMismatchError", RuntimeError),
-    ("predict.airr.builder", "AirrAssemblyError", Exception),
-    ("registry.cache", "DownloadIntegrityError", RuntimeError),
-    ("registry.sources", "OfflineError", RuntimeError),
-    ("train.guards", "TrainingConfigError", ValueError),
-    ("train.guards", "NonFiniteTrainingError", RuntimeError),
-    ("genotype.files", "UnknownAlleleError", ValueError),
+    ("errors", "DuplicateMetadataIdError", ValueError),
+    ("errors", "PredictionCountMismatchError", RuntimeError),
+    ("errors", "AirrAssemblyError", Exception),
+    ("errors", "DownloadIntegrityError", RuntimeError),
+    ("errors", "OfflineError", RuntimeError),
+    ("errors", "TrainingConfigError", ValueError),
+    ("errors", "NonFiniteTrainingError", RuntimeError),
+    ("errors", "UnknownAlleleError", ValueError),
 ])
 def test_canonical_exceptions_preserve_builtin_catchability(module, name, builtin):
     cls = getattr(importlib.import_module("alignair." + module), name)

@@ -11,7 +11,7 @@ import zlib
 from contextlib import contextmanager
 from itertools import chain
 
-from ..errors import DataContractError, InputError, OperationIOError, error_context
+from ..errors import DataContractError, DuplicateMetadataIdError, InputError, OperationIOError, error_context
 from .airr import metadata_column
 from .sequence_records import open_text
 
@@ -20,11 +20,6 @@ _META_DEFAULTS = ("cell_id", "barcode", "sample_id", "umi_count", "umis", "reads
                   "chain", "c_call", "is_cell", "high_confidence")
 _10X_TO_AIRR = {"barcode": "cell_id", "umis": "umi_count", "reads": "consensus_count", "c_gene": "c_call"}
 _SQL_PARAM_CHUNK = 900
-
-
-class DuplicateMetadataIdError(InputError):
-    """A metadata join key occurs more than once; neither row may silently win."""
-    code = "ALIGNAIR_METADATA_ID_INVALID"
 
 
 def _duplicate(key):

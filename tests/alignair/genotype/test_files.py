@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from alignair.genotype.files import UnknownAlleleError, load_genotype
+from alignair.errors import UnknownAlleleError
+from alignair.genotype.files import load_genotype
 
 pytestmark = pytest.mark.component
 

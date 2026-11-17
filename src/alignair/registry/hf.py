@@ -10,8 +10,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from ..errors import MissingDependencyError, ModelNotFoundError, RegistryError, RegistryUnavailableError
-from .sources import OfflineError, retryable_status
+from ..errors import MissingDependencyError, ModelNotFoundError, OfflineError, RegistryError, RegistryUnavailableError
+from .sources import retryable_status
 
 DEFAULT_FILENAME = "model.alignair"
 

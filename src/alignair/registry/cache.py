@@ -12,15 +12,10 @@ import hashlib
 import os
 from pathlib import Path
 
-from alignair.errors import ArtifactIntegrityError, ModelError, ModelNotFoundError, RegistryError
+from alignair.errors import DownloadIntegrityError, ModelError, ModelNotFoundError, RegistryError
 
 from ..io.files import sha256_file
 from . import sources as registry_sources
-
-
-class DownloadIntegrityError(ArtifactIntegrityError):
-    """A downloaded artifact failed SHA256 verification."""
-    code = "ALIGNAIR_DOWNLOAD_INTEGRITY_FAILED"
 
 
 def cache_root() -> Path:

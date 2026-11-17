@@ -8,7 +8,7 @@ import pytest
 
 from alignair import Aligner
 from alignair.genotype.bank import genotype_bank
-from alignair.genotype.files import UnknownAlleleError
+from alignair.errors import UnknownAlleleError
 from tests.alignair.predict.golden_rows import GOLDEN_READS, TEST_CHIP
 
 pytestmark = pytest.mark.integration

@@ -15,12 +15,12 @@ from alignair.errors import (
     AlignAIRError,
     ModelError,
     ModelNotFoundError,
+    OfflineError,
     RegistryError,
     RegistryInvalidError,
     RegistryUnavailableError,
 )
 from alignair.registry import sources
-from alignair.registry.sources import OfflineError
 
 pytestmark = pytest.mark.component
 
@@ -46,14 +46,14 @@ CODES = {
     "alignair.errors.exceptions.OperationIOError": "ALIGNAIR_IO_FAILED",
     "alignair.errors.exceptions.InternalError": "ALIGNAIR_INTERNAL_ERROR",
     "alignair.errors.exceptions.OperationCancelledError": "ALIGNAIR_INTERRUPTED",
-    "alignair.registry.sources.OfflineError": "ALIGNAIR_MODEL_UNAVAILABLE",
-    "alignair.registry.cache.DownloadIntegrityError": "ALIGNAIR_DOWNLOAD_INTEGRITY_FAILED",
-    "alignair.genotype.files.UnknownAlleleError": "ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND",
-    "alignair.io.airr.PredictionCountMismatchError": "ALIGNAIR_PREDICTION_COUNT_MISMATCH",
-    "alignair.io.metadata.DuplicateMetadataIdError": "ALIGNAIR_METADATA_ID_INVALID",
-    "alignair.train.guards.TrainingConfigError": "ALIGNAIR_CONFIG_INVALID",
-    "alignair.train.guards.NonFiniteTrainingError": "ALIGNAIR_TRAINING_NUMERICS_INVALID",
-    "alignair.predict.airr.builder.AirrAssemblyError": "ALIGNAIR_AIRR_ASSEMBLY_FAILED",
+    "alignair.errors.exceptions.OfflineError": "ALIGNAIR_MODEL_UNAVAILABLE",
+    "alignair.errors.exceptions.DownloadIntegrityError": "ALIGNAIR_DOWNLOAD_INTEGRITY_FAILED",
+    "alignair.errors.exceptions.UnknownAlleleError": "ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND",
+    "alignair.errors.exceptions.PredictionCountMismatchError": "ALIGNAIR_PREDICTION_COUNT_MISMATCH",
+    "alignair.errors.exceptions.DuplicateMetadataIdError": "ALIGNAIR_METADATA_ID_INVALID",
+    "alignair.errors.exceptions.TrainingConfigError": "ALIGNAIR_CONFIG_INVALID",
+    "alignair.errors.exceptions.NonFiniteTrainingError": "ALIGNAIR_TRAINING_NUMERICS_INVALID",
+    "alignair.errors.exceptions.AirrAssemblyError": "ALIGNAIR_AIRR_ASSEMBLY_FAILED",
 }
 STATES = ("INVALID", "MISSING", "FAILED", "UNAVAILABLE", "MISMATCH", "NOT_FOUND", "INTERRUPTED")
 UNSCHEMED = {"ALIGNAIR_ERROR", "ALIGNAIR_INTERNAL_ERROR", "ALIGNAIR_INTERRUPTED"}
