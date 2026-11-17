@@ -7,7 +7,7 @@ import SearchPalette from "./SearchPalette";
 // The top bar's links (the docs' own sections are in the docs sidebar). The link check reads these targets.
 const NAV = [
   { label: "Docs", to: "/docs" },
-  { label: "Models", to: "/docs/models" },
+  { label: "Models", to: "/docs/choose-a-model" },
   { label: "CLI reference", to: "/docs/cli" },
   { label: "Python API", to: "/docs/python-api" },
 ];
@@ -116,7 +116,7 @@ function Footer() {
           <div className="flex gap-12">
             <div className="flex flex-col gap-2.5">
               <Link to="/docs" className={link}>Docs</Link>
-              <Link to="/docs/models" className={link}>Models</Link>
+              <Link to="/docs/choose-a-model" className={link}>Models</Link>
               <Link to="/docs/cli" className={link}>CLI reference</Link>
             </div>
             <div className="flex flex-col gap-2.5">

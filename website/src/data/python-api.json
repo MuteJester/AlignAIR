@@ -411,6 +411,22 @@
     "anchor": "alignair.io.lookup_metadata_rows"
   },
   {
+    "name": "alignair.genotype.genotype_bank",
+    "kind": "function",
+    "signature": "(reference: ReferenceSet, genotype: Mapping[str, Iterable[str]]) -> ReferenceSet",
+    "doc": "``reference``'s subset of the alleles ``genotype`` names (``{gene letter: allele names}``, any case), in the\nreference's order and with its locus schema (every locus stays, its ranges over the kept alleles); a gene it\ndoes not name keeps all its alleles. ConfigurationError for a key that is not a segment (V, D, J), gene names\nincluded, or an entry that is not a list of names (one string, say); UnknownAlleleError when it names alleles\nthe reference does not hold (give their sequences in the reference); InputError when it leaves a gene with no\nallele.",
+    "members": [],
+    "anchor": "alignair.genotype.genotype_bank"
+  },
+  {
+    "name": "alignair.genotype.load_genotype",
+    "kind": "function",
+    "signature": "(path: str) -> dict[str, set[str]]",
+    "doc": "Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment\nworks too; the sequences are ignored), or an AIRR GenotypeSet such as ``alignair genotype`` writes. Returns\n``{segment: set(names)}``, segments lower-case. ConfigurationError for a file that is not such a mapping, or one\nkeyed by gene names. ``genotype_bank`` checks its alleles against a\nreference.",
+    "members": [],
+    "anchor": "alignair.genotype.load_genotype"
+  },
+  {
     "name": "alignair.registry.DEFAULT_REGISTRY",
     "kind": "constant",
     "signature": " = 'hf://AlignAIR/AlignAIR-pretrained'",

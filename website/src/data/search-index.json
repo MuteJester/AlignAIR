@@ -43,6 +43,192 @@
   },
   {
     "kind": "page",
+    "title": "Coming from IgBLAST",
+    "text": "Coming from…",
+    "href": "#/docs/from-igblast"
+  },
+  {
+    "kind": "heading",
+    "title": "The command",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=the-command"
+  },
+  {
+    "kind": "heading",
+    "title": "IgBLAST's options, one by one",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=option-by-option"
+  },
+  {
+    "kind": "heading",
+    "title": "Your germline database",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=germline-database"
+  },
+  {
+    "kind": "heading",
+    "title": "Allele names on the IG models",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=allele-names"
+  },
+  {
+    "kind": "heading",
+    "title": "Bind another germline set",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=bind-a-reference"
+  },
+  {
+    "kind": "heading",
+    "title": "Column by column",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=columns"
+  },
+  {
+    "kind": "heading",
+    "title": "Columns only AlignAIR writes",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=alignair-only-columns"
+  },
+  {
+    "kind": "heading",
+    "title": "A fair side-by-side",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=fair-comparison"
+  },
+  {
+    "kind": "heading",
+    "title": "The auxiliary J file",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=auxiliary-j-file"
+  },
+  {
+    "kind": "heading",
+    "title": "Run both, then compare",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=run-both"
+  },
+  {
+    "kind": "heading",
+    "title": "Next",
+    "text": "Coming from IgBLAST",
+    "href": "#/docs/from-igblast?h=next"
+  },
+  {
+    "kind": "page",
+    "title": "Coming from MiXCR",
+    "text": "Coming from…",
+    "href": "#/docs/from-mixcr"
+  },
+  {
+    "kind": "heading",
+    "title": "Two different jobs",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=two-jobs"
+  },
+  {
+    "kind": "heading",
+    "title": "What maps and what does not",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=what-maps"
+  },
+  {
+    "kind": "heading",
+    "title": "Where AlignAIR fits",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=where-it-fits"
+  },
+  {
+    "kind": "heading",
+    "title": "Give it your reads",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=feed-reads"
+  },
+  {
+    "kind": "heading",
+    "title": "Merged reads",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=merged-reads"
+  },
+  {
+    "kind": "heading",
+    "title": "UMI consensus reads and their counts",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=umi-counts"
+  },
+  {
+    "kind": "heading",
+    "title": "Reads in a table",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=reads-in-a-table"
+  },
+  {
+    "kind": "heading",
+    "title": "10x single-cell contigs",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=single-cell"
+  },
+  {
+    "kind": "heading",
+    "title": "Next",
+    "text": "Coming from MiXCR",
+    "href": "#/docs/from-mixcr?h=next"
+  },
+  {
+    "kind": "page",
+    "title": "Coming from Immcantation",
+    "text": "Coming from…",
+    "href": "#/docs/from-immcantation"
+  },
+  {
+    "kind": "heading",
+    "title": "AssignGenes and MakeDb become one command",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=assign-and-makedb"
+  },
+  {
+    "kind": "heading",
+    "title": "Germlines for CreateGermlines",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=create-germlines"
+  },
+  {
+    "kind": "heading",
+    "title": "Donor genotypes",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=genotypes"
+  },
+  {
+    "kind": "heading",
+    "title": "IMGT names and OGRDB names",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=imgt-and-ogrdb-names"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair genotype: TIgGER's rule on any table",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=alignair-genotype"
+  },
+  {
+    "kind": "heading",
+    "title": "Clonal clustering: Change-O and SCOPer",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=clonal-clustering"
+  },
+  {
+    "kind": "heading",
+    "title": "nf-core/airrflow",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=airrflow"
+  },
+  {
+    "kind": "heading",
+    "title": "Next",
+    "text": "Coming from Immcantation",
+    "href": "#/docs/from-immcantation?h=next"
+  },
+  {
+    "kind": "page",
     "title": "Citation & support",
     "text": "Community",
     "href": "#/docs/citation-support"
@@ -223,24 +409,6 @@
   },
   {
     "kind": "page",
-    "title": "Getting started",
-    "text": "Get started",
-    "href": "#/docs/getting-started"
-  },
-  {
-    "kind": "page",
-    "title": "Concepts",
-    "text": "Get started",
-    "href": "#/docs/concepts"
-  },
-  {
-    "kind": "page",
-    "title": "Pretrained models",
-    "text": "Using AlignAIR",
-    "href": "#/docs/models"
-  },
-  {
-    "kind": "page",
     "title": "Training a custom model",
     "text": "Training",
     "href": "#/docs/training"
@@ -322,12 +490,6 @@
     "title": "Publishing models",
     "text": "Maintainer",
     "href": "#/docs/publishing"
-  },
-  {
-    "kind": "page",
-    "title": "Migrating from IgBLAST",
-    "text": "Get started",
-    "href": "#/docs/migrating-from-igblast"
   },
   {
     "kind": "page",
@@ -430,6 +592,294 @@
     "title": "Count-only construction",
     "text": "Model setup API",
     "href": "#/docs/model-setup?h=counts"
+  },
+  {
+    "kind": "page",
+    "title": "Install",
+    "text": "Get started",
+    "href": "#/docs/install"
+  },
+  {
+    "kind": "heading",
+    "title": "Install with pip",
+    "text": "Install",
+    "href": "#/docs/install?h=pip"
+  },
+  {
+    "kind": "heading",
+    "title": "Extras",
+    "text": "Install",
+    "href": "#/docs/install?h=extras"
+  },
+  {
+    "kind": "heading",
+    "title": "GPU or CPU",
+    "text": "Install",
+    "href": "#/docs/install?h=gpu"
+  },
+  {
+    "kind": "heading",
+    "title": "Conda",
+    "text": "Install",
+    "href": "#/docs/install?h=conda"
+  },
+  {
+    "kind": "heading",
+    "title": "Docker",
+    "text": "Install",
+    "href": "#/docs/install?h=docker"
+  },
+  {
+    "kind": "heading",
+    "title": "Check the install",
+    "text": "Install",
+    "href": "#/docs/install?h=check-the-install"
+  },
+  {
+    "kind": "heading",
+    "title": "Models, the cache and offline use",
+    "text": "Install",
+    "href": "#/docs/install?h=models-and-the-cache"
+  },
+  {
+    "kind": "heading",
+    "title": "Install problems",
+    "text": "Install",
+    "href": "#/docs/install?h=install-problems"
+  },
+  {
+    "kind": "heading",
+    "title": "pip finds no matching version, or says AlignAIR requires a different Python",
+    "text": "Install",
+    "href": "#/docs/install?h=python-version"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair: command not found",
+    "text": "Install",
+    "href": "#/docs/install?h=command-not-found"
+  },
+  {
+    "kind": "heading",
+    "title": "WARNING: missing core dependency, or No module named 'GenAIRR'",
+    "text": "Install",
+    "href": "#/docs/install?h=missing-core-dependency"
+  },
+  {
+    "kind": "heading",
+    "title": "device_auto says cpu on a machine with a GPU",
+    "text": "Install",
+    "href": "#/docs/install?h=gpu-not-used"
+  },
+  {
+    "kind": "heading",
+    "title": "loading a model directly from a Hugging Face repo needs 'huggingface_hub'",
+    "text": "Install",
+    "href": "#/docs/install?h=hub-missing"
+  },
+  {
+    "kind": "heading",
+    "title": "The first run cannot download the model",
+    "text": "Install",
+    "href": "#/docs/install?h=cannot-download"
+  },
+  {
+    "kind": "heading",
+    "title": "model path must be a file",
+    "text": "Install",
+    "href": "#/docs/install?h=not-a-file"
+  },
+  {
+    "kind": "page",
+    "title": "Your first alignment",
+    "text": "Get started",
+    "href": "#/docs/first-alignment"
+  },
+  {
+    "kind": "heading",
+    "title": "Get the example reads",
+    "text": "Your first alignment",
+    "href": "#/docs/first-alignment?h=get-the-example-reads"
+  },
+  {
+    "kind": "heading",
+    "title": "Align them",
+    "text": "Your first alignment",
+    "href": "#/docs/first-alignment?h=align-them"
+  },
+  {
+    "kind": "heading",
+    "title": "Read the table",
+    "text": "Your first alignment",
+    "href": "#/docs/first-alignment?h=read-the-table"
+  },
+  {
+    "kind": "heading",
+    "title": "In pandas",
+    "text": "Your first alignment",
+    "href": "#/docs/first-alignment?h=in-pandas"
+  },
+  {
+    "kind": "heading",
+    "title": "The same in Python",
+    "text": "Your first alignment",
+    "href": "#/docs/first-alignment?h=the-same-in-python"
+  },
+  {
+    "kind": "heading",
+    "title": "Run it on your own reads",
+    "text": "Your first alignment",
+    "href": "#/docs/first-alignment?h=your-own-reads"
+  },
+  {
+    "kind": "heading",
+    "title": "Next steps",
+    "text": "Your first alignment",
+    "href": "#/docs/first-alignment?h=next-steps"
+  },
+  {
+    "kind": "page",
+    "title": "Concepts for repertoire researchers",
+    "text": "Get started",
+    "href": "#/docs/concepts"
+  },
+  {
+    "kind": "heading",
+    "title": "What AlignAIR does",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=what-alignair-does"
+  },
+  {
+    "kind": "heading",
+    "title": "Glossary",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=glossary"
+  },
+  {
+    "kind": "heading",
+    "title": "Reads and germlines",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=reads-and-germlines"
+  },
+  {
+    "kind": "heading",
+    "title": "Models",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=models"
+  },
+  {
+    "kind": "heading",
+    "title": "The output",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=the-output"
+  },
+  {
+    "kind": "heading",
+    "title": "OGRDB and IMGT allele names",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=allele-names"
+  },
+  {
+    "kind": "heading",
+    "title": "Working with IMGT-named data",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=working-with-imgt-named-data"
+  },
+  {
+    "kind": "heading",
+    "title": "What a model contains",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=what-a-model-contains"
+  },
+  {
+    "kind": "heading",
+    "title": "Narrow it, extend it, or train",
+    "text": "Concepts for repertoire researchers",
+    "href": "#/docs/concepts?h=narrow-extend-or-train"
+  },
+  {
+    "kind": "page",
+    "title": "How AlignAIR works (optional)",
+    "text": "Get started",
+    "href": "#/docs/how-alignair-works"
+  },
+  {
+    "kind": "heading",
+    "title": "The idea",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=the-idea"
+  },
+  {
+    "kind": "heading",
+    "title": "From a read to a row",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=from-read-to-row"
+  },
+  {
+    "kind": "heading",
+    "title": "Orientation",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=orientation"
+  },
+  {
+    "kind": "heading",
+    "title": "Embedding and trunk",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=embedding-and-trunk"
+  },
+  {
+    "kind": "heading",
+    "title": "Parser and anchors",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=parser-and-anchors"
+  },
+  {
+    "kind": "heading",
+    "title": "Mutation reader",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=mutation-reader"
+  },
+  {
+    "kind": "heading",
+    "title": "The bank and its scans",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=bank-and-scans"
+  },
+  {
+    "kind": "heading",
+    "title": "D presence",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=d-presence"
+  },
+  {
+    "kind": "heading",
+    "title": "Refinement against the germline",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=refinement"
+  },
+  {
+    "kind": "heading",
+    "title": "Calls and the AIRR row",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=calls-and-assembly"
+  },
+  {
+    "kind": "heading",
+    "title": "How the model learns",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=how-the-model-learns"
+  },
+  {
+    "kind": "heading",
+    "title": "Why the germline set is an input",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=why-the-germline-set-is-an-input"
+  },
+  {
+    "kind": "heading",
+    "title": "Read more",
+    "text": "How AlignAIR works (optional)",
+    "href": "#/docs/how-alignair-works?h=read-more"
   },
   {
     "kind": "page",
@@ -613,9 +1063,303 @@
   },
   {
     "kind": "page",
-    "title": "Worked example: real repertoire data",
-    "text": "Get started",
-    "href": "#/docs/worked-example"
+    "title": "Choose a model",
+    "text": "",
+    "href": "#/docs/choose-a-model"
+  },
+  {
+    "kind": "heading",
+    "title": "Pick by locus",
+    "text": "Choose a model",
+    "href": "#/docs/choose-a-model?h=pick-by-locus"
+  },
+  {
+    "kind": "heading",
+    "title": "What a model contains",
+    "text": "Choose a model",
+    "href": "#/docs/choose-a-model?h=what-a-model-contains"
+  },
+  {
+    "kind": "heading",
+    "title": "Allele names: OGRDB and IMGT",
+    "text": "Choose a model",
+    "href": "#/docs/choose-a-model?h=allele-names"
+  },
+  {
+    "kind": "heading",
+    "title": "First use, the cache and offline use",
+    "text": "Choose a model",
+    "href": "#/docs/choose-a-model?h=download-and-cache"
+  },
+  {
+    "kind": "heading",
+    "title": "List the models and read a model's card",
+    "text": "Choose a model",
+    "href": "#/docs/choose-a-model?h=list-and-inspect"
+  },
+  {
+    "kind": "heading",
+    "title": "Nothing fits?",
+    "text": "Choose a model",
+    "href": "#/docs/choose-a-model?h=nothing-fits"
+  },
+  {
+    "kind": "page",
+    "title": "Prepare your input",
+    "text": "",
+    "href": "#/docs/prepare-input"
+  },
+  {
+    "kind": "heading",
+    "title": "Formats",
+    "text": "Prepare your input",
+    "href": "#/docs/prepare-input?h=formats"
+  },
+  {
+    "kind": "heading",
+    "title": "Read ids",
+    "text": "Prepare your input",
+    "href": "#/docs/prepare-input?h=read-ids"
+  },
+  {
+    "kind": "heading",
+    "title": "Reads that are dropped",
+    "text": "Prepare your input",
+    "href": "#/docs/prepare-input?h=dropped-reads"
+  },
+  {
+    "kind": "heading",
+    "title": "Reads longer than 575 nt",
+    "text": "Prepare your input",
+    "href": "#/docs/prepare-input?h=long-reads"
+  },
+  {
+    "kind": "heading",
+    "title": "Read from standard input",
+    "text": "Prepare your input",
+    "href": "#/docs/prepare-input?h=stdin"
+  },
+  {
+    "kind": "heading",
+    "title": "Read a table",
+    "text": "Prepare your input",
+    "href": "#/docs/prepare-input?h=tables"
+  },
+  {
+    "kind": "page",
+    "title": "Align with a donor genotype",
+    "text": "",
+    "href": "#/docs/donor-genotype"
+  },
+  {
+    "kind": "heading",
+    "title": "The genotype file",
+    "text": "Align with a donor genotype",
+    "href": "#/docs/donor-genotype?h=genotype-file"
+  },
+  {
+    "kind": "heading",
+    "title": "Reads of genes the genotype leaves out",
+    "text": "Align with a donor genotype",
+    "href": "#/docs/donor-genotype?h=outside-the-genotype"
+  },
+  {
+    "kind": "heading",
+    "title": "When a genotype is refused",
+    "text": "Align with a donor genotype",
+    "href": "#/docs/donor-genotype?h=refused"
+  },
+  {
+    "kind": "heading",
+    "title": "A genotype from an AIRR table: alignair genotype",
+    "text": "Align with a donor genotype",
+    "href": "#/docs/donor-genotype?h=genotype-from-a-table"
+  },
+  {
+    "kind": "heading",
+    "title": "Infer the genotype in the same run: --infer-genotype",
+    "text": "Align with a donor genotype",
+    "href": "#/docs/donor-genotype?h=infer-genotype"
+  },
+  {
+    "kind": "page",
+    "title": "Use your own germline reference",
+    "text": "",
+    "href": "#/docs/own-reference"
+  },
+  {
+    "kind": "heading",
+    "title": "What the FASTA needs",
+    "text": "Use your own germline reference",
+    "href": "#/docs/own-reference?h=fasta-requirements"
+  },
+  {
+    "kind": "heading",
+    "title": "Novel alleles",
+    "text": "Use your own germline reference",
+    "href": "#/docs/own-reference?h=novel-alleles"
+  },
+  {
+    "kind": "heading",
+    "title": "How missing gaps and anchors are filled",
+    "text": "Use your own germline reference",
+    "href": "#/docs/own-reference?h=gaps-and-anchors"
+  },
+  {
+    "kind": "heading",
+    "title": "References that are refused",
+    "text": "Use your own germline reference",
+    "href": "#/docs/own-reference?h=reference-refusals"
+  },
+  {
+    "kind": "heading",
+    "title": "Export a model's germline set",
+    "text": "Use your own germline reference",
+    "href": "#/docs/own-reference?h=export-the-reference"
+  },
+  {
+    "kind": "page",
+    "title": "Join sample and cell metadata",
+    "text": "",
+    "href": "#/docs/metadata-join"
+  },
+  {
+    "kind": "heading",
+    "title": "A 10x example",
+    "text": "Join sample and cell metadata",
+    "href": "#/docs/metadata-join?h=10x-example"
+  },
+  {
+    "kind": "heading",
+    "title": "Which column holds the read id",
+    "text": "Join sample and cell metadata",
+    "href": "#/docs/metadata-join?h=id-column"
+  },
+  {
+    "kind": "heading",
+    "title": "Which columns are kept",
+    "text": "Join sample and cell metadata",
+    "href": "#/docs/metadata-join?h=kept-columns"
+  },
+  {
+    "kind": "heading",
+    "title": "Columns AlignAIR also writes: the meta_ prefix",
+    "text": "Join sample and cell metadata",
+    "href": "#/docs/metadata-join?h=meta-prefix"
+  },
+  {
+    "kind": "page",
+    "title": "Choose output columns",
+    "text": "",
+    "href": "#/docs/output-columns-choice"
+  },
+  {
+    "kind": "heading",
+    "title": "The presets",
+    "text": "Choose output columns",
+    "href": "#/docs/output-columns-choice?h=presets"
+  },
+  {
+    "kind": "heading",
+    "title": "minimal",
+    "text": "Choose output columns",
+    "href": "#/docs/output-columns-choice?h=preset-minimal"
+  },
+  {
+    "kind": "heading",
+    "title": "airr",
+    "text": "Choose output columns",
+    "href": "#/docs/output-columns-choice?h=preset-airr"
+  },
+  {
+    "kind": "heading",
+    "title": "For Change-O, TIgGER and SCOPer",
+    "text": "Choose output columns",
+    "href": "#/docs/output-columns-choice?h=for-immcantation"
+  },
+  {
+    "kind": "heading",
+    "title": "Name your own columns",
+    "text": "Choose output columns",
+    "href": "#/docs/output-columns-choice?h=column-list"
+  },
+  {
+    "kind": "heading",
+    "title": "The run record beside the table",
+    "text": "Choose output columns",
+    "href": "#/docs/output-columns-choice?h=run-json"
+  },
+  {
+    "kind": "heading",
+    "title": "Reading the T/F columns",
+    "text": "Choose output columns",
+    "href": "#/docs/output-columns-choice?h=t-f-columns"
+  },
+  {
+    "kind": "page",
+    "title": "Run at scale",
+    "text": "",
+    "href": "#/docs/run-at-scale"
+  },
+  {
+    "kind": "heading",
+    "title": "On a GPU",
+    "text": "Run at scale",
+    "href": "#/docs/run-at-scale?h=gpu"
+  },
+  {
+    "kind": "heading",
+    "title": "On the CPU: --threads",
+    "text": "Run at scale",
+    "href": "#/docs/run-at-scale?h=cpu-threads"
+  },
+  {
+    "kind": "heading",
+    "title": "Large files in constant memory",
+    "text": "Run at scale",
+    "href": "#/docs/run-at-scale?h=memory"
+  },
+  {
+    "kind": "heading",
+    "title": "Many samples",
+    "text": "Run at scale",
+    "href": "#/docs/run-at-scale?h=many-samples"
+  },
+  {
+    "kind": "heading",
+    "title": "nf-core/airrflow",
+    "text": "Run at scale",
+    "href": "#/docs/run-at-scale?h=airrflow"
+  },
+  {
+    "kind": "page",
+    "title": "Fix common problems",
+    "text": "",
+    "href": "#/docs/fix-common-problems"
+  },
+  {
+    "kind": "heading",
+    "title": "Genotype and reference",
+    "text": "Fix common problems",
+    "href": "#/docs/fix-common-problems?h=genotype-and-reference"
+  },
+  {
+    "kind": "heading",
+    "title": "Rows and runs",
+    "text": "Fix common problems",
+    "href": "#/docs/fix-common-problems?h=rows-and-run"
+  },
+  {
+    "kind": "heading",
+    "title": "Models and machines",
+    "text": "Fix common problems",
+    "href": "#/docs/fix-common-problems?h=models-and-machines"
+  },
+  {
+    "kind": "heading",
+    "title": "A T/F column read wrong in pandas",
+    "text": "Fix common problems",
+    "href": "#/docs/fix-common-problems?h=t-f-in-pandas"
   },
   {
     "kind": "option",

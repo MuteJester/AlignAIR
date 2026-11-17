@@ -26,9 +26,22 @@ def _pages() -> dict[str, set[str]]:
     return pages
 
 
+# Pages the docs part's group 5 writes; links to them are allowed until then. Each leaves this set when it exists
+# (test_a_pending_page_is_not_written_yet), so the set only shrinks.
+PENDING = {"output-columns", "trust-the-calls", "comparison", "column-dictionary", "model-cards", "error-codes",
+           "cache-and-environment", "do-i-need-to-train", "train", "fine-tune", "evaluate", "share", "cite", "support",
+           "changelog"}
+
+
 def _broken(target: str, pages: dict[str, set[str]]) -> bool:
     slug, _, heading = target.partition("?h=")
+    if slug in PENDING:
+        return False
     return slug not in pages or bool(heading) and heading not in pages[slug]
+
+
+def test_a_pending_page_is_not_written_yet():
+    assert sorted(PENDING & set(_pages())) == []
 
 
 def test_every_site_link_leads_to_a_page_and_heading():

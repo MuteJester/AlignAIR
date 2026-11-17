@@ -13,7 +13,7 @@ const testing: DocPage = {
         Run tests from the repository root. Pytest loads the source checkout using
         <code> pyproject.toml</code> (with <code>src</code> on the path, so the development packages
         <code> alignair_assay</code> and <code>alignair_lab</code> are importable). Follow the
-        <DocLink to="getting-started"> installation guide</DocLink> to choose a PyTorch build for your machine, then
+        <DocLink to="first-alignment"> installation guide</DocLink> to choose a PyTorch build for your machine, then
         install the test dependencies:
       </p>
       <CodeBlock code={`python -m pip install -e ".[cli,test]"

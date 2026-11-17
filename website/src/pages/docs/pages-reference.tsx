@@ -165,7 +165,7 @@ const knownFailureModes: DocPage = {
         <li><strong>End-to-end clonotype/repertoire assembly</strong> - MiXCR and Immcantation cover clustering, lineage, and stats AlignAIR does not; AlignAIR's job is the per-read alignment that feeds them.</li>
       </ul>
       <p>
-        Switching a pipeline over? <DocLink to="migrating-from-igblast">Migrating from IgBLAST</DocLink> maps the
+        Switching a pipeline over? <DocLink to="from-igblast">Migrating from IgBLAST</DocLink> maps the
         commands and output fields and shows a real side-by-side.
       </p>
 

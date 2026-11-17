@@ -1,9 +1,9 @@
 import type { DocPage } from "./doc-kit";
 import { adjacent, sectionsFor } from "./nav";
-import { getStartedPages, conceptsPages } from "./pages-getstarted";
-import { migratePages } from "./pages-migrate";
-import { tutorialPages } from "./pages-tutorial";
-import { guidesPages, trainingPages } from "./pages-guides";
+import { startPages } from "./pages-start";
+import { comingFromPages } from "./pages-coming-from";
+import { usePages } from "./pages-use";
+import { trainingPages } from "./pages-guides";
 import { guides2Pages } from "./pages-guides2";
 import { airrFieldsPages } from "./pages-airrfields";
 import { referencePages } from "./pages-reference";
@@ -22,17 +22,14 @@ import { inferencePages } from "./pages-inference";
 import { communityPages } from "./pages-community";
 
 /**
- * All reference pages in section-grouped reading order, so the sidebar order and the
- * Previous/Next flow agree. The primary journey lives in "Get started": install and predict
- * (getting-started) -> migrate an existing pipeline -> the concepts behind the output. "Using
- * AlignAIR" is everyday usage; Training and Evaluation are deliberately separate activities.
+ * Every docs page. The sidebar and Previous/Next order them by section (nav.ts): the user's journey (Get started,
+ * Coming from…, Use on your data, Understand the results, Reference, Train or fine-tune, Project), then, apart, the
+ * developers'.
  */
 export const DOCS: DocPage[] = [
-  ...getStartedPages, // getting-started
-  ...migratePages, // migrating-from-igblast
-  ...tutorialPages, // worked-example
-  ...conceptsPages, // concepts
-  ...guidesPages, // models  [Using AlignAIR]
+  ...startPages, // install, first-alignment, concepts, how-alignair-works  [Get started]
+  ...comingFromPages, // from-igblast, from-mixcr, from-immcantation  [Coming from…]
+  ...usePages, // choose-a-model … fix-common-problems  [Use on your data]
   ...guides2Pages, // cli, python-api, integrations  [Using AlignAIR]
   ...airrFieldsPages, // airr-fields  [Reference]
   ...errorPages, // errors  [Reference]

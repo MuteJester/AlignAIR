@@ -37,7 +37,8 @@ MODEL_FILES = {"IGH": "IGH-v4-seed0-cool/milestones/model.step320000.alignair",
                "TRG": "TRG-v4-seed0-cool/milestones/model.step320000.alignair"}
 # The locus a germline set's name gives (HUMAN_TCRB_IMGT -> TRB).
 _SET_LOCUS = {"IGH": "IGH", "IGK": "IGK", "IGL": "IGL", "TCRA": "TRA", "TCRB": "TRB", "TCRD": "TRD", "TCRG": "TRG"}
-PYTHON_PACKAGES = ("alignair", "alignair.io", "alignair.registry", "alignair.reference", "alignair.train")
+PYTHON_PACKAGES = ("alignair", "alignair.io", "alignair.genotype", "alignair.registry", "alignair.reference",
+                   "alignair.train")
 
 # What a user does about each error code.
 ACTIONS = {

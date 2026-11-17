@@ -117,13 +117,13 @@ _SITE_FILES = sorted((_ROOT / "website" / "src").rglob("*.tsx"))
 # Pages still to be rewritten (docs part, groups 4-5): known stale; each leaves this list when it is rewritten, and a
 # file listed here that parses fails the test (strict), so the list can only shrink.
 _KNOWN_STALE = {"website/src/lessons/tracks/benchmarking.tsx", "website/src/pages/docs/pages-eval.tsx",
-                 "website/src/pages/docs/pages-guides.tsx", "website/src/pages/docs/pages-guides2.tsx"}
-_CODE_STRING = re.compile(r"code=\{`(.*?)`\}|code=\"([^\"]*)\"", re.DOTALL)
+                 "website/src/pages/docs/pages-guides2.tsx"}
+_CODE_STRING = re.compile(r"(?:code|cli)=\{`(.*?)`\}|(?:code|cli)=\"([^\"]*)\"", re.DOTALL)
 _JS_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
 
 
 def _iter_site_commands(text: str):
-    """Yield each ``alignair …`` command of a TSX file's code blocks (``code={`…`}`` or ``code="…"``), with the
+    """Yield each ``alignair …`` command of a TSX file's code blocks and CLI tabs (``code=``/``cli=``), with the
     JavaScript escapes decoded, line continuations joined and a ``$ `` prompt stripped."""
     for template, plain in _CODE_STRING.findall(text):
         code = _JS_ESCAPE.sub(lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), template or plain)
