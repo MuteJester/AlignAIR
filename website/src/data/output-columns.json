@@ -1,0 +1,941 @@
+[
+  {
+    "name": "sequence_id",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The read's id: the input record's id (a repeated id gets a _dupN suffix), or the --id-column value of a table.",
+    "presets": [
+      "full",
+      "core",
+      "minimal",
+      "airr"
+    ]
+  },
+  {
+    "name": "sequence",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read as aligned (cut to its first 575 nt when longer); for a reverse-complement read, the original read (see rev_comp).",
+    "presets": [
+      "full",
+      "core",
+      "minimal",
+      "airr"
+    ]
+  },
+  {
+    "name": "rev_comp",
+    "kind": "T/F",
+    "unit": "",
+    "meaning": "T when the read was reverse-complemented to align: coordinates and alignments then refer to the reverse complement of sequence.",
+    "presets": [
+      "full",
+      "core",
+      "airr"
+    ]
+  },
+  {
+    "name": "locus",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The locus of the V call (IGH, IGK, IGL, TRA, TRB, TRD or TRG); a model of one locus writes it for every read.",
+    "presets": [
+      "full",
+      "core",
+      "minimal"
+    ]
+  },
+  {
+    "name": "v_call",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The V allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "presets": [
+      "full",
+      "core",
+      "minimal",
+      "airr"
+    ]
+  },
+  {
+    "name": "d_call",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The D allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "presets": [
+      "full",
+      "core",
+      "minimal",
+      "airr"
+    ]
+  },
+  {
+    "name": "j_call",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The J allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "presets": [
+      "full",
+      "core",
+      "minimal",
+      "airr"
+    ]
+  },
+  {
+    "name": "c_call",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The constant-region gene. AlignAIR does not call it; a --metadata table may fill it (10x c_gene).",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "productive",
+    "kind": "T/F",
+    "unit": "",
+    "meaning": "T when the rearrangement is productive: V and J in frame, no stop codon, conserved junction anchors.",
+    "presets": [
+      "full",
+      "core",
+      "minimal",
+      "airr"
+    ]
+  },
+  {
+    "name": "productive_prediction",
+    "kind": "T/F",
+    "unit": "",
+    "meaning": "The same call as productive, kept for tools that read this column.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "vj_in_frame",
+    "kind": "T/F",
+    "unit": "",
+    "meaning": "T when V and J are in the same reading frame.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "stop_codon",
+    "kind": "T/F",
+    "unit": "",
+    "meaning": "T when the aligned sequence holds a stop codon in the V reading frame.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_identity",
+    "kind": "number",
+    "unit": "fraction 0-1",
+    "meaning": "The fraction of the aligned V bases that match the germline.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_identity",
+    "kind": "number",
+    "unit": "fraction 0-1",
+    "meaning": "The fraction of the aligned D bases that match the germline.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_identity",
+    "kind": "number",
+    "unit": "fraction 0-1",
+    "meaning": "The fraction of the aligned J bases that match the germline.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "sequence_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The aligned read, IMGT-gapped (dots in the V gaps).",
+    "presets": [
+      "full",
+      "airr"
+    ]
+  },
+  {
+    "name": "germline_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The germline the read aligns to, IMGT-gapped, position for position with sequence_alignment (N in the junction's untemplated bases).",
+    "presets": [
+      "full",
+      "airr"
+    ]
+  },
+  {
+    "name": "sequence_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "sequence_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "germline_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "germline_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "junction",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The junction: CDR3 with its conserved anchors (V's Cys to J's Trp or Phe).",
+    "presets": [
+      "full",
+      "core",
+      "airr"
+    ]
+  },
+  {
+    "name": "junction_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The junction translated (X for an incomplete codon).",
+    "presets": [
+      "full",
+      "core",
+      "airr"
+    ]
+  },
+  {
+    "name": "junction_length",
+    "kind": "integer",
+    "unit": "nt",
+    "meaning": "The junction's length in nucleotides.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "junction_aa_length",
+    "kind": "integer",
+    "unit": "aa",
+    "meaning": "The junction's length in amino acids.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "np1",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The untemplated bases between V and D (between V and J without a D).",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "np1_length",
+    "kind": "integer",
+    "unit": "nt",
+    "meaning": "The length of np1.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "np2",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The untemplated bases between D and J.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "np2_length",
+    "kind": "integer",
+    "unit": "nt",
+    "meaning": "The length of np2.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_cigar",
+    "kind": "CIGAR",
+    "unit": "",
+    "meaning": "The V alignment of the read against its germline, as a CIGAR string.",
+    "presets": [
+      "full",
+      "core",
+      "airr"
+    ]
+  },
+  {
+    "name": "d_cigar",
+    "kind": "CIGAR",
+    "unit": "",
+    "meaning": "The D alignment of the read against its germline, as a CIGAR string.",
+    "presets": [
+      "full",
+      "core",
+      "airr"
+    ]
+  },
+  {
+    "name": "j_cigar",
+    "kind": "CIGAR",
+    "unit": "",
+    "meaning": "The J alignment of the read against its germline, as a CIGAR string.",
+    "presets": [
+      "full",
+      "core",
+      "airr"
+    ]
+  },
+  {
+    "name": "v_sequence_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where V starts in sequence.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "v_sequence_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where V ends in sequence.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "v_germline_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the alignment starts in the V germline.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "v_germline_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the alignment ends in the V germline.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "d_sequence_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where D starts in sequence.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "d_sequence_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where D ends in sequence.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "d_germline_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the alignment starts in the D germline.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "d_germline_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the alignment ends in the D germline.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "j_sequence_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where J starts in sequence.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "j_sequence_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where J ends in sequence.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "j_germline_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the alignment starts in the J germline.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "j_germline_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the alignment ends in the J germline.",
+    "presets": [
+      "full",
+      "core"
+    ]
+  },
+  {
+    "name": "fwr1",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's framework region 1.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr1_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The framework region 1 translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr1_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 1 starts in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr1_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 1 ends in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr1",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's CDR1.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr1_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The CDR1 translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr1_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the CDR1 starts in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr1_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the CDR1 ends in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr2",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's framework region 2.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr2_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The framework region 2 translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr2_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 2 starts in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr2_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 2 ends in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr2",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's CDR2.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr2_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The CDR2 translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr2_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the CDR2 starts in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr2_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the CDR2 ends in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr3",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's framework region 3.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr3_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The framework region 3 translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr3_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 3 starts in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr3_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 3 ends in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr3",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's CDR3.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr3_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The CDR3 translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr3_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the CDR3 starts in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "cdr3_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the CDR3 ends in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr4",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's framework region 4.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr4_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "The framework region 4 translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr4_start",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 4 starts in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "fwr4_end",
+    "kind": "integer",
+    "unit": "1-based position",
+    "meaning": "Where the framework region 4 ends in sequence.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_sequence_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's V part of sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_germline_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The V germline's part of germline_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_sequence_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "v_sequence_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_germline_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "v_germline_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_alignment_start",
+    "kind": "integer",
+    "unit": "position",
+    "meaning": "Where V starts in sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_alignment_end",
+    "kind": "integer",
+    "unit": "position",
+    "meaning": "Where V ends in sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_sequence_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's D part of sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_germline_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The D germline's part of germline_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_sequence_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "d_sequence_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_germline_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "d_germline_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_alignment_start",
+    "kind": "integer",
+    "unit": "position",
+    "meaning": "Where D starts in sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_alignment_end",
+    "kind": "integer",
+    "unit": "position",
+    "meaning": "Where D ends in sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_sequence_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read's J part of sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_germline_alignment",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The J germline's part of germline_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_sequence_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "j_sequence_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_germline_alignment_aa",
+    "kind": "amino acids",
+    "unit": "",
+    "meaning": "j_germline_alignment translated.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_alignment_start",
+    "kind": "integer",
+    "unit": "position",
+    "meaning": "Where J starts in sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_alignment_end",
+    "kind": "integer",
+    "unit": "position",
+    "meaning": "Where J ends in sequence_alignment.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "v_call_set",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The candidate set: the V alleles the model scored as possible before the germline refinement, comma-separated (the v_call can fall outside it).",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "d_call_set",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The candidate set: the D alleles the model scored as possible before the germline refinement, comma-separated (the d_call can fall outside it).",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "j_call_set",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The candidate set: the J alleles the model scored as possible before the germline refinement, comma-separated (the j_call can fall outside it).",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "mutation_rate",
+    "kind": "number",
+    "unit": "fraction 0-1",
+    "meaning": "AlignAIR's estimate of the read's somatic mutation rate over its V, D and J.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "orientation",
+    "kind": "string",
+    "unit": "",
+    "meaning": "How the read was turned to align: forward, reverse_complement, complement or reverse.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "input_sequence",
+    "kind": "nucleotides",
+    "unit": "",
+    "meaning": "The read as given, before orientation.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "segmentation_low_quality",
+    "kind": "T/F",
+    "unit": "",
+    "meaning": "T when the read's V or J segment came out empty or reversed: treat its calls with caution.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "length_cropped",
+    "kind": "T/F",
+    "unit": "",
+    "meaning": "T when the read was longer than 575 nt and only its first 575 nt were aligned.",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "airr_assembly_status",
+    "kind": "string",
+    "unit": "",
+    "meaning": "complete (every field derived), partial (valid calls, some fields left blank: see airr_assembly_reason) or failed (see airr_assembly_error).",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "airr_assembly_reason",
+    "kind": "string",
+    "unit": "",
+    "meaning": "Why a partial row is partial (e.g. no_v: the read has no V call).",
+    "presets": [
+      "full"
+    ]
+  },
+  {
+    "name": "airr_assembly_error",
+    "kind": "string",
+    "unit": "",
+    "meaning": "The error that stopped a failed row's assembly.",
+    "presets": [
+      "full"
+    ]
+  }
+]

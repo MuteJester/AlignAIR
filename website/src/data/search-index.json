@@ -1,0 +1,2408 @@
+[
+  {
+    "kind": "page",
+    "title": "AIRR output fields",
+    "text": "Reference",
+    "href": "#/docs/airr-fields"
+  },
+  {
+    "kind": "page",
+    "title": "Training batch API",
+    "text": "Design",
+    "href": "#/docs/training-batches"
+  },
+  {
+    "kind": "heading",
+    "title": "Adapt records",
+    "text": "Training batch API",
+    "href": "#/docs/training-batches?h=adapters"
+  },
+  {
+    "kind": "heading",
+    "title": "Model inputs",
+    "text": "Training batch API",
+    "href": "#/docs/training-batches?h=inputs"
+  },
+  {
+    "kind": "heading",
+    "title": "Training targets",
+    "text": "Training batch API",
+    "href": "#/docs/training-batches?h=targets"
+  },
+  {
+    "kind": "heading",
+    "title": "Window rules",
+    "text": "Training batch API",
+    "href": "#/docs/training-batches?h=windows"
+  },
+  {
+    "kind": "heading",
+    "title": "Prepared samples",
+    "text": "Training batch API",
+    "href": "#/docs/training-batches?h=prepared"
+  },
+  {
+    "kind": "page",
+    "title": "Citation & support",
+    "text": "Community",
+    "href": "#/docs/citation-support"
+  },
+  {
+    "kind": "page",
+    "title": "Model composition API",
+    "text": "Design",
+    "href": "#/docs/model-composition"
+  },
+  {
+    "kind": "heading",
+    "title": "Package ownership",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=package-ownership"
+  },
+  {
+    "kind": "heading",
+    "title": "Construct a model",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=construction"
+  },
+  {
+    "kind": "heading",
+    "title": "Configuration",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=choices"
+  },
+  {
+    "kind": "heading",
+    "title": "Forward computation",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=forward"
+  },
+  {
+    "kind": "heading",
+    "title": "How the units train together",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=gradient-paths"
+  },
+  {
+    "kind": "heading",
+    "title": "Replace components",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=components"
+  },
+  {
+    "kind": "heading",
+    "title": "Inspect components",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=inspection"
+  },
+  {
+    "kind": "heading",
+    "title": "Develop and verify an architecture variant",
+    "text": "Model composition API",
+    "href": "#/docs/model-composition?h=architecture-development"
+  },
+  {
+    "kind": "page",
+    "title": "Training engine API",
+    "text": "Design",
+    "href": "#/docs/training-engine"
+  },
+  {
+    "kind": "heading",
+    "title": "Construct and run an engine",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=step"
+  },
+  {
+    "kind": "heading",
+    "title": "Placement and parameter ownership",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=initialization"
+  },
+  {
+    "kind": "heading",
+    "title": "Select optimizers and schedulers",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=factories"
+  },
+  {
+    "kind": "heading",
+    "title": "Run an explicit step window",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=iterations"
+  },
+  {
+    "kind": "heading",
+    "title": "Validate without changing training modes",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=validation"
+  },
+  {
+    "kind": "heading",
+    "title": "Checkpoints",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=checkpoints"
+  },
+  {
+    "kind": "heading",
+    "title": "RNG state and continuation limits",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=resume"
+  },
+  {
+    "kind": "heading",
+    "title": "Implementation ownership",
+    "text": "Training engine API",
+    "href": "#/docs/training-engine?h=ownership"
+  },
+  {
+    "kind": "page",
+    "title": "Errors and diagnostics API",
+    "text": "Reference",
+    "href": "#/docs/errors"
+  },
+  {
+    "kind": "heading",
+    "title": "Handle an AlignAIR failure",
+    "text": "Errors and diagnostics API",
+    "href": "#/docs/errors?h=handling"
+  },
+  {
+    "kind": "heading",
+    "title": "Exception reference",
+    "text": "Errors and diagnostics API",
+    "href": "#/docs/errors?h=exceptions"
+  },
+  {
+    "kind": "heading",
+    "title": "Constructor and diagnostic fields",
+    "text": "Errors and diagnostics API",
+    "href": "#/docs/errors?h=diagnostics"
+  },
+  {
+    "kind": "heading",
+    "title": "Operation context and cause chains",
+    "text": "Errors and diagnostics API",
+    "href": "#/docs/errors?h=context"
+  },
+  {
+    "kind": "heading",
+    "title": "Reporting and logging",
+    "text": "Errors and diagnostics API",
+    "href": "#/docs/errors?h=reporting"
+  },
+  {
+    "kind": "heading",
+    "title": "Command-line reporting",
+    "text": "Errors and diagnostics API",
+    "href": "#/docs/errors?h=cli"
+  },
+  {
+    "kind": "heading",
+    "title": "Define an application-specific exception",
+    "text": "Errors and diagnostics API",
+    "href": "#/docs/errors?h=extensions"
+  },
+  {
+    "kind": "page",
+    "title": "Benchmarks",
+    "text": "Evaluation",
+    "href": "#/docs/benchmarks"
+  },
+  {
+    "kind": "page",
+    "title": "Speed & throughput",
+    "text": "Evaluation",
+    "href": "#/docs/performance"
+  },
+  {
+    "kind": "page",
+    "title": "Design & internals",
+    "text": "Design",
+    "href": "#/docs/design"
+  },
+  {
+    "kind": "page",
+    "title": "Getting started",
+    "text": "Get started",
+    "href": "#/docs/getting-started"
+  },
+  {
+    "kind": "page",
+    "title": "Concepts",
+    "text": "Get started",
+    "href": "#/docs/concepts"
+  },
+  {
+    "kind": "page",
+    "title": "Pretrained models",
+    "text": "Using AlignAIR",
+    "href": "#/docs/models"
+  },
+  {
+    "kind": "page",
+    "title": "Training a custom model",
+    "text": "Training",
+    "href": "#/docs/training"
+  },
+  {
+    "kind": "page",
+    "title": "Command-line reference",
+    "text": "Using AlignAIR",
+    "href": "#/docs/cli"
+  },
+  {
+    "kind": "page",
+    "title": "Python API",
+    "text": "Using AlignAIR",
+    "href": "#/docs/python-api"
+  },
+  {
+    "kind": "page",
+    "title": "Integrations",
+    "text": "Using AlignAIR",
+    "href": "#/docs/integrations"
+  },
+  {
+    "kind": "page",
+    "title": "Model inference API",
+    "text": "Design",
+    "href": "#/docs/model-inference"
+  },
+  {
+    "kind": "heading",
+    "title": "Resolve and load model artifacts",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=model-resolution"
+  },
+  {
+    "kind": "heading",
+    "title": "Read sequence files before validation",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=files"
+  },
+  {
+    "kind": "heading",
+    "title": "Join metadata by source identity",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=source-identity"
+  },
+  {
+    "kind": "heading",
+    "title": "Normalize records without losing source identity",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=records"
+  },
+  {
+    "kind": "heading",
+    "title": "Select the nucleotide content policy",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=nucleotide-policy"
+  },
+  {
+    "kind": "heading",
+    "title": "Bind the tokenizer and input window",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=inputs"
+  },
+  {
+    "kind": "heading",
+    "title": "Execute one batch or an ordered stream",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=forward"
+  },
+  {
+    "kind": "heading",
+    "title": "Execution and policy ownership",
+    "text": "Model inference API",
+    "href": "#/docs/model-inference?h=ownership"
+  },
+  {
+    "kind": "page",
+    "title": "Publishing models",
+    "text": "Maintainer",
+    "href": "#/docs/publishing"
+  },
+  {
+    "kind": "page",
+    "title": "Migrating from IgBLAST",
+    "text": "Get started",
+    "href": "#/docs/migrating-from-igblast"
+  },
+  {
+    "kind": "page",
+    "title": "Model contract",
+    "text": "Reference",
+    "href": "#/docs/model-contract"
+  },
+  {
+    "kind": "page",
+    "title": "Known failure modes",
+    "text": "Reference",
+    "href": "#/docs/known-failure-modes"
+  },
+  {
+    "kind": "page",
+    "title": "Troubleshooting",
+    "text": "Reference",
+    "href": "#/docs/troubleshooting"
+  },
+  {
+    "kind": "page",
+    "title": "Reference identity API",
+    "text": "Reference",
+    "href": "#/docs/reference-identity"
+  },
+  {
+    "kind": "heading",
+    "title": "The embedded reference's fingerprints",
+    "text": "Reference identity API",
+    "href": "#/docs/reference-identity?h=fingerprints"
+  },
+  {
+    "kind": "heading",
+    "title": "Annotate and bind another reference",
+    "text": "Reference identity API",
+    "href": "#/docs/reference-identity?h=binding"
+  },
+  {
+    "kind": "heading",
+    "title": "Loading and conversion",
+    "text": "Reference identity API",
+    "href": "#/docs/reference-identity?h=loading-conversion"
+  },
+  {
+    "kind": "page",
+    "title": "Model setup API",
+    "text": "Design",
+    "href": "#/docs/model-setup"
+  },
+  {
+    "kind": "heading",
+    "title": "Prepare and build",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=prepare"
+  },
+  {
+    "kind": "heading",
+    "title": "Input and label spaces",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=policies"
+  },
+  {
+    "kind": "heading",
+    "title": "Labels and the bound reference",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=labels"
+  },
+  {
+    "kind": "heading",
+    "title": "Configure components",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=options"
+  },
+  {
+    "kind": "heading",
+    "title": "Validate a reference binding",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=binding"
+  },
+  {
+    "kind": "heading",
+    "title": "Restore decoded model weights",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=restore"
+  },
+  {
+    "kind": "heading",
+    "title": "Restore through a prepared binding",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=prepared-restoration"
+  },
+  {
+    "kind": "heading",
+    "title": "Read model files without constructing a model",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=checkpoint-data"
+  },
+  {
+    "kind": "heading",
+    "title": "Count-only construction",
+    "text": "Model setup API",
+    "href": "#/docs/model-setup?h=counts"
+  },
+  {
+    "kind": "page",
+    "title": "Curriculum source API",
+    "text": "Design",
+    "href": "#/docs/curriculum-sources"
+  },
+  {
+    "kind": "heading",
+    "title": "Choose a source policy",
+    "text": "Curriculum source API",
+    "href": "#/docs/curriculum-sources?h=usage"
+  },
+  {
+    "kind": "heading",
+    "title": "The curriculum",
+    "text": "Curriculum source API",
+    "href": "#/docs/curriculum-sources?h=curriculum"
+  },
+  {
+    "kind": "heading",
+    "title": "Components and ordering",
+    "text": "Curriculum source API",
+    "href": "#/docs/curriculum-sources?h=mixture"
+  },
+  {
+    "kind": "heading",
+    "title": "Seed blocks",
+    "text": "Curriculum source API",
+    "href": "#/docs/curriculum-sources?h=seeds"
+  },
+  {
+    "kind": "heading",
+    "title": "Mutation caps per reference",
+    "text": "Curriculum source API",
+    "href": "#/docs/curriculum-sources?h=loci"
+  },
+  {
+    "kind": "heading",
+    "title": "Library flanks",
+    "text": "Curriculum source API",
+    "href": "#/docs/curriculum-sources?h=flanks"
+  },
+  {
+    "kind": "heading",
+    "title": "Replace the provider",
+    "text": "Curriculum source API",
+    "href": "#/docs/curriculum-sources?h=providers"
+  },
+  {
+    "kind": "page",
+    "title": "Training task API",
+    "text": "Design",
+    "href": "#/docs/training-tasks"
+  },
+  {
+    "kind": "heading",
+    "title": "Configure a training step",
+    "text": "Training task API",
+    "href": "#/docs/training-tasks?h=step"
+  },
+  {
+    "kind": "heading",
+    "title": "Loss terms",
+    "text": "Training task API",
+    "href": "#/docs/training-tasks?h=objectives"
+  },
+  {
+    "kind": "heading",
+    "title": "Metrics and validation",
+    "text": "Training task API",
+    "href": "#/docs/training-tasks?h=metrics"
+  },
+  {
+    "kind": "heading",
+    "title": "Extend task behavior",
+    "text": "Training task API",
+    "href": "#/docs/training-tasks?h=extension"
+  },
+  {
+    "kind": "page",
+    "title": "Testing and validation",
+    "text": "Maintainer",
+    "href": "#/docs/testing"
+  },
+  {
+    "kind": "heading",
+    "title": "Test environment",
+    "text": "Testing and validation",
+    "href": "#/docs/testing?h=setup"
+  },
+  {
+    "kind": "heading",
+    "title": "Suite responsibilities",
+    "text": "Testing and validation",
+    "href": "#/docs/testing?h=layout"
+  },
+  {
+    "kind": "heading",
+    "title": "Run relevant checks",
+    "text": "Testing and validation",
+    "href": "#/docs/testing?h=selection"
+  },
+  {
+    "kind": "heading",
+    "title": "Release-claim validation",
+    "text": "Testing and validation",
+    "href": "#/docs/testing?h=models"
+  },
+  {
+    "kind": "heading",
+    "title": "Coverage evidence",
+    "text": "Testing and validation",
+    "href": "#/docs/testing?h=coverage"
+  },
+  {
+    "kind": "heading",
+    "title": "Test contracts and fixtures",
+    "text": "Testing and validation",
+    "href": "#/docs/testing?h=writing"
+  },
+  {
+    "kind": "heading",
+    "title": "Distribution checks",
+    "text": "Testing and validation",
+    "href": "#/docs/testing?h=artifacts"
+  },
+  {
+    "kind": "page",
+    "title": "Training workflow API",
+    "text": "Training",
+    "href": "#/docs/training-workflow"
+  },
+  {
+    "kind": "heading",
+    "title": "Input and label spaces",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=spaces"
+  },
+  {
+    "kind": "heading",
+    "title": "Configure a run",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=request"
+  },
+  {
+    "kind": "heading",
+    "title": "Retain and evaluate study checkpoints",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=study"
+  },
+  {
+    "kind": "heading",
+    "title": "Observe successful updates",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=observe"
+  },
+  {
+    "kind": "heading",
+    "title": "Checkpoint, resume, and reload",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=reload"
+  },
+  {
+    "kind": "heading",
+    "title": "Capture and restore process RNG state",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=rng-state"
+  },
+  {
+    "kind": "heading",
+    "title": "Export a distributable model",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=export"
+  },
+  {
+    "kind": "heading",
+    "title": "Predict from a trained model",
+    "text": "Training workflow API",
+    "href": "#/docs/training-workflow?h=predictions"
+  },
+  {
+    "kind": "page",
+    "title": "Worked example: real repertoire data",
+    "text": "Get started",
+    "href": "#/docs/worked-example"
+  },
+  {
+    "kind": "option",
+    "title": "--model",
+    "text": "alignair predict: a model file (.alignair), a registry id or id@version, or hf://org/repo",
+    "href": "#/docs/cli?h=predict-model"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair predict: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=predict-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair predict: never touch the network",
+    "href": "#/docs/cli?h=predict-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--revision",
+    "text": "alignair predict: pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+    "href": "#/docs/cli?h=predict-revision"
+  },
+  {
+    "kind": "option",
+    "title": "--hf-token",
+    "text": "alignair predict: Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+    "href": "#/docs/cli?h=predict-hf-token"
+  },
+  {
+    "kind": "option",
+    "title": "--input",
+    "text": "alignair predict: reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)",
+    "href": "#/docs/cli?h=predict-input"
+  },
+  {
+    "kind": "option",
+    "title": "--out",
+    "text": "alignair predict: output AIRR TSV path",
+    "href": "#/docs/cli?h=predict-out"
+  },
+  {
+    "kind": "option",
+    "title": "--sequence-column",
+    "text": "alignair predict: sequence column name (CSV/TSV input)",
+    "href": "#/docs/cli?h=predict-sequence-column"
+  },
+  {
+    "kind": "option",
+    "title": "--id-column",
+    "text": "alignair predict: id column name (CSV/TSV input)",
+    "href": "#/docs/cli?h=predict-id-column"
+  },
+  {
+    "kind": "option",
+    "title": "--rejects-out",
+    "text": "alignair predict: write dropped/invalid input records here (id, position, reason, sequence)",
+    "href": "#/docs/cli?h=predict-rejects-out"
+  },
+  {
+    "kind": "option",
+    "title": "--locus",
+    "text": "alignair predict: locus label for records the model can't attribute (default: the model's locus if it declares exactly one; else IGH). With several loci, each",
+    "href": "#/docs/cli?h=predict-locus"
+  },
+  {
+    "kind": "option",
+    "title": "--no-run-metadata",
+    "text": "alignair predict: do not write the <out>.run.json sidecar",
+    "href": "#/docs/cli?h=predict-no-run-metadata"
+  },
+  {
+    "kind": "option",
+    "title": "--columns",
+    "text": "alignair predict: output columns: a preset (full/core/minimal/airr) or a comma-separated field list (default: full). Light selections skip the AIRR assembly f",
+    "href": "#/docs/cli?h=predict-columns"
+  },
+  {
+    "kind": "option",
+    "title": "--metadata",
+    "text": "alignair predict: per-read metadata table (e.g. 10x filtered_contig_annotations.csv / an AIRR TSV) to join by id and carry into output (cell_id/barcode/umi_co",
+    "href": "#/docs/cli?h=predict-metadata"
+  },
+  {
+    "kind": "option",
+    "title": "--metadata-id-column",
+    "text": "alignair predict: id column in the --metadata table",
+    "href": "#/docs/cli?h=predict-metadata-id-column"
+  },
+  {
+    "kind": "option",
+    "title": "--keep-columns",
+    "text": "alignair predict: comma-separated metadata columns to carry through (default: known 10x/AIRR set)",
+    "href": "#/docs/cli?h=predict-keep-columns"
+  },
+  {
+    "kind": "option",
+    "title": "--genotype",
+    "text": "alignair predict: a donor's genotype: JSON/YAML {V|D|J: [allele names]} or the AIRR GenotypeSet `alignair genotype` writes; calls come only from its alleles, ",
+    "href": "#/docs/cli?h=predict-genotype"
+  },
+  {
+    "kind": "option",
+    "title": "--reference",
+    "text": "alignair predict: germline FASTA (V, D and J alleles) to call from, novel alleles included. Missing IMGT gaps and anchors are taken from the model's own refer",
+    "href": "#/docs/cli?h=predict-reference"
+  },
+  {
+    "kind": "option",
+    "title": "--infer-genotype",
+    "text": "alignair predict: infer the donor's V genotype from the reads' own calls (TIgGER's frequency rule on the reads whose V call is a single allele) and re-call th",
+    "href": "#/docs/cli?h=predict-infer-genotype"
+  },
+  {
+    "kind": "option",
+    "title": "--genotype-out",
+    "text": "alignair predict: where --infer-genotype writes the genotype, an AIRR GenotypeSet (default: <out>.genotype.json)",
+    "href": "#/docs/cli?h=predict-genotype-out"
+  },
+  {
+    "kind": "option",
+    "title": "--genotype-explain",
+    "text": "alignair predict: --infer-genotype: the share of a gene's single-allele reads its alleles explain (default 0.875)",
+    "href": "#/docs/cli?h=predict-genotype-explain"
+  },
+  {
+    "kind": "option",
+    "title": "--genotype-min-reads",
+    "text": "alignair predict: --infer-genotype: the single-allele reads a gene needs to be genotyped; a gene with fewer keeps every allele (default 10)",
+    "href": "#/docs/cli?h=predict-genotype-min-reads"
+  },
+  {
+    "kind": "option",
+    "title": "--device",
+    "text": "alignair predict: cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+    "href": "#/docs/cli?h=predict-device"
+  },
+  {
+    "kind": "option",
+    "title": "--batch-size",
+    "text": "alignair predict: reads per batch (default: 256 on a GPU, 16 per worker with --threads on the CPU, else 64)",
+    "href": "#/docs/cli?h=predict-batch-size"
+  },
+  {
+    "kind": "option",
+    "title": "--threads",
+    "text": "alignair predict: CPU threads: on the CPU, N worker processes of one thread each (torch's threads scale poorly on read batches); on a GPU, torch's CPU threads",
+    "href": "#/docs/cli?h=predict-threads"
+  },
+  {
+    "kind": "option",
+    "title": "--chunk-size",
+    "text": "alignair predict: stream the input in chunks of this many reads (default 20000)",
+    "href": "#/docs/cli?h=predict-chunk-size"
+  },
+  {
+    "kind": "option",
+    "title": "--max-assembly-failures",
+    "text": "alignair predict: fail the job if the AIRR-assembly FAILURE rate exceeds this fraction (default 0.01); failures are always tagged per row regardless",
+    "href": "#/docs/cli?h=predict-max-assembly-failures"
+  },
+  {
+    "kind": "option",
+    "title": "--max-partial-assemblies",
+    "text": "alignair predict: fail the job if the PARTIAL-assembly rate exceeds this fraction (default 1.0 = never; partial rows are always tagged with a reason)",
+    "href": "#/docs/cli?h=predict-max-partial-assemblies"
+  },
+  {
+    "kind": "option",
+    "title": "--permissive",
+    "text": "alignair predict: never fail on assembly failure/partial rates (dirty repertoires); still tags rows",
+    "href": "#/docs/cli?h=predict-permissive"
+  },
+  {
+    "kind": "option",
+    "title": "--quiet",
+    "text": "alignair predict: suppress the update-available notice",
+    "href": "#/docs/cli?h=predict-quiet"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair predict: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=predict-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair predict: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=predict-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--dataconfig",
+    "text": "alignair train: built-in GenAIRR dataconfig(s) (1 => single-chain, N => multi-chain); or use --v-fasta/--j-fasta/--chain-type for a custom reference",
+    "href": "#/docs/cli?h=train-dataconfig"
+  },
+  {
+    "kind": "option",
+    "title": "--v-fasta",
+    "text": "alignair train: custom V germline FASTA (with --j-fasta [--d-fasta])",
+    "href": "#/docs/cli?h=train-v-fasta"
+  },
+  {
+    "kind": "option",
+    "title": "--d-fasta",
+    "text": "alignair train: custom D germline FASTA (heavy / D-bearing loci)",
+    "href": "#/docs/cli?h=train-d-fasta"
+  },
+  {
+    "kind": "option",
+    "title": "--j-fasta",
+    "text": "alignair train: custom J germline FASTA",
+    "href": "#/docs/cli?h=train-j-fasta"
+  },
+  {
+    "kind": "option",
+    "title": "--chain-type",
+    "text": "alignair train: GenAIRR chain type for a custom reference",
+    "href": "#/docs/cli?h=train-chain-type"
+  },
+  {
+    "kind": "option",
+    "title": "--out",
+    "text": "alignair train: output run directory (checkpoints + bundle/)",
+    "href": "#/docs/cli?h=train-out"
+  },
+  {
+    "kind": "option",
+    "title": "--overwrite",
+    "text": "alignair train: replace an existing bundle/ in --out (default: refuse, to protect a published bundle)",
+    "href": "#/docs/cli?h=train-overwrite"
+  },
+  {
+    "kind": "option",
+    "title": "--preset",
+    "text": "alignair train: resource-tuned defaults for steps/batch/validation (default: desktop)",
+    "href": "#/docs/cli?h=train-preset"
+  },
+  {
+    "kind": "option",
+    "title": "--steps",
+    "text": "alignair train: override the preset's step count",
+    "href": "#/docs/cli?h=train-steps"
+  },
+  {
+    "kind": "option",
+    "title": "--lr",
+    "text": "alignair train: initial learning rate (default 3e-4)",
+    "href": "#/docs/cli?h=train-lr"
+  },
+  {
+    "kind": "option",
+    "title": "--batch-size",
+    "text": "alignair train: override the preset's batch size",
+    "href": "#/docs/cli?h=train-batch-size"
+  },
+  {
+    "kind": "option",
+    "title": "--grad-clip",
+    "text": "alignair train: clip the global gradient norm",
+    "href": "#/docs/cli?h=train-grad-clip"
+  },
+  {
+    "kind": "option",
+    "title": "--val-every",
+    "text": "alignair train: override the preset's validation interval",
+    "href": "#/docs/cli?h=train-val-every"
+  },
+  {
+    "kind": "option",
+    "title": "--seed",
+    "text": "alignair train: seed of the training data and initial weights (default 0)",
+    "href": "#/docs/cli?h=train-seed"
+  },
+  {
+    "kind": "option",
+    "title": "--data-workers",
+    "text": "alignair train: generate training data in this many worker processes (at most 28 are used); the batches are identical to --data-workers 0 (default: 0)",
+    "href": "#/docs/cli?h=train-data-workers"
+  },
+  {
+    "kind": "option",
+    "title": "--init-from",
+    "text": "alignair train: start from this model's weights (a model file, a registry id or hf://org/repo) to fine-tune it: the weights whose shapes match are copied, t",
+    "href": "#/docs/cli?h=train-init-from"
+  },
+  {
+    "kind": "option",
+    "title": "--plan",
+    "text": "alignair train: validate the reference/config and print the plan WITHOUT training",
+    "href": "#/docs/cli?h=train-plan"
+  },
+  {
+    "kind": "option",
+    "title": "--device",
+    "text": "alignair train: cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+    "href": "#/docs/cli?h=train-device"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair train: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=train-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair train: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=train-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "-o, --out",
+    "text": "alignair demo: output directory for the demo artifacts (default: a fresh temp directory)",
+    "href": "#/docs/cli?h=demo-o"
+  },
+  {
+    "kind": "option",
+    "title": "--dataconfig",
+    "text": "alignair demo: GenAIRR dataconfig to demo on",
+    "href": "#/docs/cli?h=demo-dataconfig"
+  },
+  {
+    "kind": "option",
+    "title": "--steps",
+    "text": "alignair demo: training steps (tiny; 1 in the smoke test)",
+    "href": "#/docs/cli?h=demo-steps"
+  },
+  {
+    "kind": "option",
+    "title": "--reads",
+    "text": "alignair demo: number of simulated reads to predict",
+    "href": "#/docs/cli?h=demo-reads"
+  },
+  {
+    "kind": "option",
+    "title": "--device",
+    "text": "alignair demo: cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+    "href": "#/docs/cli?h=demo-device"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair demo: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=demo-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair demo: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=demo-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--json",
+    "text": "alignair doctor: emit the diagnostics as JSON",
+    "href": "#/docs/cli?h=doctor-json"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair doctor: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=doctor-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair doctor: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=doctor-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "model",
+    "text": "alignair info: a model file (.alignair), a registry id or id@version, or hf://org/repo",
+    "href": "#/docs/cli?h=info-model"
+  },
+  {
+    "kind": "option",
+    "title": "--json",
+    "text": "alignair info: print the raw metadata JSON",
+    "href": "#/docs/cli?h=info-json"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair info: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=info-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair info: never touch the network",
+    "href": "#/docs/cli?h=info-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--revision",
+    "text": "alignair info: pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+    "href": "#/docs/cli?h=info-revision"
+  },
+  {
+    "kind": "option",
+    "title": "--hf-token",
+    "text": "alignair info: Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+    "href": "#/docs/cli?h=info-hf-token"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair info: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=info-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair info: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=info-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair models: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=models-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair models: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=models-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair models list: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=models-list-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair models list: never touch the network",
+    "href": "#/docs/cli?h=models-list-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair models list: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=models-list-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair models list: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=models-list-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "model",
+    "text": "alignair models get: a model file (.alignair), a registry id or id@version, or hf://org/repo",
+    "href": "#/docs/cli?h=models-get-model"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair models get: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=models-get-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair models get: never touch the network",
+    "href": "#/docs/cli?h=models-get-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--revision",
+    "text": "alignair models get: pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+    "href": "#/docs/cli?h=models-get-revision"
+  },
+  {
+    "kind": "option",
+    "title": "--hf-token",
+    "text": "alignair models get: Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+    "href": "#/docs/cli?h=models-get-hf-token"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair models get: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=models-get-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair models get: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=models-get-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "model",
+    "text": "alignair models path: a model file (.alignair), a registry id or id@version, or hf://org/repo",
+    "href": "#/docs/cli?h=models-path-model"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair models path: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=models-path-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair models path: never touch the network",
+    "href": "#/docs/cli?h=models-path-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--revision",
+    "text": "alignair models path: pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+    "href": "#/docs/cli?h=models-path-revision"
+  },
+  {
+    "kind": "option",
+    "title": "--hf-token",
+    "text": "alignair models path: Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+    "href": "#/docs/cli?h=models-path-hf-token"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair models path: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=models-path-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair models path: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=models-path-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "model",
+    "text": "alignair models update: model id (default: all installed)",
+    "href": "#/docs/cli?h=models-update-model"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair models update: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=models-update-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair models update: never touch the network",
+    "href": "#/docs/cli?h=models-update-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair models update: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=models-update-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair models update: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=models-update-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "model",
+    "text": "alignair models verify: model id (default: all installed)",
+    "href": "#/docs/cli?h=models-verify-model"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair models verify: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=models-verify-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair models verify: never touch the network",
+    "href": "#/docs/cli?h=models-verify-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair models verify: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=models-verify-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair models verify: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=models-verify-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--keep",
+    "text": "alignair models prune: the newest versions to keep per model (default 1)",
+    "href": "#/docs/cli?h=models-prune-keep"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair models prune: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=models-prune-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair models prune: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=models-prune-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair reference: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=reference-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair reference: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=reference-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--species",
+    "text": "alignair reference list: filter by species substring (e.g. Human)",
+    "href": "#/docs/cli?h=reference-list-species"
+  },
+  {
+    "kind": "option",
+    "title": "--chain",
+    "text": "alignair reference list: filter by a chain type, locus, or a whole token of either or of the name, case-insensitive (e.g. IGH, TRB, TCR, BCR_LIGHT_KAPPA, light)",
+    "href": "#/docs/cli?h=reference-list-chain"
+  },
+  {
+    "kind": "option",
+    "title": "--json",
+    "text": "alignair reference list: emit JSON instead of a table",
+    "href": "#/docs/cli?h=reference-list-json"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair reference list: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=reference-list-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair reference list: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=reference-list-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "model",
+    "text": "alignair reference export: a model file (.alignair)",
+    "href": "#/docs/cli?h=reference-export-model"
+  },
+  {
+    "kind": "option",
+    "title": "--fasta",
+    "text": "alignair reference export: write the germline V/D/J FASTA here",
+    "href": "#/docs/cli?h=reference-export-fasta"
+  },
+  {
+    "kind": "option",
+    "title": "--gapped",
+    "text": "alignair reference export: write each V allele IMGT-gapped, as Change-O's CreateGermlines.py needs (D, J as they are)",
+    "href": "#/docs/cli?h=reference-export-gapped"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair reference export: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=reference-export-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair reference export: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=reference-export-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "checkpoint",
+    "text": "alignair export: a resumable training checkpoint (.alignair with dataconfig/train_state sections)",
+    "href": "#/docs/cli?h=export-checkpoint"
+  },
+  {
+    "kind": "option",
+    "title": "out_dir",
+    "text": "alignair export: the bundle directory to write (refused if it exists, unless --overwrite)",
+    "href": "#/docs/cli?h=export-out_dir"
+  },
+  {
+    "kind": "option",
+    "title": "--model-id",
+    "text": "alignair export: the model id recorded in the card (the catalog id)",
+    "href": "#/docs/cli?h=export-model-id"
+  },
+  {
+    "kind": "option",
+    "title": "--model-version",
+    "text": "alignair export: the model version recorded in the card",
+    "href": "#/docs/cli?h=export-model-version"
+  },
+  {
+    "kind": "option",
+    "title": "--description",
+    "text": "alignair export: a one-line description recorded in the card",
+    "href": "#/docs/cli?h=export-description"
+  },
+  {
+    "kind": "option",
+    "title": "--validate, --no-validate",
+    "text": "alignair export: score the model on a fixed held-out stream and write validation_report.json (default: on)",
+    "href": "#/docs/cli?h=export-validate"
+  },
+  {
+    "kind": "option",
+    "title": "--overwrite",
+    "text": "alignair export: replace an existing OUT_DIR",
+    "href": "#/docs/cli?h=export-overwrite"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair export: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=export-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair export: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=export-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "input",
+    "text": "alignair validate-airr: AIRR rearrangement TSV to validate",
+    "href": "#/docs/cli?h=validate-airr-input"
+  },
+  {
+    "kind": "option",
+    "title": "--max-show",
+    "text": "alignair validate-airr: max individual errors to print",
+    "href": "#/docs/cli?h=validate-airr-max-show"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair validate-airr: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=validate-airr-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair validate-airr: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=validate-airr-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--a",
+    "text": "alignair compare: first AIRR rearrangement TSV",
+    "href": "#/docs/cli?h=compare-a"
+  },
+  {
+    "kind": "option",
+    "title": "--b",
+    "text": "alignair compare: second AIRR rearrangement TSV",
+    "href": "#/docs/cli?h=compare-b"
+  },
+  {
+    "kind": "option",
+    "title": "--a-name",
+    "text": "alignair compare: label for the first file",
+    "href": "#/docs/cli?h=compare-a-name"
+  },
+  {
+    "kind": "option",
+    "title": "--b-name",
+    "text": "alignair compare: label for the second file",
+    "href": "#/docs/cli?h=compare-b-name"
+  },
+  {
+    "kind": "option",
+    "title": "--out",
+    "text": "alignair compare: write the report here (default: stdout)",
+    "href": "#/docs/cli?h=compare-out"
+  },
+  {
+    "kind": "option",
+    "title": "--json",
+    "text": "alignair compare: emit the raw comparison JSON instead of markdown",
+    "href": "#/docs/cli?h=compare-json"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair compare: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=compare-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair compare: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=compare-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "input",
+    "text": "alignair analyze: AIRR rearrangement TSV (e.g. from `alignair predict`)",
+    "href": "#/docs/cli?h=analyze-input"
+  },
+  {
+    "kind": "option",
+    "title": "--out",
+    "text": "alignair analyze: write the report here (default: stdout)",
+    "href": "#/docs/cli?h=analyze-out"
+  },
+  {
+    "kind": "option",
+    "title": "--json",
+    "text": "alignair analyze: emit the report as JSON instead of text",
+    "href": "#/docs/cli?h=analyze-json"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair analyze: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=analyze-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair analyze: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=analyze-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "--model",
+    "text": "alignair benchmark: a model file (.alignair), a registry id or id@version, or hf://org/repo",
+    "href": "#/docs/cli?h=benchmark-model"
+  },
+  {
+    "kind": "option",
+    "title": "--dataconfig",
+    "text": "alignair benchmark: the GenAIRR dataconfig to generate reads from (default: the model card's first)",
+    "href": "#/docs/cli?h=benchmark-dataconfig"
+  },
+  {
+    "kind": "option",
+    "title": "--n",
+    "text": "alignair benchmark: reads per stratum",
+    "href": "#/docs/cli?h=benchmark-n"
+  },
+  {
+    "kind": "option",
+    "title": "--strata",
+    "text": "alignair benchmark: comma-list subset (default: all)",
+    "href": "#/docs/cli?h=benchmark-strata"
+  },
+  {
+    "kind": "option",
+    "title": "--seed",
+    "text": "alignair benchmark: seed of the generated reads (default 0)",
+    "href": "#/docs/cli?h=benchmark-seed"
+  },
+  {
+    "kind": "option",
+    "title": "--device",
+    "text": "alignair benchmark: cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+    "href": "#/docs/cli?h=benchmark-device"
+  },
+  {
+    "kind": "option",
+    "title": "--batch-size",
+    "text": "alignair benchmark: reads per batch (default 64)",
+    "href": "#/docs/cli?h=benchmark-batch-size"
+  },
+  {
+    "kind": "option",
+    "title": "--out",
+    "text": "alignair benchmark: write the report here (default: stdout)",
+    "href": "#/docs/cli?h=benchmark-out"
+  },
+  {
+    "kind": "option",
+    "title": "--json",
+    "text": "alignair benchmark: emit the report as JSON instead of text",
+    "href": "#/docs/cli?h=benchmark-json"
+  },
+  {
+    "kind": "option",
+    "title": "--registry",
+    "text": "alignair benchmark: a registry url to look model ids up in (repeatable)",
+    "href": "#/docs/cli?h=benchmark-registry"
+  },
+  {
+    "kind": "option",
+    "title": "--offline",
+    "text": "alignair benchmark: never touch the network",
+    "href": "#/docs/cli?h=benchmark-offline"
+  },
+  {
+    "kind": "option",
+    "title": "--revision",
+    "text": "alignair benchmark: pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+    "href": "#/docs/cli?h=benchmark-revision"
+  },
+  {
+    "kind": "option",
+    "title": "--hf-token",
+    "text": "alignair benchmark: Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+    "href": "#/docs/cli?h=benchmark-hf-token"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair benchmark: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=benchmark-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair benchmark: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=benchmark-error-format"
+  },
+  {
+    "kind": "option",
+    "title": "input",
+    "text": "alignair genotype: an AIRR rearrangement TSV with a v_call column (any tool's)",
+    "href": "#/docs/cli?h=genotype-input"
+  },
+  {
+    "kind": "option",
+    "title": "--out",
+    "text": "alignair genotype: the AIRR GenotypeSet JSON to write",
+    "href": "#/docs/cli?h=genotype-out"
+  },
+  {
+    "kind": "option",
+    "title": "--locus",
+    "text": "alignair genotype: the genotype's locus (default IGH)",
+    "href": "#/docs/cli?h=genotype-locus"
+  },
+  {
+    "kind": "option",
+    "title": "--explain",
+    "text": "alignair genotype: the share of a gene's single-allele rows its alleles explain (default 0.875)",
+    "href": "#/docs/cli?h=genotype-explain"
+  },
+  {
+    "kind": "option",
+    "title": "--min-reads",
+    "text": "alignair genotype: the single-allele rows a gene needs to be genotyped (default 10)",
+    "href": "#/docs/cli?h=genotype-min-reads"
+  },
+  {
+    "kind": "option",
+    "title": "--debug",
+    "text": "alignair genotype: include the full exception traceback on errors",
+    "href": "#/docs/cli?h=genotype-debug"
+  },
+  {
+    "kind": "option",
+    "title": "--error-format",
+    "text": "alignair genotype: runtime error format on stderr (default: text)",
+    "href": "#/docs/cli?h=genotype-error-format"
+  },
+  {
+    "kind": "column",
+    "title": "sequence_id",
+    "text": "The read's id: the input record's id (a repeated id gets a _dupN suffix), or the --id-column value of a table.",
+    "href": "#/docs/column-dictionary?h=sequence_id"
+  },
+  {
+    "kind": "column",
+    "title": "sequence",
+    "text": "The read as aligned (cut to its first 575 nt when longer); for a reverse-complement read, the original read (see rev_comp).",
+    "href": "#/docs/column-dictionary?h=sequence"
+  },
+  {
+    "kind": "column",
+    "title": "rev_comp",
+    "text": "T when the read was reverse-complemented to align: coordinates and alignments then refer to the reverse complement of sequence.",
+    "href": "#/docs/column-dictionary?h=rev_comp"
+  },
+  {
+    "kind": "column",
+    "title": "locus",
+    "text": "The locus of the V call (IGH, IGK, IGL, TRA, TRB, TRD or TRG); a model of one locus writes it for every read.",
+    "href": "#/docs/column-dictionary?h=locus"
+  },
+  {
+    "kind": "column",
+    "title": "v_call",
+    "text": "The V allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "href": "#/docs/column-dictionary?h=v_call"
+  },
+  {
+    "kind": "column",
+    "title": "d_call",
+    "text": "The D allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "href": "#/docs/column-dictionary?h=d_call"
+  },
+  {
+    "kind": "column",
+    "title": "j_call",
+    "text": "The J allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "href": "#/docs/column-dictionary?h=j_call"
+  },
+  {
+    "kind": "column",
+    "title": "c_call",
+    "text": "The constant-region gene. AlignAIR does not call it; a --metadata table may fill it (10x c_gene).",
+    "href": "#/docs/column-dictionary?h=c_call"
+  },
+  {
+    "kind": "column",
+    "title": "productive",
+    "text": "T when the rearrangement is productive: V and J in frame, no stop codon, conserved junction anchors.",
+    "href": "#/docs/column-dictionary?h=productive"
+  },
+  {
+    "kind": "column",
+    "title": "productive_prediction",
+    "text": "The same call as productive, kept for tools that read this column.",
+    "href": "#/docs/column-dictionary?h=productive_prediction"
+  },
+  {
+    "kind": "column",
+    "title": "vj_in_frame",
+    "text": "T when V and J are in the same reading frame.",
+    "href": "#/docs/column-dictionary?h=vj_in_frame"
+  },
+  {
+    "kind": "column",
+    "title": "stop_codon",
+    "text": "T when the aligned sequence holds a stop codon in the V reading frame.",
+    "href": "#/docs/column-dictionary?h=stop_codon"
+  },
+  {
+    "kind": "column",
+    "title": "v_identity",
+    "text": "The fraction of the aligned V bases that match the germline.",
+    "href": "#/docs/column-dictionary?h=v_identity"
+  },
+  {
+    "kind": "column",
+    "title": "d_identity",
+    "text": "The fraction of the aligned D bases that match the germline.",
+    "href": "#/docs/column-dictionary?h=d_identity"
+  },
+  {
+    "kind": "column",
+    "title": "j_identity",
+    "text": "The fraction of the aligned J bases that match the germline.",
+    "href": "#/docs/column-dictionary?h=j_identity"
+  },
+  {
+    "kind": "column",
+    "title": "sequence_alignment",
+    "text": "The aligned read, IMGT-gapped (dots in the V gaps).",
+    "href": "#/docs/column-dictionary?h=sequence_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "germline_alignment",
+    "text": "The germline the read aligns to, IMGT-gapped, position for position with sequence_alignment (N in the junction's untemplated bases).",
+    "href": "#/docs/column-dictionary?h=germline_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "sequence_alignment_aa",
+    "text": "sequence_alignment translated.",
+    "href": "#/docs/column-dictionary?h=sequence_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "germline_alignment_aa",
+    "text": "germline_alignment translated.",
+    "href": "#/docs/column-dictionary?h=germline_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "junction",
+    "text": "The junction: CDR3 with its conserved anchors (V's Cys to J's Trp or Phe).",
+    "href": "#/docs/column-dictionary?h=junction"
+  },
+  {
+    "kind": "column",
+    "title": "junction_aa",
+    "text": "The junction translated (X for an incomplete codon).",
+    "href": "#/docs/column-dictionary?h=junction_aa"
+  },
+  {
+    "kind": "column",
+    "title": "junction_length",
+    "text": "The junction's length in nucleotides.",
+    "href": "#/docs/column-dictionary?h=junction_length"
+  },
+  {
+    "kind": "column",
+    "title": "junction_aa_length",
+    "text": "The junction's length in amino acids.",
+    "href": "#/docs/column-dictionary?h=junction_aa_length"
+  },
+  {
+    "kind": "column",
+    "title": "np1",
+    "text": "The untemplated bases between V and D (between V and J without a D).",
+    "href": "#/docs/column-dictionary?h=np1"
+  },
+  {
+    "kind": "column",
+    "title": "np1_length",
+    "text": "The length of np1.",
+    "href": "#/docs/column-dictionary?h=np1_length"
+  },
+  {
+    "kind": "column",
+    "title": "np2",
+    "text": "The untemplated bases between D and J.",
+    "href": "#/docs/column-dictionary?h=np2"
+  },
+  {
+    "kind": "column",
+    "title": "np2_length",
+    "text": "The length of np2.",
+    "href": "#/docs/column-dictionary?h=np2_length"
+  },
+  {
+    "kind": "column",
+    "title": "v_cigar",
+    "text": "The V alignment of the read against its germline, as a CIGAR string.",
+    "href": "#/docs/column-dictionary?h=v_cigar"
+  },
+  {
+    "kind": "column",
+    "title": "d_cigar",
+    "text": "The D alignment of the read against its germline, as a CIGAR string.",
+    "href": "#/docs/column-dictionary?h=d_cigar"
+  },
+  {
+    "kind": "column",
+    "title": "j_cigar",
+    "text": "The J alignment of the read against its germline, as a CIGAR string.",
+    "href": "#/docs/column-dictionary?h=j_cigar"
+  },
+  {
+    "kind": "column",
+    "title": "v_sequence_start",
+    "text": "Where V starts in sequence.",
+    "href": "#/docs/column-dictionary?h=v_sequence_start"
+  },
+  {
+    "kind": "column",
+    "title": "v_sequence_end",
+    "text": "Where V ends in sequence.",
+    "href": "#/docs/column-dictionary?h=v_sequence_end"
+  },
+  {
+    "kind": "column",
+    "title": "v_germline_start",
+    "text": "Where the alignment starts in the V germline.",
+    "href": "#/docs/column-dictionary?h=v_germline_start"
+  },
+  {
+    "kind": "column",
+    "title": "v_germline_end",
+    "text": "Where the alignment ends in the V germline.",
+    "href": "#/docs/column-dictionary?h=v_germline_end"
+  },
+  {
+    "kind": "column",
+    "title": "d_sequence_start",
+    "text": "Where D starts in sequence.",
+    "href": "#/docs/column-dictionary?h=d_sequence_start"
+  },
+  {
+    "kind": "column",
+    "title": "d_sequence_end",
+    "text": "Where D ends in sequence.",
+    "href": "#/docs/column-dictionary?h=d_sequence_end"
+  },
+  {
+    "kind": "column",
+    "title": "d_germline_start",
+    "text": "Where the alignment starts in the D germline.",
+    "href": "#/docs/column-dictionary?h=d_germline_start"
+  },
+  {
+    "kind": "column",
+    "title": "d_germline_end",
+    "text": "Where the alignment ends in the D germline.",
+    "href": "#/docs/column-dictionary?h=d_germline_end"
+  },
+  {
+    "kind": "column",
+    "title": "j_sequence_start",
+    "text": "Where J starts in sequence.",
+    "href": "#/docs/column-dictionary?h=j_sequence_start"
+  },
+  {
+    "kind": "column",
+    "title": "j_sequence_end",
+    "text": "Where J ends in sequence.",
+    "href": "#/docs/column-dictionary?h=j_sequence_end"
+  },
+  {
+    "kind": "column",
+    "title": "j_germline_start",
+    "text": "Where the alignment starts in the J germline.",
+    "href": "#/docs/column-dictionary?h=j_germline_start"
+  },
+  {
+    "kind": "column",
+    "title": "j_germline_end",
+    "text": "Where the alignment ends in the J germline.",
+    "href": "#/docs/column-dictionary?h=j_germline_end"
+  },
+  {
+    "kind": "column",
+    "title": "fwr1",
+    "text": "The read's framework region 1.",
+    "href": "#/docs/column-dictionary?h=fwr1"
+  },
+  {
+    "kind": "column",
+    "title": "fwr1_aa",
+    "text": "The framework region 1 translated.",
+    "href": "#/docs/column-dictionary?h=fwr1_aa"
+  },
+  {
+    "kind": "column",
+    "title": "fwr1_start",
+    "text": "Where the framework region 1 starts in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr1_start"
+  },
+  {
+    "kind": "column",
+    "title": "fwr1_end",
+    "text": "Where the framework region 1 ends in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr1_end"
+  },
+  {
+    "kind": "column",
+    "title": "cdr1",
+    "text": "The read's CDR1.",
+    "href": "#/docs/column-dictionary?h=cdr1"
+  },
+  {
+    "kind": "column",
+    "title": "cdr1_aa",
+    "text": "The CDR1 translated.",
+    "href": "#/docs/column-dictionary?h=cdr1_aa"
+  },
+  {
+    "kind": "column",
+    "title": "cdr1_start",
+    "text": "Where the CDR1 starts in sequence.",
+    "href": "#/docs/column-dictionary?h=cdr1_start"
+  },
+  {
+    "kind": "column",
+    "title": "cdr1_end",
+    "text": "Where the CDR1 ends in sequence.",
+    "href": "#/docs/column-dictionary?h=cdr1_end"
+  },
+  {
+    "kind": "column",
+    "title": "fwr2",
+    "text": "The read's framework region 2.",
+    "href": "#/docs/column-dictionary?h=fwr2"
+  },
+  {
+    "kind": "column",
+    "title": "fwr2_aa",
+    "text": "The framework region 2 translated.",
+    "href": "#/docs/column-dictionary?h=fwr2_aa"
+  },
+  {
+    "kind": "column",
+    "title": "fwr2_start",
+    "text": "Where the framework region 2 starts in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr2_start"
+  },
+  {
+    "kind": "column",
+    "title": "fwr2_end",
+    "text": "Where the framework region 2 ends in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr2_end"
+  },
+  {
+    "kind": "column",
+    "title": "cdr2",
+    "text": "The read's CDR2.",
+    "href": "#/docs/column-dictionary?h=cdr2"
+  },
+  {
+    "kind": "column",
+    "title": "cdr2_aa",
+    "text": "The CDR2 translated.",
+    "href": "#/docs/column-dictionary?h=cdr2_aa"
+  },
+  {
+    "kind": "column",
+    "title": "cdr2_start",
+    "text": "Where the CDR2 starts in sequence.",
+    "href": "#/docs/column-dictionary?h=cdr2_start"
+  },
+  {
+    "kind": "column",
+    "title": "cdr2_end",
+    "text": "Where the CDR2 ends in sequence.",
+    "href": "#/docs/column-dictionary?h=cdr2_end"
+  },
+  {
+    "kind": "column",
+    "title": "fwr3",
+    "text": "The read's framework region 3.",
+    "href": "#/docs/column-dictionary?h=fwr3"
+  },
+  {
+    "kind": "column",
+    "title": "fwr3_aa",
+    "text": "The framework region 3 translated.",
+    "href": "#/docs/column-dictionary?h=fwr3_aa"
+  },
+  {
+    "kind": "column",
+    "title": "fwr3_start",
+    "text": "Where the framework region 3 starts in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr3_start"
+  },
+  {
+    "kind": "column",
+    "title": "fwr3_end",
+    "text": "Where the framework region 3 ends in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr3_end"
+  },
+  {
+    "kind": "column",
+    "title": "cdr3",
+    "text": "The read's CDR3.",
+    "href": "#/docs/column-dictionary?h=cdr3"
+  },
+  {
+    "kind": "column",
+    "title": "cdr3_aa",
+    "text": "The CDR3 translated.",
+    "href": "#/docs/column-dictionary?h=cdr3_aa"
+  },
+  {
+    "kind": "column",
+    "title": "cdr3_start",
+    "text": "Where the CDR3 starts in sequence.",
+    "href": "#/docs/column-dictionary?h=cdr3_start"
+  },
+  {
+    "kind": "column",
+    "title": "cdr3_end",
+    "text": "Where the CDR3 ends in sequence.",
+    "href": "#/docs/column-dictionary?h=cdr3_end"
+  },
+  {
+    "kind": "column",
+    "title": "fwr4",
+    "text": "The read's framework region 4.",
+    "href": "#/docs/column-dictionary?h=fwr4"
+  },
+  {
+    "kind": "column",
+    "title": "fwr4_aa",
+    "text": "The framework region 4 translated.",
+    "href": "#/docs/column-dictionary?h=fwr4_aa"
+  },
+  {
+    "kind": "column",
+    "title": "fwr4_start",
+    "text": "Where the framework region 4 starts in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr4_start"
+  },
+  {
+    "kind": "column",
+    "title": "fwr4_end",
+    "text": "Where the framework region 4 ends in sequence.",
+    "href": "#/docs/column-dictionary?h=fwr4_end"
+  },
+  {
+    "kind": "column",
+    "title": "v_sequence_alignment",
+    "text": "The read's V part of sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=v_sequence_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "v_germline_alignment",
+    "text": "The V germline's part of germline_alignment.",
+    "href": "#/docs/column-dictionary?h=v_germline_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "v_sequence_alignment_aa",
+    "text": "v_sequence_alignment translated.",
+    "href": "#/docs/column-dictionary?h=v_sequence_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "v_germline_alignment_aa",
+    "text": "v_germline_alignment translated.",
+    "href": "#/docs/column-dictionary?h=v_germline_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "v_alignment_start",
+    "text": "Where V starts in sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=v_alignment_start"
+  },
+  {
+    "kind": "column",
+    "title": "v_alignment_end",
+    "text": "Where V ends in sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=v_alignment_end"
+  },
+  {
+    "kind": "column",
+    "title": "d_sequence_alignment",
+    "text": "The read's D part of sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=d_sequence_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "d_germline_alignment",
+    "text": "The D germline's part of germline_alignment.",
+    "href": "#/docs/column-dictionary?h=d_germline_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "d_sequence_alignment_aa",
+    "text": "d_sequence_alignment translated.",
+    "href": "#/docs/column-dictionary?h=d_sequence_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "d_germline_alignment_aa",
+    "text": "d_germline_alignment translated.",
+    "href": "#/docs/column-dictionary?h=d_germline_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "d_alignment_start",
+    "text": "Where D starts in sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=d_alignment_start"
+  },
+  {
+    "kind": "column",
+    "title": "d_alignment_end",
+    "text": "Where D ends in sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=d_alignment_end"
+  },
+  {
+    "kind": "column",
+    "title": "j_sequence_alignment",
+    "text": "The read's J part of sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=j_sequence_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "j_germline_alignment",
+    "text": "The J germline's part of germline_alignment.",
+    "href": "#/docs/column-dictionary?h=j_germline_alignment"
+  },
+  {
+    "kind": "column",
+    "title": "j_sequence_alignment_aa",
+    "text": "j_sequence_alignment translated.",
+    "href": "#/docs/column-dictionary?h=j_sequence_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "j_germline_alignment_aa",
+    "text": "j_germline_alignment translated.",
+    "href": "#/docs/column-dictionary?h=j_germline_alignment_aa"
+  },
+  {
+    "kind": "column",
+    "title": "j_alignment_start",
+    "text": "Where J starts in sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=j_alignment_start"
+  },
+  {
+    "kind": "column",
+    "title": "j_alignment_end",
+    "text": "Where J ends in sequence_alignment.",
+    "href": "#/docs/column-dictionary?h=j_alignment_end"
+  },
+  {
+    "kind": "column",
+    "title": "v_call_set",
+    "text": "The candidate set: the V alleles the model scored as possible before the germline refinement, comma-separated (the v_call can fall outside i",
+    "href": "#/docs/column-dictionary?h=v_call_set"
+  },
+  {
+    "kind": "column",
+    "title": "d_call_set",
+    "text": "The candidate set: the D alleles the model scored as possible before the germline refinement, comma-separated (the d_call can fall outside i",
+    "href": "#/docs/column-dictionary?h=d_call_set"
+  },
+  {
+    "kind": "column",
+    "title": "j_call_set",
+    "text": "The candidate set: the J alleles the model scored as possible before the germline refinement, comma-separated (the j_call can fall outside i",
+    "href": "#/docs/column-dictionary?h=j_call_set"
+  },
+  {
+    "kind": "column",
+    "title": "mutation_rate",
+    "text": "AlignAIR's estimate of the read's somatic mutation rate over its V, D and J.",
+    "href": "#/docs/column-dictionary?h=mutation_rate"
+  },
+  {
+    "kind": "column",
+    "title": "orientation",
+    "text": "How the read was turned to align: forward, reverse_complement, complement or reverse.",
+    "href": "#/docs/column-dictionary?h=orientation"
+  },
+  {
+    "kind": "column",
+    "title": "input_sequence",
+    "text": "The read as given, before orientation.",
+    "href": "#/docs/column-dictionary?h=input_sequence"
+  },
+  {
+    "kind": "column",
+    "title": "segmentation_low_quality",
+    "text": "T when the read's V or J segment came out empty or reversed: treat its calls with caution.",
+    "href": "#/docs/column-dictionary?h=segmentation_low_quality"
+  },
+  {
+    "kind": "column",
+    "title": "length_cropped",
+    "text": "T when the read was longer than 575 nt and only its first 575 nt were aligned.",
+    "href": "#/docs/column-dictionary?h=length_cropped"
+  },
+  {
+    "kind": "column",
+    "title": "airr_assembly_status",
+    "text": "complete (every field derived), partial (valid calls, some fields left blank: see airr_assembly_reason) or failed (see airr_assembly_error).",
+    "href": "#/docs/column-dictionary?h=airr_assembly_status"
+  },
+  {
+    "kind": "column",
+    "title": "airr_assembly_reason",
+    "text": "Why a partial row is partial (e.g. no_v: the read has no V call).",
+    "href": "#/docs/column-dictionary?h=airr_assembly_reason"
+  },
+  {
+    "kind": "column",
+    "title": "airr_assembly_error",
+    "text": "The error that stopped a failed row's assembly.",
+    "href": "#/docs/column-dictionary?h=airr_assembly_error"
+  },
+  {
+    "kind": "model",
+    "title": "alignair4-igh-human",
+    "text": "IGH · HUMAN_IGH_OGRDB",
+    "href": "#/docs/model-cards?h=alignair4-igh-human"
+  },
+  {
+    "kind": "model",
+    "title": "alignair4-igk-human",
+    "text": "IGK · HUMAN_IGK_OGRDB",
+    "href": "#/docs/model-cards?h=alignair4-igk-human"
+  },
+  {
+    "kind": "model",
+    "title": "alignair4-igl-human",
+    "text": "IGL · HUMAN_IGL_OGRDB",
+    "href": "#/docs/model-cards?h=alignair4-igl-human"
+  },
+  {
+    "kind": "model",
+    "title": "alignair4-tra-human",
+    "text": "TRA · HUMAN_TCRA_IMGT",
+    "href": "#/docs/model-cards?h=alignair4-tra-human"
+  },
+  {
+    "kind": "model",
+    "title": "alignair4-trb-human",
+    "text": "TRB · HUMAN_TCRB_IMGT",
+    "href": "#/docs/model-cards?h=alignair4-trb-human"
+  },
+  {
+    "kind": "model",
+    "title": "alignair4-trd-human",
+    "text": "TRD · HUMAN_TCRD_IMGT",
+    "href": "#/docs/model-cards?h=alignair4-trd-human"
+  },
+  {
+    "kind": "model",
+    "title": "alignair4-trg-human",
+    "text": "TRG · HUMAN_TCRG_IMGT",
+    "href": "#/docs/model-cards?h=alignair4-trg-human"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_AIRR_ASSEMBLY_FAILED",
+    "text": "AIRR assembly failed for one record. Carries the record identifier and the originating error so an unexpected (non-data) failure surfaces wi",
+    "href": "#/docs/error-codes?h=alignair_airr_assembly_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_ARTIFACT_INTEGRITY_FAILED",
+    "text": "Artifact bytes or bound identities failed verification.",
+    "href": "#/docs/error-codes?h=alignair_artifact_integrity_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_CONFIG_INVALID",
+    "text": "Invalid configuration or incompatible options.",
+    "href": "#/docs/error-codes?h=alignair_config_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_CONFIG_INVALID",
+    "text": "A training request is invalid (bad hyperparameters / config / reference). Raised *before* the full model is allocated so misuse fails fast w",
+    "href": "#/docs/error-codes?h=alignair_config_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_DATA_INVALID",
+    "text": "A record, batch, or component violated its declared data contract.",
+    "href": "#/docs/error-codes?h=alignair_data_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_DEPENDENCY_MISSING",
+    "text": "A requested feature needs an optional dependency.",
+    "href": "#/docs/error-codes?h=alignair_dependency_missing"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_DOWNLOAD_INTEGRITY_FAILED",
+    "text": "A downloaded artifact failed SHA256 verification.",
+    "href": "#/docs/error-codes?h=alignair_download_integrity_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_ERROR",
+    "text": "Base for classified AlignAIR failures; built-in compatibility is added by subclasses.",
+    "href": "#/docs/error-codes?h=alignair_error"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND",
+    "text": "A genotype names alleles the reference does not hold; their sequences belong in the reference.",
+    "href": "#/docs/error-codes?h=alignair_genotype_allele_not_found"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_INFERENCE_FAILED",
+    "text": "Prediction or result assembly failed.",
+    "href": "#/docs/error-codes?h=alignair_inference_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_INPUT_INVALID",
+    "text": "Invalid user input or sequence data.",
+    "href": "#/docs/error-codes?h=alignair_input_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_INTERNAL_ERROR",
+    "text": "Unexpected defect, classified only at an application boundary.",
+    "href": "#/docs/error-codes?h=alignair_internal_error"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_INTERRUPTED",
+    "text": "An application operation was interrupted by the user.",
+    "href": "#/docs/error-codes?h=alignair_interrupted"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_IO_FAILED",
+    "text": "An expected filesystem or operating-system operation failed.",
+    "href": "#/docs/error-codes?h=alignair_io_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_METADATA_ID_INVALID",
+    "text": "A metadata join key occurs more than once; neither row may silently win.",
+    "href": "#/docs/error-codes?h=alignair_metadata_id_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_MODEL_FORMAT_INVALID",
+    "text": "Malformed or unsupported .alignair container.",
+    "href": "#/docs/error-codes?h=alignair_model_format_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_MODEL_INTEGRITY_FAILED",
+    "text": "A model section failed verification (also catchable as ValueError).",
+    "href": "#/docs/error-codes?h=alignair_model_integrity_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_MODEL_INVALID",
+    "text": "A model artifact is missing, incompatible, or unusable.",
+    "href": "#/docs/error-codes?h=alignair_model_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_MODEL_NOT_FOUND",
+    "text": "No such model: a model file that does not exist, an id no registry lists, a hub repo, revision or file that is not there.",
+    "href": "#/docs/error-codes?h=alignair_model_not_found"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_MODEL_SECTION_MISSING",
+    "text": "A required model section is absent (also catchable as KeyError).",
+    "href": "#/docs/error-codes?h=alignair_model_section_missing"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_MODEL_UNAVAILABLE",
+    "text": "A fetch was needed while offline: the model is not available from the cache. Not retryable: the same call fails the same way until offline m",
+    "href": "#/docs/error-codes?h=alignair_model_unavailable"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_NUMERICS_INVALID",
+    "text": "Non-finite model outputs, losses, or gradients.",
+    "href": "#/docs/error-codes?h=alignair_numerics_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_PREDICTION_COUNT_MISMATCH",
+    "text": "The writer was given a different number of ids / sequences / predictions — a pipeline or model defect. Raised instead of silently truncating",
+    "href": "#/docs/error-codes?h=alignair_prediction_count_mismatch"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_REGISTRY_FAILED",
+    "text": "Model registry lookup or transfer failed; ``retryable`` says whether a retry may succeed.",
+    "href": "#/docs/error-codes?h=alignair_registry_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_REGISTRY_INVALID",
+    "text": "A registry's catalog cannot be used: not JSON, no models mapping, a malformed entry, a version that fails validation.",
+    "href": "#/docs/error-codes?h=alignair_registry_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_REGISTRY_UNAVAILABLE",
+    "text": "A registry source or the hub could not be reached or read (the network, a server, a local registry that is not there). Retryable unless the ",
+    "href": "#/docs/error-codes?h=alignair_registry_unavailable"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_TRAINING_DATA_INVALID",
+    "text": "Simulator or training records lack the fields needed to construct targets.",
+    "href": "#/docs/error-codes?h=alignair_training_data_invalid"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_TRAINING_FAILED",
+    "text": "Training failed.",
+    "href": "#/docs/error-codes?h=alignair_training_failed"
+  },
+  {
+    "kind": "error",
+    "title": "ALIGNAIR_TRAINING_NUMERICS_INVALID",
+    "text": "Loss or a gradient became NaN/Inf — training is aborted with a per-task diagnostic rather than continuing to corrupt the weights.",
+    "href": "#/docs/error-codes?h=alignair_training_numerics_invalid"
+  }
+]

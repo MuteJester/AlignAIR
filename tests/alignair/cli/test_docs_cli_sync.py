@@ -109,3 +109,39 @@ def test_guard_rejects_stale_commands(bad):
 def test_guard_accepts_a_valid_command():
     assert not _problems_for(
         "alignair predict --input r.fasta --out o.tsv --model m.alignair", build_parser())
+
+
+# --- the website: every ``alignair …`` command in a code block of a page, lesson or widget -------------------------
+
+_SITE_FILES = sorted((_ROOT / "website" / "src").rglob("*.tsx"))
+# Pages still to be rewritten (docs part, groups 4-5): known stale; each leaves this list when it is rewritten, and a
+# file listed here that parses fails the test (strict), so the list can only shrink.
+_KNOWN_STALE = {"website/src/lessons/tracks/benchmarking.tsx", "website/src/pages/docs/pages-eval.tsx",
+                 "website/src/pages/docs/pages-guides.tsx", "website/src/pages/docs/pages-guides2.tsx"}
+_CODE_STRING = re.compile(r"code=\{`(.*?)`\}|code=\"([^\"]*)\"", re.DOTALL)
+_JS_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
+
+
+def _iter_site_commands(text: str):
+    """Yield each ``alignair …`` command of a TSX file's code blocks (``code={`…`}`` or ``code="…"``), with the
+    JavaScript escapes decoded, line continuations joined and a ``$ `` prompt stripped."""
+    for template, plain in _CODE_STRING.findall(text):
+        code = _JS_ESCAPE.sub(lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), template or plain)
+        yield from _iter_shell_commands(f"```bash\n{code}\n```")
+
+
+@pytest.mark.parametrize("page", [
+    pytest.param(path, marks=pytest.mark.xfail(strict=True, reason="stale page, rewritten in the docs part"))
+    if str(path.relative_to(_ROOT)) in _KNOWN_STALE else path for path in _SITE_FILES],
+    ids=lambda path: str(path.relative_to(_ROOT / "website" / "src")))
+def test_site_alignair_commands_parse(page):
+    parser = build_parser()
+    problems = [problem for cmd in _iter_site_commands(page.read_text()) for problem in _problems_for(cmd, parser)]
+    assert not problems, "stale CLI on the website:\n" + "\n".join(problems)
+
+
+def test_the_site_command_reader_finds_template_and_plain_code_strings():
+    text = 'x <CodeBlock code={`$ alignair predict --input r.fa \\\\\\n  --out o.tsv --model m`} /> ' \
+           '<CodeBlock code="alignair models list" />'
+    assert [shlex.split(cmd) for cmd in _iter_site_commands(text)] == [
+        ["alignair", "predict", "--input", "r.fa", "--out", "o.tsv", "--model", "m"], ["alignair", "models", "list"]]
