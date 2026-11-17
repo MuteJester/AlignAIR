@@ -1,4 +1,4 @@
-"""Per-read metadata normalization and unique-key in-memory or disk-backed lookup."""
+"""Per-read metadata: read from a CSV/TSV table into a unique-key, disk-backed lookup (a temporary SQLite index)."""
 from __future__ import annotations
 
 import csv
@@ -8,6 +8,7 @@ import os
 import sqlite3
 import tempfile
 import zlib
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import contextmanager
 from itertools import chain
 
@@ -89,19 +90,6 @@ def _metadata_rows(path, id_column, keep_columns, normalize_10x, rename=None):
             raise OperationIOError("cannot read metadata input") from exc
 
 
-def load_metadata(path: str | os.PathLike[str], id_column: str | None = None,
-                  keep_columns=None, normalize_10x: bool = False, rename=metadata_column):
-    """Return (unique-ID rows, output columns); duplicate keys are rejected in both loaders. ``rename`` names each
-    output column (by default ``io.airr.metadata_column``: a column AlignAIR writes becomes ``meta_<column>``)."""
-    with _metadata_rows(path, id_column, keep_columns, normalize_10x, rename) as (columns, rows):
-        result = {}
-        for key, row in rows:
-            if key in result:
-                raise _duplicate(key)
-            result[key] = row
-    return result, columns
-
-
 class MetadataIndex:
     """Temporary SQLite lookup with atomic batch inserts and bounded lookup parameter counts.
 
@@ -127,7 +115,9 @@ class MetadataIndex:
             raise DataContractError("metadata index is closed")
         return self._con
 
-    def put_many(self, items) -> None:
+    def put_many(self, items: Iterable[tuple[str, dict]]) -> None:
+        """Store ``(source ID, metadata row)`` pairs in one transaction: a DuplicateMetadataIdError (and nothing
+        stored) when an ID is already stored or repeats among them."""
         connection = self._connection()
         rows = []
         for key, row in items:
@@ -147,7 +137,8 @@ class MetadataIndex:
         except sqlite3.Error as exc:
             raise OperationIOError("cannot store metadata rows", context={"stage": "metadata_index"}) from exc
 
-    def get_many(self, ids) -> dict:
+    def get_many(self, ids: Iterable[str]) -> dict[str, dict]:
+        """The stored rows of ``ids`` by ID; an ID not stored is absent."""
         connection = self._connection()
         ids = list(ids)
         result = {}
@@ -161,10 +152,12 @@ class MetadataIndex:
             raise OperationIOError("cannot look up metadata rows", context={"stage": "metadata_index"}) from exc
         return result
 
-    def get(self, key, default=None):
+    def get(self, key: str, default: dict | None = None) -> dict:
+        """The stored row of ``key``, else ``default`` (an empty row by default)."""
         return self.get_many([key]).get(key, {} if default is None else default)
 
     def close(self) -> None:
+        """Close the index and remove its file; closing twice is harmless."""
         try:
             if self._con is not None:
                 self._con.close()
@@ -183,10 +176,13 @@ class MetadataIndex:
         self.close()
 
 
-def build_metadata_index(path, id_column=None, keep_columns=None, normalize_10x=False, rename=metadata_column):
+def build_metadata_index(path: str | os.PathLike[str], id_column: str | None = None,
+                         keep_columns: Sequence[str] | None = None, normalize_10x: bool = False,
+                         rename: Callable[[str], str] = metadata_column) -> tuple[MetadataIndex, list[str]]:
     """Return (owned index, output columns); close the index after joining source IDs.
 
-    ``rename`` (as ``load_metadata``'s) is resolved once per output column. Colliding target columns fail before index
+    ``rename`` names each output column (by default ``io.airr.metadata_column``: a column AlignAIR writes becomes
+    ``meta_<column>``) and is resolved once per output column. Colliding target columns fail before index
     creation. Reading and insertion use bounded batches; every failure closes and removes the index.
     """
     with _metadata_rows(path, id_column, keep_columns, normalize_10x, rename) as (columns, rows):
@@ -206,15 +202,15 @@ def build_metadata_index(path, id_column=None, keep_columns=None, normalize_10x=
     return index, columns
 
 
-def lookup_metadata_rows(metadata, source_ids) -> list[dict] | None:
-    """Align metadata to original source IDs through a mapping or batched index.
+def lookup_metadata_rows(metadata: MetadataIndex | None, source_ids: Iterable[str | None]) -> list[dict] | None:
+    """The metadata row of each original source ID, in order, from ``build_metadata_index``'s index (None: no
+    metadata, so None).
 
     Missing/empty source IDs receive empty rows; generated output names are never inferred as
-    join keys. Duplicate source IDs share their metadata row. Indexed queries deduplicate keys.
+    join keys. Duplicate source IDs share their metadata row; the index is queried once per distinct key.
     """
     if metadata is None:
         return None
     source_ids = tuple(source_ids)
-    keys = list(dict.fromkeys(key for key in source_ids if key))
-    found = metadata.get_many(keys) if hasattr(metadata, "get_many") else metadata
+    found = metadata.get_many(list(dict.fromkeys(key for key in source_ids if key)))
     return [found.get(key, {}) if key else {} for key in source_ids]

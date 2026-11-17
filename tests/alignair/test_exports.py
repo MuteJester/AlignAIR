@@ -1,5 +1,5 @@
 """What the package exports (P2-D10). The top level is the supported API; every error class lives in and is
-exported by ``alignair.errors``."""
+exported by ``alignair.errors``; ``alignair.io`` exports what the product uses (``load_metadata`` is gone, U-06)."""
 import importlib
 import pkgutil
 
@@ -12,6 +12,7 @@ pytestmark = pytest.mark.component
 TOP_LEVEL = {"AirrWriter", "AlignAIRError", "Aligner", "PredictionResult", "ReferenceSet", "TrainingConfig",
              "TrainingRun", "__version__", "compare_airr", "iter_sequences", "read_sequences", "run_training",
              "write_airr"}
+IO = {"MetadataIndex", "SequenceReadBatch", "build_metadata_index", "iter_sequence_batches", "lookup_metadata_rows"}
 
 
 def test_the_top_level_exports_the_supported_api():
@@ -47,3 +48,10 @@ def test_alignair_errors_defines_and_exports_every_error_class():
     assert sorted(c.__qualname__ for c in classes if not c.__module__.startswith("alignair.errors.")) == []
     assert sorted(c.__name__ for c in classes if getattr(errors, c.__name__, None) is not c
                   or c.__name__ not in errors.__all__) == []
+
+
+def test_alignair_io_exports_what_the_product_uses_and_load_metadata_is_gone():
+    from alignair import io
+    from alignair.io import metadata
+    assert set(io.__all__) == IO
+    assert not hasattr(io, "load_metadata") and not hasattr(metadata, "load_metadata")

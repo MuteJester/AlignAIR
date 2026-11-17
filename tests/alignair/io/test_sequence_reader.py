@@ -75,7 +75,7 @@ def test_stdin_is_streamed_not_slurped(monkeypatch):
 def test_sniff_requires_seq_column_for_custom_table():
     """An extensionless delimited header (piped stdin) with a non-standard column is txt UNLESS the
     caller names the sequence column, in which case it is a table."""
-    from alignair.io import detect_sequence_format
+    from alignair.io.sequence_records import detect_sequence_format
     head = "contig_id,nt,barcode\n"
     assert detect_sequence_format("-", head) == "txt"                       # no known seq-col keyword, no hint
     assert detect_sequence_format("-", head, seq_column="nt") == "table"    # explicit --sequence-column disambiguates

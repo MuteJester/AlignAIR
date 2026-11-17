@@ -69,14 +69,13 @@ def test_stream_counts_partial_status(tmp_path):
     assert counts.partial_reasons == {"missing_calls_or_coordinates": 4}
 
 
-@pytest.mark.parametrize('indexed', [False, True])
-def test_metadata_joins_original_source_ids_across_output_id_collisions(tmp_path, indexed):
-    from alignair.io.metadata import build_metadata_index, load_metadata
+def test_metadata_joins_original_source_ids_across_output_id_collisions(tmp_path):
+    from alignair.io.metadata import build_metadata_index
     reads = tmp_path / 'reads.fa'
     reads.write_text('>read\nAC\n>read\nGT\n>read_dup1\nTG\n>\nAC\n>seq3\nCG\n')
     metadata = tmp_path / 'metadata.csv'
     metadata.write_text('sequence_id,cell_id\nread,first\nread_dup1,second\nseq3,third\n')
-    lookup, columns = (build_metadata_index if indexed else load_metadata)(metadata)
+    lookup, columns = build_metadata_index(metadata)
     try:
         counts = _stream_predict(
         _FakeAligner(), RunIO(str(reads), 1, None, None, 'minimal', columns, 'IGH', lookup),
@@ -86,8 +85,7 @@ def test_metadata_joins_original_source_ids_across_output_id_collisions(tmp_path
         assert [row['sequence_id'] for row in rows] == ['read', 'read_dup1', 'read_dup1_dup1', 'seq3', 'seq3_dup1']
         assert [row['cell_id'] for row in rows] == ['first', 'first', 'second', '', 'third']
     finally:
-        if indexed:
-            lookup.close()
+        lookup.close()
 
 
 def test_stream_closes_input_and_discards_output_if_metadata_lookup_fails(tmp_path, monkeypatch):

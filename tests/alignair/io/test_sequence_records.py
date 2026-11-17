@@ -6,7 +6,7 @@ import zlib
 import pytest
 
 from alignair.errors import ConfigurationError, InputError, OperationIOError, current_error_context
-from alignair.io import RawSequenceRecord, detect_sequence_format, iter_sequence_records
+from alignair.io.sequence_records import RawSequenceRecord, detect_sequence_format, iter_sequence_records
 
 pytestmark = pytest.mark.component
 

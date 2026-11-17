@@ -1,17 +1,29 @@
 """Metadata uniqueness, normalization and disk-backed lifecycle contracts."""
 import pytest
 
-from alignair.io.metadata import DuplicateMetadataIdError, MetadataIndex, build_metadata_index, load_metadata
-from alignair.errors import DataContractError, InputError, OperationIOError, current_error_context
+from alignair.errors import (
+    DataContractError,
+    DuplicateMetadataIdError,
+    InputError,
+    OperationIOError,
+    current_error_context,
+)
+from alignair.io.metadata import MetadataIndex, build_metadata_index
 
 pytestmark = pytest.mark.component
+
+
+def _indexed(path, ids, **kwargs):
+    """The rows of ``ids`` and the output columns of ``build_metadata_index(path, **kwargs)``."""
+    index, columns = build_metadata_index(path, **kwargs)
+    with index:
+        return index.get_many(ids), columns
 
 
 def test_metadata_join_carries_10x_columns(tmp_path):
     m = tmp_path / "annot.csv"
     m.write_text("contig_id,barcode,umi_count\nc1,AAAA-1,7\nc2,CCCC-1,3\n")
-    from alignair.io.metadata import load_metadata
-    meta, kept = load_metadata(str(m), id_column="contig_id")
+    meta, kept = _indexed(str(m), ["c1"], id_column="contig_id")
     assert "barcode" in kept and meta["c1"]["umi_count"] == "7"
 
 
@@ -20,8 +32,7 @@ def test_10x_metadata_normalized_to_airr_names(tmp_path):
     m = tmp_path / "filtered_contig_annotations.csv"
     m.write_text("barcode,contig_id,reads,umis,chain,c_gene\n"
                  "AAAA-1,c1,120,7,IGH,IGHM\n")
-    from alignair.io.metadata import load_metadata
-    meta, kept = load_metadata(str(m), id_column="contig_id", normalize_10x=True)
+    meta, kept = _indexed(str(m), ["c1"], id_column="contig_id", normalize_10x=True)
     assert meta["c1"]["cell_id"] == "AAAA-1"          # barcode -> cell_id
     assert meta["c1"]["umi_count"] == "7"             # umis -> umi_count
     assert meta["c1"]["c_call"] == "IGHM"             # c_gene -> c_call
@@ -76,12 +87,11 @@ def test_metadata_index_duplicate_id_fails_and_cleans_up(tmp_path, monkeypatch):
     assert after == before                                       # no orphan temp DB left behind
 
 
-@pytest.mark.parametrize('loader', [load_metadata, build_metadata_index])
-def test_both_loaders_reject_duplicate_join_keys_without_leaking_error_context(tmp_path, loader):
+def test_duplicate_join_keys_are_rejected_without_leaking_error_context(tmp_path):
     path = tmp_path / 'metadata.csv'
     path.write_text('id,cell_id\nread,one\nread,two\n')
     with pytest.raises(DuplicateMetadataIdError) as caught:
-        loader(path)
+        build_metadata_index(path)
     assert caught.value.context['path'] == str(path)
     assert caught.value.context['record_id'] == 'read'
     assert current_error_context() == {}
@@ -178,7 +188,7 @@ def test_unexpected_database_constraint_is_not_misreported_as_duplicate_id():
 
 
 @pytest.mark.parametrize('compressed', [False, True])
-def test_canonical_values_win_over_10x_aliases_and_eager_indexed_rows_agree(tmp_path, compressed):
+def test_canonical_values_win_over_10x_aliases(tmp_path, compressed):
     import gzip
     path = tmp_path / ('metadata.tsv' + ('.gz' if compressed else ''))
     text = ('\ncontig_id\tbarcode\tcell_id\tumis\tumi_count\tc_gene\n'
@@ -186,10 +196,7 @@ def test_canonical_values_win_over_10x_aliases_and_eager_indexed_rows_agree(tmp_
             'other\tfallback\t\t7\t\t\n'
             '\tignored\t\t\t\t\n')
     path.write_bytes(gzip.compress(text.encode()) if compressed else text.encode())
-    expected, columns = load_metadata(path, normalize_10x=True)
-    index, indexed_columns = build_metadata_index(path, normalize_10x=True)
-    with index:
-        assert columns == indexed_columns and index.get_many(['read', 'other']) == expected
+    expected, _ = _indexed(path, ['read', 'other'], normalize_10x=True)
     assert expected['read']['cell_id'] == 'canonical' and expected['read']['umi_count'] == '9'
     assert expected['other']['cell_id'] == 'fallback' and expected['other']['umi_count'] == '7'
     assert expected['read']['c_call'] == 'IGHG'
@@ -204,12 +211,11 @@ def test_canonical_values_win_over_10x_aliases_and_eager_indexed_rows_agree(tmp_
     ('id,cell_id\nread,"unterminated\n', {}, 'malformed metadata table'),
     ('"unterminated\n', {}, 'malformed metadata table'),
 ])
-@pytest.mark.parametrize('loader', [load_metadata, build_metadata_index])
-def test_bad_tables_fail_with_path_context(tmp_path, text, kwargs, message, loader):
+def test_bad_tables_fail_with_path_context(tmp_path, text, kwargs, message):
     path = tmp_path / 'metadata.csv'
     path.write_text(text)
     with pytest.raises(InputError, match=message) as caught:
-        loader(path, **kwargs)
+        build_metadata_index(path, **kwargs)
     assert caught.value.context['path'] == str(path)
     assert current_error_context() == {}
 
@@ -240,7 +246,6 @@ def test_rename_is_resolved_once_and_reused_for_rows(tmp_path):
 def test_empty_metadata_table_with_valid_header_builds_empty_index(tmp_path):
     path = tmp_path / 'metadata.csv'
     path.write_text('id,cell_id\n')
-    assert load_metadata(path) == ({}, ['cell_id'])
     index, columns = build_metadata_index(path)
     with index:
         assert index.get_many(['missing']) == {} and columns == ['cell_id']
@@ -275,13 +280,13 @@ def test_large_metadata_input_batches_inserts_and_cleans_up_late_duplicate(tmp_p
 def test_file_read_failures_are_typed_and_chained(tmp_path):
     import gzip
     with pytest.raises(OperationIOError) as caught:
-        load_metadata(tmp_path / 'missing.csv')
+        build_metadata_index(tmp_path / 'missing.csv')
     assert isinstance(caught.value.__cause__, FileNotFoundError)
     for name, payload in [('bad.csv', b'\xff'), ('bad.csv.gz', b'not gzip')]:
         path = tmp_path / name
         path.write_bytes(payload)
         with pytest.raises(InputError, match='cannot decode') as caught:
-            load_metadata(path)
+            build_metadata_index(path)
         assert caught.value.__cause__ is not None
 
 
@@ -294,12 +299,14 @@ def test_source_metadata_lookup_is_batched_and_ignores_absent_keys():
     assert lookup_metadata_rows(Lookup(), [None, 'read', '', 'read', 'other']) == [{}, {'cell_id': 'one'}, {}, {'cell_id': 'one'}, {}]
 
 
-def test_source_metadata_alignment_supports_generators_mappings_and_disabled_metadata():
+def test_source_metadata_alignment_supports_generators_and_disabled_metadata():
     from alignair.io.metadata import lookup_metadata_rows
-    assert lookup_metadata_rows({'read': {'cell_id': 'one'}}, iter(['read', None, '', 'missing', 'read'])) == [
-        {'cell_id': 'one'}, {}, {}, {}, {'cell_id': 'one'}]
+    with MetadataIndex() as index:
+        index.put_many([('read', {'cell_id': 'one'})])
+        assert lookup_metadata_rows(index, iter(['read', None, '', 'missing', 'read'])) == [
+            {'cell_id': 'one'}, {}, {}, {}, {'cell_id': 'one'}]
+        assert lookup_metadata_rows(index, []) == []
     assert lookup_metadata_rows(None, None) is None
-    assert lookup_metadata_rows({}, []) == []
 
 
 def test_a_metadata_index_storage_failure_is_reported_as_the_index_s_not_the_metadata_file_s(tmp_path, monkeypatch):

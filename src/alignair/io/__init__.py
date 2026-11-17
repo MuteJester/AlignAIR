@@ -1,18 +1,13 @@
-"""Sequence-file parsing and output serialization."""
-from .metadata import DuplicateMetadataIdError, MetadataIndex, build_metadata_index, load_metadata, lookup_metadata_rows
-from .sequence_reader import SequenceRead, SequenceReadBatch, iter_sequence_batches
-from .sequence_records import RawSequenceRecord, detect_sequence_format, iter_sequence_records
+"""Reading input reads and writing AIRR tables. ``read_sequences``, ``iter_sequences``, ``write_airr`` and
+``AirrWriter`` are on the top-level package; here are the batch reader that keeps each read's source ID, and the
+metadata index that joins per-read metadata to the reads by that ID."""
+from .metadata import MetadataIndex, build_metadata_index, lookup_metadata_rows
+from .sequence_reader import SequenceReadBatch, iter_sequence_batches
 
 __all__ = [
-    "DuplicateMetadataIdError",
     "MetadataIndex",
-    "RawSequenceRecord",
-    "SequenceRead",
     "SequenceReadBatch",
     "build_metadata_index",
-    "detect_sequence_format",
     "iter_sequence_batches",
-    "iter_sequence_records",
-    "load_metadata",
     "lookup_metadata_rows",
 ]
