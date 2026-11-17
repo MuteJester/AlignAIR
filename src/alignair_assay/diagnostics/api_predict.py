@@ -9,8 +9,8 @@ process never imports torch. It does what ``alignair/cli/predict.py`` does, thro
 and the genotype arm run the same code and model:
 
 1. The checkpoint is loaded with ``diagnostics.replay.load_model_checked`` (``alignair.model_file.load_model``, as
-   the CLI's ``Aligner.from_pretrained`` loads it) on the device ``alignair.resolve_device`` makes of ``--device``,
-   as the CLI's does, and wrapped in an ``alignair.Aligner``. The model's reference must be the one in
+   the CLI's ``Aligner.from_pretrained`` loads it) on the device ``alignair.aligner.resolve_device`` makes of
+   ``--device``, as the CLI's does, and wrapped in an ``alignair.Aligner``. The model's reference must be the one in
    ``--reference``, which the runner verified against the truth reference.
 2. ``--genotype``, a JSON ``{"v": [...], "d": [...], "j": [...]}``, is read with AlignAIR's
    ``genotype.files.load_genotype(path)``, and the Aligner is bound to it once with ``Aligner.with_genotype``, which
@@ -46,7 +46,8 @@ import traceback
 from pathlib import Path
 
 import torch
-from alignair import AirrWriter, Aligner, iter_sequences, resolve_device
+from alignair import AirrWriter, Aligner, iter_sequences
+from alignair.aligner import resolve_device
 from alignair.errors import ConfigurationError, InputError
 from alignair.genotype.files import load_genotype
 

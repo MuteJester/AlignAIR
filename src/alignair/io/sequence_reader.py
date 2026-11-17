@@ -93,9 +93,9 @@ def iter_sequence_batches(path: str, chunk_size: int = 20000, seq_column: str | 
 
 def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = None,
                    id_column: str | None = None, rejects: list | None = None):
-    """Historical (ids, cleaned nucleotide sequences, n_dropped) chunk interface.
+    """The reads of ``path`` in chunks of ``chunk_size``: ``(ids, cleaned nucleotide sequences, n_dropped)`` per chunk.
 
-    Use iter_sequence_batches when joining source metadata or retaining original source positions.
+    Use ``alignair.io.iter_sequence_batches`` when joining source metadata or retaining original source positions.
     ID state spans all chunks and grows with distinct accepted IDs; sequence payloads are chunked.
     """
     with closing(iter_sequence_batches(path, chunk_size, seq_column, id_column, rejects)) as batches:
@@ -105,7 +105,7 @@ def iter_sequences(path: str, chunk_size: int = 20000, seq_column: str | None = 
 
 def read_sequences(path: str, seq_column: str | None = None, id_column: str | None = None,
                    collect_rejects: bool = False) -> tuple[list[str], list[str], dict]:
-    """Eager read of all sequences (back-compat). For large files prefer ``iter_sequences``.
+    """Read all the reads of ``path`` at once. For large files, read chunk by chunk with ``iter_sequences``.
     Returns (ids, sequences, info) with info.n_read/n_dropped/format; when ``collect_rejects`` is set,
     info["rejects"] lists each dropped record ({id, position, reason, sequence})."""
     ids: list[str] = []

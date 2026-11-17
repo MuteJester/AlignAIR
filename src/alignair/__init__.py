@@ -14,17 +14,16 @@ Train a custom model:
     run = run_training(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
     aligner = run.best_aligner()
 
-I/O + reference helpers: ``read_sequences``, ``write_airr``, ``ReferenceSet``, ``compare_airr``.
+Files: ``read_sequences`` and ``iter_sequences`` read reads (FASTA, FASTQ, a CSV/TSV table or one per line),
+``write_airr`` and ``AirrWriter`` write an AIRR table. Also ``ReferenceSet`` and ``compare_airr``.
+
+Errors: every expected failure is an ``AlignAIRError``; ``alignair.errors`` exports each of its classes.
 """
-from .aligner import Aligner, PredictionResult, resolve_device
+from .aligner import Aligner, PredictionResult
 from .analyze.compare import compare_airr
-from .core import AlignAIR
-from .core.config import AlignAIRConfig
 from .errors import AlignAIRError
-from .io.airr import AirrWriter, PredictionCountMismatchError, write_airr
-from .io.metadata import DuplicateMetadataIdError
+from .io.airr import AirrWriter, write_airr
 from .io.sequence_reader import iter_sequences, read_sequences
-from .predict import PredictConfig
 from .reference.reference_set import ReferenceSet
 from .train.config import TrainingConfig
 from .train.workflow import TrainingRun, run_training
@@ -35,12 +34,18 @@ try:
 except Exception:  # noqa: BLE001 - not pip-installed (e.g. run from a source tree), or unreadable metadata
     __version__ = "0+unknown"
 
-__all__ = [  # noqa: RUF022 - grouped by API tier (part 2 settles the surface)
+__all__ = [
+    "AirrWriter",
     "AlignAIRError",
-    # stable object API
-    "Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training", "resolve_device",
-    "AlignAIR", "AlignAIRConfig", "PredictConfig",
-    "ReferenceSet", "read_sequences", "iter_sequences",
-    "write_airr", "AirrWriter", "compare_airr", "DuplicateMetadataIdError", "PredictionCountMismatchError",
+    "Aligner",
+    "PredictionResult",
+    "ReferenceSet",
+    "TrainingConfig",
+    "TrainingRun",
     "__version__",
+    "compare_airr",
+    "iter_sequences",
+    "read_sequences",
+    "run_training",
+    "write_airr",
 ]

@@ -304,7 +304,7 @@ class AirrWriter:
 def write_airr(path: str, ids: list[str], sequences: list[str], preds: list[dict],
                locus: str = FALLBACK_LOCUS, columns: str | Sequence[str] | None = None, metas: list[dict] | None = None,
                extra_columns: Sequence[str] | None = None) -> None:
-    """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
+    """Write a whole AIRR table at once (atomically). For large inputs, write chunk by chunk with ``AirrWriter``.
     `sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
     orientation convention per record. `columns` selects which fields to emit. `metas` (per-row
     dicts) + `extra_columns` carry preserved input metadata (barcode/UMI/sample/cell_id) into output."""

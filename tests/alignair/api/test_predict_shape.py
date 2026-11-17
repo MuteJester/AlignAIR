@@ -8,7 +8,8 @@ import json
 import pytest
 import torch
 
-from alignair import Aligner, resolve_device
+from alignair import Aligner
+from alignair.aligner import resolve_device
 from alignair.errors import ConfigurationError, InputError
 from tests.alignair.predict.golden_rows import GOLDEN_READS, TEST_CHIP
 

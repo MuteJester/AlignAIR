@@ -7,7 +7,8 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 import alignair
-from alignair import Aligner, PredictionResult, TrainingConfig, resolve_device
+from alignair import Aligner, PredictionResult, TrainingConfig
+from alignair.aligner import resolve_device
 
 pytestmark = pytest.mark.integration
 
@@ -34,8 +35,7 @@ def test_training_config_presets_and_immutability():
 
 
 def test_public_surface_snapshot():
-    for name in ("Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
-                 "resolve_device"):
+    for name in ("Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training"):
         assert name in alignair.__all__ and hasattr(alignair, name)
     for m in ("from_pretrained", "from_model", "with_genotype", "predict", "predict_iter", "loci", "default_locus"):
         assert hasattr(Aligner, m)
