@@ -16,7 +16,7 @@ from ..reference.loci import FALLBACK_LOCUS
 def register(sub) -> None:
     p = sub.add_parser("genotype", help="a donor's V genotype from an AIRR table (the frequency rule of predict "
                                         "--infer-genotype), written as an AIRR GenotypeSet")
-    p.add_argument("--airr", required=True, help="an AIRR rearrangement TSV with a v_call column (any tool's)")
+    p.add_argument("input", help="an AIRR rearrangement TSV with a v_call column (any tool's)")
     p.add_argument("--out", required=True, help="the AIRR GenotypeSet JSON to write")
     p.add_argument("--locus", default=FALLBACK_LOCUS, help="the genotype's locus (default %(default)s)")
     p.add_argument("--explain", type=float, default=EXPLAIN,
@@ -33,10 +33,10 @@ def run(args) -> int:
         return report_error(ConfigurationError("--explain must be in (0, 1] and --min-reads at least 1",
                                        context={"explain": args.explain, "min_reads": args.min_reads}))
     evidence = GenotypeEvidence()
-    with open(args.airr, newline="") as handle:
+    with open(args.input, newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         if "v_call" not in (reader.fieldnames or ()):
-            return report_error(InputError(f"{args.airr} has no v_call column", context={"path": args.airr}))
+            return report_error(InputError(f"{args.input} has no v_call column", context={"path": args.input}))
         for index, row in enumerate(reader):
             evidence.observe(index, row["v_call"])
     genotype = evidence.genotype(explain=args.explain, min_reads=args.min_reads)

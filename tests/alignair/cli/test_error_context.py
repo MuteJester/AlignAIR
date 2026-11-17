@@ -24,7 +24,7 @@ def test_a_classified_error_keeps_the_stage_its_command_reports(capsys):
 def test_a_genotype_range_error_is_a_configuration_error_as_in_predict(tmp_path, capsys):
     table = tmp_path / "rows.tsv"
     table.write_text("sequence_id\tv_call\nr0\tIGHV1-2*02\n")
-    assert main(["--error-format", "json", "genotype", "--airr", str(table), "--out", str(tmp_path / "g.json"),
+    assert main(["--error-format", "json", "genotype", str(table), "--out", str(tmp_path / "g.json"),
                  "--explain", "2"]) == 1
     assert json.loads(capsys.readouterr().err)["code"] == "ALIGNAIR_CONFIG_INVALID"
 

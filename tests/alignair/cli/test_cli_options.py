@@ -1,6 +1,7 @@
 """One set of CLI options (P2-D9): ``--device`` defaults to auto with one help text; every command that resolves a
 model takes the same model-source options and passes them on; machine output is ``--json`` everywhere (``--format``
-is gone); ``info`` takes a path or a registry id (``models info`` and the ``model`` alias are gone)."""
+is gone); ``info`` takes a path or a registry id (``models info`` and the ``model`` alias are gone); ``genotype``
+reads its table as a positional input (``--airr`` is gone)."""
 import argparse
 import hashlib
 import json
@@ -66,7 +67,8 @@ def test_machine_output_is_json_everywhere(path):
     ["model", "list"],
     ["analyze", "rows.tsv", "--format", "json"],
     ["benchmark", "--model", "m.alignair", "--format", "json"],
-], ids=["models info", "model alias", "analyze --format", "benchmark --format"])
+    ["genotype", "--airr", "rows.tsv", "--out", "g.json"],
+], ids=["models info", "model alias", "analyze --format", "benchmark --format", "genotype --airr"])
 def test_the_removed_spellings_are_refused(argv, capsys):
     with pytest.raises(SystemExit) as caught:
         build_parser().parse_args(argv)
