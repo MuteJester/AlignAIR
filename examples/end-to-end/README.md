@@ -14,7 +14,7 @@ python3 examples/end-to-end/merge_pairs.py aa_example/R1.sub.fastq aa_example/R2
 alignair predict --input aa_example/merged.fastq --out aa_example/briney_merged.tsv \
   --model alignair4-igh-human
 alignair validate-airr aa_example/briney_merged.tsv
-alignair analyze aa_example/briney_merged.tsv --format text
+alignair analyze aa_example/briney_merged.tsv
 ```
 
 `alignair4-igh-human` is the AlignAIR 4 human IGH model's id in the shared catalog. It is not published yet;

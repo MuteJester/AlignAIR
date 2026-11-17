@@ -15,18 +15,17 @@ from datetime import datetime, timezone
 from .. import __version__
 from ..aligner import Aligner
 from ..errors import (
-    AlignAIRError,
     ConfigurationError,
     DataContractError,
     InputError,
     ModelError,
-    RegistryError,
     report_error,
 )
 from ..genotype.infer import EXPLAIN, MIN_READS
 from ..io.files import sha256_file
 from ..reference.loci import FALLBACK_LOCUS
 from ._errors import fail
+from ._options import add_device, add_model_source, model_sources, resolve_model_path
 from .predict_run import RunCounts, RunIO
 
 
@@ -53,8 +52,7 @@ def register(sub) -> None:
     p.add_argument("--columns", default=None,
                    help="output columns: a preset (full/core/minimal/airr) or a comma-separated "
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
-    p.add_argument("--device", default=None,
-                   help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
+    add_device(p)
     p.add_argument("--batch-size", type=int, default=None,
                    help="reads per batch (default: 256 on a GPU, 16 per worker with --threads on the CPU, else 64)")
     p.add_argument("--threads", type=int, default=None,
@@ -83,13 +81,7 @@ def register(sub) -> None:
     p.add_argument("--genotype-min-reads", type=int, default=MIN_READS,
                    help=f"--infer-genotype: the single-allele reads a gene needs to be genotyped; a gene with fewer "
                         f"keeps every allele (default {MIN_READS})")
-    p.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
-    p.add_argument("--revision", default=None,
-                   help="pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version")
-    p.add_argument("--hf-token", default=None,
-                   help="Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then "
-                        "$HUGGING_FACE_HUB_TOKEN)")
-    p.add_argument("--offline", action="store_true", help="never touch the network")
+    add_model_source(p)
     p.add_argument("--quiet", action="store_true", help="suppress the update-available notice")
     p.add_argument("--no-run-metadata", action="store_true", help="do not write the <out>.run.json sidecar")
     p.add_argument("--max-assembly-failures", type=float, default=0.01,
@@ -269,15 +261,14 @@ def run(args) -> int:
 def _run(args) -> int:
     from ..core.runtime import resolve_device
     from ..registry import maybe_notify_updates
-    from ..registry import sources as _sources
-    device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
+    device = resolve_device(args.device)
     _check_args(args)
     if device == "cpu" and args.threads is not None and args.threads > 1:
         from .. import parallel  # the workers' forkserver imports while the model loads
         parallel.prestart()
 
     # 1) resolve + load the model ONCE (before reading, so a 1M-read input never sits in memory)
-    srcs = _sources.resolve_sources(args.registry)
+    srcs = model_sources(args)
     model_path, aligner = _load_aligner(args, srcs, device)
     reference = aligner.reference
     loci = reference.locus_names()
@@ -360,13 +351,7 @@ def _check_args(args) -> None:
 def _load_aligner(args, srcs, device: str) -> tuple[str, Aligner]:
     """``(model_path, aligner)``: the model resolved (path, registry id or Hub repo) and loaded, bound to the
     ``--reference`` FASTA when one is given (its anchor annotation's gaps reported on stderr)."""
-    from ..registry import resolve_model
-    try:
-        model_path = str(resolve_model(args.model, sources=srcs, offline=args.offline,
-                                       token=args.hf_token, revision=args.revision))
-    except (AlignAIRError, OSError, ValueError) as e:
-        raise _Refused(fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
-                            context={"model_id": args.model})) from e
+    model_path = resolve_model_path(args, srcs)
     bound = None
     if args.reference:      # the FASTA's alleles become the model's bank, annotated against its own reference
         from ..reference.reference_set import ReferenceSet

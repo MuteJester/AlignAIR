@@ -6,6 +6,8 @@ truth), e.g. AlignAIR vs IgBLAST/MiXCR ``exportAirr`` output, or two AlignAIR ru
 """
 from __future__ import annotations
 
+from ._options import add_report_output, emit
+
 
 def register(sub) -> None:
     p = sub.add_parser("compare", help="compare two AIRR TSVs (per-gene agreement + set rescue)")
@@ -13,8 +15,7 @@ def register(sub) -> None:
     p.add_argument("--b", required=True, help="second AIRR rearrangement TSV")
     p.add_argument("--a-name", default="model_a", help="label for the first file")
     p.add_argument("--b-name", default="model_b", help="label for the second file")
-    p.add_argument("--out", default=None, help="write the markdown report here (default: stdout)")
-    p.add_argument("--json", action="store_true", help="emit the raw comparison JSON instead of markdown")
+    add_report_output(p, json_help="emit the raw comparison JSON instead of markdown")
     p.set_defaults(func=run)
 
 
@@ -24,13 +25,7 @@ def run(args) -> int:
     result = compare_airr(a, b, a_name=args.a_name, b_name=args.b_name)
     if args.json:
         import json
-        text = json.dumps(result, indent=2)
+        emit(args, json.dumps(result, indent=2))
     else:
-        text = format_report_md(result)
-    if args.out:
-        with open(args.out, "w") as f:
-            f.write(text + "\n")
-        print(f"wrote {args.out}")
-    else:
-        print(text)
+        emit(args, format_report_md(result))
     return 0

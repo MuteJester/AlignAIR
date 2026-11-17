@@ -8,8 +8,9 @@ from __future__ import annotations
 import json
 import sys
 
-from ..errors import AlignAIRError, ConfigurationError, ModelError, RegistryError, report_error
+from ..errors import ConfigurationError, ModelError, report_error
 from ._errors import fail
+from ._options import add_device, add_model_source, add_report_output, emit, resolve_model_path
 
 
 def register(sub) -> None:
@@ -20,13 +21,10 @@ def register(sub) -> None:
     p.add_argument("--n", type=int, default=200, help="reads per stratum")
     p.add_argument("--strata", default=None, help="comma-list subset (default: all)")
     p.add_argument("--seed", type=int, default=0, help="seed of the generated reads (default 0)")
-    p.add_argument("--device", default=None,
-                   help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
+    add_device(p)
     p.add_argument("--batch-size", type=int, default=64, help="reads per batch (default 64)")
-    p.add_argument("--out", default=None, help="write the report here (default: stdout)")
-    p.add_argument("--format", choices=["text", "json"], default="text", help="report format (default: text)")
-    p.add_argument("--registry", action="append", help="registry url for a shipped model id (repeatable)")
-    p.add_argument("--offline", action="store_true", help="never touch the network")
+    add_report_output(p, json_help="emit the report as JSON instead of text")
+    add_model_source(p)
     p.set_defaults(func=run)
 
 
@@ -47,20 +45,12 @@ def dataconfig_name(args, model_path) -> str | None:
 
 
 def run(args) -> int:
-
     from ..core.runtime import resolve_device
     from ..evaluate import format_text, run_benchmark
     from ..genairr import resolve_dataconfig
     from ..model_file import load_model
-    from ..registry import resolve_model
-    from ..registry import sources as _sources
-    device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
-    try:
-        model_path = str(resolve_model(args.model, sources=_sources.resolve_sources(args.registry),
-                                        offline=args.offline))
-    except (AlignAIRError, OSError, ValueError) as e:
-        return fail(e, error_type=RegistryError, message=f"could not resolve model '{args.model}'",
-                    context={"model_id": args.model})
+    device = resolve_device(args.device)
+    model_path = resolve_model_path(args)
     name = dataconfig_name(args, model_path)
     if name is None:
         return report_error(ConfigurationError(
@@ -74,11 +64,5 @@ def run(args) -> int:
     strata = [s.strip() for s in args.strata.split(",")] if args.strata else None
     results = run_benchmark(loaded.model, loaded.reference, dataconfig, n=args.n, seed=args.seed, strata_names=strata,
                             device=device, batch_size=args.batch_size)
-    text = json.dumps(results, indent=2) if args.format == "json" else format_text(results)
-    if args.out:
-        with open(args.out, "w") as f:
-            f.write(text + "\n")
-        print(f"wrote {args.out}")
-    else:
-        print(text)
+    emit(args, json.dumps(results, indent=2) if args.json else format_text(results))
     return 0

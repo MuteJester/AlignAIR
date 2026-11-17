@@ -96,9 +96,9 @@ def test_cli_analyze_writes_report(tmp_path):
     assert args.func(args) == 0
     text = open(out).read()
     assert "REPERTOIRE" in text and "VALIDATION" in text
-    # json format
+    # --json
     out2 = str(tmp_path / "report.json")
-    args = build_parser().parse_args(["analyze", tsv, "--out", out2, "--format", "json"])
+    args = build_parser().parse_args(["analyze", tsv, "--out", out2, "--json"])
     assert args.func(args) == 0
     import json
     assert json.load(open(out2))["repertoire"]["n_reads"] == 3

@@ -107,7 +107,7 @@ def test_cli_benchmark_uses_card_dataconfig(tmp_path):
                   model_id="m", model_version="1.0.0")           # no --dataconfig: read it from the card
     out = str(tmp_path / "bench.json")
     args = build_parser().parse_args(["benchmark", "--model", p, "--n", "4", "--strata", "clean",
-                                      "--device", "cpu", "--format", "json", "--out", out])
+                                      "--device", "cpu", "--json", "--out", out])
     assert args.func(args) == 0
     assert json.load(open(out))["clean"]["n"] == 4
 

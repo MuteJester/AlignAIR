@@ -7,6 +7,7 @@ import os
 
 from ..errors import ConfigurationError, report_error
 from ._errors import fail
+from ._options import add_device
 
 
 def register(sub) -> None:
@@ -38,7 +39,7 @@ def register(sub) -> None:
                         "to --data-workers 0 (default: 0)")
     p.add_argument("--plan", action="store_true",
                    help="validate the reference/config and print the plan WITHOUT training")
-    p.add_argument("--device", default=None, help="cpu / cuda (default: auto)")
+    add_device(p)
     p.set_defaults(func=run)
 
 
@@ -81,15 +82,14 @@ def run(args) -> int:
 
     from ..train.config import TrainingConfig
     from ..train.workflow import run_training
-    overrides = {"lr": args.lr, "grad_clip": args.grad_clip, "seed": args.seed, "data_workers": args.data_workers}
+    overrides = {"lr": args.lr, "grad_clip": args.grad_clip, "seed": args.seed, "data_workers": args.data_workers,
+                 "device": args.device}
     if args.steps is not None:
         overrides["steps"] = args.steps
     if args.batch_size is not None:
         overrides["batch_size"] = args.batch_size
     if args.val_every is not None:
         overrides["val_every"] = args.val_every
-    if args.device:
-        overrides["device"] = args.device
     cfg = TrainingConfig.from_genairr(*dcs, preset=args.preset, **overrides)
 
     plan = training_plan(dcs, steps=cfg.steps, batch_size=cfg.batch_size)

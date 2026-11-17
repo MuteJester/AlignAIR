@@ -9,7 +9,7 @@ import pytest
 from alignair.core import prepare_model
 
 from alignair import model_file as mf
-from alignair.cli.main import build_parser
+from alignair.cli.main import build_parser, main
 from alignair.core import AlignAIR
 from alignair.reference.reference_set import ReferenceSet
 
@@ -67,6 +67,6 @@ def test_predict_offline_uncached_id_errors(reg, tmp_path, monkeypatch):
     monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "cache_empty"))
     _, fasta, _ = reg
     out = str(tmp_path / "o.tsv")
-    assert _run(["predict", "--model", "human-igh@1.0.0", "--registry", "hf://unreachable/x",
+    assert main(["predict", "--model", "human-igh@1.0.0", "--registry", "hf://unreachable/x",
                  "--input", fasta, "--out", out, "--offline", "--device", "cpu"]) == 1
     assert not os.path.exists(out)

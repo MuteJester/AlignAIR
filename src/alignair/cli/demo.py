@@ -12,6 +12,8 @@ from __future__ import annotations
 import itertools
 import os
 
+from ._options import add_device
+
 
 def register(sub) -> None:
     p = sub.add_parser("demo", help="tiny end-to-end train -> predict -> donor-compare (no network)")
@@ -20,8 +22,7 @@ def register(sub) -> None:
     p.add_argument("--dataconfig", default="HUMAN_IGH_OGRDB", help="GenAIRR dataconfig to demo on")
     p.add_argument("--steps", type=int, default=5, help="training steps (tiny; 1 in the smoke test)")
     p.add_argument("--reads", type=int, default=8, help="number of simulated reads to predict")
-    p.add_argument("--device", default=None,
-                   help="cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)")
+    add_device(p)
     p.set_defaults(func=run)
 
 
@@ -43,7 +44,7 @@ def run(args) -> int:
     from ..reference.genes import model_genes
     from ..train.config import TrainingConfig
     from ..train.workflow import run_training
-    device = resolve_device(args.device or "auto")     # as the API's device="auto": CUDA, then MPS, then CPU
+    device = resolve_device(args.device)
     out = args.out or __import__("tempfile").mkdtemp(prefix="alignair_demo_")  # zero-arg `alignair demo`
     os.makedirs(out, exist_ok=True)
     bundle = os.path.join(out, "bundle")
