@@ -1,7 +1,7 @@
 """One set of CLI options (P2-D9): ``--device`` defaults to auto with one help text; every command that resolves a
 model takes the same model-source options and passes them on; machine output is ``--json`` everywhere (``--format``
 is gone); ``info`` takes a path or a registry id (``models info`` and the ``model`` alias are gone); ``genotype``
-reads its table as a positional input (``--airr`` is gone)."""
+reads its table as a positional input (``--airr`` is gone); a disk error while caching a model is IO_FAILED."""
 import argparse
 import hashlib
 import json
@@ -118,6 +118,24 @@ def test_info_takes_a_registry_id_and_prints_the_card_of_its_file(tmp_path, monk
     card = capsys.readouterr().out
     assert main(["info", "chip@1.0.0", "--registry", registry]) == 0
     assert capsys.readouterr().out == card and "alleles:" in card
+
+
+@pytest.mark.parametrize("argv", [
+    ["info", "chip@1.0.0"],
+    ["predict", "--model", "chip@1.0.0", "--input", "reads.fasta", "--out", "out.tsv", "--quiet"],
+    ["benchmark", "--model", "chip@1.0.0", "--dataconfig", "HUMAN_IGH_OGRDB"],
+], ids=lambda argv: argv[0])
+def test_a_disk_error_while_caching_a_model_is_io_failed(argv, tmp_path, monkeypatch, capsys):
+    from alignair.registry import cache
+    registry = _chip_registry(tmp_path, monkeypatch)
+    monkeypatch.chdir(tmp_path)
+
+    def full(*args, **kwargs):
+        raise OSError(28, "No space left on device", str(tmp_path / "cache"))
+    monkeypatch.setattr(cache, "download_verified", full)
+    assert main(["--error-format", "json", *argv, "--registry", registry]) != 0
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "ALIGNAIR_IO_FAILED" and payload["context"]["errno"] == 28
 
 
 def test_info_on_a_model_file_that_does_not_exist_is_model_not_found(tmp_path, capsys):
