@@ -39,8 +39,8 @@ def _config_fields() -> frozenset:
 
 def v3_refusal(architecture: str) -> ModelError:
     """The refusal of an AlignAIR 3 model file (architecture ``architecture``)."""
-    return ModelError(f"this is an AlignAIR 3 model (architecture {architecture!r}); AlignAIR 4 reads chip models "
-                      "only — use alignair<4 to run it", context={"architecture": architecture},
+    return ModelError(f"this is an AlignAIR 3 model (architecture {architecture!r}); AlignAIR 4 runs AlignAIR 4 "
+                      "models only — use alignair<4 to run it", context={"architecture": architecture},
                       hint="pip install 'alignair<4' runs it.")
 
 

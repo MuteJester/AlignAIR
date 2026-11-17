@@ -108,7 +108,8 @@ class ChipCore(nn.Module):
         missing = [gene.upper() for gene in self.genes if gene.upper() not in reference.genes]
         if missing:
             segments = ", ".join(gene.upper() for gene in self.genes[:-1]) + " and " + self.genes[-1].upper()
-            raise ConfigurationError(f"the bound reference has no {', '.join(missing)} alleles for the chip's genes",
+            raise ConfigurationError(f"the reference has no {', '.join(missing)} alleles, but this model calls "
+                                     f"{segments}",
                                      context={"missing": missing, "genes": list(self.genes)},
                                      hint=f"This model calls {segments}: give the reference all of them (alignair "
                                           f"reference export writes the model's own), or use a model of the "

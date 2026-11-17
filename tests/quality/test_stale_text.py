@@ -90,3 +90,50 @@ def _own_docstring(value) -> str:
 def test_the_public_api_has_docstrings():
     missing = sorted({name for name, value in public_api() if not _own_docstring(value)})
     assert not missing, missing
+
+
+# Words of the model's internals that a repertoire researcher reading a message or --help need not know.
+_INTERNAL_WORDS = re.compile(r"\b(neural|chip|trunk|heads|bank|forward pass|embeddings?|curriculum|logits?)\b",
+                             re.IGNORECASE)
+
+
+def test_user_facing_messages_use_plain_words(tmp_path):
+    """The refusals a user meets name what to do in their own terms: a reference without the model's D, and an
+    AlignAIR 3 model file."""
+    import warnings
+
+    import GenAIRR.data as gd
+
+    from alignair import Aligner, ReferenceSet
+    from alignair.errors import AlignAIRError
+    from alignair.model_file import load_model
+    from tests.alignair.model_file.conftest import write_v3_header_file
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    messages = []
+    with pytest.raises(AlignAIRError) as caught, warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        Aligner.from_pretrained(str(TEST_CHIP), device="cpu", reference=ReferenceSet.from_dataconfigs(gd.HUMAN_IGK_OGRDB))
+    messages.append(f"{caught.value.message} {caught.value.hint}")
+    with pytest.raises(AlignAIRError) as caught:
+        load_model(write_v3_header_file(tmp_path))
+    messages.append(f"{caught.value.message} {caught.value.hint}")
+    assert [m for m in messages if _INTERNAL_WORDS.search(m)] == []
+
+
+def _help_texts(parser, path=("alignair",)):
+    import argparse
+    yield " ".join(path), parser.description or ""
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for choice in action._choices_actions:
+                yield " ".join((*path, choice.dest)), choice.help or ""
+            for name, child in action.choices.items():
+                yield from _help_texts(child, (*path, name))
+        elif action.help:
+            yield f"{' '.join(path)} {'/'.join(action.option_strings) or action.dest}", action.help
+
+
+def test_cli_help_uses_plain_words():
+    from alignair.cli.main import build_parser
+    found = [f"{where}: {text}" for where, text in _help_texts(build_parser()) if _INTERNAL_WORDS.search(text)]
+    assert found == []

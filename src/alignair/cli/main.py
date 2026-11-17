@@ -38,9 +38,12 @@ _COMMANDS = (_predict_cmd, _train_cmd, _demo_cmd, _doctor_cmd, _info_cmd, _model
 
 
 def _add_reporting_options(parser, *, root=True):
-    parser.add_argument("--debug", action="store_true", default=False if root else argparse.SUPPRESS,
+    """``--debug`` and ``--error-format`` on ``parser`` and every subcommand, in a subcommand's "messages" option group
+    when it has one."""
+    target = next((group for group in parser._action_groups if group.title == "messages"), parser)
+    target.add_argument("--debug", action="store_true", default=False if root else argparse.SUPPRESS,
                         help="include the full exception traceback on errors")
-    parser.add_argument("--error-format", choices=("text", "json"),
+    target.add_argument("--error-format", choices=("text", "json"),
                         default="text" if root else argparse.SUPPRESS,
                         help="runtime error format on stderr (default: text)")
     for action in parser._actions:
@@ -52,7 +55,7 @@ def _add_reporting_options(parser, *, root=True):
 def build_parser() -> argparse.ArgumentParser:
     """The ``alignair`` parser, every subcommand registered."""
     parser = argparse.ArgumentParser(prog="alignair",
-                                     description="AlignAIR — a neural aligner for IG/TCR repertoires.")
+                                     description="AlignAIR — V(D)J allele assignment for IG and TCR repertoires.")
     parser.add_argument("--version", action="version", version=f"alignair {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     for cmd in _COMMANDS:

@@ -58,4 +58,4 @@ def test_train_help_bounds_the_data_workers_by_the_curriculum_streams():
     """As ``TrainingConfig`` documents: a worker process serves one curriculum stream at most."""
     (subcommands,) = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
     (workers,) = [a for a in subcommands.choices["train"]._actions if "--data-workers" in a.option_strings]
-    assert "at most one per curriculum stream: 28 for the default mix" in workers.help
+    assert "at most 28 are used" in workers.help

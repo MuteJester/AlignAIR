@@ -30,3 +30,46 @@ def test_a_refused_reference_names_the_flag_that_sets_it(tmp_path, capsys):
     assert rc != 0
     err = capsys.readouterr().err
     assert "needs a V FASTA, a J FASTA and a chain type" in err and "--j-fasta sets it" in err
+
+
+class _Stop(Exception):
+    """Raised by the stand-in run_training once it has the configuration."""
+
+
+def _capture_config(monkeypatch) -> dict:
+    seen = {}
+
+    def run_training(config, **kwargs):
+        seen["config"] = config
+        raise _Stop
+    monkeypatch.setattr("alignair.train.workflow.run_training", run_training)
+    return seen
+
+
+def test_train_init_from_reaches_the_training_config(tmp_path, monkeypatch):
+    """``--init-from`` starts the run from a model's weights, as ``TrainingConfig(init_from=)`` does in Python."""
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    seen = _capture_config(monkeypatch)
+    main(["train", "--dataconfig", "HUMAN_IGH_OGRDB", "--out", str(tmp_path / "run"), "--steps", "1",
+          "--init-from", str(TEST_CHIP)])           # the stand-in stops the run (main reports its _Stop)
+    assert str(seen["config"].init_from) == str(TEST_CHIP)
+
+
+def test_train_init_from_takes_a_registry_id(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    import shutil
+
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "cache"))
+    registry = tmp_path / "registry"
+    (registry / "chip").mkdir(parents=True)
+    shutil.copyfile(TEST_CHIP, registry / "chip" / "1.0.0.alignair")
+    sha = hashlib.sha256(TEST_CHIP.read_bytes()).hexdigest()
+    (registry / "registry.json").write_text(json.dumps({"schema": "alignair.registry.v1", "models": {"chip": {
+        "latest": "1.0.0", "versions": {"1.0.0": {"file": "chip/1.0.0.alignair", "artifact_sha256": sha}}}}}))
+    monkeypatch.setenv("ALIGNAIR_REGISTRY", f"file://{registry}")
+    seen = _capture_config(monkeypatch)
+    main(["train", "--dataconfig", "HUMAN_IGH_OGRDB", "--out", str(tmp_path / "run"), "--steps", "1",
+          "--init-from", "chip@1.0.0"])
+    assert hashlib.sha256(open(seen["config"].init_from, "rb").read()).hexdigest() == sha

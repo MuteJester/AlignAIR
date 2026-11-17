@@ -6,7 +6,7 @@ Run commands from the repository root unless an example says otherwise.
 
 | Example | Included files |
 | --- | --- |
-| [Basic prediction](reads.fasta) | Eight simulated human IGH reads |
+| [Basic prediction](reads.fasta) | Twenty productive human IGH reads simulated by GenAIRR (`make_example_reads.py` writes them) |
 | [Donor genotype](donor_genotype/) | Two allele subsets for genotype-constrained prediction |
 | [10x metadata](10x/) | Four IGH contigs and matching Cell Ranger-style annotations |
 | [AIRR input](airr/) | A sequence table and sample metadata |

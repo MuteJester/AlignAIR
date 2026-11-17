@@ -28,3 +28,21 @@ def test_the_bank_refuses_a_genotype_naming_alleles_the_reference_lacks():
     with pytest.raises(UnknownAlleleError, match="NOT-A-REAL-ALLELE") as caught:
         genotype_bank(reference, {"v": {"IGHV1-2*01", "NOT-A-REAL-ALLELE"}})
     assert "--reference" in caught.value.hint and isinstance(caught.value, ValueError)
+
+
+def test_load_genotype_reads_an_airr_genotype_set(tmp_path):
+    """The AIRR GenotypeSet ``alignair genotype`` (and ``--genotype-out``) writes is a genotype file too: its
+    documented alleles, each segment from its name."""
+    from alignair.genotype.airr import write_genotype_set
+    path = tmp_path / "genotype.json"
+    write_genotype_set(path, {"IGHV1-2": ["IGHV1-2*02", "IGHV1-2*04"], "IGHJ4": ["IGHJ4*02"]}, "IGH")
+    assert load_genotype(str(path)) == {"v": {"IGHV1-2*02", "IGHV1-2*04"}, "j": {"IGHJ4*02"}}
+
+
+def test_a_genotype_set_label_whose_segment_cannot_be_told_is_refused(tmp_path):
+    from alignair.errors import ConfigurationError
+    from alignair.genotype.airr import write_genotype_set
+    path = tmp_path / "genotype.json"
+    write_genotype_set(path, {"x": ["mystery-allele*01"]}, "IGH")
+    with pytest.raises(ConfigurationError, match="mystery-allele"):
+        load_genotype(str(path))

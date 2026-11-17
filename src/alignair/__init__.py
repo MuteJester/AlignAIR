@@ -1,4 +1,4 @@
-"""AlignAIR — a neural aligner for IG/TCR repertoires.
+"""AlignAIR — V(D)J allele assignment for IG and TCR repertoires.
 
 The stable object API (recommended):
 

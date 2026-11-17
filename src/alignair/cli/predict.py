@@ -28,68 +28,75 @@ from ._errors import fail
 from ._options import MODEL_HELP, add_device, add_model_source, model_sources, resolve_model_path
 from .predict_run import RunCounts, RunIO
 
+# The purposes predict's options are grouped by, in --help and in the docs' option reference.
+PREDICT_GROUPS = ("model", "input and output", "output columns", "metadata join", "genotype and reference",
+                  "performance", "quality gates", "messages")
+
 
 def register(sub) -> None:
     p = sub.add_parser("predict", help="align reads with a trained model -> AIRR TSV")
-    p.add_argument("--model", required=True, help=MODEL_HELP)
-    p.add_argument("--input", required=True, help="reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)")
-    p.add_argument("--out", required=True, help="output AIRR TSV path")
-    p.add_argument("--sequence-column", default=None, help="sequence column name (CSV/TSV input)")
-    p.add_argument("--id-column", default=None, help="id column name (CSV/TSV input)")
-    p.add_argument("--metadata", default=None,
+    model, io, columns, meta, genotype, perf, gates, messages = (p.add_argument_group(title)
+                                                                 for title in PREDICT_GROUPS)
+    model.add_argument("--model", required=True, help=MODEL_HELP)
+    io.add_argument("--input", required=True, help="reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)")
+    io.add_argument("--out", required=True, help="output AIRR TSV path")
+    io.add_argument("--sequence-column", default=None, help="sequence column name (CSV/TSV input)")
+    io.add_argument("--id-column", default=None, help="id column name (CSV/TSV input)")
+    meta.add_argument("--metadata", default=None,
                    help="per-read metadata table (e.g. 10x filtered_contig_annotations.csv / an AIRR TSV) "
                         "to join by id and carry into output (cell_id/barcode/umi_count/…)")
-    p.add_argument("--metadata-id-column", default=None, help="id column in the --metadata table")
-    p.add_argument("--keep-columns", default=None,
+    meta.add_argument("--metadata-id-column", default=None, help="id column in the --metadata table")
+    meta.add_argument("--keep-columns", default=None,
                    help="comma-separated metadata columns to carry through (default: known 10x/AIRR set)")
-    p.add_argument("--rejects-out", default=None,
+    io.add_argument("--rejects-out", default=None,
                    help="write dropped/invalid input records here (id, position, reason, sequence)")
-    p.add_argument("--locus", default=None,
+    io.add_argument("--locus", default=None,
                    help="locus label for records the model can't attribute (default: the model's locus "
                         "if it declares exactly one; else IGH). With several loci, each record carries its called "
                         "V's locus (blank without a V call).")
-    p.add_argument("--columns", default=None,
+    columns.add_argument("--columns", default=None,
                    help="output columns: a preset (full/core/minimal/airr) or a comma-separated "
                         "field list (default: full). Light selections skip the AIRR assembly for speed.")
-    add_device(p)
-    p.add_argument("--batch-size", type=int, default=None,
+    add_device(perf)
+    perf.add_argument("--batch-size", type=int, default=None,
                    help="reads per batch (default: 256 on a GPU, 16 per worker with --threads on the CPU, else 64)")
-    p.add_argument("--threads", type=int, default=None,
+    perf.add_argument("--threads", type=int, default=None,
                    help="CPU threads: on the CPU, N worker processes of one thread each (torch's threads scale "
                         "poorly on read batches); on a GPU, torch's CPU threads (default: one process on torch's "
                         "own thread count)")
-    p.add_argument("--chunk-size", type=int, default=20000,
+    perf.add_argument("--chunk-size", type=int, default=20000,
                    help="stream the input in chunks of this many reads (default 20000)")
-    p.add_argument("--genotype", default=None,
-                   help="genotype JSON/YAML {V|D|J: [allele names]}: the bank the calls come from, a subset of the "
-                        "bound reference (--reference may add novel alleles)")
-    p.add_argument("--reference", default=None,
+    genotype.add_argument("--genotype", default=None,
+                   help="a donor's genotype: JSON/YAML {V|D|J: [allele names]} or the AIRR GenotypeSet `alignair "
+                        "genotype` writes; calls come only from its alleles, a subset of the reference "
+                        "(--reference may add novel alleles)")
+    genotype.add_argument("--reference", default=None,
                    help="germline FASTA (V, D and J alleles) to call from, novel alleles included. Missing IMGT "
                         "gaps and anchors are taken from the model's own reference (the same allele, or a close "
                         "same-length variant)")
-    p.add_argument("--infer-genotype", action="store_true",
+    genotype.add_argument("--infer-genotype", action="store_true",
                    help="infer the donor's V genotype from the reads' own calls (TIgGER's frequency rule on the "
                         "reads whose V call is a single allele) and re-call the reads whose call it excludes while "
                         "they tie an allele it allows; writes the genotype to --genotype-out. Reads the input twice")
-    p.add_argument("--genotype-out", default=None,
+    genotype.add_argument("--genotype-out", default=None,
                    help="where --infer-genotype writes the genotype, an AIRR GenotypeSet "
                         "(default: <out>.genotype.json)")
-    p.add_argument("--genotype-explain", type=float, default=EXPLAIN,
+    genotype.add_argument("--genotype-explain", type=float, default=EXPLAIN,
                    help=f"--infer-genotype: the share of a gene's single-allele reads its alleles explain "
                         f"(default {EXPLAIN})")
-    p.add_argument("--genotype-min-reads", type=int, default=MIN_READS,
+    genotype.add_argument("--genotype-min-reads", type=int, default=MIN_READS,
                    help=f"--infer-genotype: the single-allele reads a gene needs to be genotyped; a gene with fewer "
                         f"keeps every allele (default {MIN_READS})")
-    add_model_source(p)
-    p.add_argument("--quiet", action="store_true", help="suppress the update-available notice")
-    p.add_argument("--no-run-metadata", action="store_true", help="do not write the <out>.run.json sidecar")
-    p.add_argument("--max-assembly-failures", type=float, default=0.01,
+    add_model_source(model)
+    messages.add_argument("--quiet", action="store_true", help="suppress the update-available notice")
+    io.add_argument("--no-run-metadata", action="store_true", help="do not write the <out>.run.json sidecar")
+    gates.add_argument("--max-assembly-failures", type=float, default=0.01,
                    help="fail the job if the AIRR-assembly FAILURE rate exceeds this fraction "
                         "(default 0.01); failures are always tagged per row regardless")
-    p.add_argument("--max-partial-assemblies", type=float, default=1.0,
+    gates.add_argument("--max-partial-assemblies", type=float, default=1.0,
                    help="fail the job if the PARTIAL-assembly rate exceeds this fraction "
                         "(default 1.0 = never; partial rows are always tagged with a reason)")
-    p.add_argument("--permissive", action="store_true",
+    gates.add_argument("--permissive", action="store_true",
                    help="never fail on assembly failure/partial rates (dirty repertoires); still tags rows")
     p.set_defaults(func=run)
 

@@ -34,9 +34,11 @@ def register(sub) -> None:
     p.add_argument("--val-every", type=int, default=None, help="override the preset's validation interval")
     p.add_argument("--seed", type=int, default=0, help="seed of the training data and initial weights (default 0)")
     p.add_argument("--data-workers", type=int, default=0,
-                   help="generate training data in this many worker processes (at most one per curriculum "
-                        "stream: 28 for the default mix, 7 components of 4 streams); the batches are identical "
-                        "to --data-workers 0 (default: 0)")
+                   help="generate training data in this many worker processes (at most 28 are used); the batches "
+                        "are identical to --data-workers 0 (default: 0)")
+    p.add_argument("--init-from", default=None, metavar="MODEL",
+                   help="start from this model's weights (a model file, a registry id or hf://org/repo) to fine-tune "
+                        "it: the weights whose shapes match are copied, the rest start fresh")
     p.add_argument("--plan", action="store_true",
                    help="validate the reference/config and print the plan WITHOUT training")
     add_device(p)
@@ -90,6 +92,9 @@ def run(args) -> int:
         overrides["batch_size"] = args.batch_size
     if args.val_every is not None:
         overrides["val_every"] = args.val_every
+    if args.init_from is not None:
+        from ..registry import resolve_model
+        overrides["init_from"] = str(resolve_model(args.init_from))
     cfg = TrainingConfig.from_genairr(*dcs, preset=args.preset, **overrides)
 
     plan = training_plan(dcs, steps=cfg.steps, batch_size=cfg.batch_size)

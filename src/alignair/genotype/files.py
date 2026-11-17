@@ -42,15 +42,34 @@ def check_segment_values(genotype, *, source: str = "the genotype is not {V|D|J:
 
 def load_genotype(path: str) -> dict[str, set[str]]:
     """Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment
-    works too; the sequences are ignored). Returns ``{segment: set(names)}``, segments lower-case. ConfigurationError
-    for a file that is not such a mapping, or one keyed by gene names. ``genotype_bank`` checks its alleles against a
+    works too; the sequences are ignored), or an AIRR GenotypeSet such as ``alignair genotype`` writes. Returns
+    ``{segment: set(names)}``, segments lower-case. ConfigurationError for a file that is not such a mapping, or one
+    keyed by gene names. ``genotype_bank`` checks its alleles against a
     reference."""
     with open(path) as f:
         text = f.read()
     data = _parse(text, path)
+    if "genotype_class_list" in data:                   # an AIRR GenotypeSet (``alignair genotype`` writes one)
+        data = _segments_of_genotype_set(data, path)
     check_segment_keys(data, source=f"{path}", context={"path": path})
     check_segment_values(data, source=f"{path} is not a YAML or JSON genotype", context={"path": path})
     return {str(g).lower(): {str(n) for n in names} for g, names in data.items()}
+
+
+def _segments_of_genotype_set(genotype_set: dict, path: str) -> dict[str, list[str]]:
+    """The documented alleles of every genotype in an AIRR GenotypeSet, by segment (the letter after the locus in each
+    name: IGHV1-2*02 is V). ConfigurationError for a label whose segment its name does not tell."""
+    segments: dict[str, list[str]] = {}
+    for genotype in genotype_set.get("genotype_class_list") or []:
+        for allele in genotype.get("documented_alleles") or []:
+            label = str(allele.get("label", ""))
+            match = _GENE_NAME.match(label)
+            if match is None:
+                raise ConfigurationError(f"{path}: the GenotypeSet allele {label!r} does not name its segment "
+                                         "(V, D or J after the locus, e.g. IGHV1-2*02)",
+                                         context={"path": path, "allele": label}, hint=FORMAT_HINT)
+            segments.setdefault(label[match.end() - 1].upper(), []).append(label)
+    return segments
 
 
 def _parse(text: str, path: str) -> dict:

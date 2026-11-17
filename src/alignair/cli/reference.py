@@ -22,6 +22,8 @@ def register(sub) -> None:
     ep = rsub.add_parser("export", help="write a model file's germline FASTA")
     ep.add_argument("model", help="a model file (.alignair)")
     ep.add_argument("--fasta", required=True, help="write the germline V/D/J FASTA here")
+    ep.add_argument("--gapped", action="store_true",
+                    help="write each V allele IMGT-gapped, as Change-O's CreateGermlines.py needs (D, J as they are)")
     ep.set_defaults(func=run_export)
 
 
@@ -57,8 +59,9 @@ def _chain_matches(query: str, row: dict) -> bool:
 
 
 def run_export(args) -> int:
-    from ..model_file import read_reference
+    from ..model_file import read_reference, read_reference_gapped
+    text = (read_reference_gapped if args.gapped else read_reference)(args.model)
     with open(args.fasta, "w") as f:
-        f.write(read_reference(args.model))
+        f.write(text)
     print(f"wrote {args.fasta}")
     return 0

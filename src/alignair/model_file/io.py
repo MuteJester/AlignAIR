@@ -366,3 +366,22 @@ def read_dataconfig(path: str | os.PathLike[str], index: int) -> DataConfig:
 def read_reference(path: str | os.PathLike[str]) -> str:
     """A model file's reference as FASTA text (its ``reference`` section)."""
     return container.read_section(path, "reference").decode("utf-8")
+
+
+def read_reference_gapped(path: str | os.PathLike[str]) -> str:
+    """``read_reference``'s FASTA with each V allele IMGT-gapped (the form Change-O's ``CreateGermlines.py`` reads),
+    D and J as they are. A ConfigurationError naming the V alleles the reference holds no gapped form of."""
+    v = serialize.reference_from_json(container.read_section(path, "reference_json")).gene("V")
+    gapped = v.gapped or {}
+    missing = [name for name in v.names if name not in gapped]
+    if missing:
+        raise ConfigurationError(f"the model's reference has no IMGT-gapped form of {len(missing)} V allele(s): "
+                                 f"{', '.join(missing[:5])}", context={"alleles": missing},
+                                 hint="Export without --gapped, or gap these alleles against IMGT's.")
+    records: list[list[str]] = []
+    for line in read_reference(path).splitlines():
+        if line.startswith(">"):
+            records.append([line, ""])
+        elif records:
+            records[-1][1] += line.strip()
+    return "".join(f"{header}\n{gapped.get(header[1:].split()[0], sequence)}\n" for header, sequence in records)

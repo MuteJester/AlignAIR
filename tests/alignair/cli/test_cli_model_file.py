@@ -89,3 +89,55 @@ def test_the_duplicate_export_reference_verb_is_gone(tmp_path, capsys):
     with pytest.raises(SystemExit) as caught:
         main(["export-reference", _save(tmp_path), "--fasta", str(tmp_path / "ref.fasta")])
     assert caught.value.code == 2
+
+
+def _fasta_records(text: str) -> dict[str, str]:
+    records, name = {}, None
+    for line in text.splitlines():
+        if line.startswith(">"):
+            name = line[1:].split()[0]
+            records[name] = ""
+        elif name:
+            records[name] += line.strip()
+    return records
+
+
+def test_reference_export_gapped_writes_imgt_gapped_v_for_change_o(tmp_path, capsys):
+    """``--gapped`` writes each V allele IMGT-gapped (as Change-O's CreateGermlines.py needs) and D and J as they
+    are."""
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    plain, gapped = tmp_path / "plain.fasta", tmp_path / "gapped.fasta"
+    assert main(["reference", "export", str(TEST_CHIP), "--fasta", str(plain)]) == 0
+    assert main(["reference", "export", str(TEST_CHIP), "--fasta", str(gapped), "--gapped"]) == 0
+    reference = mf.load_model(str(TEST_CHIP)).reference
+    plain_records, gapped_records = _fasta_records(plain.read_text()), _fasta_records(gapped.read_text())
+    assert list(gapped_records) == list(plain_records)
+    v = reference.gene("V")
+    assert all(gapped_records[name] == v.gapped[name] for name in v.names)
+    assert all("." in gapped_records[name] for name in v.names)
+    assert all(gapped_records[name] == plain_records[name] for name in plain_records if name not in v.names)
+
+
+def test_reference_export_without_gapped_is_unchanged(tmp_path, capsys):
+    from tests.alignair.predict.golden_rows import TEST_CHIP
+    fasta = tmp_path / "ref.fasta"
+    assert main(["reference", "export", str(TEST_CHIP), "--fasta", str(fasta)]) == 0
+    assert fasta.read_text() == mf.read_reference(TEST_CHIP)
+
+
+def test_a_gapped_export_of_a_reference_without_imgt_gaps_is_refused(tmp_path, capsys):
+    """A V allele with no IMGT-gapped form is named, not written ungapped among gapped ones."""
+    import copy
+    import dataclasses
+    reference = copy.deepcopy(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB))
+    v = reference.gene("V")
+    first = v.names[0]
+    reference.genes["V"] = dataclasses.replace(v, gapped={n: g for n, g in v.gapped.items() if n != first})
+    cfg = prepare_model(reference, max_seq_length=576).config
+    path = tmp_path / "m.alignair"
+    mf.save_model(str(path), AlignAIR(cfg), reference, training={"steps": 2, "batch_size": 3})
+    assert main(["--error-format", "json", "reference", "export", str(path), "--fasta",
+                 str(tmp_path / "g.fasta"), "--gapped"]) != 0
+    import json
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["code"] == "ALIGNAIR_CONFIG_INVALID" and first in payload["context"]["alleles"]

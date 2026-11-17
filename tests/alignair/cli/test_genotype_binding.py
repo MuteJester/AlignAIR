@@ -191,3 +191,25 @@ def test_bound_to_annotates_a_reference_against_the_aligners_own(tmp_path):
     keys = ("v_call", "d_call", "j_call", "junction", "v_germline_start", "j_germline_end")
     assert [{k: r[k] for k in keys} for r in bound.predict(reads, batch_size=4).to_dicts()] == [
         {k: r[k] for k in keys} for r in aligner.predict(reads, batch_size=4).to_dicts()]
+
+
+def test_predict_takes_the_genotype_alignair_genotype_wrote(fasta, tmp_path):
+    """``alignair genotype``'s GenotypeSet goes straight back into ``predict --genotype``."""
+    import csv
+
+    from alignair import model_file
+    from alignair.cli.main import main
+    names = list(model_file.load_model(str(TEST_CHIP)).reference.gene("V").names[:3])
+    table = tmp_path / "calls.tsv"
+    with open(table, "w", newline="") as handle:
+        writer = csv.writer(handle, delimiter="\t")
+        writer.writerow(["sequence_id", "v_call"])
+        writer.writerows([[f"r{i}", names[i % 3]] for i in range(60)])
+    genotype = tmp_path / "genotype.json"
+    assert main(["genotype", str(table), "--out", str(genotype), "--min-reads", "1"]) == 0
+    out = tmp_path / "out.tsv"
+    assert main(["predict", "--model", str(TEST_CHIP), "--input", str(fasta), "--out", str(out),
+                 "--genotype", str(genotype), "--device", "cpu", "--quiet"]) == 0
+    with open(out) as handle:
+        calls = {row["v_call"].split(",")[0] for row in csv.DictReader(handle, delimiter="\t") if row["v_call"]}
+    assert calls <= set(names)

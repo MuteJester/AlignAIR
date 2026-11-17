@@ -177,3 +177,32 @@ def _model_argument(path):
 def test_every_command_that_resolves_a_model_describes_its_model_argument_once():
     helps = {_model_argument(path).help for path in RESOLVERS}
     assert len(helps) == 1 and "hf://" in helps.pop()
+
+
+PREDICT_GROUPS_EXPECTED = {
+    "model": {"--model", "--registry", "--offline", "--revision", "--hf-token"},
+    "input and output": {"--input", "--out", "--sequence-column", "--id-column", "--rejects-out", "--locus",
+                         "--no-run-metadata"},
+    "output columns": {"--columns"},
+    "metadata join": {"--metadata", "--metadata-id-column", "--keep-columns"},
+    "genotype and reference": {"--genotype", "--reference", "--infer-genotype", "--genotype-out", "--genotype-explain",
+                               "--genotype-min-reads"},
+    "performance": {"--device", "--batch-size", "--threads", "--chunk-size"},
+    "quality gates": {"--max-assembly-failures", "--max-partial-assemblies", "--permissive"},
+    "messages": {"--quiet", "--debug", "--error-format"},
+}
+
+
+def test_predict_options_are_grouped_by_purpose(capsys):
+    """``alignair predict --help`` lists its options under the purposes the docs' option reference uses."""
+    from alignair.cli.predict import PREDICT_GROUPS
+    parser = _parser("predict")
+    assert tuple(PREDICT_GROUPS_EXPECTED) == PREDICT_GROUPS
+    grouped = {group.title: {flag for action in group._group_actions for flag in action.option_strings
+                             if flag.startswith("--")} for group in parser._action_groups
+               if group.title in PREDICT_GROUPS}
+    assert grouped == PREDICT_GROUPS_EXPECTED
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["predict", "--help"])
+    text = capsys.readouterr().out
+    assert all(f"{title}:" in text for title in PREDICT_GROUPS)
