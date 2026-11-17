@@ -3,23 +3,11 @@ import { adjacent, sectionsFor } from "./nav";
 import { startPages } from "./pages-start";
 import { comingFromPages } from "./pages-coming-from";
 import { usePages } from "./pages-use";
-import { trainingPages } from "./pages-guides";
-import { guides2Pages } from "./pages-guides2";
-import { airrFieldsPages } from "./pages-airrfields";
+import { resultsPages } from "./pages-results";
 import { referencePages } from "./pages-reference";
-import { errorPages } from "./pages-errors";
-import { evalPages } from "./pages-eval";
-import { maintainerPages } from "./pages-maintainer";
-import { testingPages } from "./pages-testing";
-import { setupPages } from "./pages-setup";
-import { compositionPages } from "./pages-composition";
-import { streamPages } from "./pages-streams";
-import { taskPages } from "./pages-tasks";
-import { batchingPages } from "./pages-batching";
-import { enginePages } from "./pages-engine";
-import { trainingWorkflowPages } from "./pages-training-workflow";
-import { inferencePages } from "./pages-inference";
-import { communityPages } from "./pages-community";
+import { trainPages } from "./pages-train";
+import { projectPages } from "./pages-project";
+import { developerPages } from "./pages-developers";
 
 /**
  * Every docs page. The sidebar and Previous/Next order them by section (nav.ts): the user's journey (Get started,
@@ -30,23 +18,11 @@ export const DOCS: DocPage[] = [
   ...startPages, // install, first-alignment, concepts, how-alignair-works  [Get started]
   ...comingFromPages, // from-igblast, from-mixcr, from-immcantation  [Coming from…]
   ...usePages, // choose-a-model … fix-common-problems  [Use on your data]
-  ...guides2Pages, // cli, python-api, integrations  [Using AlignAIR]
-  ...airrFieldsPages, // airr-fields  [Reference]
-  ...errorPages, // errors  [Reference]
-  ...referencePages, // model-contract, known-failure-modes, troubleshooting
-  ...trainingPages, // training  [Training]
-  ...trainingWorkflowPages, // training-workflow  [Training]
-  ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
-  ...compositionPages, // model-composition  [Design]
-  ...setupPages, // model-setup  [Design]
-  ...streamPages, // curriculum-sources  [Design]
-  ...taskPages, // training-tasks  [Design]
-  ...batchingPages, // training-batches  [Design]
-  ...enginePages, // training-engine  [Design]
-  ...inferencePages, // model-inference  [Design]
-  ...maintainerPages, // publishing  [Maintainer]
-  ...testingPages, // testing  [Maintainer]
-  ...communityPages, // citation-support  [Community]
+  ...resultsPages, // output-columns, trust-the-calls, comparison  [Understand the results]
+  ...referencePages, // cli, python-api, column-dictionary, model-cards, error-codes, cache-and-environment  [Reference]
+  ...trainPages, // do-i-need-to-train, train, fine-tune, evaluate, share  [Train or fine-tune]
+  ...projectPages, // cite, support, changelog  [Project]
+  ...developerPages, // architecture, testing, publishing, contributing  [Developers]
 ];
 
 export { audienceOf, sectionsFor } from "./nav";

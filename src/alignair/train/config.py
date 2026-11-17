@@ -34,7 +34,7 @@ class TrainingConfig:
 
     Model options are copied on construction and checked with ``max_seq_length`` and ``has_d`` as the model
     configuration they build (``AlignAIRConfig``); the allele counts come from the bound reference.
-    ``data_workers`` > 0 generates training data in that many worker processes (one per curriculum
+    ``data_workers`` > 0 generates training data in that many worker processes (one per training-data
     stream at most: 28 for the default mix, 7 components of 4 streams); the batches are those of
     ``data_workers=0``, so it is not part of model identity.
     ``init_seed`` None seeds the model's initial weights from ``seed``. An int
@@ -46,15 +46,15 @@ class TrainingConfig:
     draw in the training step or an ``on_iteration`` callback raises TrainingError;
     use ``data_workers=0`` there.
     ``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant
-    region) around the curriculum's reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the
-    chip's recipe; None trains on the bare reads.
+    region) around the simulated training reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the
+    shipped models' recipe; None trains on the bare reads.
     ``novel_alleles`` (``train.records.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and
-    puts their rows in each batch's bank (``data.novel_bank``), so the model does not memorise the training alleles:
-    by default ``NovelAlleles()``, the shipped models' recipe; None trains on the dataconfigs' alleles alone, as does a
-    run whose reference they cannot be drawn for (a dataconfig with no eligible V, loci of several species, or a custom
-    reference, which names no species), which says so. The model and the saved reference stay the dataconfigs' either
-    way.
-    ``inverted_d`` (0 to 1) inverts the D of that share of the curriculum's records; 0, the default, trains on forward
+    puts their rows in each batch's allele set (``data.novel_bank``), so the model does not memorise the training
+    alleles: by default ``NovelAlleles()``, the shipped models' recipe; None trains on the dataconfigs' alleles alone,
+    as does a run whose reference they cannot be drawn for (a dataconfig with no eligible V, loci of several species,
+    or a custom reference, which names no species), which says so. The model and the saved reference stay the
+    dataconfigs' either way.
+    ``inverted_d`` (0 to 1) inverts the D of that share of the training records; 0, the default, trains on forward
     Ds alone.
     ``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d`` are the run's settings of its record policy
     (``record_policy``), the rest of which is the recipe's.
@@ -132,7 +132,7 @@ class TrainingConfig:
         AlignAIRConfig(**self.model_options, **window, **d_gene)    # the model settings' own checks, before any build
 
     def record_policy(self) -> CurriculumStreamPolicy:
-        """The curriculum record policy the run draws its records with: the recipe's, with this configuration's
+        """The training-record policy the run draws its records with: the recipe's, with this configuration's
         ``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d``."""
         return CurriculumStreamPolicy(short_boost=self.short_boost, flanks=self.flanks,
                                       novel_alleles=self.novel_alleles, inverted_d=self.inverted_d)

@@ -41,8 +41,8 @@ def run_training(config: TrainingConfig, *, output_dir: str | os.PathLike[str] |
     ``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``on_iteration`` is called after each update
     with its ``TrainingIteration`` (``step``, ``result``: the ``StepResult``, and the batch's ``records``).
     ``record_source`` (``train.records.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces
-    the GenAIRR provider of the run's curriculum records. ``config`` validated its values when it was built; the run
-    checks its reference before the model is built.
+    the GenAIRR provider of the run's simulated training records. ``config`` validated its values when it was built;
+    the run checks its reference before the model is built.
     """
     import numpy as np
     import torch

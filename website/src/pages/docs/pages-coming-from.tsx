@@ -180,8 +180,9 @@ aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
           [
             <><code>v_call</code>, <code>d_call</code>, <code>j_call</code></>,
             <>
-              Both list the alleles that match the read equally well, comma-separated after the call (read02 below). On
-              the IG models the names are OGRDB labels.
+              <code>v_call</code> lists the V alleles that match the read equally well, comma-separated after the
+              call (read02 below); AlignAIR's <code>d_call</code> and <code>j_call</code> name one allele. On the IG
+              models the names are OGRDB labels.
             </>,
           ],
           [

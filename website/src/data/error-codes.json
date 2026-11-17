@@ -37,7 +37,7 @@
     "retryable": false,
     "meaning": "A training request is invalid (bad hyperparameters / config / reference). Raised *before* the full model is allocated so misuse fails fast with an actionable message. Its code is a configuration error's.",
     "action": "Change the option or setting the message names; its hint gives the allowed values.",
-    "anchor": "alignair_config_invalid"
+    "anchor": "alignair_config_invalid-trainingconfigerror"
   },
   {
     "code": "ALIGNAIR_DATA_INVALID",

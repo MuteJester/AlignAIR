@@ -162,12 +162,12 @@ class Aligner:
         return cls(model, reference, device=device)
 
     def bound_to(self, reference: ReferenceSet) -> Aligner:
-        """An Aligner that predicts from ``reference`` (its bank, e.g. a donor genotype's subset of the reference): a
-        copy of the model bound to it once, so later calls, and the workers a pool starts from it, use that bank
-        with no per-call binding; the reference is annotated against this Aligner's own (``alignair.reference.
-        annotate``), as one given at load is; one that holds alleles of a locus the model does not call is refused
-        (ConfigurationError). This Aligner is unchanged. The copy is not a model file (``model_path`` is unset), and
-        its label schema names the bank's alleles."""
+        """An Aligner that predicts from ``reference`` (the alleles it calls from, e.g. a donor genotype's subset of
+        the reference): a copy of the model bound to it once, so later calls, and the workers a pool starts from it,
+        use those alleles with no per-call binding; the reference is annotated against this Aligner's own
+        (``alignair.reference.annotate``), as one given at load is; one that holds alleles of a locus the model does
+        not call is refused (ConfigurationError). This Aligner is unchanged. The copy is not a model file
+        (``model_path`` is unset), and its label schema names the reference's alleles."""
         import copy
 
         from .reference import annotate
@@ -235,7 +235,7 @@ class Aligner:
         return PredictionResult(records, locus=self.default_locus, ids=ids)
 
     def predict_raw(self, sequences: Sequence[str], *, batch_size: int | str | None = "auto") -> dict:
-        """The model's raw head arrays; label_schema describes column identity.
+        """The model's raw per-read output arrays; label_schema describes column identity.
 
         This method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the
         read's best allele, model-frame positions). The forward is the one ``predict`` runs (``predict.forward.

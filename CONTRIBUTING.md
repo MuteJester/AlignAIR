@@ -34,7 +34,7 @@ acceptance workflow. The guide includes the equivalent local command. Declare ea
 ## Reporting issues
 
 For exception classes, structured diagnostics, CLI error reporting, and conventions
-for new failure paths, see the [Errors and diagnostics API](https://mutejester.github.io/AlignAIR/#/docs/errors).
+for new failure paths, see the [error codes](https://mutejester.github.io/AlignAIR/#/docs/error-codes).
 
 Use the issue templates: **bug report**, **feature request**, or **model or reference request** (a
 species/locus you'd like a pretrained model for, or a reference that fails to parse or train). Include your

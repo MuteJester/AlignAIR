@@ -61,7 +61,7 @@
     "name": "d_call",
     "kind": "string",
     "unit": "",
-    "meaning": "The D allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "meaning": "The D allele call: one allele (only v_call lists tied alleles).",
     "presets": [
       "full",
       "core",
@@ -73,7 +73,7 @@
     "name": "j_call",
     "kind": "string",
     "unit": "",
-    "meaning": "The J allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "meaning": "The J allele call: one allele (only v_call lists tied alleles).",
     "presets": [
       "full",
       "core",

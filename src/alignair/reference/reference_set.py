@@ -76,7 +76,7 @@ class ReferenceSet:
         return loci[0] if len(loci) == 1 else FALLBACK_LOCUS
 
     def locus_mask(self, locus: str, gene: str) -> np.ndarray:
-        """Boolean mask over the ``gene`` head selecting exactly the alleles that belong to ``locus``.
+        """Boolean mask over the model's allele outputs selecting exactly the alleles that belong to ``locus``.
 
         No schema (single-chain) -> all-True (unconstrained). With a schema, a locus that *has* no
         alleles for this gene (e.g. D on a light chain) -> **all-False** (an explicit no-call), NOT
@@ -103,8 +103,8 @@ class ReferenceSet:
         return reference_from_dataconfigs(*dataconfigs)
 
     def to_serializable(self) -> dict:
-        """Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== model-head
-        index), ungapped ``sequences``, IMGT-``gapped`` V, and junction ``anchors`` — with NO pickle.
+        """Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== the model's
+        output index), ungapped ``sequences``, IMGT-``gapped`` V, and junction ``anchors`` — with NO pickle.
         This is the safe reference the distributed ``.alignair`` embeds and inference rebuilds from."""
         genes: dict[str, dict] = {}
         for G in ("V", "D", "J"):
@@ -174,7 +174,7 @@ class ReferenceSet:
         names that show one locus give it to every allele (those whose name shows none join it); names that show
         several, every allele showing one, group each gene's alleles by locus (loci in order of first appearance over
         V, then J, then D; the file's order within a locus); otherwise there is no schema. The alleles otherwise
-        keep the file's order. A chip reads its alleles from the bound reference, so the result can be bound to a
+        keep the file's order. A model reads its alleles from the bound reference, so the result can be bound to a
         model (``predict --reference``), novel alleles included, or trained against.
         """
         upper = {k.upper(): v for k, v in genes.items()}
@@ -203,7 +203,7 @@ class ReferenceSet:
         """Return a new ReferenceSet keeping only the named alleles per gene (a donor's
         reduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {V|D|J: allele
         names}; a segment it does not name keeps all its alleles. The kept alleles are in this reference's order, each
-        once, whatever order (or set) they are named in: the chip's scores depend on its bank's row order."""
+        once, whatever order (or set) they are named in: the model's scores depend on the alleles' order."""
         want = {g.upper(): set(v) for g, v in allowed.items()}
         out: dict[str, GeneReference] = {}
         for G, ref in self.genes.items():

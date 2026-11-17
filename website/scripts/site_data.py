@@ -163,7 +163,11 @@ def error_codes() -> list:
         entries.append({"code": cls.code, "class": name, "category": cls.category, "exit_code": int(cls.exit_code),
                         "retryable": bool(_example(cls).retryable), "meaning": meaning,
                         "action": ACTIONS.get(cls.code, ""), "anchor": _anchor(cls.code)})
-    return sorted(entries, key=lambda entry: (entry["code"], entry["class"]))
+    entries.sort(key=lambda entry: (entry["code"], entry["class"]))
+    for previous, entry in zip(entries, entries[1:]):    # a code shared by two classes: the later rows by class too
+        if entry["code"] == previous["code"]:
+            entry["anchor"] = _anchor(f"{entry['code']}-{entry['class']}")
+    return entries
 
 
 # ----------------------------------------------------------------------------------------- Python API

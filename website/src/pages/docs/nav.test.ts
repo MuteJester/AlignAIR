@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { USER_SECTIONS, DEVELOPER_SECTIONS, audienceOf, sectionsFor, adjacent } from "./nav.ts";
+import { USER_SECTIONS, DEVELOPER_SECTIONS, audienceOf, sectionsFor, adjacent, movedTo, MOVED } from "./nav.ts";
 
 const pages = [
   { slug: "architecture", title: "Architecture", section: "Developers" },
@@ -35,4 +35,19 @@ test("Next never walks from the user pages into the developer pages, nor back", 
 test("a section the order does not know still shows, after the known ones", () => {
   const extra = [...pages, { slug: "old", title: "Old page", section: "Using AlignAIR" }];
   assert.deepEqual(sectionsFor(extra, "user").map((s) => s.title), ["Get started", "Reference", "Project", "Using AlignAIR"]);
+});
+
+test("an address from before the restructure leads to the page that replaced it", () => {
+  assert.equal(movedTo("/docs/getting-started"), "/docs/first-alignment");
+  assert.equal(movedTo("/docs/models"), "/docs/choose-a-model");
+  assert.equal(movedTo("/docs/training-engine"), "/docs/architecture");
+  assert.equal(movedTo("/learn"), "/docs");
+  assert.equal(movedTo("/learn/predicting/your-first-run"), "/docs/first-alignment");
+  assert.equal(movedTo("/learn/unknown-track/x"), "/docs");
+});
+
+test("a live address is not redirected, and no old slug points at another old slug", () => {
+  assert.equal(movedTo("/docs/first-alignment"), undefined);
+  assert.equal(movedTo("/docs/cli"), undefined);
+  assert.deepEqual(Object.values(MOVED).filter((to) => to in MOVED), []);
 });

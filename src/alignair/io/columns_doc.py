@@ -76,7 +76,8 @@ def _gene_columns(g: str) -> dict[str, ColumnDoc]:
     gene = _GENE[g]
     return {
         f"{g}_call": ColumnDoc("string", "", f"The {gene} allele call; alleles that match the read equally well "
-                                             f"follow it, comma-separated (IgBLAST's convention)."),
+                                             f"follow it, comma-separated (IgBLAST's convention)." if g == "v" else
+                               f"The {gene} allele call: one allele (only v_call lists tied alleles)."),
         f"{g}_identity": ColumnDoc("number", "fraction 0-1", f"The fraction of the aligned {gene} bases that match "
                                                              f"the germline."),
         f"{g}_cigar": ColumnDoc("CIGAR", "", f"The {gene} alignment of the read against its germline, as a CIGAR "

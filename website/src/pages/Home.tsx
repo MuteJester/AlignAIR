@@ -104,8 +104,8 @@ export default function Home() {
           </div>
         </div>
         <p className="mt-4 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-          The first run downloads the model and caches it. A GPU is optional. When a read cannot tell alleles apart,
-          the call lists them all (read02), as IgBLAST does.{" "}
+          The first run downloads the model and caches it. A GPU is optional. When a read cannot tell V alleles apart,
+          <code>v_call</code> lists them all (read02), as IgBLAST does.{" "}
           <Link to="/docs/install" className="font-semibold text-brand-700 underline underline-offset-2 dark:text-brand-300">
             Install options
           </Link>{" "}

@@ -75,7 +75,7 @@ read02       IGHVF10-G42*01,IGHVF10-G42*03  IGHD2-2*02   IGHJ4*02  CAKGTSCNSTSCY
 read03       IGHVF3-G12*02                  IGHD5-18*02  IGHJ6*03  CARDTLNIVATPISAFAIYYYYYMDVW  T
 ```
 
-When a read cannot tell alleles apart, the call lists them all, comma-separated (read02), as IgBLAST does. The IG
+When a read cannot tell V alleles apart, `v_call` lists them all, comma-separated (read02), as IgBLAST does. The IG
 models name alleles as OGRDB does (`IGHVF10-G50*02`); see [Pretrained models](#pretrained-models). To align your own
 reads, point `--input` at your file.
 
@@ -95,7 +95,8 @@ print(result.records[0]["v_call"], result.records[0]["junction_aa"])
 IGHVF10-G50*02 CATFYYGSGSYYNFVSNYNYYGMDVW
 ```
 
-`result.records` holds one dict per read with the same fields as the table.
+`result.records` holds one dict per read, in Python's terms (positions from 0, `True`/`False`); `write_airr` writes
+the AIRR table, which is what tools downstream read.
 
 ## Pretrained models
 

@@ -23,9 +23,9 @@ GENERATOR = 1
 
 @dataclass(frozen=True)
 class NovelAlleles:
-    """How novel alleles enter a curriculum: the share of eligible V genes each epoch makes novel, the number of SNPs
-    of a variant (``(low, high)``, uniform), and the epoch length in seeds (a power of two, so an epoch never
-    straddles two seed blocks)."""
+    """How novel alleles enter the simulated training data: the share of eligible V genes each epoch makes novel, the
+    number of SNPs of a variant (``(low, high)``, uniform), and the epoch length in seeds (a power of two, so an epoch
+    never straddles two seed blocks)."""
     gene_fraction: float = 0.4
     snps: tuple[int, int] = (1, 6)
     epoch_records: int = 4096

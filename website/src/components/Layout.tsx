@@ -11,7 +11,7 @@ const NAV = [
   { label: "CLI reference", to: "/docs/cli" },
   { label: "Python API", to: "/docs/python-api" },
 ];
-const DEVELOPERS = { label: "Developers", to: "/docs/design" };
+const DEVELOPERS = { label: "Developers", to: "/docs/architecture" };
 const PAPER = "https://doi.org/10.1093/nar/gkaf651";
 const GITHUB = "https://github.com/MuteJester/AlignAIR";
 
@@ -122,7 +122,7 @@ function Footer() {
             <div className="flex flex-col gap-2.5">
               <a href={GITHUB} target="_blank" rel="noreferrer" className={link}>GitHub</a>
               <a href="https://huggingface.co/AlignAIR" target="_blank" rel="noreferrer" className={link}>Hugging Face</a>
-              <Link to="/docs/citation-support" className={link}>Cite</Link>
+              <Link to="/docs/cite" className={link}>Cite</Link>
             </div>
           </div>
         </div>

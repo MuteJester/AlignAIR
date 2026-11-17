@@ -20,3 +20,11 @@ def test_the_facts_users_trip_on_are_stated():
     assert {COLUMN_DOCS[c].kind for c in ("productive", "rev_comp", "segmentation_low_quality")} == {"T/F"}
     assert all("candidate set" in COLUMN_DOCS[f"{g}_call_set"].meaning for g in "vdj")
     assert "_dupN" in COLUMN_DOCS["sequence_id"].meaning and "575" in COLUMN_DOCS["length_cropped"].meaning
+
+
+def test_only_the_v_call_lists_tied_alleles():
+    # predict/results.py lists the V ties after the call; d_call and j_call name one allele.
+    from alignair.io.columns_doc import COLUMN_DOCS
+    assert "equally well" in COLUMN_DOCS["v_call"].meaning
+    assert [g for g in "dj" if "equally well" in COLUMN_DOCS[f"{g}_call"].meaning] == []
+    assert all("one allele" in COLUMN_DOCS[f"{g}_call"].meaning for g in "dj")

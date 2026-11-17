@@ -1,48 +1,6 @@
 [
   {
     "kind": "page",
-    "title": "AIRR output fields",
-    "text": "Reference",
-    "href": "#/docs/airr-fields"
-  },
-  {
-    "kind": "page",
-    "title": "Training batch API",
-    "text": "Design",
-    "href": "#/docs/training-batches"
-  },
-  {
-    "kind": "heading",
-    "title": "Adapt records",
-    "text": "Training batch API",
-    "href": "#/docs/training-batches?h=adapters"
-  },
-  {
-    "kind": "heading",
-    "title": "Model inputs",
-    "text": "Training batch API",
-    "href": "#/docs/training-batches?h=inputs"
-  },
-  {
-    "kind": "heading",
-    "title": "Training targets",
-    "text": "Training batch API",
-    "href": "#/docs/training-batches?h=targets"
-  },
-  {
-    "kind": "heading",
-    "title": "Window rules",
-    "text": "Training batch API",
-    "href": "#/docs/training-batches?h=windows"
-  },
-  {
-    "kind": "heading",
-    "title": "Prepared samples",
-    "text": "Training batch API",
-    "href": "#/docs/training-batches?h=prepared"
-  },
-  {
-    "kind": "page",
     "title": "Coming from IgBLAST",
     "text": "Coming from…",
     "href": "#/docs/from-igblast"
@@ -229,369 +187,957 @@
   },
   {
     "kind": "page",
-    "title": "Citation & support",
-    "text": "Community",
-    "href": "#/docs/citation-support"
+    "title": "Architecture",
+    "text": "Developers",
+    "href": "#/docs/architecture"
+  },
+  {
+    "kind": "heading",
+    "title": "The packages",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=packages"
+  },
+  {
+    "kind": "heading",
+    "title": "The model's parts",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=terms"
+  },
+  {
+    "kind": "heading",
+    "title": "From a read to an AIRR row",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=read-to-row"
+  },
+  {
+    "kind": "heading",
+    "title": "1. Load the model",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=load"
+  },
+  {
+    "kind": "heading",
+    "title": "2. Read the input",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=read"
+  },
+  {
+    "kind": "heading",
+    "title": "3. Run the pipeline",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=pipeline"
+  },
+  {
+    "kind": "heading",
+    "title": "Inside the forward stage",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=forward-pass"
+  },
+  {
+    "kind": "heading",
+    "title": "4. Write the table",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=write"
+  },
+  {
+    "kind": "heading",
+    "title": "Watch the stages",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=trace"
+  },
+  {
+    "kind": "heading",
+    "title": "Training",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=training"
+  },
+  {
+    "kind": "heading",
+    "title": "The model file",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=model-file"
+  },
+  {
+    "kind": "heading",
+    "title": "Extension points",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=extend"
+  },
+  {
+    "kind": "heading",
+    "title": "A new architecture",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=new-architecture"
+  },
+  {
+    "kind": "heading",
+    "title": "Pipeline hooks",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=pipeline-hooks"
+  },
+  {
+    "kind": "heading",
+    "title": "Another source of training reads",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=record-source"
+  },
+  {
+    "kind": "heading",
+    "title": "Registries",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=registries"
+  },
+  {
+    "kind": "heading",
+    "title": "What to build on",
+    "text": "Architecture",
+    "href": "#/docs/architecture?h=public-api"
   },
   {
     "kind": "page",
-    "title": "Model composition API",
-    "text": "Design",
-    "href": "#/docs/model-composition"
+    "title": "Testing",
+    "text": "Developers",
+    "href": "#/docs/testing"
   },
   {
     "kind": "heading",
-    "title": "Package ownership",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=package-ownership"
+    "title": "Set up",
+    "text": "Testing",
+    "href": "#/docs/testing?h=setup"
   },
   {
     "kind": "heading",
-    "title": "Construct a model",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=construction"
+    "title": "Where the tests are",
+    "text": "Testing",
+    "href": "#/docs/testing?h=layout"
   },
   {
     "kind": "heading",
-    "title": "Configuration",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=choices"
+    "title": "Layers and markers",
+    "text": "Testing",
+    "href": "#/docs/testing?h=markers"
   },
   {
     "kind": "heading",
-    "title": "Forward computation",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=forward"
+    "title": "Run what you need",
+    "text": "Testing",
+    "href": "#/docs/testing?h=selection"
   },
   {
     "kind": "heading",
-    "title": "How the units train together",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=gradient-paths"
+    "title": "Quality gates",
+    "text": "Testing",
+    "href": "#/docs/testing?h=gates"
   },
   {
     "kind": "heading",
-    "title": "Replace components",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=components"
+    "title": "Coverage",
+    "text": "Testing",
+    "href": "#/docs/testing?h=coverage"
   },
   {
     "kind": "heading",
-    "title": "Inspect components",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=inspection"
+    "title": "Release claims and the public models",
+    "text": "Testing",
+    "href": "#/docs/testing?h=release-claims"
   },
   {
     "kind": "heading",
-    "title": "Develop and verify an architecture variant",
-    "text": "Model composition API",
-    "href": "#/docs/model-composition?h=architecture-development"
+    "title": "Writing a test",
+    "text": "Testing",
+    "href": "#/docs/testing?h=writing-tests"
+  },
+  {
+    "kind": "heading",
+    "title": "Distribution checks",
+    "text": "Testing",
+    "href": "#/docs/testing?h=distribution"
+  },
+  {
+    "kind": "heading",
+    "title": "The website",
+    "text": "Testing",
+    "href": "#/docs/testing?h=website"
+  },
+  {
+    "kind": "heading",
+    "title": "Regenerate the site's data",
+    "text": "Testing",
+    "href": "#/docs/testing?h=site-data"
   },
   {
     "kind": "page",
-    "title": "Training engine API",
-    "text": "Design",
-    "href": "#/docs/training-engine"
+    "title": "Publishing to the catalog",
+    "text": "Developers",
+    "href": "#/docs/publishing"
   },
   {
     "kind": "heading",
-    "title": "Construct and run an engine",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=step"
+    "title": "The catalog",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=the-catalog"
   },
   {
     "kind": "heading",
-    "title": "Placement and parameter ownership",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=initialization"
+    "title": "The registry format",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=registry-format"
   },
   {
     "kind": "heading",
-    "title": "Select optimizers and schedulers",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=factories"
+    "title": "1. Export the bundle",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=export"
   },
   {
     "kind": "heading",
-    "title": "Run an explicit step window",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=iterations"
+    "title": "2. Add it to a local copy of the catalog",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=publish"
   },
   {
     "kind": "heading",
-    "title": "Validate without changing training modes",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=validation"
+    "title": "3. Upload the version",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=upload"
   },
   {
     "kind": "heading",
-    "title": "Checkpoints",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=checkpoints"
+    "title": "What is checked",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=validation"
   },
   {
     "kind": "heading",
-    "title": "RNG state and continuation limits",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=resume"
+    "title": "The calls",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=calls"
   },
   {
     "kind": "heading",
-    "title": "Implementation ownership",
-    "text": "Training engine API",
-    "href": "#/docs/training-engine?h=ownership"
+    "title": "A model in a repo of its own",
+    "text": "Publishing to the catalog",
+    "href": "#/docs/publishing?h=own-repo"
   },
   {
     "kind": "page",
-    "title": "Errors and diagnostics API",
-    "text": "Reference",
-    "href": "#/docs/errors"
+    "title": "Contributing",
+    "text": "Developers",
+    "href": "#/docs/contributing"
   },
   {
     "kind": "heading",
-    "title": "Handle an AlignAIR failure",
-    "text": "Errors and diagnostics API",
-    "href": "#/docs/errors?h=handling"
+    "title": "Start with an issue",
+    "text": "Contributing",
+    "href": "#/docs/contributing?h=issues"
   },
   {
     "kind": "heading",
-    "title": "Exception reference",
-    "text": "Errors and diagnostics API",
-    "href": "#/docs/errors?h=exceptions"
+    "title": "Set up",
+    "text": "Contributing",
+    "href": "#/docs/contributing?h=setup"
   },
   {
     "kind": "heading",
-    "title": "Constructor and diagnostic fields",
-    "text": "Errors and diagnostics API",
-    "href": "#/docs/errors?h=diagnostics"
+    "title": "Branch, test, open a pull request",
+    "text": "Contributing",
+    "href": "#/docs/contributing?h=pull-requests"
   },
   {
     "kind": "heading",
-    "title": "Operation context and cause chains",
-    "text": "Errors and diagnostics API",
-    "href": "#/docs/errors?h=context"
+    "title": "Where the docs live",
+    "text": "Contributing",
+    "href": "#/docs/contributing?h=where-the-docs-live"
   },
   {
     "kind": "heading",
-    "title": "Reporting and logging",
-    "text": "Errors and diagnostics API",
-    "href": "#/docs/errors?h=reporting"
-  },
-  {
-    "kind": "heading",
-    "title": "Command-line reporting",
-    "text": "Errors and diagnostics API",
-    "href": "#/docs/errors?h=cli"
-  },
-  {
-    "kind": "heading",
-    "title": "Define an application-specific exception",
-    "text": "Errors and diagnostics API",
-    "href": "#/docs/errors?h=extensions"
+    "title": "Licence",
+    "text": "Contributing",
+    "href": "#/docs/contributing?h=licence"
   },
   {
     "kind": "page",
-    "title": "Benchmarks",
-    "text": "Evaluation",
-    "href": "#/docs/benchmarks"
+    "title": "Cite",
+    "text": "",
+    "href": "#/docs/cite"
+  },
+  {
+    "kind": "heading",
+    "title": "The paper",
+    "text": "Cite",
+    "href": "#/docs/cite?h=the-paper"
+  },
+  {
+    "kind": "heading",
+    "title": "BibTeX",
+    "text": "Cite",
+    "href": "#/docs/cite?h=bibtex"
+  },
+  {
+    "kind": "heading",
+    "title": "What to report in your methods",
+    "text": "Cite",
+    "href": "#/docs/cite?h=methods"
   },
   {
     "kind": "page",
-    "title": "Speed & throughput",
-    "text": "Evaluation",
-    "href": "#/docs/performance"
+    "title": "Support",
+    "text": "",
+    "href": "#/docs/support"
+  },
+  {
+    "kind": "heading",
+    "title": "Where to ask",
+    "text": "Support",
+    "href": "#/docs/support?h=where-to-ask"
+  },
+  {
+    "kind": "heading",
+    "title": "What to put in a bug report",
+    "text": "Support",
+    "href": "#/docs/support?h=what-to-include"
+  },
+  {
+    "kind": "heading",
+    "title": "Contributing",
+    "text": "Support",
+    "href": "#/docs/support?h=contributing"
   },
   {
     "kind": "page",
-    "title": "Design & internals",
-    "text": "Design",
-    "href": "#/docs/design"
+    "title": "Changelog",
+    "text": "",
+    "href": "#/docs/changelog"
+  },
+  {
+    "kind": "heading",
+    "title": "Models",
+    "text": "Changelog",
+    "href": "#/docs/changelog?h=models"
+  },
+  {
+    "kind": "heading",
+    "title": "Germline sets and genotypes",
+    "text": "Changelog",
+    "href": "#/docs/changelog?h=germline-sets-and-genotypes"
+  },
+  {
+    "kind": "heading",
+    "title": "Calls and output",
+    "text": "Changelog",
+    "href": "#/docs/changelog?h=calls-and-output"
+  },
+  {
+    "kind": "heading",
+    "title": "Running",
+    "text": "Changelog",
+    "href": "#/docs/changelog?h=running"
+  },
+  {
+    "kind": "heading",
+    "title": "Training",
+    "text": "Changelog",
+    "href": "#/docs/changelog?h=training"
   },
   {
     "kind": "page",
-    "title": "Training a custom model",
-    "text": "Training",
-    "href": "#/docs/training"
-  },
-  {
-    "kind": "page",
-    "title": "Command-line reference",
-    "text": "Using AlignAIR",
+    "title": "CLI options",
+    "text": "",
     "href": "#/docs/cli"
+  },
+  {
+    "kind": "heading",
+    "title": "Options of every command",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=every-command"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair predict",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=predict"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair genotype",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=genotype"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair models",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=models"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair models list",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=models-list"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair models get",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=models-get"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair models path",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=models-path"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair models update",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=models-update"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair models verify",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=models-verify"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair models prune",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=models-prune"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair info",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=info"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair reference",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=reference"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair reference list",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=reference-list"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair reference export",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=reference-export"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair doctor",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=doctor"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair compare",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=compare"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair analyze",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=analyze"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair validate-airr",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=validate-airr"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair train",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=train"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair export",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=export"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair benchmark",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=benchmark"
+  },
+  {
+    "kind": "heading",
+    "title": "alignair demo",
+    "text": "CLI options",
+    "href": "#/docs/cli?h=demo"
   },
   {
     "kind": "page",
     "title": "Python API",
-    "text": "Using AlignAIR",
+    "text": "",
     "href": "#/docs/python-api"
   },
   {
-    "kind": "page",
-    "title": "Integrations",
-    "text": "Using AlignAIR",
-    "href": "#/docs/integrations"
-  },
-  {
-    "kind": "page",
-    "title": "Model inference API",
-    "text": "Design",
-    "href": "#/docs/model-inference"
+    "kind": "heading",
+    "title": "The main entry points",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=main-entry-points"
   },
   {
     "kind": "heading",
-    "title": "Resolve and load model artifacts",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=model-resolution"
+    "title": "Records and the table",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=records-and-the-table"
   },
   {
     "kind": "heading",
-    "title": "Read sequence files before validation",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=files"
+    "title": "Errors",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=errors"
   },
   {
     "kind": "heading",
-    "title": "Join metadata by source identity",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=source-identity"
+    "title": "alignair",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=package-alignair"
   },
   {
     "kind": "heading",
-    "title": "Normalize records without losing source identity",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=records"
+    "title": "alignair.io",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=package-alignair-io"
   },
   {
     "kind": "heading",
-    "title": "Select the nucleotide content policy",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=nucleotide-policy"
+    "title": "alignair.genotype",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=package-alignair-genotype"
   },
   {
     "kind": "heading",
-    "title": "Bind the tokenizer and input window",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=inputs"
+    "title": "alignair.reference",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=package-alignair-reference"
   },
   {
     "kind": "heading",
-    "title": "Execute one batch or an ordered stream",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=forward"
+    "title": "alignair.registry",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=package-alignair-registry"
   },
   {
     "kind": "heading",
-    "title": "Execution and policy ownership",
-    "text": "Model inference API",
-    "href": "#/docs/model-inference?h=ownership"
+    "title": "alignair.train",
+    "text": "Python API",
+    "href": "#/docs/python-api?h=package-alignair-train"
   },
   {
     "kind": "page",
-    "title": "Publishing models",
-    "text": "Maintainer",
-    "href": "#/docs/publishing"
+    "title": "Output column dictionary",
+    "text": "",
+    "href": "#/docs/column-dictionary"
+  },
+  {
+    "kind": "heading",
+    "title": "Presets",
+    "text": "Output column dictionary",
+    "href": "#/docs/column-dictionary?h=presets"
+  },
+  {
+    "kind": "heading",
+    "title": "Conventions",
+    "text": "Output column dictionary",
+    "href": "#/docs/column-dictionary?h=conventions"
+  },
+  {
+    "kind": "heading",
+    "title": "All columns",
+    "text": "Output column dictionary",
+    "href": "#/docs/column-dictionary?h=all-columns"
   },
   {
     "kind": "page",
-    "title": "Model contract",
-    "text": "Reference",
-    "href": "#/docs/model-contract"
+    "title": "Model cards",
+    "text": "",
+    "href": "#/docs/model-cards"
+  },
+  {
+    "kind": "heading",
+    "title": "What every model holds",
+    "text": "Model cards",
+    "href": "#/docs/model-cards?h=what-a-model-holds"
+  },
+  {
+    "kind": "heading",
+    "title": "Germline sets and allele names",
+    "text": "Model cards",
+    "href": "#/docs/model-cards?h=germline-sets"
+  },
+  {
+    "kind": "heading",
+    "title": "Notes per model",
+    "text": "Model cards",
+    "href": "#/docs/model-cards?h=per-model-notes"
+  },
+  {
+    "kind": "heading",
+    "title": "Training",
+    "text": "Model cards",
+    "href": "#/docs/model-cards?h=training"
+  },
+  {
+    "kind": "heading",
+    "title": "Read a model's card: alignair info",
+    "text": "Model cards",
+    "href": "#/docs/model-cards?h=read-a-card"
+  },
+  {
+    "kind": "heading",
+    "title": "Versions",
+    "text": "Model cards",
+    "href": "#/docs/model-cards?h=versions"
   },
   {
     "kind": "page",
-    "title": "Known failure modes",
-    "text": "Reference",
-    "href": "#/docs/known-failure-modes"
+    "title": "Error codes",
+    "text": "",
+    "href": "#/docs/error-codes"
+  },
+  {
+    "kind": "heading",
+    "title": "Read an error",
+    "text": "Error codes",
+    "href": "#/docs/error-codes?h=read-an-error"
+  },
+  {
+    "kind": "heading",
+    "title": "The codes",
+    "text": "Error codes",
+    "href": "#/docs/error-codes?h=code-scheme"
+  },
+  {
+    "kind": "heading",
+    "title": "JSON errors, for pipelines",
+    "text": "Error codes",
+    "href": "#/docs/error-codes?h=json-errors"
+  },
+  {
+    "kind": "heading",
+    "title": "Exit codes",
+    "text": "Error codes",
+    "href": "#/docs/error-codes?h=exit-codes"
+  },
+  {
+    "kind": "heading",
+    "title": "In Python",
+    "text": "Error codes",
+    "href": "#/docs/error-codes?h=in-python"
+  },
+  {
+    "kind": "heading",
+    "title": "All codes",
+    "text": "Error codes",
+    "href": "#/docs/error-codes?h=all-codes"
   },
   {
     "kind": "page",
-    "title": "Troubleshooting",
-    "text": "Reference",
-    "href": "#/docs/troubleshooting"
+    "title": "Cache, offline use and environment variables",
+    "text": "",
+    "href": "#/docs/cache-and-environment"
+  },
+  {
+    "kind": "heading",
+    "title": "Where models are kept",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=the-cache"
+  },
+  {
+    "kind": "heading",
+    "title": "How a model is found",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=how-a-model-is-found"
+  },
+  {
+    "kind": "heading",
+    "title": "Work without a network",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=offline"
+  },
+  {
+    "kind": "heading",
+    "title": "The update notice",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=update-notice"
+  },
+  {
+    "kind": "heading",
+    "title": "Registries",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=registries"
+  },
+  {
+    "kind": "heading",
+    "title": "The settings file",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=settings-file"
+  },
+  {
+    "kind": "heading",
+    "title": "Private and gated models",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=private-models"
+  },
+  {
+    "kind": "heading",
+    "title": "Environment variables",
+    "text": "Cache, offline use and environment variables",
+    "href": "#/docs/cache-and-environment?h=environment-variables"
   },
   {
     "kind": "page",
-    "title": "Reference identity API",
-    "text": "Reference",
-    "href": "#/docs/reference-identity"
+    "title": "Output columns explained",
+    "text": "",
+    "href": "#/docs/output-columns"
   },
   {
     "kind": "heading",
-    "title": "The embedded reference's fingerprints",
-    "text": "Reference identity API",
-    "href": "#/docs/reference-identity?h=fingerprints"
+    "title": "The calls: v_call, d_call, j_call",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=calls"
   },
   {
     "kind": "heading",
-    "title": "Annotate and bind another reference",
-    "text": "Reference identity API",
-    "href": "#/docs/reference-identity?h=binding"
+    "title": "The candidate set: v_call_set, d_call_set, j_call_set",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=candidate-set"
   },
   {
     "kind": "heading",
-    "title": "Loading and conversion",
-    "text": "Reference identity API",
-    "href": "#/docs/reference-identity?h=loading-conversion"
+    "title": "The junction and productivity",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=junction-and-productivity"
+  },
+  {
+    "kind": "heading",
+    "title": "Identity and mutation",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=identity-and-mutation"
+  },
+  {
+    "kind": "heading",
+    "title": "Assembly status: is the row complete?",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=assembly-status"
+  },
+  {
+    "kind": "heading",
+    "title": "Orientation: rev_comp, orientation, input_sequence",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=orientation"
+  },
+  {
+    "kind": "heading",
+    "title": "Keep the rows your analysis can use",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=filter-usable-rows"
+  },
+  {
+    "kind": "heading",
+    "title": "Every other column",
+    "text": "Output columns explained",
+    "href": "#/docs/output-columns?h=every-other-column"
   },
   {
     "kind": "page",
-    "title": "Model setup API",
-    "text": "Design",
-    "href": "#/docs/model-setup"
+    "title": "How far to trust the calls",
+    "text": "",
+    "href": "#/docs/trust-the-calls"
   },
   {
     "kind": "heading",
-    "title": "Prepare and build",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=prepare"
+    "title": "What each row tells you about itself",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=signals"
   },
   {
     "kind": "heading",
-    "title": "Input and label spaces",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=policies"
+    "title": "Short reads and fragments",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=short-reads"
   },
   {
     "kind": "heading",
-    "title": "Labels and the bound reference",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=labels"
+    "title": "Heavy hypermutation",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=hypermutation"
   },
   {
     "kind": "heading",
-    "title": "Configure components",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=options"
+    "title": "Reads longer than 575 nt",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=long-reads"
   },
   {
     "kind": "heading",
-    "title": "Validate a reference binding",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=binding"
+    "title": "Alleles that differ only outside the read",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=outside-the-read"
   },
   {
     "kind": "heading",
-    "title": "Restore decoded model weights",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=restore"
+    "title": "D calls on short D segments",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=short-d"
   },
   {
     "kind": "heading",
-    "title": "Restore through a prepared binding",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=prepared-restoration"
+    "title": "Novel alleles",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=novel-alleles"
   },
   {
     "kind": "heading",
-    "title": "Read model files without constructing a model",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=checkpoint-data"
+    "title": "Reads of another locus, and other sequences",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=off-target"
   },
   {
     "kind": "heading",
-    "title": "Count-only construction",
-    "text": "Model setup API",
-    "href": "#/docs/model-setup?h=counts"
+    "title": "Other limits",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=other-limits"
+  },
+  {
+    "kind": "heading",
+    "title": "Partial rows and segmentation_low_quality",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=partial-rows"
+  },
+  {
+    "kind": "heading",
+    "title": "The quality gates",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=quality-gates"
+  },
+  {
+    "kind": "heading",
+    "title": "When to cross-check with IgBLAST",
+    "text": "How far to trust the calls",
+    "href": "#/docs/trust-the-calls?h=cross-check"
+  },
+  {
+    "kind": "page",
+    "title": "Comparison with IgBLAST",
+    "text": "",
+    "href": "#/docs/comparison"
+  },
+  {
+    "kind": "heading",
+    "title": "How it was measured",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=method"
+  },
+  {
+    "kind": "heading",
+    "title": "The same germline set",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=same-germline-set"
+  },
+  {
+    "kind": "heading",
+    "title": "Simulated reads with known truth",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=known-truth"
+  },
+  {
+    "kind": "heading",
+    "title": "The 13 suites",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=suites"
+  },
+  {
+    "kind": "heading",
+    "title": "The measures",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=measures"
+  },
+  {
+    "kind": "heading",
+    "title": "Paired tests",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=paired-tests"
+  },
+  {
+    "kind": "heading",
+    "title": "Results on simulated reads",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results"
+  },
+  {
+    "kind": "heading",
+    "title": "IGH",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results-igh"
+  },
+  {
+    "kind": "heading",
+    "title": "IGK",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results-igk"
+  },
+  {
+    "kind": "heading",
+    "title": "IGL",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results-igl"
+  },
+  {
+    "kind": "heading",
+    "title": "TRA",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results-tra"
+  },
+  {
+    "kind": "heading",
+    "title": "TRB",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results-trb"
+  },
+  {
+    "kind": "heading",
+    "title": "TRD",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results-trd"
+  },
+  {
+    "kind": "heading",
+    "title": "TRG",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=results-trg"
+  },
+  {
+    "kind": "heading",
+    "title": "Real IGH repertoires",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=real-data"
+  },
+  {
+    "kind": "heading",
+    "title": "On your own data",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=your-own-data"
+  },
+  {
+    "kind": "heading",
+    "title": "When IgBLAST is still the better choice",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=when-igblast"
   },
   {
     "kind": "page",
@@ -883,183 +1429,213 @@
   },
   {
     "kind": "page",
-    "title": "Curriculum source API",
-    "text": "Design",
-    "href": "#/docs/curriculum-sources"
+    "title": "Do I need to train?",
+    "text": "",
+    "href": "#/docs/do-i-need-to-train"
   },
   {
     "kind": "heading",
-    "title": "Choose a source policy",
-    "text": "Curriculum source API",
-    "href": "#/docs/curriculum-sources?h=usage"
+    "title": "Bind your germline set, or train",
+    "text": "Do I need to train?",
+    "href": "#/docs/do-i-need-to-train?h=bind-or-train"
   },
   {
     "kind": "heading",
-    "title": "The curriculum",
-    "text": "Curriculum source API",
-    "href": "#/docs/curriculum-sources?h=curriculum"
+    "title": "Decide in four questions",
+    "text": "Do I need to train?",
+    "href": "#/docs/do-i-need-to-train?h=decide"
   },
   {
     "kind": "heading",
-    "title": "Components and ordering",
-    "text": "Curriculum source API",
-    "href": "#/docs/curriculum-sources?h=mixture"
-  },
-  {
-    "kind": "heading",
-    "title": "Seed blocks",
-    "text": "Curriculum source API",
-    "href": "#/docs/curriculum-sources?h=seeds"
-  },
-  {
-    "kind": "heading",
-    "title": "Mutation caps per reference",
-    "text": "Curriculum source API",
-    "href": "#/docs/curriculum-sources?h=loci"
-  },
-  {
-    "kind": "heading",
-    "title": "Library flanks",
-    "text": "Curriculum source API",
-    "href": "#/docs/curriculum-sources?h=flanks"
-  },
-  {
-    "kind": "heading",
-    "title": "Replace the provider",
-    "text": "Curriculum source API",
-    "href": "#/docs/curriculum-sources?h=providers"
+    "title": "What training costs",
+    "text": "Do I need to train?",
+    "href": "#/docs/do-i-need-to-train?h=what-training-costs"
   },
   {
     "kind": "page",
-    "title": "Training task API",
-    "text": "Design",
-    "href": "#/docs/training-tasks"
+    "title": "Train a model for your germline set",
+    "text": "",
+    "href": "#/docs/train"
   },
   {
     "kind": "heading",
-    "title": "Configure a training step",
-    "text": "Training task API",
-    "href": "#/docs/training-tasks?h=step"
+    "title": "From a built-in germline set",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=built-in-set"
   },
   {
     "kind": "heading",
-    "title": "Loss terms",
-    "text": "Training task API",
-    "href": "#/docs/training-tasks?h=objectives"
+    "title": "Check the plan first",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=plan-first"
   },
   {
     "kind": "heading",
-    "title": "Metrics and validation",
-    "text": "Training task API",
-    "href": "#/docs/training-tasks?h=metrics"
+    "title": "From your own germline FASTAs",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=own-fastas"
   },
   {
     "kind": "heading",
-    "title": "Extend task behavior",
-    "text": "Training task API",
-    "href": "#/docs/training-tasks?h=extension"
+    "title": "Where germline FASTAs come from",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=where-fastas-come-from"
+  },
+  {
+    "kind": "heading",
+    "title": "What the FASTAs need",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=fasta-format"
+  },
+  {
+    "kind": "heading",
+    "title": "Check the anchors before you train",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=check-anchors"
+  },
+  {
+    "kind": "heading",
+    "title": "IMGT or OGRDB names",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=allele-names"
+  },
+  {
+    "kind": "heading",
+    "title": "Run the training",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=run-it"
+  },
+  {
+    "kind": "heading",
+    "title": "Novel alleles, drawn by default",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=novel-alleles"
+  },
+  {
+    "kind": "heading",
+    "title": "Train from Python",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=python"
+  },
+  {
+    "kind": "heading",
+    "title": "Every option",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=options"
+  },
+  {
+    "kind": "heading",
+    "title": "Resume an interrupted run (Python)",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=resume"
+  },
+  {
+    "kind": "heading",
+    "title": "What a run writes",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=output"
+  },
+  {
+    "kind": "heading",
+    "title": "Use the model",
+    "text": "Train a model for your germline set",
+    "href": "#/docs/train?h=use-it"
   },
   {
     "kind": "page",
-    "title": "Testing and validation",
-    "text": "Maintainer",
-    "href": "#/docs/testing"
+    "title": "Fine-tune a model",
+    "text": "",
+    "href": "#/docs/fine-tune"
   },
   {
     "kind": "heading",
-    "title": "Test environment",
-    "text": "Testing and validation",
-    "href": "#/docs/testing?h=setup"
+    "title": "Start from a model",
+    "text": "Fine-tune a model",
+    "href": "#/docs/fine-tune?h=start-from-a-model"
   },
   {
     "kind": "heading",
-    "title": "Suite responsibilities",
-    "text": "Testing and validation",
-    "href": "#/docs/testing?h=layout"
+    "title": "What a warm start does",
+    "text": "Fine-tune a model",
+    "href": "#/docs/fine-tune?h=what-a-warm-start-does"
   },
   {
     "kind": "heading",
-    "title": "Run relevant checks",
-    "text": "Testing and validation",
-    "href": "#/docs/testing?h=selection"
+    "title": "When to try it",
+    "text": "Fine-tune a model",
+    "href": "#/docs/fine-tune?h=when-to-try-it"
   },
   {
     "kind": "heading",
-    "title": "Release-claim validation",
-    "text": "Testing and validation",
-    "href": "#/docs/testing?h=models"
-  },
-  {
-    "kind": "heading",
-    "title": "Coverage evidence",
-    "text": "Testing and validation",
-    "href": "#/docs/testing?h=coverage"
-  },
-  {
-    "kind": "heading",
-    "title": "Test contracts and fixtures",
-    "text": "Testing and validation",
-    "href": "#/docs/testing?h=writing"
-  },
-  {
-    "kind": "heading",
-    "title": "Distribution checks",
-    "text": "Testing and validation",
-    "href": "#/docs/testing?h=artifacts"
+    "title": "Resume or warm start?",
+    "text": "Fine-tune a model",
+    "href": "#/docs/fine-tune?h=resume-or-warm-start"
   },
   {
     "kind": "page",
-    "title": "Training workflow API",
-    "text": "Training",
-    "href": "#/docs/training-workflow"
+    "title": "Evaluate your model",
+    "text": "",
+    "href": "#/docs/evaluate"
   },
   {
     "kind": "heading",
-    "title": "Input and label spaces",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=spaces"
+    "title": "The validation report",
+    "text": "Evaluate your model",
+    "href": "#/docs/evaluate?h=validation-report"
   },
   {
     "kind": "heading",
-    "title": "Configure a run",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=request"
+    "title": "Score the calls: alignair benchmark",
+    "text": "Evaluate your model",
+    "href": "#/docs/evaluate?h=benchmark"
   },
   {
     "kind": "heading",
-    "title": "Retain and evaluate study checkpoints",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=study"
+    "title": "Compare with another tool: alignair compare",
+    "text": "Evaluate your model",
+    "href": "#/docs/evaluate?h=compare"
   },
   {
     "kind": "heading",
-    "title": "Observe successful updates",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=observe"
+    "title": "Check the output: alignair analyze",
+    "text": "Evaluate your model",
+    "href": "#/docs/evaluate?h=analyze"
+  },
+  {
+    "kind": "page",
+    "title": "Share your model",
+    "text": "",
+    "href": "#/docs/share"
   },
   {
     "kind": "heading",
-    "title": "Checkpoint, resume, and reload",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=reload"
+    "title": "Export the model: alignair export",
+    "text": "Share your model",
+    "href": "#/docs/share?h=export"
   },
   {
     "kind": "heading",
-    "title": "Capture and restore process RNG state",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=rng-state"
+    "title": "Put it on Hugging Face",
+    "text": "Share your model",
+    "href": "#/docs/share?h=hugging-face"
   },
   {
     "kind": "heading",
-    "title": "Export a distributable model",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=export"
+    "title": "Load it back",
+    "text": "Share your model",
+    "href": "#/docs/share?h=load-it-back"
   },
   {
     "kind": "heading",
-    "title": "Predict from a trained model",
-    "text": "Training workflow API",
-    "href": "#/docs/training-workflow?h=predictions"
+    "title": "The model's licence",
+    "text": "Share your model",
+    "href": "#/docs/share?h=licence"
+  },
+  {
+    "kind": "heading",
+    "title": "The pretrained catalog",
+    "text": "Share your model",
+    "href": "#/docs/share?h=catalog"
   },
   {
     "kind": "page",
@@ -2372,13 +2948,13 @@
   {
     "kind": "column",
     "title": "d_call",
-    "text": "The D allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "text": "The D allele call: one allele (only v_call lists tied alleles).",
     "href": "#/docs/column-dictionary?h=d_call"
   },
   {
     "kind": "column",
     "title": "j_call",
-    "text": "The J allele call; alleles that match the read equally well follow it, comma-separated (IgBLAST's convention).",
+    "text": "The J allele call: one allele (only v_call lists tied alleles).",
     "href": "#/docs/column-dictionary?h=j_call"
   },
   {
@@ -2997,7 +3573,7 @@
     "kind": "error",
     "title": "ALIGNAIR_CONFIG_INVALID",
     "text": "A training request is invalid (bad hyperparameters / config / reference). Raised *before* the full model is allocated so misuse fails fast w",
-    "href": "#/docs/error-codes?h=alignair_config_invalid"
+    "href": "#/docs/error-codes?h=alignair_config_invalid-trainingconfigerror"
   },
   {
     "kind": "error",

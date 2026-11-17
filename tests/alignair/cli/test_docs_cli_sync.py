@@ -111,13 +111,9 @@ def test_guard_accepts_a_valid_command():
         "alignair predict --input r.fasta --out o.tsv --model m.alignair", build_parser())
 
 
-# --- the website: every ``alignair …`` command in a code block of a page, lesson or widget -------------------------
+# --- the website: every ``alignair …`` command in a code block or CLI tab of a page or component ---------------------
 
 _SITE_FILES = sorted((_ROOT / "website" / "src").rglob("*.tsx"))
-# Pages still to be rewritten (docs part, groups 4-5): known stale; each leaves this list when it is rewritten, and a
-# file listed here that parses fails the test (strict), so the list can only shrink.
-_KNOWN_STALE = {"website/src/lessons/tracks/benchmarking.tsx", "website/src/pages/docs/pages-eval.tsx",
-                 "website/src/pages/docs/pages-guides2.tsx"}
 _CODE_STRING = re.compile(r"(?:code|cli)=\{`(.*?)`\}|(?:code|cli)=\"([^\"]*)\"", re.DOTALL)
 _JS_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
 
@@ -130,10 +126,7 @@ def _iter_site_commands(text: str):
         yield from _iter_shell_commands(f"```bash\n{code}\n```")
 
 
-@pytest.mark.parametrize("page", [
-    pytest.param(path, marks=pytest.mark.xfail(strict=True, reason="stale page, rewritten in the docs part"))
-    if str(path.relative_to(_ROOT)) in _KNOWN_STALE else path for path in _SITE_FILES],
-    ids=lambda path: str(path.relative_to(_ROOT / "website" / "src")))
+@pytest.mark.parametrize("page", _SITE_FILES, ids=lambda path: str(path.relative_to(_ROOT / "website" / "src")))
 def test_site_alignair_commands_parse(page):
     parser = build_parser()
     problems = [problem for cmd in _iter_site_commands(page.read_text()) for problem in _problems_for(cmd, parser)]

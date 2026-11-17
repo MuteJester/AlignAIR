@@ -326,8 +326,9 @@ const firstAlignment: DocPage = {
               <code>v_call</code>, <code>d_call</code>, <code>j_call</code>
             </>,
             <>
-              The called alleles. When the read cannot tell alleles apart, the call is followed by the alleles that
-              match it exactly as well, comma-separated, as IgBLAST lists them (read02). The IG models use OGRDB allele
+              The called alleles. When the read cannot tell V alleles apart, <code>v_call</code> is followed by the
+              alleles that match it exactly as well, comma-separated, as IgBLAST lists them (read02);{" "}
+              <code>d_call</code> and <code>j_call</code> name one allele. The IG models use OGRDB allele
               names (<code>IGHVF10-G50*02</code>); <DocLink to="concepts?h=allele-names">allele names</DocLink> explains
               them.
             </>,
@@ -393,9 +394,11 @@ const firstAlignment: DocPage = {
           <code>info["n_read"]</code>, <code>info["n_dropped"]</code>); it drops the same reads the command line drops.
         </li>
         <li>
-          <code>predict</code> returns a result whose <code>records</code> are one dict per read, with the table's
-          columns as keys. In them the true/false fields are Python <code>True</code> and <code>False</code>; the file
-          has <code>T</code> and <code>F</code>.
+          <code>predict</code> returns a result whose <code>records</code> are one dict per read, in Python's terms:
+          positions count from 0 with the end excluded, and true/false fields are <code>True</code> and{" "}
+          <code>False</code> (the file has positions from 1, <code>T</code> and <code>F</code>).{" "}
+          <code>write_airr</code> writes the AIRR table; give tools downstream the table (
+          <DocLink to="python-api?h=records-and-the-table">records and the table</DocLink>).
         </li>
         <li>
           <code>write_airr</code> writes the same table the command line writes; <code>columns="core"</code> (or a list

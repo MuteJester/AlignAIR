@@ -1,23 +1,28 @@
-# 10x contigs with metadata
+# 10x contigs with their cell metadata
 
-[filtered_contig.fasta](filtered_contig.fasta) contains four human IGH contigs.
-[filtered_contig_annotations.csv](filtered_contig_annotations.csv) supplies their
-Cell Ranger-style annotations, joined by `contig_id`.
+[filtered_contig.fasta](filtered_contig.fasta) holds four human IGH contigs, and
+[filtered_contig_annotations.csv](filtered_contig_annotations.csv) their Cell Ranger annotations (barcode, chain,
+UMI and read counts, clonotype), one row per contig, keyed by `contig_id`.
 
 Run from the repository root:
 
+<!-- PENDING-V4-PUBLISH: the model id alignair4-igh-human is confirmed when the models are published. -->
 ```bash
-alignair predict --input examples/10x/filtered_contig.fasta --out tenx_airr.tsv \
-  --model alignair4-igh-human --metadata examples/10x/filtered_contig_annotations.csv \
-  --metadata-id-column contig_id
+alignair predict --model alignair4-igh-human --input examples/10x/filtered_contig.fasta \
+  --out tenx_airr.tsv --metadata examples/10x/filtered_contig_annotations.csv --metadata-id-column contig_id
 ```
 
-`alignair4-igh-human` is the AlignAIR 4 human IGH model's id in the shared catalog. It is not published yet;
-until it is, pass an AlignAIR 4 `.alignair` path to `--model`. <!-- PENDING-V4-PUBLISH: alignair4-igh-human -->
+The annotations are joined to the contigs by read id: the FASTA's ids are the table's `contig_id` values.
+`--metadata-id-column contig_id` names that column; AlignAIR would also find it on its own, as the first column named
+`sequence_id`, `contig_id`, `cell_id`, `id` or `name`.
 
-The output keeps the annotation's barcode, chain, count, cell and clonotype columns, and adds
-their AIRR names (`cell_id`, `umi_count`, `consensus_count`, `c_call`). Metadata is carried as
-given, not checked against the calls. These are IGH inputs; light-chain or TCR contigs require
-a model for the corresponding locus.
-See [integrations](https://mutejester.github.io/AlignAIR/#/docs/integrations) for metadata
-selection and downstream workflows.
+`tenx_airr.tsv` has AlignAIR's 99 columns, then the annotation columns it keeps (`barcode`, `umis`, `reads`,
+`raw_clonotype_id`, `raw_consensus_id`, `chain`, `is_cell`, `high_confidence`) and three of them again under their
+AIRR names: `cell_id`, `umi_count` and `consensus_count`. Cell Ranger's `c_gene` fills AlignAIR's own `c_call`
+column. The metadata is carried as given; it is not checked against the calls.
+
+These contigs are IGH. For light-chain or TCR contigs, use the model of their locus: the annotation's `chain` column
+tells them apart.
+
+More on the join, `--keep-columns` and the `meta_` prefix:
+[Join sample and cell metadata](https://mutejester.github.io/AlignAIR/#/docs/metadata-join).

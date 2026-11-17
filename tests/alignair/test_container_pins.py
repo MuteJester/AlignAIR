@@ -23,10 +23,7 @@ PINNED_FILES = [
     "workflows/nextflow/main.nf",
     "workflows/snakemake/Snakefile",
     "workflows/snakemake/config.yaml",
-    "website/src/pages/docs/pages-getstarted.tsx",
-    "website/src/pages/docs/pages-guides2.tsx",
-    "website/src/pages/docs/pages-reference.tsx",
-]
+] + sorted(str(page.relative_to(ROOT)) for page in (ROOT / "website" / "src").rglob("*.tsx"))
 
 
 @pytest.mark.parametrize("rel", PINNED_FILES)

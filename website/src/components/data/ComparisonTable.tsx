@@ -1,4 +1,5 @@
 import comparisonData from "../../data/comparison.json";
+import { formatDifference, formatMeasure } from "../../lib/measure";
 
 interface Row {
   measure: string;
@@ -14,8 +15,6 @@ interface Comparison {
 }
 
 export const COMPARISON = comparisonData as Comparison;
-
-const percent = (value: number) => `${(100 * value).toFixed(1)}%`;
 
 function verdictLabel(verdict: string): string {
   if (/b_better|alignair/i.test(verdict) && !/igblast/i.test(verdict)) return "AlignAIR better";
@@ -49,9 +48,9 @@ export default function ComparisonTable({ locus }: { locus: string }) {
                 {suite.rows.map((row) => (
                   <tr key={row.measure} className="border-b border-slate-100 last:border-0 dark:border-slate-800/60">
                     <td className="px-4 py-2 font-mono text-[0.85em]">{row.measure}</td>
-                    <td className="px-4 py-2">{percent(row.igblast)}</td>
-                    <td className="px-4 py-2">{percent(row.alignair)}</td>
-                    <td className="px-4 py-2">{(100 * row.delta).toFixed(1)} pp [{(100 * row.ci95[0]).toFixed(1)}, {(100 * row.ci95[1]).toFixed(1)}]</td>
+                    <td className="px-4 py-2">{formatMeasure(row.measure, row.igblast)}</td>
+                    <td className="px-4 py-2">{formatMeasure(row.measure, row.alignair)}</td>
+                    <td className="px-4 py-2">{formatDifference(row.measure, row.delta, row.ci95)}</td>
                     <td className="px-4 py-2">{verdictLabel(row.verdict)}</td>
                   </tr>
                 ))}

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Navigate, useParams, useLocation, Link, NavLink, useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { DOCS, getDoc, firstDocSlug, adjacentDocs, audienceOf, sectionsFor } from "./docs";
+import { movedTo } from "./docs/nav";
 import type { DocPage } from "./docs/doc-kit";
 import { PageHeader } from "./docs/doc-kit";
 import Breadcrumbs from "../components/Breadcrumbs";
@@ -58,6 +59,8 @@ export default function DocsPage() {
   }, [slug, search]);
 
   if (!slug) return <Navigate to={`/docs/${firstDocSlug()}`} replace />;
+  const moved = doc ? undefined : movedTo(`/docs/${slug}`);
+  if (moved) return <Navigate to={moved} replace />;
   if (!doc) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-24 text-center">

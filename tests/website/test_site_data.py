@@ -48,6 +48,12 @@ def test_every_error_code_has_a_meaning_and_an_action():
     assert [entry["code"] for entry in entries if not entry["meaning"] or not entry["action"]] == []
 
 
+def test_every_error_row_has_its_own_anchor():
+    # Two error classes can share a code (ALIGNAIR_CONFIG_INVALID); each row still needs a distinct link target.
+    anchors = [entry["anchor"] for entry in json.loads((DATA / "error-codes.json").read_text())]
+    assert sorted({anchor for anchor in anchors if anchors.count(anchor) > 1}) == []
+
+
 def test_the_model_list_names_the_seven_models():
     models = json.loads((DATA / "models.json").read_text())
     assert {model["locus"]: model["id"] for model in models} == MODEL_IDS
