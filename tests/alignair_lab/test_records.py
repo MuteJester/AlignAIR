@@ -208,7 +208,9 @@ def test_a_stream_that_cannot_be_drawn_in_segments_fails_the_write(tmp_path, pro
     assert list(tmp_path.iterdir()) == []                                 # no cache, no partial directory
 
 
-@pytest.mark.timeout(120)
+# Writer pools start worker processes that import torch and GenAIRR; under coverage on a loaded 4-vCPU CI runner that
+# alone can take minutes (8 s locally). 600 s still fails a real hang.
+@pytest.mark.timeout(600)
 def test_a_writer_killed_outright_fails_the_write_instead_of_hanging(tmp_path):
     """A pool replaces a worker killed outright (the out-of-memory killer, kill -9) but never finishes its task."""
     from tests.alignair_lab.providers import killed
@@ -218,7 +220,7 @@ def test_a_writer_killed_outright_fails_the_write_instead_of_hanging(tmp_path):
     assert list(tmp_path.iterdir()) == []                                 # no cache, no partial directory
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(600)
 def test_a_write_whose_writers_cannot_be_signalled_is_not_failed(tmp_path, monkeypatch):
     """A sandbox may refuse kill(pid, 0) for a live process: the writers are judged by the pool's own children."""
     import os

@@ -146,3 +146,14 @@ def test_the_search_index_holds_each_sections_prose():
     chunk = ('<H2 id="a">First</H2>\n<p>Cell <code>x</code> Ranger&apos;s file,{" "}\n  split</p>'
              '<CodeBlock code={`alignair predict`} />\n<H3 id="b">Second</H3><p>slurm</p>')
     assert site_data.section_texts(chunk) == {"a": "Cell x Ranger's file, split", "b": "slurm"}
+
+
+def test_an_on_off_options_help_is_the_same_on_every_python():
+    # Python 3.10's argparse appends " (default: True)" to a BooleanOptionalAction's help; 3.11+ does not. The site
+    # data is generated once, so it must not depend on the Python that generates it.
+    import argparse
+    parser = argparse.ArgumentParser()
+    action = parser.add_argument("--validate", action=argparse.BooleanOptionalAction, default=True,
+                                 help="score the model (default: on)")
+    action.help = "score the model (default: on) (default: True)"      # as Python 3.10 leaves it
+    assert _site_data()._option(parser, action)["help"] == "score the model (default: on)"

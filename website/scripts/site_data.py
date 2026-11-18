@@ -96,6 +96,8 @@ def _option(parser, action) -> dict:
         kind = getattr(action.type, "__name__", "text") if action.type else "text"
     default = None if action.default in (None, argparse.SUPPRESS) or kind == "flag" else action.default
     help_text = parser._get_formatter()._expand_help(action) if action.help else ""
+    if isinstance(action, argparse.BooleanOptionalAction):   # Python 3.10's argparse appends its own default
+        help_text = re.sub(r" \(default: (True|False|None)\)$", "", help_text)
     flags = list(action.option_strings) or [action.metavar or action.dest]
     return {"flags": flags, "metavar": action.metavar if isinstance(action.metavar, str) else None, "kind": kind,
             "default": default if isinstance(default, (str, int, float, bool)) else None,
