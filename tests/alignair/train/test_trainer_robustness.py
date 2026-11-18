@@ -45,8 +45,15 @@ def test_resume_below_checkpoint_step_is_rejected(tmp_path):
                save_path=out, log_every=100)
 
 
+@pytest.fixture
+def without_file_digest(monkeypatch):
+    """Python 3.10, which the package supports, has no hashlib.file_digest (3.11+)."""
+    import hashlib
+    monkeypatch.delattr(hashlib, "file_digest", raising=False)
+
+
 @pytest.mark.slow
-def test_train_saves_best_and_resumes(tmp_path):
+def test_train_saves_best_and_resumes(tmp_path, without_file_digest):
     import GenAIRR.data as gd
     from alignair.reference.reference_set import ReferenceSet
     setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576)

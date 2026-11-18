@@ -200,6 +200,9 @@ are `alignair4-<locus>-human` 1.0.0, one per locus (IGH, IGK, IGL, TRA, TRB, TRD
   traceback.
 
 ### Fixed
+- On Python 3.10, a training run from a checkpoint or model (`--init-from`, resuming) no longer fails with
+  `AttributeError: module 'hashlib' has no attribute 'file_digest'` (a Python 3.11 function) when it records the
+  source's checksum.
 - On Windows, saving a training checkpoint (`alignair train`, `alignair demo`, `run_training`) no longer fails with
   `OSError: [Errno 9] Bad file descriptor`: the checkpoint is flushed to disk through a handle open for writing, which
   Windows requires.

@@ -1,7 +1,6 @@
 """Training loop for the AlignAIR model on GenAIRR record streams."""
 from __future__ import annotations
 
-import hashlib
 import itertools
 import math
 from dataclasses import dataclass, replace
@@ -13,6 +12,7 @@ from ..data.training import prepare_training_data
 from ..errors import ConfigurationError, ModelNotFoundError, error_context
 from ..genairr.catalog import dataconfig_name
 from ..genairr.identity import recorded_genairr_source
+from ..io.files import sha256_file
 from ..tasks import TrainingTasks, build_tasks
 from .checkpoints import (
     best_checkpoint_path,
@@ -258,9 +258,8 @@ def _train_args(sources, config: TrainingConfig, requested_policy, source_policy
         args["novel_alleles_unavailable"] = novel_unavailable
     if requested.inverted_d:
         args["inverted_d"] = requested.inverted_d
-    if source_checkpoint:
-        with open(source_checkpoint, 'rb') as source:
-            args['source_checkpoint_sha256'] = hashlib.file_digest(source, 'sha256').hexdigest()
+    if source_checkpoint:          # not hashlib.file_digest: that is Python 3.11+, and the package supports 3.10
+        args['source_checkpoint_sha256'] = sha256_file(source_checkpoint)
     return args
 
 
