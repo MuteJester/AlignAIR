@@ -53,7 +53,6 @@ vsearch.
 
 ## 3. Align, check, summarise
 
-<!-- PENDING-V4-PUBLISH: the model id alignair4-igh-human is confirmed when the models are published. -->
 ```bash
 alignair predict --model alignair4-igh-human --input aa_example/merged.fastq --out aa_example/briney_merged.tsv
 alignair validate-airr aa_example/briney_merged.tsv

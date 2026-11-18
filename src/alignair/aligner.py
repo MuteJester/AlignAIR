@@ -2,7 +2,7 @@
 over the prediction pipeline (``alignair.predict``).
 
     from alignair import Aligner
-    # a catalog id (PENDING-V4-PUBLISH), a path, or id@version
+    # a catalog id, a path, or id@version
     aligner = Aligner.from_pretrained("alignair4-igh-human", device="auto")
     result = aligner.predict(["CAGGTGCAGCTG..."])
     result.write_airr("predictions.tsv")

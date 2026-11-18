@@ -6,7 +6,6 @@ UMI and read counts, clonotype), one row per contig, keyed by `contig_id`.
 
 Run from the repository root:
 
-<!-- PENDING-V4-PUBLISH: the model id alignair4-igh-human is confirmed when the models are published. -->
 ```bash
 alignair predict --model alignair4-igh-human --input examples/10x/filtered_contig.fasta \
   --out tenx_airr.tsv --metadata examples/10x/filtered_contig_annotations.csv --metadata-id-column contig_id

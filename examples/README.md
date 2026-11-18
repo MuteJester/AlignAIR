@@ -17,7 +17,6 @@ Small input files, each with the commands that run on it. Run every command from
 
 ## First run
 
-<!-- PENDING-V4-PUBLISH: the model id alignair4-igh-human is confirmed when the models are published. -->
 ```bash
 alignair doctor
 alignair predict --model alignair4-igh-human --input examples/reads.fasta --out out.tsv

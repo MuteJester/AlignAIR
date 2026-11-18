@@ -6,7 +6,6 @@ elsewhere in `examples/`.
 
 Run this Bash block from the repository root:
 
-<!-- PENDING-V4-PUBLISH: the model id alignair4-igh-human is confirmed when the models are published. -->
 ```bash
 set -euo pipefail
 alignair models get alignair4-igh-human

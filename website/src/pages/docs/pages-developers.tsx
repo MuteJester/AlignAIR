@@ -946,7 +946,6 @@ python -m tests.support.coverage_gate --coverage test-results/coverage.json`}
         <code>tests/fixtures/models/validation.json</code> pins, through AlignAIR's verified downloader, then requires
         every claim's test to pass:
       </p>
-      {/* PENDING-V4-PUBLISH: tests/fixtures/models/validation.json is re-pinned to the alignair4-* models at publish. */}
       <CodeBlock
         code={`python -m tests.support.model_artifacts --cache /tmp/alignair-test-models
 python -m pytest tests -m "model_validation or acceptance or claim_evidence" \\
@@ -1086,7 +1085,6 @@ const publishing: DocPage = {
           id downloads it, and <code>alignair models update</code> fetches it for the models already in a cache.
         </li>
       </ul>
-      {/* PENDING-V4-PUBLISH: the seven alignair4-<locus>-human ids and their first version are uploaded at publish. */}
 
       <H2 id="registry-format">The registry format</H2>
       <p>

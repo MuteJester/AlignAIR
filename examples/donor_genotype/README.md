@@ -11,7 +11,6 @@ a plain list of names per segment works too.
 
 Run from the repository root:
 
-<!-- PENDING-V4-PUBLISH: the model id alignair4-igh-human is confirmed when the models are published. -->
 ```bash
 alignair predict --model alignair4-igh-human --input examples/reads.fasta --out out_donor.tsv \
   --genotype examples/donor_genotype/donor.yaml

@@ -6,7 +6,6 @@
 
 Run from the repository root:
 
-<!-- PENDING-V4-PUBLISH: the model id alignair4-igh-human is confirmed when the models are published. -->
 ```bash
 alignair predict --model alignair4-igh-human --input examples/airr/reads.tsv --out out.tsv \
   --metadata examples/airr/sample_metadata.tsv --keep-columns sample_id,subject_id,tissue,timepoint

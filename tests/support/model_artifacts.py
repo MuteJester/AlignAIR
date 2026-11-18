@@ -73,8 +73,8 @@ def validation_models(pytestconfig):
 
 
 @pytest.fixture
-def igkl_model(validation_models):
-    return str(validation_models["igkl"])
+def igk_model(validation_models):
+    return str(validation_models["igk"])
 
 
 def main():

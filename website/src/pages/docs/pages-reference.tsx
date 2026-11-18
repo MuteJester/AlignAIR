@@ -663,7 +663,6 @@ const errorCodes: DocPage = {
   body: () => (
     <>
       <H2 id="read-an-error">Read an error</H2>
-      {/* PENDING-V4-PUBLISH: the default registry (hf://AlignAIR/AlignAIR-pretrained) is confirmed at publish. */}
       <CodeBlock
         title="shell"
         code={`$ alignair predict --model alignair4-igh-human --input reads.fasta --out out.tsv --offline
@@ -912,7 +911,6 @@ aligner = Aligner.from_pretrained("alignair4-igh-human", offline=True)   # the c
       <p>
         A registry is the catalog AlignAIR looks a model id up in: a <code>registry.json</code> file listing ids,
         versions and checksums, beside the model files. The default is the AlignAIR models on Hugging Face (
-        {/* PENDING-V4-PUBLISH: the default registry name is confirmed at publish. */}
         <code>hf://AlignAIR/AlignAIR-pretrained</code>). A lab can keep its own, and name it in one of three ways:
       </p>
       <ol>
