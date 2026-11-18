@@ -12,6 +12,7 @@ pytestmark = pytest.mark.component
 
 ROOT = Path(__file__).resolve().parents[2]
 META = ROOT / "conda" / "meta.yaml"
+VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 
 
 def _dep_lines():
@@ -49,7 +50,7 @@ def test_recipe_is_literal_local_source_and_renders_stably():
     tmpl = jinja2.Environment().from_string(META.read_text())
     rendered = yaml.safe_load(tmpl.render(environ={}, PYTHON="$PYTHON"))
     assert rendered["package"]["name"] == "alignair"
-    assert str(rendered["package"]["version"]) == "3.0.0"
+    assert str(rendered["package"]["version"]) == VERSION
     assert rendered["source"].get("path") == ".."          # local source, no PyPI url / sha
     assert "url" not in rendered["source"]
     assert rendered["build"]["noarch"] == "python"

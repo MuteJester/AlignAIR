@@ -10,7 +10,7 @@
 # when submitting to bioconda-recipes. Keep `version` in sync with pyproject.toml [project].version.
 package:
   name: alignair
-  version: "3.0.0"
+  version: "4.0.0"
 
 source:
   path: ..

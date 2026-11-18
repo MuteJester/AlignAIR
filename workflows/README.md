@@ -11,8 +11,8 @@ Prerequisites:
   <id>`, or `alignair train ... --out my_model`). A catalog id such as `alignair4-igh-human` also
   works but needs network access inside the container, and without a mounted cache it is
   downloaded again for every task.
-- the **container** — the wrappers pin `alignair/alignair:3.0.0` (also mirrored at
-  `ghcr.io/mutejester/alignair:3.0.0`), or run them against a local `alignair` already on `PATH`
+- the **container** — the wrappers pin `alignair/alignair:4.0.0` (also mirrored at
+  `ghcr.io/mutejester/alignair:4.0.0`), or run them against a local `alignair` already on `PATH`
   (Nextflow `-profile local`).
 
 The image's `ENTRYPOINT` is `alignair`. Workflow engines that launch a shell inside the container

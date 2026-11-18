@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 # ── Project metadata (PEP 621) ──────────────────────────────────────────────
 [project]
 name = "AlignAIR"
-version = "3.0.0"
+version = "4.0.0"
 description = "End-to-end neural aligner for immunoglobulin and T-cell-receptor V(D)J sequences, with standard AIRR output"
 readme = "README.md"
 license = "GPL-3.0-or-later"
