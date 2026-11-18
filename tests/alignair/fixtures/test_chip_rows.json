@@ -897,7 +897,8 @@
    "vj_in_frame": false
   },
   {
-   "airr_assembly_status": "complete",
+   "airr_assembly_reason": "j_cropped",
+   "airr_assembly_status": "partial",
    "ar_indels": 0.11948560923337936,
    "cdr1": "GGGTTCTCACTCAGC......ACTAGTGGAATGTGT",
    "cdr1_aa": "GFSLS__TSGMC",

@@ -906,7 +906,7 @@
     "name": "length_cropped",
     "kind": "T/F",
     "unit": "",
-    "meaning": "T when the read was longer than 575 nt and only its first 575 nt were aligned.",
+    "meaning": "T when the read was longer than 575 nt and only its first 575 nt were aligned; a row cut inside its J is partial (j_cropped).",
     "presets": [
       "full"
     ]
@@ -915,7 +915,7 @@
     "name": "airr_assembly_status",
     "kind": "string",
     "unit": "",
-    "meaning": "complete (every field derived), partial (valid calls, some fields left blank: see airr_assembly_reason) or failed (see airr_assembly_error).",
+    "meaning": "complete (every field derived), partial (some fields left blank, or calls that rest on part of the read: see airr_assembly_reason) or failed (see airr_assembly_error).",
     "presets": [
       "full"
     ]
@@ -924,7 +924,7 @@
     "name": "airr_assembly_reason",
     "kind": "string",
     "unit": "",
-    "meaning": "Why a partial row is partial (e.g. no_v: the read has no V call).",
+    "meaning": "Why a partial row is partial: no_v (the read has no V call), nonproductive_indel, missing_calls_or_coordinates, collapsed_segment, incomplete_alignment, or j_cropped (the read was longer than 575 nt and the cut fell inside its J, so its J call and junction rest on part of the J).",
     "presets": [
       "full"
     ]

@@ -435,9 +435,9 @@ const firstAlignment: DocPage = {
           <strong>Long reads are cut.</strong> A read longer than 575 nt is aligned on its first 575 nt (its{" "}
           <code>length_cropped</code> is <code>T</code>). The cut comes before the read is turned around: a forward
           read loses its 3' end, often only constant region but the J and junction when much comes before the V; a
-          reverse-complemented one loses the start of its V.{" "}
-          <DocLink to="prepare-input?h=long-reads">Reads longer than 575 nt</DocLink> says which rows to check, and
-          when to trim.
+          reverse-complemented one loses the start of its V. A row cut inside its J is <code>partial</code> (
+          <code>j_cropped</code>).{" "}
+          <DocLink to="prepare-input?h=long-reads">Reads longer than 575 nt</DocLink> says when to trim.
         </li>
         <li>
           <strong>Ids stay yours.</strong> Each row keeps its read's id; a repeated id gets <code>_dup1</code>,{" "}
@@ -726,7 +726,8 @@ const concepts: DocPage = {
             <strong>575-nt window</strong>,
             <>
               A read longer than 575 nt is aligned on its first 575 nt, and its <code>length_cropped</code> is{" "}
-              <code>T</code> (blank for a read that was not cut).
+              <code>T</code> (blank for a read that was not cut). A row cut inside its J is <code>partial</code> (
+              <code>j_cropped</code>).
             </>,
           ],
           [

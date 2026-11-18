@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from alignair.errors import AirrAssemblyError
 
 from ...core.d_presence import ABSENT, D_CLASSES, SHORT
+from ...core.orientation import COMPLEMENT, FORWARD
 from ...reference.genes import GENES
 from ...reference.loci import FALLBACK_LOCUS
 from ..results import ReadResult, light_record
@@ -49,6 +50,19 @@ def _partial(out: dict, reason: str) -> dict:
     out["airr_assembly_status"] = "partial"
     out["airr_assembly_reason"] = reason
     return out
+
+
+def _j_cropped(read: ReadResult, j) -> bool:
+    """Whether the read was cut inside (or before) its J: cut to the model's window (``predict.results``: the end of
+    the read as given is dropped), with its J aligned up to that cut. In the model's forward frame the cut is the
+    read's end for a forward or a complemented read, and its start for a reverse-complemented or a reversed one, which
+    lose the bases before their V, not their J. The J kept is then a fragment (or a scrap the aligner stretched over
+    its germline) its call, junction and FWR4 rest on."""
+    if not read.cropped:
+        return False
+    if read.orientation_id in (FORWARD, COMPLEMENT):
+        return j.seq_end >= len(read.sequence)
+    return j.seq_start <= 0
 
 
 def _first(call_field: str) -> str:
@@ -129,6 +143,8 @@ def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bo
         out.update(d_identity=None, d_germline_alignment=None, d_germline_alignment_aa=None)
     if not germ_alignment or not seq_alignment:    # ran the math but a core product is missing
         return _partial(out, "incomplete_alignment")
+    if _j_cropped(read, j):
+        return _partial(out, "j_cropped")
     out["airr_assembly_status"] = "complete"
     return out
 

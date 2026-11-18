@@ -150,6 +150,11 @@ contract: AlignAIR 3 model files do not run on it.
   `CreateGermlines.py` builds the germlines from the table without a preparation step (2,855 of 2,872 complete rows of
   3,000 real IGH reads; the rest have an indel in their J alignment). Python records keep Python's terms (0-based,
   end excluded).
+- **A read cut inside its J is `partial` (`j_cropped`).** A read longer than 575 nt is aligned on its first 575 nt;
+  when that cut fell inside the J (a forward read with a long leader, as on some 10x contigs), the row said
+  `complete` while its J call, junction and FWR4 rested on part of the J. A row whose J alignment runs to the cut (the
+  read's end for a forward or complemented read, its start for a reverse-complemented or reversed one) is now
+  `partial`, reason `j_cropped`.
 - `--reference` reads IMGT/GENE-DB headers (`>X00369|IGHV3-11*04|Homo sapiens|F|...`, as in Immcantation's germline
   files): the allele is the field with a `*`, as Change-O reads it, not the header's first word.
 - `examples/reads.fasta` is 20 clean, productive human IGH reads, written by `examples/make_example_reads.py`.

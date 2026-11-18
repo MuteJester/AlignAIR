@@ -499,9 +499,10 @@ aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
       </p>
       <Callout kind="warning" title="Reads over 575 nt">
         A read longer than 575 nt is aligned on its first 575 nt only (<code>length_cropped</code> is <code>T</code>).
-        The cut comes before the read is turned, so on a reverse-complemented long read the J end can be lost. Trim long
-        reads to the V(D)J region first. Cell Ranger's contigs are forward, and the cut usually takes only constant
-        region after the J. See <DocLink to="prepare-input">Prepare your input</DocLink>.
+        The cut comes before the read is turned: a forward read loses its 3' end, a reverse-complemented one the start
+        of its V. A row cut inside its J is <code>partial</code> (<code>j_cropped</code>). Trim long reads to the
+        V(D)J region first. Cell Ranger's contigs are forward, and the cut usually takes only constant region after the
+        J. See <DocLink to="prepare-input?h=long-reads">Prepare your input</DocLink>.
       </Callout>
 
       <H3 id="umi-counts">UMI consensus reads and their counts</H3>

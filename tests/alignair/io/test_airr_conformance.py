@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import csv
 import json
+import random
 import re
 from pathlib import Path
 
@@ -239,8 +240,9 @@ def _read_fasta(path: Path) -> list[str]:
 
 @pytest.fixture(scope="module")
 def table(tmp_path_factory):
-    """The test chip's AIRR table of the example reads and the golden reads, plus the golden reads again with the D
-    presence head forced to absent and to short: ``(rows, germline maps, path)``."""
+    """The test chip's AIRR table of the example reads and the golden reads (the read longer than the window is cut
+    inside its J), two golden reads with 300 random bases after their J (cut past the J), and the golden reads again
+    with the D presence head forced to absent and to short: ``(rows, germline maps, path)``."""
     from tests.alignair.predict.golden_rows import FIXTURE, golden_model
     from tests.alignair.predict.test_d_gate import DPresenceStub, _encoded
 
@@ -249,7 +251,9 @@ def table(tmp_path_factory):
     from alignair.predict.airr.alignment import GermlineMaps
     model, reference = golden_model()
     golden = json.loads(FIXTURE.read_text())["reads"]
-    reads = _read_fasta(EXAMPLES) + golden
+    rng = random.Random(7)
+    tail = "".join(rng.choice("ACGT") for _ in range(300))
+    reads = _read_fasta(EXAMPLES) + golden + [read + tail for read in golden[:2]]
     records = Aligner.from_model(model, reference, device="cpu").predict(reads, batch_size=8).records
     for klass in (0, 1):
         stub = DPresenceStub(model, {_encoded(read): klass for read in golden[:5]})
@@ -269,12 +273,14 @@ def test_every_row_follows_the_airr_coordinates_and_cigars(table):
 
 
 def test_the_rows_cover_the_cases_the_frames_differ_in(table):
-    """Reverse-complemented and cropped reads, V starting past the germline's first base (an N in v_cigar), rows
-    without a D call (absent and short), and complete rows CreateGermlines can rebuild."""
+    """Reverse-complemented and cropped reads (cut past the J: complete; cut inside it: partial, ``j_cropped``), V
+    starting past the germline's first base (an N in v_cigar), rows without a D call (absent and short), and complete
+    rows CreateGermlines can rebuild."""
     rows, _, _ = table
     complete = [row for row in rows if row["airr_assembly_status"] == "complete"]
     assert any(row["rev_comp"] == "T" for row in complete)
     assert any(row["length_cropped"] == "T" for row in complete)
+    assert any(row["length_cropped"] == "T" and row["airr_assembly_reason"] == "j_cropped" for row in rows)
     assert any(re.match(r"^(\d+S)?\d+N", row["v_cigar"]) for row in complete)
     assert any(not row["d_call"] and row["d_sequence_start"] for row in complete)       # short: its span kept
     assert any(not row["d_call"] and not row["d_sequence_start"] for row in complete)   # absent

@@ -426,19 +426,22 @@ print(info["rejects"][0])    # {'sequence_id': 'junk1', 'position': 3, 'reason':
         </li>
       </ul>
       <p>
-        A cut that falls after the J changes nothing AlignAIR reports. A cut that reaches the J shows in the row: the J
-        alignment ends at the last base read, <code>j_sequence_end</code> = 575. The J call and the junction of such a
-        row can be wrong even when it says <code>complete</code>, and a deeper cut leaves the row{" "}
-        <code>partial</code>. In a test that put 100 to 320 nt of random sequence before four example reads, every
-        row whose junction changed was one of these. So after a run, check these rows:
+        A cut that falls after the J changes nothing AlignAIR reports. A cut inside the J leaves only part of it, and
+        the J call, the junction and FWR4 rest on that part, so AlignAIR marks the row <code>partial</code> with{" "}
+        <code>airr_assembly_reason</code> = <code>j_cropped</code> (its J alignment runs to the last base read). A cut
+        before the J leaves the row <code>partial</code> too (<code>collapsed_segment</code>, or{" "}
+        <code>j_cropped</code> when a few bases still align as J). In a test that put 100 to 320 nt of random sequence
+        before four example reads, all 40 rows whose junction changed came out <code>partial</code> (25{" "}
+        <code>j_cropped</code>, 15 <code>collapsed_segment</code>), as did 12 rows cut inside the J whose junction
+        survived; none of the 40 rows whose J ended before the cut did. So the usual filter drops them:
       </p>
       <CodeBlock
         lang="python"
         code={`import pandas as pd
 
 table = pd.read_csv("out.tsv", sep="\\t")
-check = table[(table["length_cropped"] == "T")
-              & ((table["j_sequence_end"] >= 575) | (table["airr_assembly_status"] != "complete"))]`}
+complete = table[table["airr_assembly_status"] == "complete"]
+cut_in_j = table[table["airr_assembly_reason"] == "j_cropped"]   # the reads to trim and align again`}
       />
       <p>
         When there are many, trim the reads to the V(D)J region before aligning (remove the leader, primers and
@@ -451,9 +454,8 @@ check = table[(table["length_cropped"] == "T")
         not call (<code>c_call</code> comes from Cell Ranger's annotations, through{" "}
         <DocLink to="metadata-join">--metadata</DocLink>). In a test with 300 simulated TRB contigs given 10x-like
         flanks (80 to 160 nt before the V, 100 to 250 nt after the J, of random sequence), 271 came out cropped; every
-        one kept the V call, J call and junction of the same contig without flanks, and none had{" "}
-        <code>j_sequence_end</code> = 575. Contigs with a longer stretch before the V are the ones the check above
-        finds.
+        one kept the V call, J call and junction of the same contig without flanks, and none was cut inside its J.
+        Contigs with a longer stretch before the V are the ones that come out <code>j_cropped</code>.
       </p>
 
       <H2 id="presto-headers">Reads from pRESTO: CONSCOUNT and DUPCOUNT</H2>
@@ -1607,13 +1609,12 @@ const fixCommonProblems: DocPage = {
           ],
           [
             <>
-              Rows with <code>length_cropped</code> = <code>T</code> are <code>partial</code>, or their{" "}
-              <code>j_sequence_end</code> is 575
+              Rows with <code>airr_assembly_reason</code> = <code>j_cropped</code>
             </>,
-            "The reads are longer than 575 nt, and the cut reached the J: the J call and junction may be wrong.",
+            "The reads are longer than 575 nt, and the cut fell inside the J: the J call and junction rest on part of it.",
             <>
               Trim reads to the V(D)J region first (<DocLink to="prepare-input?h=long-reads">long reads</DocLink>).
-              Cropped rows whose J ends before 575, as on most 10x contigs, are fine.
+              Cropped rows whose J ends before the cut, as on most 10x contigs, stay <code>complete</code>.
             </>,
           ],
           [

@@ -1246,7 +1246,8 @@
    "fwr3_aa",
    "v_identity",
    "j_identity",
-   "airr_assembly_status"
+   "airr_assembly_status",
+   "airr_assembly_reason"
   ],
   [
    "sequence",

@@ -66,12 +66,15 @@ _FIXED = {
     "segmentation_low_quality": ColumnDoc("T/F", "", "T when the read's V or J segment came out empty or reversed: "
                                                      "treat its calls with caution."),
     "length_cropped": ColumnDoc("T/F", "", "T when the read was longer than 575 nt and only its first 575 nt were "
-                                           "aligned."),
-    "airr_assembly_status": ColumnDoc("string", "", "complete (every field derived), partial (valid calls, some "
-                                                    "fields left blank: see airr_assembly_reason) or failed (see "
-                                                    "airr_assembly_error)."),
-    "airr_assembly_reason": ColumnDoc("string", "", "Why a partial row is partial (e.g. no_v: the read has no V "
-                                                    "call)."),
+                                           "aligned; a row cut inside its J is partial (j_cropped)."),
+    "airr_assembly_status": ColumnDoc("string", "", "complete (every field derived), partial (some fields left "
+                                                    "blank, or calls that rest on part of the read: see "
+                                                    "airr_assembly_reason) or failed (see airr_assembly_error)."),
+    "airr_assembly_reason": ColumnDoc("string", "", "Why a partial row is partial: no_v (the read has no V call), "
+                                                    "nonproductive_indel, missing_calls_or_coordinates, "
+                                                    "collapsed_segment, incomplete_alignment, or j_cropped (the read "
+                                                    "was longer than 575 nt and the cut fell inside its J, so its J "
+                                                    "call and junction rest on part of the J)."),
     "airr_assembly_error": ColumnDoc("string", "", "The error that stopped a failed row's assembly."),
 }
 

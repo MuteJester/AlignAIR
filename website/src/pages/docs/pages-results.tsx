@@ -199,8 +199,9 @@ read01       0.958904109589041   1.0         0.9830508474576272  0.0326176844537
           [
             <code>airr_assembly_status</code>,
             <>
-              <code>complete</code>: every field was derived. <code>partial</code>: the calls stand, but some fields
-              are blank. <code>failed</code>: an unexpected error stopped the row; it keeps its calls.
+              <code>complete</code>: every field was derived. <code>partial</code>: some fields are blank, or (
+              <code>j_cropped</code>) the J call and junction rest on part of a J the cut shortened.{" "}
+              <code>failed</code>: an unexpected error stopped the row; it keeps its calls.
             </>,
           ],
           [
@@ -224,8 +225,8 @@ read01       0.958904109589041   1.0         0.9830508474576272  0.0326176844537
               <code>T</code> when the read was longer than 575 nt and only its first 575 nt were aligned; blank
               otherwise, never <code>F</code> (<DocLink to="prepare-input?h=long-reads">reads longer than 575 nt</DocLink>
               ). Cell Ranger's contigs often pass 575 nt, as they carry the constant region after the J: many 10x rows
-              are <code>T</code>, and the cut usually takes only constant region, which AlignAIR does not call.{" "}
-              <DocLink to="prepare-input">Prepare your input</DocLink> shows how to find the rows where it took more.
+              are <code>T</code>, and the cut usually takes only constant region, which AlignAIR does not call. A row
+              cut inside its J is <code>partial</code> (<code>j_cropped</code>).
             </>,
           ],
         ]}
@@ -429,7 +430,7 @@ const trustTheCalls: DocPage = {
             <>
               <code>length_cropped</code> <code>T</code>
             </>,
-            "The read was cut to its first 575 nt.",
+            "The read was cut to its first 575 nt. Its calls stand unless the row is partial (j_cropped: the cut fell inside the J).",
           ],
           [
             <>
@@ -517,14 +518,16 @@ read06_last100  IGHVF3-G6*03,... (68 alleles of families F3, F5, F6    CARLYRNIT
         <code>length_cropped</code> is <code>T</code>. The cut comes before AlignAIR turns the read around: a forward
         read with a long stretch before its V loses its J and junction; a reverse-complemented read loses the start of
         its V. read01 with 300 extra bases in front of it is cut near the end of its V, before the junction: it gets no
-        junction and no meaningful J call, and the row is <code>partial</code> (<code>collapsed_segment</code>).
+        junction and no meaningful J call, and the row is <code>partial</code> (<code>collapsed_segment</code>). With
+        about 200 extra bases the cut falls inside its J: the J call and the junction rest on part of the J, and the row
+        is <code>partial</code> (<code>j_cropped</code>), even where the junction survived.
       </p>
       <p>
         <strong>What to do.</strong> Trim reads to the V(D)J region before aligning (
-        <DocLink to="prepare-input?h=long-reads">Prepare your input</DocLink>), and check the rows with{" "}
-        <code>length_cropped</code> <code>T</code>. Cell Ranger's contigs are forward and carry the constant region
-        after the J, so many are cut, mostly in the constant region, which changes no call: Prepare your input shows
-        how to find the few where the cut reached the J.
+        <DocLink to="prepare-input?h=long-reads">Prepare your input</DocLink>), and keep the{" "}
+        <code>complete</code> rows: a row whose J ends before the cut stays <code>complete</code>. Cell Ranger's
+        contigs are forward and carry the constant region after the J, so many are cut, mostly in the constant region,
+        which changes no call; the few cut inside the J come out <code>j_cropped</code>.
       </p>
 
       <H2 id="outside-the-read">Alleles that differ only outside the read</H2>
@@ -662,8 +665,8 @@ CAGATTTTCATATTAT-1_contig_1  TRB              TRBJ2-4*01                        
 
       <H2 id="partial-rows">Partial rows and segmentation_low_quality</H2>
       <p>
-        A <code>partial</code> row keeps its calls but has some fields blank. <code>airr_assembly_reason</code> says
-        why:
+        A <code>partial</code> row keeps its calls but has some fields blank, or calls that rest on part of the read.{" "}
+        <code>airr_assembly_reason</code> says why:
       </p>
       <DocTable
         head={["Reason", "What happened", "What the row keeps"]}
@@ -699,6 +702,15 @@ CAGATTTTCATATTAT-1_contig_1  TRB              TRBJ2-4*01                        
             <code>incomplete_alignment</code>,
             "The IMGT-gapped alignment could not be built.",
             "The calls, positions and junction.",
+          ],
+          [
+            <code>j_cropped</code>,
+            <>
+              The read was longer than 575 nt and the cut fell inside (or just before) its J (
+              <DocLink to="trust-the-calls?h=long-reads">long reads</DocLink>): the J call, the junction and FWR4 rest
+              on part of the J.
+            </>,
+            "Everything a complete row has; the J call and the junction may be wrong.",
           ],
         ]}
       />

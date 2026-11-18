@@ -20,6 +20,7 @@ def test_the_facts_users_trip_on_are_stated():
     assert {COLUMN_DOCS[c].kind for c in ("productive", "rev_comp", "segmentation_low_quality")} == {"T/F"}
     assert all("candidate set" in COLUMN_DOCS[f"{g}_call_set"].meaning for g in "vdj")
     assert "_dupN" in COLUMN_DOCS["sequence_id"].meaning and "575" in COLUMN_DOCS["length_cropped"].meaning
+    assert all("j_cropped" in COLUMN_DOCS[c].meaning for c in ("airr_assembly_reason", "length_cropped"))
 
 
 def test_only_the_v_call_lists_tied_alleles():
