@@ -25,6 +25,11 @@ const DOORS = [
     icon: ArrowLeftRight,
     title: "Coming from IgBLAST, MiXCR or Immcantation",
     body: "Your commands, germline databases and columns, mapped to AlignAIR's.",
+    links: [
+      { to: "/docs/from-igblast", label: "IgBLAST" },
+      { to: "/docs/from-mixcr", label: "MiXCR" },
+      { to: "/docs/from-immcantation", label: "Immcantation" },
+    ],
   },
   {
     to: "/docs/do-i-need-to-train",
@@ -104,7 +109,7 @@ export default function Home() {
           </div>
         </div>
         <p className="mt-4 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-          The first run downloads the model and caches it. A GPU is optional. When a read cannot tell V alleles apart,
+          The first run downloads the model and caches it. A GPU is optional. When a read cannot tell V alleles apart,{" "}
           <code>v_call</code> lists them all (read02), as IgBLAST does.{" "}
           <Link to="/docs/install" className="font-semibold text-brand-700 underline underline-offset-2 dark:text-brand-300">
             Install options
@@ -118,7 +123,21 @@ export default function Home() {
 
       {/* Three doors */}
       <section aria-label="Where to go next" className="mt-12 grid gap-4 sm:grid-cols-3">
-        {DOORS.map(({ to, icon: Icon, title, body }) => (
+        {DOORS.map(({ to, icon: Icon, title, body, links }) =>
+          links ? (
+            <div key={to} className={card}>
+              <Icon aria-hidden="true" className="h-5 w-5 text-brand-600 dark:text-brand-400" />
+              <span className="mt-3 font-semibold text-slate-900 dark:text-white">{title}</span>
+              <span className="mt-1.5 flex-1 text-sm leading-relaxed text-slate-600 dark:text-slate-400">{body}</span>
+              <span className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm font-semibold">
+                {links.map((link) => (
+                  <Link key={link.to} to={link.to} className="text-brand-700 underline underline-offset-2 dark:text-brand-300">
+                    {link.label}
+                  </Link>
+                ))}
+              </span>
+            </div>
+          ) : (
           <Link key={to} to={to} className={card}>
             <Icon aria-hidden="true" className="h-5 w-5 text-brand-600 dark:text-brand-400" />
             <span className="mt-3 font-semibold text-slate-900 dark:text-white">{title}</span>
@@ -128,7 +147,8 @@ export default function Home() {
               className="mt-3 h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-600 dark:group-hover:text-brand-400"
             />
           </Link>
-        ))}
+          ),
+        )}
       </section>
 
       {/* The seven models */}
@@ -139,14 +159,14 @@ export default function Home() {
         </p>
         <ModelTable />
         <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-          The IG models name alleles as OGRDB does, the TCR models as IMGT does. No model for your species or germline
-          set? Bind your own germline FASTA with{" "}
+          The IG models name alleles as OGRDB does, the TCR models as IMGT does. Another germline set, or novel
+          alleles? Bind the germline FASTA with{" "}
           <Link to="/docs/own-reference" className="whitespace-nowrap font-semibold text-brand-700 underline underline-offset-2 dark:text-brand-300">
             --reference
           </Link>
-          , novel alleles included, or{" "}
+          . Another species?{" "}
           <Link to="/docs/do-i-need-to-train" className="font-semibold text-brand-700 underline underline-offset-2 dark:text-brand-300">
-            train one
+            Fine-tune or train a model
           </Link>
           .
         </p>

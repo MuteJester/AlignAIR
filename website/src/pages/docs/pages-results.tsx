@@ -61,7 +61,8 @@ read03       IGHVF3-G12*02                  IGHD5-18*02  IGHJ6*03`}
         </li>
         <li>
           <strong>Allele names.</strong> The IG models write OGRDB labels (<code>IGHVF10-G50*02</code>), the TCR models
-          IMGT names; see <DocLink to="concepts?h=allele-names">OGRDB and IMGT allele names</DocLink>.
+          IMGT names; see <DocLink to="concepts?h=allele-names">OGRDB and IMGT allele names</DocLink>, and{" "}
+          <DocLink to="choose-a-model?h=map-names">Map the labels to IMGT names</DocLink> to translate them.
         </li>
         <li>
           <strong>A blank call.</strong> A blank <code>v_call</code> means the read holds no V that AlignAIR could
@@ -156,8 +157,10 @@ read02       CAKGTSCNSTSCYTIDYW           54               T            F       
         ]}
       />
       <p>
-        These columns come from the junction alone: an indel elsewhere in V or J that shifts the frame is not seen (
-        <DocLink to="trust-the-calls?h=other-limits">other limits</DocLink>).
+        All three read the junction's frame: <code>vj_in_frame</code> from the junction's length, and{" "}
+        <code>stop_codon</code> from the codons in that frame between the V's start and the J's end. An indel inside the
+        V or the J that shifts the frame is not seen (<DocLink to="trust-the-calls?h=other-limits">other limits</DocLink>
+        ).
       </p>
 
       <H2 id="identity-and-mutation">Identity and mutation</H2>
@@ -219,7 +222,10 @@ read01       0.958904109589041   1.0         0.9830508474576272  0.0326176844537
             <code>length_cropped</code>,
             <>
               <code>T</code> when the read was longer than 575 nt and only its first 575 nt were aligned; blank
-              otherwise (<DocLink to="prepare-input?h=long-reads">reads longer than 575 nt</DocLink>).
+              otherwise, never <code>F</code> (<DocLink to="prepare-input?h=long-reads">reads longer than 575 nt</DocLink>
+              ). Cell Ranger's contigs often pass 575 nt, as they carry the constant region after the J: many 10x rows
+              are <code>T</code>, and the cut usually takes only constant region, which AlignAIR does not call.{" "}
+              <DocLink to="prepare-input">Prepare your input</DocLink> shows how to find the rows where it took more.
             </>,
           ],
         ]}
@@ -269,9 +275,15 @@ read01       0.958904109589041   1.0         0.9830508474576272  0.0326176844537
       <H2 id="filter-usable-rows">Keep the rows your analysis can use</H2>
       <p>
         The true/false columns (<code>productive</code>, <code>rev_comp</code>, <code>vj_in_frame</code>,{" "}
-        <code>stop_codon</code>, <code>segmentation_low_quality</code>, <code>length_cropped</code>) hold the AIRR
-        strings <code>T</code> and <code>F</code>, and a blank cell means unknown. Compare them with the string{" "}
-        <code>"T"</code>. Which rows to keep depends on the analysis:
+        <code>stop_codon</code>, <code>segmentation_low_quality</code>) hold the AIRR strings <code>T</code> and{" "}
+        <code>F</code>, and a blank cell means unknown. <code>length_cropped</code> is <code>T</code> or blank, and
+        blank means the read was not cut. Compare them with the string <code>"T"</code>.
+      </p>
+      <p>
+        First, with 10x contigs, keep the rows whose <code>chain</code> (Cell Ranger's, joined with{" "}
+        <code>--metadata</code>) equals <code>locus</code>: a model gives reads of another locus rows that can look
+        real (<DocLink to="trust-the-calls?h=off-target">reads of another locus</DocLink>). Then, which rows to keep
+        depends on the analysis:
       </p>
       <DocTable
         head={["Analysis", "Keep"]}
@@ -291,8 +303,9 @@ read01       0.958904109589041   1.0         0.9830508474576272  0.0326176844537
           [
             "Gene usage, genotyping (TIgGER)",
             <>
-              Rows with a call for that segment, partial ones included, except those with{" "}
-              <code>segmentation_low_quality</code> <code>T</code>.
+              Rows with a <code>v_call</code>, partial ones included, except those with{" "}
+              <code>segmentation_low_quality</code> <code>T</code>. Count D and J on these rows only. On TCR rows, also
+              leave out a low <code>v_identity</code> (below 0.9 here).
             </>,
           ],
         ]}
@@ -302,13 +315,26 @@ read01       0.958904109589041   1.0         0.9830508474576272  0.0326176844537
         code={`import pandas as pd
 
 table = pd.read_csv("out.tsv", sep="\\t")
+if "chain" in table:                                   # 10x: Cell Ranger's chain column, joined by --metadata
+    table = table[table["chain"] == table["locus"]]    # drops the other chains and Multi
 complete = table[table["airr_assembly_status"] == "complete"]
-productive = complete[complete["productive"] == "T"]                 # blank: unknown, not F
-v_usage = table[table["v_call"].notna() & (table["segmentation_low_quality"] != "T")]`}
+productive = complete[complete["productive"] == "T"]   # blank: unknown, not F
+usage = table[table["v_call"].notna() & (table["segmentation_low_quality"] != "T")]
+tcr = usage["locus"].str.startswith("TR")
+usage = usage[~tcr | (usage["v_identity"] >= 0.9)]     # T cells do not hypermutate
+j_usage = usage["j_call"].str.split("*").str[0].value_counts()   # J genes, on rows with a V call`}
       />
       <p>
         A complete row never has <code>segmentation_low_quality</code> <code>T</code>, so the first two filters need no
         check on it. It matters when you keep partial rows: there it marks the rows whose V or J call means nothing.
+      </p>
+      <p>
+        A J call stands on a row without a V call, but that row is often a read of another locus. On 300 simulated TRA
+        contigs aligned with the TRB model, counting J on every row with a J call (except{" "}
+        <code>segmentation_low_quality</code> <code>T</code>) kept 277 meaningless TRBJ calls; the filter above keeps
+        4. T cells do not hypermutate, so a TCR row far from its germline is suspect: every simulated TRA and TRB contig
+        aligned with its own model had a <code>v_identity</code> of at least 0.98, while the reads of another locus
+        that got a V call had a median of 0.75 to 0.79. The 0.9 is an example: set it from your own rows.
       </p>
       <Callout kind="warning" title="Never .astype(bool) a T/F column">
         Any non-empty string is true in Python, so <code>.astype(bool)</code> turns every <code>"F"</code> into{" "}
@@ -319,9 +345,27 @@ v_usage = table[table["v_call"].notna() & (table["segmentation_low_quality"] != 
 
       <H2 id="every-other-column">Every other column</H2>
       <p>
-        The rest of the table follows the AIRR standard: the IMGT-gapped <code>sequence_alignment</code> and{" "}
-        <code>germline_alignment</code>, each segment's start and end in the read and in its germline (1-based), the
-        CIGAR strings, the N regions (<code>np1</code>, <code>np2</code>) and the framework and CDR regions. The{" "}
+        The rest of the table follows the AIRR standard, counting as Change-O's MakeDb does where the standard leaves a
+        choice:
+      </p>
+      <ul>
+        <li>
+          the IMGT-gapped <code>sequence_alignment</code> and <code>germline_alignment</code>, with N in the germline
+          for the untemplated bases between the segments;
+        </li>
+        <li>
+          each segment's start and end in the read and in its germline, 1-based and inclusive (the V's germline
+          positions count in the IMGT-gapped V);
+        </li>
+        <li>the CIGAR strings, each over the whole read;</li>
+        <li>
+          the N regions (<code>np1</code>, <code>np2</code>); a row without a D call holds every base between V and J in{" "}
+          <code>np1</code>;
+        </li>
+        <li>the framework and CDR regions, with their positions in the read.</li>
+      </ul>
+      <p>
+        The{" "}
         <DocLink to="column-dictionary">output column dictionary</DocLink> describes all 99 columns, with their units
         and the presets that hold them; <DocLink to="output-columns-choice">Choose output columns</DocLink> shows how to
         write fewer.
@@ -397,7 +441,7 @@ const trustTheCalls: DocPage = {
             <>
               A low <code>v_identity</code>, a high <code>mutation_rate</code>
             </>,
-            "Heavy hypermutation, sequencing errors, or an allele the germline set lacks.",
+            "Heavy hypermutation, sequencing errors, an allele the germline set lacks, or a read of another locus.",
           ],
         ]}
       />
@@ -478,7 +522,9 @@ read06_last100  IGHVF3-G6*03,... (68 alleles of families F3, F5, F6    CARLYRNIT
       <p>
         <strong>What to do.</strong> Trim reads to the V(D)J region before aligning (
         <DocLink to="prepare-input?h=long-reads">Prepare your input</DocLink>), and check the rows with{" "}
-        <code>length_cropped</code> <code>T</code>.
+        <code>length_cropped</code> <code>T</code>. Cell Ranger's contigs are forward and carry the constant region
+        after the J, so many are cut, mostly in the constant region, which changes no call: Prepare your input shows
+        how to find the few where the cut reached the J.
       </p>
 
       <H2 id="outside-the-read">Alleles that differ only outside the read</H2>
@@ -511,7 +557,9 @@ read06_last100  IGHVF3-G6*03,... (68 alleles of families F3, F5, F6    CARLYRNIT
         <li>
           AlignAIR calls a D only when it finds at least 8 of the D's germline bases in the read. With fewer,{" "}
           <code>d_call</code> is blank, the D's place in the read (<code>d_sequence_start</code>, <code>d_sequence_end</code>) is kept and{" "}
-          <code>d_identity</code> is blank. With none, the row has no D, and <code>np1</code> runs from the V to the J.
+          <code>d_identity</code> is blank. Either way, a row without a D call has no D in its germline:{" "}
+          <code>np1</code> runs from the V to the J, as Change-O reads such a row. With no D bases at all, the row has no
+          D coordinates either.
         </li>
         <li>
           So a TRD D is called only when almost all of it remains: <code>TRDD1*01</code> is 8 nt long.
@@ -536,13 +584,14 @@ read06_last100  IGHVF3-G6*03,... (68 alleles of families F3, F5, F6    CARLYRNIT
         <li>
           AlignAIR does not discover novel alleles, and neither does <code>--infer-genotype</code>. Find them with a
           tool built for it, such as TIgGER, on AlignAIR's table (
-          <DocLink to="from-immcantation?h=genotypes">Coming from Immcantation</DocLink>).
+          <DocLink to="from-immcantation?h=tigger">TIgGER on AlignAIR's table</DocLink>).
         </li>
         <li>
           Then add them to the germline set with <code>--reference</code>: a read that matches the novel allele at
           more bases than the old call is called by the novel allele's name (
-          <DocLink to="own-reference?h=novel-alleles">Novel alleles</DocLink>). Give new V alleles IMGT-gapped, and read
-          the warning that names any allele left without its anchor (
+          <DocLink to="own-reference?h=novel-alleles">Novel alleles</DocLink>). Export the model's set with{" "}
+          <code>--gapped</code>, append the novel alleles IMGT-gapped (TIgGER writes them so), and give that one file
+          to AlignAIR, TIgGER and CreateGermlines. Read the warning that names any allele left without its anchor (
           <DocLink to="own-reference?h=gaps-and-anchors">gaps and anchors</DocLink>).
         </li>
       </ul>
@@ -550,21 +599,41 @@ read06_last100  IGHVF3-G6*03,... (68 alleles of families F3, F5, F6    CARLYRNIT
       <H2 id="off-target">Reads of another locus, and other sequences</H2>
       <p>
         A model calls only its own locus, and every row carries that locus in <code>locus</code>. A read of another
-        locus, or a sequence that is not a receptor at all, usually gets no V call: the row is <code>partial</code>{" "}
-        with reason <code>no_v</code>. It still gets a <code>j_call</code>, which means nothing. A TRB read and a random
-        sequence aligned with the IGH model:
+        locus, or a sequence that is not a receptor at all, most often gets no V call: the row is <code>partial</code>{" "}
+        with reason <code>no_v</code>, and still has a <code>j_call</code>, which means nothing. Most such rows have{" "}
+        <code>segmentation_low_quality</code> <code>F</code>, so that column does not find them. And a fifth to a third
+        of these reads come out as ordinary <code>complete</code> rows, with a V call of the model's locus, often a
+        junction, sometimes <code>productive</code> <code>T</code>, and the run gives no warning. Simulated 10x-like
+        contigs aligned with the model of another locus:
       </p>
+      <DocTable
+        head={["Reads, model", <><code>no_v</code> rows (with <code>segmentation_low_quality</code> T)</>, <><code>complete</code> rows</>, <>of them <code>productive</code> T</>]}
+        rows={[
+          ["300 TRA contigs, TRB model", "206 (23)", "85 (28%)", "21"],
+          ["300 TRB contigs, IGH model", "246 (92)", "54 (18%)", "2"],
+          ["300 TRB contigs, TRA model", "188 (4)", "98 (33%)", "13"],
+        ]}
+      />
       <CodeBlock
         lang="text"
-        title="out.tsv"
-        code={`sequence_id  locus  v_call  j_call    segmentation_low_quality  airr_assembly_status  airr_assembly_reason
-trb_read     IGH            IGHJ2*01  T                         partial               no_v
-random1      IGH            IGHJ4*02  T                         partial               no_v`}
+        title="TRA contigs aligned with the TRB model (a few columns)"
+        code={`sequence_id                  locus  v_call    j_call      v_identity          junction_aa       productive  airr_assembly_status  airr_assembly_reason
+TAAATGAGACATCTTA-1_contig_1  TRB    TRBV2*01  TRBJ1-6*01  0.8292682926829268  CAMREGINTNAGKSTF  T           complete
+CAGATTTTCATATTAT-1_contig_1  TRB              TRBJ2-4*01                                                    partial               no_v`}
       />
       <p>
+        <strong>How it shows.</strong> Two signals tell these rows apart. With 10x data, Cell Ranger's{" "}
+        <code>chain</code> (joined with <code>--metadata</code>) differs from <code>locus</code>. On the TCR models,{" "}
+        <code>v_identity</code> is low: the off-locus rows with a V call had a median of 0.75 to 0.79, every true TRA
+        and TRB contig 0.98 or more. A few off-locus reads keep only a short stretch of V that matches many alleles
+        exactly, and reach a <code>v_identity</code> of 1: the <code>chain</code> column still finds those.
+      </p>
+      <p>
         <strong>What to do.</strong> Split mixed libraries by locus and align each part with its own model (
-        <DocLink to="choose-a-model?h=pick-by-locus">Pick by locus</DocLink>). Many <code>no_v</code> rows in a run
-        point to reads of another locus, or to a genotype that misses genes.
+        <DocLink to="choose-a-model?h=pick-by-locus">Pick by locus</DocLink>). Keep the rows whose{" "}
+        <code>chain</code> equals <code>locus</code>, leave out TCR rows with a low <code>v_identity</code>, and count
+        J only on rows with a V call (<DocLink to="output-columns?h=filter-usable-rows">filters</DocLink>). Many{" "}
+        <code>no_v</code> rows in a run point to reads of another locus, or to a genotype that misses genes.
       </p>
 
       <H2 id="other-limits">Other limits</H2>
@@ -898,6 +967,10 @@ const comparison: DocPage = {
           tool calls that allele.
         </li>
       </ul>
+      <p>
+        The other loci have no such check on real reads: for IGK, IGL and the four TCR loci, the simulated results
+        above are the measure.
+      </p>
       {/* PENDING-V4-NUMBERS: the locked run's real-data results (its pre-declared measure per protocol, with the
           known-answer accuracy beside it), reported as the run's report gives them, wins, ties or losses alike. */}
       <p className="text-sm text-slate-500">Results of the locked test run appear here.</p>

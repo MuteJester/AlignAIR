@@ -102,7 +102,9 @@ const install: DocPage = {
         The second command mounts your current folder as <code>/data</code> and runs as you, so <code>out.tsv</code>{" "}
         lands in your folder and belongs to you; <code>HOME=/data</code> keeps the downloaded model in{" "}
         <code>.cache/alignair</code> there, so the next run does not download it again. For a pipeline, pin the
-        release's version tag (<code>alignair/alignair:&lt;version&gt;</code>) rather than <code>latest</code>.
+        release's version tag (<code>alignair/alignair:&lt;version&gt;</code>) rather than <code>latest</code>. On a
+        cluster that runs Apptainer or Singularity instead of Docker, the same image works (
+        <DocLink to="run-at-scale?h=apptainer">Apptainer or Singularity</DocLink>).
       </p>
 
       <H2 id="check-the-install">Check the install</H2>
@@ -292,7 +294,8 @@ const firstAlignment: DocPage = {
         </li>
         <li>
           The line it prints counts the reads aligned and the reads dropped. A read is dropped when more than 20% of
-          its symbols are not A, C, G, T or N (<code>--rejects-out rejects.tsv</code> keeps them, with the reason). When
+          its characters are unusable: neither a base (A, C, G, T, N) nor an IUPAC ambiguity code such as R or Y, which
+          is read as N (<code>--rejects-out rejects.tsv</code> keeps them, with the reason). When
           some rows could be assembled only in part, the line adds how many, for example{" "}
           <code>; 0 failed / 3 partial AIRR assemblies tagged</code>.
         </li>
@@ -431,8 +434,10 @@ const firstAlignment: DocPage = {
         <li>
           <strong>Long reads are cut.</strong> A read longer than 575 nt is aligned on its first 575 nt (its{" "}
           <code>length_cropped</code> is <code>T</code>). The cut comes before the read is turned around: a forward
-          read loses its J end and the junction, a reverse-complemented one the start of its V. Trim long reads to the
-          V(D)J region first.
+          read loses its 3' end, often only constant region but the J and junction when much comes before the V; a
+          reverse-complemented one loses the start of its V.{" "}
+          <DocLink to="prepare-input?h=long-reads">Reads longer than 575 nt</DocLink> says which rows to check, and
+          when to trim.
         </li>
         <li>
           <strong>Ids stay yours.</strong> Each row keeps its read's id; a repeated id gets <code>_dup1</code>,{" "}
@@ -712,15 +717,16 @@ const concepts: DocPage = {
           [
             <strong>Dropped read</strong>,
             <>
-              A read with more than 20% symbols other than A, C, G, T and N. It is counted as dropped, and written to the{" "}
-              <code>--rejects-out</code> file if you give one.
+              A read more than 20% of whose characters are unusable: neither a base (A, C, G, T, N) nor an IUPAC
+              ambiguity code (R, Y, S, W, K, M, B, D, H, V, read as N). An empty read is dropped too. It is counted as
+              dropped, and written to the <code>--rejects-out</code> file if you give one.
             </>,
           ],
           [
             <strong>575-nt window</strong>,
             <>
               A read longer than 575 nt is aligned on its first 575 nt, and its <code>length_cropped</code> is{" "}
-              <code>T</code>.
+              <code>T</code> (blank for a read that was not cut).
             </>,
           ],
           [
@@ -778,19 +784,18 @@ const concepts: DocPage = {
       <p>Two ways:</p>
       <ol>
         <li>
-          <strong>Translate the names through OGRDB.</strong> OGRDB publishes the human germline sets at{" "}
+          <strong>Translate the names.</strong> OGRDB's current human sets, at{" "}
           <a href="https://ogrdb.airr-community.org/germline_sets/Homo%20sapiens" target="_blank" rel="noreferrer">
             ogrdb.airr-community.org/germline_sets/Homo sapiens
-          </a>{" "}
-          (AIRR JSON, gapped and ungapped FASTA), with gene tables at{" "}
-          <a href="https://ogrdb.airr-community.org/gene_table" target="_blank" rel="noreferrer">
-            ogrdb.airr-community.org/gene_table
           </a>
-          . Look your alleles up there, and write your genotype in the names the model uses.
+          , name their alleles by their IMGT (IUIS) names and hold the IGH model's sequences, so matching sequences
+          maps each label to its IMGT name (<code>IGHVF10-G50*02</code> is <code>IGHV3-11*04</code>).{" "}
+          <DocLink to="choose-a-model?h=map-names">Map the labels to IMGT names</DocLink> has the script.
         </li>
         <li>
-          <strong>Bind the IMGT germline set itself.</strong> Give the model a FASTA of the IMGT alleles, one plain allele
-          name per header (<code>&gt;IGHV3-23*01</code>); its calls then carry those names.
+          <strong>Bind the IMGT germline set itself.</strong> Give the model a FASTA of the IMGT alleles; its calls then
+          carry those names. Immcantation's IMGT germline files are read as they are, full IMGT/GENE-DB headers
+          included.
         </li>
       </ol>
       <CodeTabs
@@ -798,8 +803,9 @@ const concepts: DocPage = {
         python={`from alignair import Aligner, ReferenceSet\n\naligner = Aligner.from_pretrained("alignair4-igh-human", reference=ReferenceSet.from_fasta("imgt_igh.fasta"))`}
       />
       <p>
-        <DocLink to="own-reference">Use your own germline reference</DocLink> says what such a FASTA needs, and{" "}
-        <DocLink to="choose-a-model">Choose a model</DocLink> shows each model's germline set.
+        <DocLink to="choose-a-model?h=bind-imgt">Call with IMGT's set</DocLink> shows the calls this gives and what the
+        model's own set lacks; <DocLink to="own-reference">Use your own germline reference</DocLink> says what such a
+        FASTA needs.
       </p>
 
       <H2 id="what-a-model-contains">What a model contains</H2>

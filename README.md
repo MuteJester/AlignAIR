@@ -115,8 +115,9 @@ the AIRR table, which is what tools downstream read.
 - **Allele names.** The IG models call alleles by their OGRDB names (`IGHVF6-G21*07`), the TCR models by their IMGT
   names. A genotype written in the other naming is refused; the [Choose a model](https://mutejester.github.io/AlignAIR/#/docs/choose-a-model)
   page shows how to work with IMGT-named data.
-- **No model for your species or germline set?** Give your own germline FASTA with `--reference` (novel alleles
-  included), or [train a model](https://mutejester.github.io/AlignAIR/#/docs/train).
+- **Another germline set, or novel alleles,** for a species and locus a model covers: give the germline FASTA with
+  `--reference`. **Another species** (mouse, say): [fine-tune or train a model](https://mutejester.github.io/AlignAIR/#/docs/do-i-need-to-train); binding
+  another species' germlines to a human model costs accuracy.
 - The models are released under GPL-3.0-or-later, as the code.
 
 ## Your own data
@@ -137,8 +138,9 @@ alignair predict --model alignair4-igh-human --input reads.fastq.gz --out out.ts
 # Your own germline set, novel alleles included
 alignair predict --model alignair4-igh-human --input reads.fasta --out out.tsv --reference germline.fasta
 
-# Carry 10x cell barcodes and UMI counts into the table
-alignair predict --model alignair4-igh-human --input contigs.fasta --out out.tsv \
+# Carry 10x cell barcodes and UMI counts into the table. One locus per run: Cell Ranger's contigs mix chains,
+# so split them by chain first (the metadata page shows how) and give each locus its own model.
+alignair predict --model alignair4-igh-human --input igh_contigs.fasta --out igh.tsv \
   --metadata filtered_contig_annotations.csv
 
 # Many reads on the CPU: worker processes
@@ -158,7 +160,10 @@ shows every measure, ties included, and the method.
 
 **When another tool is the better choice:**
 
-- **IgBLAST**, for a species or germline set no AlignAIR model covers when you cannot train one.
+- **IgBLAST**, for a species or locus no AlignAIR model covers when you cannot train one; reads longer than 575 nt
+  you cannot trim; a D call wherever any D bases remain (AlignAIR leaves a D with fewer than 8 bases uncalled);
+  IgBLAST's scores and e-values; or a measure your study rests on where the
+  [comparison](https://mutejester.github.io/AlignAIR/#/docs/comparison?h=when-igblast) says IgBLAST is better.
 - **MiXCR**, for a pipeline from raw sequencing data to assembled clonotypes (UMIs, contig assembly): AlignAIR
   assigns V(D)J alleles to reads, it does not assemble clones.
 - **Immcantation** stays your downstream toolkit: AlignAIR replaces its alignment step (AssignGenes and MakeDb), and

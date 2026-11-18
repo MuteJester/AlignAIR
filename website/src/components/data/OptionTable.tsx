@@ -1,4 +1,5 @@
 import optionsData from "../../data/cli-options.json";
+import InlineText from "./InlineText";
 
 interface Option {
   flags: string[];
@@ -31,14 +32,14 @@ export default function OptionTable({ command }: { command: string }) {
             <table className="w-full border-collapse text-left text-sm">
               <tbody>
                 {group.options.map((option) => (
-                  <tr key={option.anchor} id={option.anchor} className="scroll-mt-24 border-b border-slate-100 align-top last:border-0 dark:border-slate-800/60">
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-[0.85em] font-semibold text-brand-700 dark:text-brand-300">
+                  <tr key={option.anchor} id={option.anchor} className="block scroll-mt-24 border-b border-slate-100 py-2 align-top last:border-0 sm:table-row sm:py-0 dark:border-slate-800/60">
+                    <td className="block px-4 py-1 font-mono sm:table-cell sm:whitespace-nowrap sm:py-3 text-[0.85em] font-semibold text-brand-700 dark:text-brand-300">
                       {option.flags.join(", ")}
                       {option.metavar && option.kind !== "flag" ? <span className="text-slate-500"> {option.metavar}</span> : null}
                       {option.required ? <span className="ml-2 rounded bg-amber-100 px-1.5 text-[10px] font-semibold uppercase text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">required</span> : null}
                     </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                      {option.help}
+                    <td className="block px-4 py-1 text-slate-600 sm:table-cell sm:py-3 dark:text-slate-300">
+                      <InlineText text={option.help ?? ""} />
                       {option.choices ? <span className="block text-xs text-slate-500">One of: {option.choices.join(", ")}</span> : null}
                       {option.default !== null && option.default !== "" ? (
                         <span className="block text-xs text-slate-500">Default: <code>{String(option.default)}</code></span>

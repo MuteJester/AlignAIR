@@ -76,8 +76,10 @@ const doINeedToTrain: DocPage = {
         from the model's own alleles: the same sequence, or a V of the same length that differs at no more than 10% of
         its bases (<DocLink to="own-reference?h=gaps-and-anchors">how they are filled</DocLink>). A V allele unlike
         any of the model's gets its anchor only from its own IMGT gaps; without them it has none, and its reads get no
-        junction. And a set of another species binds when it has the model's segments, but how well a human model calls
-        another species' alleles has not been measured. For another species, train.
+        junction. And a set of another species binds when it has the model's segments, but a human model calls another
+        species' reads worse than a model trained or fine-tuned for it (
+        <DocLink to="choose-a-model?h=another-species">Mouse and other species</DocLink>). For another species, train
+        or fine-tune.
       </p>
 
       <H2 id="decide">Decide in four questions</H2>
@@ -125,21 +127,56 @@ const doINeedToTrain: DocPage = {
             "Checks that the run works, start to end. Its calls are not usable.",
           ],
           [<code>desktop</code>, "50,000", "64", "3.2 million", "2,000 steps", "The default."],
-          [<code>full</code>, "300,000", "128", "38.4 million", "5,000 steps", "A long run, close to the pretrained models' length."],
+          [
+            <code>full</code>,
+            "300,000",
+            "128",
+            "38.4 million",
+            "5,000 steps",
+            "A long run: nearly the pretrained models' steps, with twice their reads per step.",
+          ],
         ]}
       />
       <p>
-        The seven pretrained models trained for 320,000 to 340,000 steps (each one's card gives its count:{" "}
-        <DocLink to="model-cards">Model cards</DocLink>). <code>--steps</code>, <code>--batch-size</code> and{" "}
+        The seven pretrained models trained for 320,000 to 340,000 steps of 64 reads, 20 to 22 million reads in all
+        (each one's card gives its count: <DocLink to="model-cards">Model cards</DocLink>). <code>--steps</code>, <code>--batch-size</code> and{" "}
         <code>--val-every</code> override a preset's numbers.
       </p>
       <p>
-        How long a step takes depends on your hardware, so AlignAIR gives no time per preset. Train{" "}
-        <code>desktop</code> and <code>full</code> on a GPU; on a CPU, keep to <code>--plan</code> and{" "}
-        <code>quick</code>. The reads are simulated on the CPU while the model trains: on a GPU machine with spare CPU
-        cores, <code>--data-workers N</code> simulates them in N worker processes (at most 28 are used), with the same
-        reads as one process. To estimate your own time, time a short run with your preset's batch size and scale it
-        by the steps:
+        How long a step takes depends on the machine. Three runs on one desktop (Intel i7-10700F with 8 cores, NVIDIA
+        RTX 3090 Ti), shared with other jobs; the times include the setup and the export:
+      </p>
+      <DocTable
+        head={["Run", "Device", "Time"]}
+        rows={[
+          [
+            <>
+              <code>desktop</code> preset, <code>MOUSE_IGH_IMGT</code> from scratch, 500 steps,{" "}
+              <code>--data-workers 6</code>
+            </>,
+            "GPU",
+            "8 and 10 min in two runs: 1 to 1.2 s a step, so the preset's 50,000 steps would take 14 to 16 hours at that pace",
+          ],
+          [
+            <>
+              <code>MOUSE_TCRB_IMGT</code>, warm start from the human TRB model, 100 steps,{" "}
+              <code>--data-workers 4</code>
+            </>,
+            "CPU",
+            <>
+              3.5 min, VAL score 0.99 (<DocLink to="fine-tune?h=mouse-trb">the example</DocLink>)
+            </>,
+          ],
+          [<>The same 100 steps from scratch</>, "CPU", "2.5 min, VAL score 0.47"],
+        ]}
+      />
+      <p>
+        So a CPU is enough for <code>--plan</code>, <code>quick</code> and a short warm start from a model of the same
+        locus; a <code>desktop</code> or <code>full</code> run from scratch wants a GPU. A warm start still trains the
+        preset's full steps unless you lower <code>--steps</code>. The reads are simulated on the CPU while the model
+        trains, so free CPU cores matter on a GPU machine too: <code>--data-workers N</code> simulates them in N worker
+        processes (at most 28 are used), with the same reads as one process. To estimate your own time, time a short
+        run with your preset's batch size and scale it by the steps:
       </p>
       <CodeBlock
         code={`time alignair train --dataconfig MOUSE_IGH_IMGT --out runs/timing --preset desktop \\
@@ -188,6 +225,19 @@ const train: DocPage = {
   MOUSE_IGH_IMGT               BCR_HEAVY              Mouse                  True`}
       />
       <p>
+        The T-cell sets are named with <code>TCR</code>, not the locus: <code>MOUSE_TCRA_IMGT</code>,{" "}
+        <code>MOUSE_TCRB_IMGT</code>, <code>MOUSE_TCRD_IMGT</code> and <code>MOUSE_TCRG_IMGT</code>. A name such as{" "}
+        <code>MOUSE_TRB_IMGT</code> is refused (<code>[ALIGNAIR_CONFIG_INVALID] unknown GenAIRR dataconfig
+        'MOUSE_TRB_IMGT'</code>). <code>--chain</code> takes the locus all the same:
+      </p>
+      <CodeBlock
+        code={`$ alignair reference list --species Mouse --chain TRB
+2 built-in reference(s):
+  name                         chain_type             species                has_d
+  MOUSE_C57BL6J_TCRB_IMGT      TCR_BETA               Mouse C57BL/6J         True
+  MOUSE_TCRB_IMGT              TCR_BETA               Mouse                  True`}
+      />
+      <p>
         The sets come from IMGT for every species, and also from OGRDB for the human IG loci (
         <code>HUMAN_IGH_OGRDB</code>, the pretrained IGH model's set). A model calls alleles by the names of the set it
         trained on: IMGT names from an <code>_IMGT</code> set, OGRDB labels from an <code>_OGRDB</code> set. Pick the
@@ -205,7 +255,9 @@ aligner = run.best_aligner()      # the best training snapshot, loaded as an Ali
         The command line uses the <code>desktop</code> preset unless you give <code>--preset</code> (
         <DocLink to="do-i-need-to-train?h=what-training-costs">what each preset costs</DocLink>). Several names after{" "}
         <code>--dataconfig</code> train one model of several loci, for example{" "}
-        <code>--dataconfig MOUSE_IGK_IMGT MOUSE_IGL_IMGT</code> for both light chains.
+        <code>--dataconfig MOUSE_IGK_IMGT MOUSE_IGL_IMGT</code> for both light chains. For mouse T cells, a short warm
+        start from the human model of the same locus gets much further than a run from scratch of the same length (
+        <DocLink to="fine-tune?h=mouse-trb">Fine-tune a model</DocLink>).
       </p>
 
       <H2 id="plan-first">Check the plan first</H2>
@@ -604,7 +656,8 @@ run = run_training(config, output_dir="runs/mouse_igh_ft")`}
           only the alleles of your set.
         </li>
         <li>
-          The run starts at step 0 and trains for the full number of steps, with a fresh optimizer and learning rate.
+          The run starts at step 0 and trains for the preset's full number of steps (50,000 with{" "}
+          <code>desktop</code>) unless you lower <code>--steps</code>, with a fresh optimizer and learning rate.
           Nothing of the source's training state is used.
         </li>
       </ul>
@@ -641,11 +694,41 @@ backbone transfer: 86/86 tensors (100%)
           another learning rate.
         </li>
       </ul>
+
+      <H2 id="mouse-trb">Example: mouse TRB from the human TRB model</H2>
+      <p>
+        The mouse TRB set is <code>MOUSE_TCRB_IMGT</code>. A short warm start from the human TRB model, on a CPU, then
+        a check of the model on fresh simulated reads:
+      </p>
+      <CodeBlock
+        code={`alignair train --dataconfig MOUSE_TCRB_IMGT --out runs/mouse_trb_ft --init-from alignair4-trb-human \\
+  --steps 100 --val-every 50 --device cpu --data-workers 4
+alignair benchmark --model runs/mouse_trb_ft/bundle/model.alignair`}
+      />
+      <p>
+        The same 100 steps without <code>--init-from</code> train from scratch. Both runs, measured on one desktop
+        (Intel i7-10700F, 8 cores, shared with other jobs; the time includes the setup, the two checks and the
+        export), and scored by <code>alignair benchmark</code> on its 200 <code>clean</code> reads (shares from 0 to
+        1):
+      </p>
+      <DocTable
+        head={["100 steps on the CPU", "Time", "VAL score", "V allele right", "J allele right", "Junction exact"]}
+        rows={[
+          ["Warm start from the human TRB model", "3.5 min", "0.99", "1.000", "0.980", "0.972"],
+          ["From scratch", "2.5 min", "0.47", "0.950", "0.145", "0.771"],
+        ]}
+      />
+      <p>
+        These are simulated reads, from one short run each: a sign of what a warm start saves, not a validated model.
+        A model warm-started this way also called more J alleles right than the human model with the mouse set bound
+        with <code>--reference</code> (<DocLink to="choose-a-model?h=another-species">Mouse and other species</DocLink>
+        ).
+      </p>
       <Callout kind="note" title="No recipe">
-        AlignAIR does not prescribe how long to fine-tune or with which settings, and whether a warm start gives a
-        better model than a run from scratch has not been measured for your case. To find out, train your set both
-        ways with the same settings and compare the two models on the same reads (
-        <DocLink to="evaluate?h=benchmark">alignair benchmark</DocLink>).
+        AlignAIR does not prescribe how long to fine-tune or with which settings. Start short, check the model with{" "}
+        <DocLink to="evaluate?h=benchmark">alignair benchmark</DocLink>, and train longer while its scores still
+        rise. To compare a warm start with a run from scratch for your set, train both with the same settings and
+        score them on the same reads (the same <code>--n</code> and <code>--seed</code>).
       </Callout>
 
       <H2 id="resume-or-warm-start">Resume or warm start?</H2>
@@ -808,8 +891,11 @@ Matched **4** sequences by \`sequence_id\` (AlignAIR: 4, IgBLAST: 4; AlignAIR-on
         (its <code>v_call_set</code>, <code>d_call_set</code>, <code>j_call_set</code>): shared ambiguity, not a
         conflict. So give AlignAIR's table as <code>--a</code>. The report ends with examples of
         the reads that disagree. Agreement is not accuracy: where the tools differ, either may be right.{" "}
-        <code>--json</code> gives the numbers as JSON, <code>--out</code> writes the report to a file. Both tables must
-        use the same allele names, so align with the same germline set in both tools.
+        <code>--json</code> gives the numbers as JSON, <code>--out</code> writes the report to a file. Rows are matched
+        by <code>sequence_id</code>, so both tables must name the reads alike. Allele agreement needs the same allele
+        names, so align with the same germline set in both tools. Against a table of another germline set, or of genes
+        only, such as Cell Ranger's <code>airr_rearrangement.tsv</code> or a MiXCR export, read the gene agreement
+        column (<DocLink to="from-mixcr?h=check-against-cell-ranger">an example on 10x TRB contigs</DocLink>).
       </p>
 
       <H2 id="analyze">Check the output: alignair analyze</H2>

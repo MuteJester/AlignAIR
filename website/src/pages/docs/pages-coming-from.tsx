@@ -3,17 +3,34 @@ import CodeTabs from "../../components/CodeTabs";
 import { DocTable, DocLink, H2, H3, type DocPage } from "./doc-kit";
 import ColumnTable from "../../components/data/ColumnTable";
 
-const OGRDB_SETS = "https://ogrdb.airr-community.org/germline_sets/Homo%20sapiens";
-const OGRDB_GENES = "https://ogrdb.airr-community.org/gene_table";
-
 const PREDICT_PYTHON = `from alignair import Aligner, read_sequences
 
 aligner = Aligner.from_pretrained("alignair4-igh-human")
 ids, reads, info = read_sequences("reads.fasta")
 aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`;
 
+const TIGGER_RUN = `library(tigger)
+
+db <- airr::read_rearrangement("alignair.tsv")
+germline_db <- readIgFasta("germlines.fasta")      # alignair reference export ... --gapped
+
+# pos_range leaves out the V positions the primers cover (these reads start near IMGT position 40)
+novel <- findNovelAlleles(db, germline_db, pos_range = 50:312, nproc = 4)
+genotype <- inferGenotype(db, germline_db = germline_db, novel = novel)`;
+
+const TIGGER_BACK = `# The novel alleles, gapped, after the gapped germlines: one file for AlignAIR, TIgGER and CreateGermlines
+found <- selectNovel(novel)
+file.copy("germlines.fasta", "germlines_with_novel.fasta", overwrite = TRUE)
+cat(sprintf(">%s\\n%s\\n", found$polymorphism_call, found$novel_imgt),
+    file = "germlines_with_novel.fasta", sep = "", append = TRUE)
+
+# The genotype as YAML: every V allele of it, gene*allele
+alleles <- unlist(Map(function(gene, calls) paste0(gene, "*", strsplit(calls, ",")[[1]]),
+                      genotype$gene, genotype$alleles), use.names = FALSE)
+writeLines(c("V:", paste0("  - ", alleles)), "donor.yaml")`;
+
 /* ------------------------------------------------------------------------------------------------------------------ */
-/* IgBLAST                                                                                                            */
+/* IgBLAST                                                                                                         */
 /* ------------------------------------------------------------------------------------------------------------------ */
 
 const fromIgblast: DocPage = {
@@ -65,8 +82,8 @@ aligned 20 reads (0 dropped) -> alignair.tsv`}
             <code>-auxiliary_data</code>,
             <>
               Nothing to give. The model's J alleles carry their reading frame and CDR3 end. A bound{" "}
-              <code>--reference</code> takes the ones it lacks from the model's own alleles (the same allele, or a close
-              variant of the same length).
+              <code>--reference</code> takes a J's from the model's allele with the same sequence, else from the J's own
+              Trp/Phe-Gly-X-Gly motif.
             </>,
           ],
           [
@@ -128,18 +145,21 @@ aligned 20 reads (0 dropped) -> alignair.tsv`}
       </p>
       <ul>
         <li>
-          Look your alleles up in OGRDB's published human germline sets (
-          <a href={OGRDB_SETS} target="_blank" rel="noreferrer">germline sets</a>, as AIRR JSON and gapped or ungapped
-          FASTA) and its <a href={OGRDB_GENES} target="_blank" rel="noreferrer">gene tables</a>, and use the OGRDB
-          labels.
+          Bind IMGT's germline set with <code>--reference</code>: the calls then carry IMGT names (
+          <DocLink to="choose-a-model?h=bind-imgt">Call with IMGT's set</DocLink>).
         </li>
-        <li>Bind the IMGT germline set itself with <code>--reference</code>: the calls then carry IMGT names.</li>
+        <li>
+          Map the model's labels to IMGT names by their sequences, and translate your tables or AlignAIR's calls (
+          <DocLink to="choose-a-model?h=map-names">Map the labels to IMGT names</DocLink>).
+        </li>
       </ul>
 
       <H3 id="bind-a-reference">Bind another germline set</H3>
       <p>
-        Give a FASTA of V, D and J alleles whose headers are the allele names (<code>&gt;IGHV3-23*01</code>). Novel
-        alleles are welcome. Missing IMGT gaps and anchors are taken from the model's own alleles. Nothing is retrained.
+        Give a FASTA of V, D and J alleles whose headers are the allele names (<code>&gt;IGHV3-23*01</code>), or
+        IMGT/GENE-DB headers, which are read as they are (the field with a <code>*</code> names the allele). Novel
+        alleles are welcome. Missing IMGT gaps and anchors are taken from the model's own alleles where it can. Nothing
+        is retrained.
       </p>
       <CodeTabs
         cli={`alignair predict --model alignair4-igh-human --input reads.fasta --out alignair.tsv \\
@@ -175,7 +195,11 @@ aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
           ],
           [
             <><code>v_sequence_start</code> to <code>j_germline_end</code></>,
-            "The same: 1-based positions in the read and in the germline allele.",
+            <>
+              1-based positions in the read and in the germline allele. AlignAIR's <code>v_germline_start</code> and{" "}
+              <code>v_germline_end</code> count in the IMGT-gapped V germline from its first position, as Change-O's
+              MakeDb writes them (so <code>v_germline_start</code> is 1); IgBLAST's count in the ungapped allele.
+            </>,
           ],
           [
             <><code>v_call</code>, <code>d_call</code>, <code>j_call</code></>,
@@ -199,9 +223,17 @@ aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
           [
             <><code>v_cigar</code>, <code>d_cigar</code>, <code>j_cigar</code></>,
             <>
-              AlignAIR writes only the aligned segment (<code>292M</code>); IgBLAST's string also counts the read's bases
-              outside the segment and the germline bases skipped at its start. Read positions from the start and end
-              columns instead.
+              Both span the whole read: S for the read's bases outside the segment, N for the germline bases skipped at
+              its start, then the alignment (<code>4N291M73S</code>). IgBLAST's also ends with an N for the germline
+              bases after the segment, which the AIRR standard leaves optional.
+            </>,
+          ],
+          [
+            <><code>fwr1</code> to <code>fwr4</code>, <code>cdr1</code> to <code>cdr3</code>, with their starts and ends</>,
+            <>
+              The positions are the same: 1-based, in the read. AlignAIR cuts FWR1 to CDR2 from the IMGT-gapped
+              alignment, so they hold its dots, as MakeDb's do. FWR4 is IMGT's FR4 in both, from the J's Trp or Phe
+              codon.
             </>,
           ],
           [
@@ -398,14 +430,15 @@ const fromMixcr: DocPage = {
           [
             "UMI and cell-barcode correction",
             <>
-              None. Build one consensus read per UMI first, and carry barcodes and counts in with{" "}
-              <code>--metadata</code>.
+              None. Build one consensus read per UMI first (<DocLink to="from-mixcr?h=umi-counts">below</DocLink>), and
+              carry barcodes and counts in with <code>--metadata</code>.
             </>,
           ],
           [
             "Clonotype and contig assembly",
             <>
-              None. Cluster the AIRR table into clones with Change-O or SCOPer (
+              None: AlignAIR does not assemble contigs, pair chains or group reads into clonotypes. For T cells, see{" "}
+              <DocLink to="from-mixcr?h=tcr-clonotypes">T-cell clonotypes</DocLink>; for B cells, Change-O or SCOPer (
               <DocLink to="from-immcantation?h=clonal-clustering">how</DocLink>).
             </>,
           ],
@@ -427,19 +460,23 @@ const fromMixcr: DocPage = {
       <H2 id="where-it-fits">Where AlignAIR fits</H2>
       <ol>
         <li>
-          <strong>Prepare the reads.</strong> Merge read pairs, and for UMI libraries build one consensus read per UMI.
-          pRESTO, part of Immcantation, does both.
+          <strong>Prepare the reads.</strong> Merge read pairs, and for UMI libraries build one consensus read per UMI (
+          <DocLink to="from-mixcr?h=umi-counts">below</DocLink>). Cell Ranger's contigs need neither: align them as
+          they are.
         </li>
         <li>
           <strong>Assign alleles.</strong> <code>alignair predict</code> with the model of each locus.
         </li>
         <li>
-          <strong>Cluster clones.</strong> Change-O's <code>DefineClones.py</code> or SCOPer on AlignAIR's table (
+          <strong>Group clonotypes.</strong> T cells: by V gene, J gene and junction, with no threshold (
+          <DocLink to="from-mixcr?h=tcr-clonotypes">below</DocLink>). B cells, which hypermutate: Change-O's{" "}
+          <code>DefineClones.py</code> or SCOPer, with a distance threshold (
           <DocLink to="from-immcantation?h=clonal-clustering">Coming from Immcantation</DocLink>).
         </li>
         <li>
-          <strong>Go on downstream.</strong> Germlines, genotypes, mutation and lineage analysis with the rest of
-          Immcantation.
+          <strong>Go on downstream.</strong> T cells: Scirpy and other tools that read AIRR tables (
+          <DocLink to="from-mixcr?h=tcr-tools">below</DocLink>). B cells: germlines, genotypes, mutation and lineage
+          analysis with the rest of Immcantation.
         </li>
       </ol>
 
@@ -456,18 +493,28 @@ aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
       />
       <p>
         AlignAIR turns each read the right way round itself (the <code>orientation</code> and <code>rev_comp</code>{" "}
-        columns say how), so reads in mixed orientations are fine. A read in which more than 20% of the symbols are not
-        A, C, G, T or N is dropped; <code>--rejects-out</code> keeps the dropped reads in a file.
+        columns say how), so reads in mixed orientations are fine. IUPAC ambiguity codes are read as N; a read in which
+        more than 20% of the symbols are something else (a gap, a digit) is dropped, and <code>--rejects-out</code>{" "}
+        keeps the dropped reads in a file.
       </p>
       <Callout kind="warning" title="Reads over 575 nt">
         A read longer than 575 nt is aligned on its first 575 nt only (<code>length_cropped</code> is <code>T</code>).
         The cut comes before the read is turned, so on a reverse-complemented long read the J end can be lost. Trim long
-        reads to the V(D)J region first. See <DocLink to="prepare-input">Prepare your input</DocLink>.
+        reads to the V(D)J region first. Cell Ranger's contigs are forward, and the cut usually takes only constant
+        region after the J. See <DocLink to="prepare-input">Prepare your input</DocLink>.
       </Callout>
 
       <H3 id="umi-counts">UMI consensus reads and their counts</H3>
       <p>
-        Align the consensus reads, and join their counts by read id with <code>--metadata</code>. A table with a{" "}
+        AlignAIR aligns each read as it is. It does not group reads by UMI, correct UMI or barcode errors, or build a
+        consensus, so two reads of one molecule get two rows. Build the consensus reads first: MiXCR builds its own
+        inside its pipeline, and AlignAIR needs them as sequences (FASTA, FASTQ or a table). Outside MiXCR, pRESTO's{" "}
+        <code>BuildConsensus.py</code> builds one read per UMI from reads whose UMI is in their header (
+        <a href="https://presto.readthedocs.io" target="_blank" rel="noreferrer">pRESTO's documentation</a> has
+        workflows for UMI libraries); pRESTO is installed with Change-O.
+      </p>
+      <p>
+        Then align the consensus reads, and join their counts by read id with <code>--metadata</code>. A table with a{" "}
         <code>sequence_id</code> column and columns such as <code>umi_count</code>, <code>consensus_count</code>,{" "}
         <code>duplicate_count</code> or <code>sample_id</code> adds them to each row:
       </p>
@@ -493,14 +540,94 @@ aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
 
       <H3 id="single-cell">10x single-cell contigs</H3>
       <CodeBlock
-        code={`alignair predict --model alignair4-igh-human --input heavy_contigs.fasta --out alignair.tsv \\
+        code={`alignair predict --model alignair4-trb-human --input contigs_TRB.fasta --out TRB.tsv \\
   --metadata filtered_contig_annotations.csv`}
       />
       <p>
         Cell Ranger's <code>barcode</code>, <code>umis</code>, <code>reads</code> and <code>c_gene</code> become{" "}
         <code>cell_id</code>, <code>umi_count</code>, <code>consensus_count</code> and <code>c_call</code>. A contig file
-        holds every chain, and each model calls one locus: give each model the contigs of its locus (the annotation
-        table's <code>chain</code> column says which).
+        holds every chain, and each model calls one locus, so split the contigs by the annotations'{" "}
+        <code>chain</code> column first and align each chain with its own model: a TRA contig given to the TRB model
+        can come out as a complete, productive TRB row. <DocLink to="metadata-join">Join sample and cell metadata</DocLink>{" "}
+        gives the split, for TRA, TRB, TRG and TRD alike, and how to put the tables back together.
+      </p>
+
+      <H2 id="t-cells">T-cell data</H2>
+
+      <H3 id="tcr-clonotypes">T-cell clonotypes</H3>
+      <p>
+        T cells do not hypermutate, so a T-cell clonotype is usually the reads, or cells, with the same V gene, J gene
+        and junction, base for base or in amino acids. No distance threshold is chosen, unlike the SHazaM threshold of
+        B-cell clones. Change-O's <code>DefineClones.py</code> groups them with a distance of 0:
+      </p>
+      <CodeBlock code={`DefineClones.py -d TRB.tsv --act set --model ham --norm none --dist 0`} />
+      <p>
+        It writes <code>TRB_clone-pass.tsv</code> with a <code>clone_id</code> column. A row without a junction cannot
+        be grouped, and DefineClones counts it as failed. For single cells, a clonotype usually also pairs the chains of
+        each cell (by <code>cell_id</code>): Scirpy does that, below.
+      </p>
+
+      <H3 id="tcr-tools">Scirpy and other tools</H3>
+      <p>
+        Scirpy reads AlignAIR's tables as they are, one per locus, and puts the chains with the same{" "}
+        <code>cell_id</code> together (the <code>cell_id</code> comes from Cell Ranger's annotations, through{" "}
+        <code>--metadata</code>). Checked with Scirpy 0.26.1, on the TRA and TRB tables of 300 simulated cells:
+      </p>
+      <CodeBlock
+        lang="python"
+        code={`import scirpy as ir
+
+adata = ir.io.read_airr(["TRA.tsv", "TRB.tsv"])     # one cell per cell_id
+ir.pp.index_chains(adata)
+ir.tl.chain_qc(adata)
+ir.pp.ir_dist(adata)
+ir.tl.define_clonotypes(adata, receptor_arms="all", dual_ir="primary_only", same_v_gene=True)`}
+      />
+      <p>
+        <code>define_clonotypes</code> groups the cells whose chains have the same CDR3 in nucleotides;{" "}
+        <code>same_v_gene=True</code> also asks for the same V gene. <code>index_chains</code> keeps the productive
+        chains of each cell. Other tools that read the AIRR rearrangement format take AlignAIR's table the same way;
+        check the columns each one needs.
+      </p>
+
+      <H3 id="check-against-cell-ranger">Check the calls against Cell Ranger or MiXCR</H3>
+      <p>
+        <code>alignair compare</code> matches two AIRR tables row by row on <code>sequence_id</code> and reports, per
+        segment, how often the calls agree. Cell Ranger's <code>airr_rearrangement.tsv</code> names each row by its
+        contig id, as in <code>filtered_contig.fasta</code>, so it matches AlignAIR's table of the same contigs as it
+        is (the rows of the other chains count as Cell Ranger's only). A MiXCR table matches only when its{" "}
+        <code>sequence_id</code> holds your read ids. On 300 simulated TRB contigs, against a table in Cell Ranger's
+        layout that names each contig's true genes, without alleles:
+      </p>
+      <CodeBlock
+        title="shell (output shortened)"
+        code={`$ alignair compare --a TRB.tsv --b airr_rearrangement.tsv --a-name AlignAIR --b-name CellRanger
+# AIRR agreement: AlignAIR vs CellRanger
+
+Matched **300** sequences by \`sequence_id\` (AlignAIR: 300, CellRanger: 300; AlignAIR-only 0, CellRanger-only 0).
+
+## Call agreement (rows where both tools called the gene)
+
+| gene | n | allele agreement | gene agreement | set-rescue of disagreements |
+| --- | --- | --- | --- | --- |
+| V | 300 | 0.0% | 96.7% | 0.0% |
+| D | 0 | n/a | n/a | n/a |
+| J | 300 | 0.0% | 100.0% | 0.0% |`}
+      />
+      <p>
+        Read the gene agreement column. A table that names genes only, or alleles of another germline set (Cell
+        Ranger's reference, MiXCR's library), agrees on no allele name, so its allele agreement says nothing. Where the
+        tools differ, either may be right. <DocLink to="evaluate?h=compare">Evaluate your model</DocLink> explains the
+        rest of the report.
+      </p>
+
+      <H3 id="tcr-measured">What has been measured on T-cell receptors</H3>
+      <p>
+        The <DocLink to="comparison">comparison with IgBLAST</DocLink> measures the four TCR models, like the IG
+        models, on simulated reads with known truth. Its check on real reads covers human IGH repertoires only, whose
+        donors' alleles are known from their genomes; no real TCR repertoire has been scored that way. So judge the TCR
+        models by the simulated results, and check a sample of your own reads against the tool you use today, as
+        above.
       </p>
 
       <H2 id="next">Next</H2>
@@ -552,6 +679,12 @@ aligned 20 reads (0 dropped) -> alignair.tsv`}
         When a read cannot tell V alleles apart, <code>v_call</code> lists the call and then the alleles that match the
         read as well, comma-separated, as IgBLAST does. Change-O and TIgGER read these lists as they read IgBLAST's.
       </p>
+      <p>
+        Reads from pRESTO keep their whole header as <code>sequence_id</code>: AlignAIR does not split{" "}
+        <code>&gt;read01|CONSCOUNT=2|DUPCOUNT=5|PRCONS=IGHG</code> into the <code>consensus_count</code> and{" "}
+        <code>duplicate_count</code> columns MakeDb writes. <DocLink to="prepare-input">Prepare your input</DocLink>{" "}
+        shows how to cut the headers to the read id and join the annotations back with <code>--metadata</code>.
+      </p>
 
       <H2 id="create-germlines">Germlines for CreateGermlines</H2>
       <p>
@@ -567,40 +700,28 @@ wrote germlines.fasta`}
         the model calls. <code>reference export</code> reads a model file: <code>alignair models path</code> prints where
         the model's file is (downloading it first if needed).
       </p>
+      <p>Then build the germlines from AlignAIR's table as it is:</p>
+      <CodeBlock code={`CreateGermlines.py -d alignair.tsv -r germlines.fasta`} />
       <p>
-        Change-O reads two things its own way. It counts V germline positions in the IMGT-gapped germline, from its
-        first position, while AlignAIR's <code>v_germline_start</code> and <code>v_germline_end</code> count in the
-        ungapped allele. And on a row without a D call it takes every base between V and J as <code>np1</code>, where
-        AlignAIR can split them around a D region it located but did not call. Without these changes CreateGermlines
-        refuses the rows (the germline it builds differs in length from <code>sequence_alignment</code>). This keeps the
-        complete rows and rewrites those columns:
+        Where the AIRR schema leaves a choice, AlignAIR's table counts as MakeDb does, so CreateGermlines reads it
+        unchanged. <code>v_germline_start</code> and <code>v_germline_end</code> are positions in the IMGT-gapped V
+        germline, from its first position, as <code>sequence_alignment</code> lays out the V. The untemplated bases are N
+        in <code>germline_alignment</code>. A row without a D call holds every base between V and J in{" "}
+        <code>np1</code>. The CIGARs count ungapped germline bases, as the schema says.
       </p>
-      <CodeBlock
-        lang="python"
-        title="prepare_for_changeo.py"
-        code={`import pandas as pd
-
-t = pd.read_csv("alignair.tsv", sep="\\t", dtype=str, keep_default_na=False)
-t = t[t["airr_assembly_status"] == "complete"].copy()
-
-# Change-O counts V germline positions in the IMGT-gapped germline, from its first position
-t["v_germline_start"] = "1"
-t["v_germline_end"] = t["v_alignment_end"]
-
-# Without a D call, Change-O takes every base between V and J as np1
-no_d = t["d_call"] == ""
-between = t.loc[no_d, "j_sequence_start"].astype(int) - t.loc[no_d, "v_sequence_end"].astype(int) - 1
-t.loc[no_d, "np1_length"] = between.astype(str)
-t.loc[no_d, "np2_length"] = "0"
-
-t.to_csv("alignair_changeo.tsv", sep="\\t", index=False)`}
-      />
-      <p>Then build the germlines:</p>
-      <CodeBlock code={`CreateGermlines.py -d alignair_changeo.tsv -r germlines.fasta`} />
       <p>
-        It writes <code>alignair_changeo_germ-pass.tsv</code> with a <code>germline_alignment_d_mask</code> column, the
-        germline Change-O's later steps read. Its log counts the rows it could not build; Change-O's{" "}
-        <code>--failed</code> option writes them to a file.
+        CreateGermlines writes <code>alignair_germ-pass.tsv</code> with a <code>germline_alignment_d_mask</code> column,
+        the germline Change-O's later steps read. Its log counts the rows it could not build; Change-O's{" "}
+        <code>--failed</code> option writes them to a file. Most of those are partial rows (
+        <code>airr_assembly_status</code>), which have no gapped alignment. A complete row also fails when its J
+        alignment has more or fewer germline bases than read bases (an insertion or deletion in J). CreateGermlines takes
+        the J's length from <code>j_germline_start</code> and <code>j_germline_end</code>, while{" "}
+        <code>sequence_alignment</code> keeps the read's own J bases. On 3,000 real IGH reads, 2,855 of the 2,872
+        complete rows passed; each of the other 17 has such a J.
+      </p>
+      <p>
+        With novel alleles, give CreateGermlines the FASTA you bound with <code>--reference</code>, the export with
+        the novel alleles added (<DocLink to="from-immcantation?h=tigger">TIgGER on AlignAIR's table</DocLink>).
       </p>
 
       <H2 id="genotypes">Donor genotypes</H2>
@@ -634,12 +755,11 @@ aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
 
       <H3 id="imgt-and-ogrdb-names">IMGT names and OGRDB names</H3>
       <p>
-        A genotype must name alleles the way the model does. A TIgGER genotype made from IgBLAST calls against IMGT
-        germlines names alleles such as <code>IGHV3-23*01</code>. The IG models call OGRDB labels, so AlignAIR refuses
-        it:
+        A genotype must name alleles the way the model does. A genotype made from IgBLAST calls against IMGT germlines
+        names alleles such as <code>IGHV3-23*01</code>. The IG models call OGRDB labels, so AlignAIR refuses it:
       </p>
       <CodeBlock
-        code={`$ alignair predict --model alignair4-igh-human --input reads.fasta --out alignair.tsv --genotype tigger_genotype.yaml
+        code={`$ alignair predict --model alignair4-igh-human --input reads.fasta --out alignair.tsv --genotype imgt_genotype.yaml
 [ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND] the genotype names alleles the reference does not hold: IGHV1-2*02, IGHV3-23*01
 Context: {"command": "predict", "missing": ["IGHV1-2*02", "IGHV3-23*01"], "stage": "genotype_validation"}
 Hint: Give their sequences in the reference (alignair predict --reference; in Python, Aligner.from_pretrained(reference=) or bound_to).`}
@@ -647,87 +767,197 @@ Hint: Give their sequences in the reference (alignair predict --reference; in Py
       <p>Three ways through:</p>
       <ul>
         <li>
-          <strong>Make the genotype from AlignAIR's own calls.</strong> Use <code>alignair genotype</code> (below) or{" "}
-          <code>--infer-genotype</code>, or run TIgGER on AlignAIR's table: the names are then the model's.
+          <strong>Make the genotype from AlignAIR's own calls.</strong> Use <code>alignair genotype</code> or{" "}
+          <code>--infer-genotype</code> (below), or run TIgGER on AlignAIR's table (
+          <DocLink to="from-immcantation?h=tigger">how</DocLink>): the names are then the model's.
         </li>
         <li>
-          <strong>Translate the names.</strong> OGRDB publishes the human germline sets (
-          <a href={OGRDB_SETS} target="_blank" rel="noreferrer">germline sets</a>, as AIRR JSON and gapped or ungapped
-          FASTA) with <a href={OGRDB_GENES} target="_blank" rel="noreferrer">gene tables</a>. Look your alleles up there
-          and write their OGRDB labels into the genotype.
+          <strong>Translate the names.</strong> Match the model's alleles to IMGT names by sequence, then write the
+          model's labels into the genotype (<DocLink to="choose-a-model?h=map-names">Map the labels to IMGT names</DocLink>
+          ).
         </li>
         <li>
-          <strong>Keep IMGT names.</strong> Bind the IMGT germline set with <code>--reference</code> (a FASTA of V, D
-          and J alleles whose headers are the allele names). The calls then carry IMGT names, and the IMGT genotype fits
-          (<DocLink to="from-igblast?h=bind-a-reference">how</DocLink>).
+          <strong>Keep IMGT names.</strong> Bind IMGT's germline set with <code>--reference</code>; Immcantation's
+          IMGT/GENE-DB files are read as they are, headers included. The calls then carry IMGT names, and the IMGT
+          genotype fits (<DocLink to="choose-a-model?h=bind-imgt">Call with IMGT's set</DocLink>).
         </li>
       </ul>
       <p>The TCR models call IMGT names, so an IMGT-named genotype fits them as it is.</p>
+
+      <H3 id="alignair-genotype">alignair genotype: a genotype from any table</H3>
       <p>
-        Novel alleles TIgGER found belong in the reference: add their sequences to the model's germlines (
-        <code>alignair reference export</code> without <code>--gapped</code>), bind the file with{" "}
-        <code>--reference</code>, and name them in the genotype.
+        <code>alignair genotype</code> reads any tool's AIRR table and infers the V genotype. For each V gene it keeps
+        the most frequent alleles among the rows whose <code>v_call</code> is a single allele, until they explain 87.5%
+        of those rows (<code>--explain</code>), the share TIgGER's <code>inferGenotype</code> also uses. It differs from{" "}
+        <code>inferGenotype</code> in two ways:
       </p>
-      <CodeTabs
-        cli={`alignair predict --model alignair4-igh-human --input reads.fasta --out alignair.tsv \\
-  --reference germlines_with_novel.fasta --genotype donor.yaml`}
-        python={`from alignair import Aligner, ReferenceSet, read_sequences
-
-reference = ReferenceSet.from_fasta("germlines_with_novel.fasta")
-aligner = Aligner.from_pretrained("alignair4-igh-human", reference=reference).with_genotype(
-    {"V": ["IGHVF10-G50*02", "IGHVF10-G50*02_A85G", "IGHVF3-G9*01"]})
-ids, reads, info = read_sequences("reads.fasta")
-aligner.predict(reads, ids=ids).write_airr("alignair.tsv")`}
-      />
-
-      <H3 id="alignair-genotype">alignair genotype: TIgGER's rule on any table</H3>
+      <ul>
+        <li>
+          it counts every such row, mutated or not, where <code>inferGenotype</code> counts only unmutated reads by
+          default (<code>find_unmutated = TRUE</code>);
+        </li>
+        <li>
+          a gene with fewer than 10 such rows (<code>--min-reads</code>) has too little evidence and is left open, a
+          cutoff of AlignAIR's own.
+        </li>
+      </ul>
       <p>
-        <code>alignair genotype</code> reads any tool's AIRR table and infers the V genotype by TIgGER's frequency rule:
-        per V gene, the most frequent alleles among the rows whose <code>v_call</code> is a single allele, until they
-        explain 87.5% of those rows (<code>--explain</code>). A gene with fewer than 10 such rows (
-        <code>--min-reads</code>) has too little evidence and is left open. It writes an AIRR GenotypeSet;{" "}
-        <code>--locus</code> names its locus (default IGH). On 3,000 reads of one donor:
+        It writes an AIRR GenotypeSet; <code>--locus</code> names its locus (default IGH). On 29,101 reads of one donor
+        (the first 30,000 read pairs of ENA run SRR8283604, merged):
       </p>
       <CodeBlock
+        title="shell (output abridged)"
         code={`$ alignair genotype alignair.tsv --out genotype.json
-IGHVF1-G1: open (6 single-allele rows, fewer than 10)
-IGHVF1-G2: IGHVF1-G2*02, IGHVF1-G2*01
-IGHVF1-G3: open (5 single-allele rows, fewer than 10)
-IGHVF10-G33: open (7 single-allele rows, fewer than 10)
-IGHVF10-G37: IGHVF10-G37*10, IGHVF10-G37*02, IGHVF10-G37*04, IGHVF10-G37*03, IGHVF10-G37*07
-IGHVF10-G38: IGHVF10-G38*02
+IGHVF1-G1: open (2 single-allele rows, fewer than 10)
+IGHVF1-G2: IGHVF1-G2*01
+IGHVF1-G3: IGHVF1-G3*03
+IGHVF10-G33: IGHVF10-G33*03
+IGHVF10-G37: IGHVF10-G37*03, IGHVF10-G37*10, IGHVF10-G37*07
 ...
-genotyped 32 of 39 V genes -> genotype.json`}
+genotyped 33 of 39 V genes -> genotype.json`}
       />
-      <p>The GenotypeSet goes straight back into <code>--genotype</code>:</p>
+      <p>
+        A gene is left open when few of its rows name a single allele, however many rows it has: 4,367 of the 4,371
+        reads called to <code>IGHVF10-G41</code> here list <code>*02</code> and <code>*03</code> together, as they
+        start after the bases that tell the two apart. The GenotypeSet goes straight back into{" "}
+        <code>--genotype</code>:
+      </p>
       <CodeBlock
         code={`alignair predict --model alignair4-igh-human --input reads.fasta --out alignair_genotyped.tsv \\
   --genotype genotype.json`}
       />
-      <Callout kind="warning" title="Genes left open are not in the file">
-        The GenotypeSet lists the alleles of the genes it genotyped. A gene left open is not in it, and{" "}
-        <code>--genotype</code> calls only the V alleles its file lists, so the reads of an open gene are called from
-        another gene. On the 3,000 reads above, all 37 reads of the 7 open genes moved to another gene. To keep open
-        genes whole, infer the genotype in the same run with <code>--infer-genotype</code>.
-      </Callout>
+      <p>
+        A GenotypeSet restricts only the genes it names. A gene it left open keeps all its alleles: in the run above,
+        the 4,388 reads of the six open genes all kept their gene.
+      </p>
+      <p>
+        <code>--infer-genotype</code> does both steps in one run. It reads the input twice: once to call, once to
+        re-call the reads whose call the genotype excludes while they tie an allele it allows. A gene with fewer than{" "}
+        <code>--genotype-min-reads</code> single-allele reads keeps every allele. The genotype goes to{" "}
+        <code>alignair.tsv.genotype.json</code> (<code>--genotype-out</code>). More on{" "}
+        <DocLink to="donor-genotype">Align with a donor genotype</DocLink>.
+      </p>
       <CodeBlock
         code={`alignair predict --model alignair4-igh-human --input reads.fasta --out alignair.tsv --infer-genotype`}
       />
+
+      <H2 id="tigger">TIgGER on AlignAIR's table</H2>
       <p>
-        It reads the input twice: once to call, once to re-call the reads whose call the genotype excludes while they
-        tie an allele it allows. A gene with fewer than <code>--genotype-min-reads</code> single-allele reads keeps every
-        allele. The genotype goes to <code>alignair.tsv.genotype.json</code> (<code>--genotype-out</code>). More on{" "}
-        <DocLink to="donor-genotype">Align with a donor genotype</DocLink>.
+        TIgGER reads AlignAIR's table as it reads MakeDb's: <code>v_call</code>, <code>j_call</code>, the IMGT-gapped{" "}
+        <code>sequence_alignment</code>, <code>junction</code> and <code>junction_length</code>. Its germline file is
+        the <code>--gapped</code> export (<DocLink to="from-immcantation?h=create-germlines">above</DocLink>): IMGT-gapped
+        V alleles, named as the table names them. Keep that one file for the whole round trip: TIgGER reads it, the
+        novel alleles TIgGER finds are added to it, and AlignAIR and CreateGermlines both read the result.
       </p>
+
+      <H3 id="tigger-run">Novel alleles and the genotype</H3>
+      <CodeBlock lang="r" title="R (TIgGER 1.2.0)" code={TIGGER_RUN} />
+      <p>
+        On the 29,101 reads above, <code>selectNovel(novel)</code> holds two novel alleles of <code>IGHVF6-G21</code>,
+        named the TIgGER way (the allele they differ from, then each substitution at its IMGT position):{" "}
+        <code>IGHVF6-G21*12_G163A</code> and <code>IGHVF6-G21*16_G54A</code>. The genotype keeps the first. These reads
+        start near IMGT position 40, and their first few bases differ from every germline, as a primer's do: with the
+        default <code>pos_range</code> (1 to 312), <code>findNovelAlleles</code> also reported "novel" alleles of four
+        genes at positions 42 to 46. Leave out the positions your primers cover.
+      </p>
+
+      <H3 id="tigger-back">Back into AlignAIR</H3>
+      <p>AlignAIR does not read TIgGER's genotype table: written to a TSV and given to <code>--genotype</code>, it is refused:</p>
+      <CodeBlock
+        code={`$ alignair predict --model alignair4-igh-human --input reads.fasta --out x.tsv --genotype tigger_genotype.tsv
+[ALIGNAIR_CONFIG_INVALID] tigger_genotype.tsv is not a YAML or JSON genotype: it does not parse (line 1): found character '\\t' that cannot start any token
+Context: {"command": "predict", "path": "tigger_genotype.tsv", "stage": "genotype_validation"}
+Hint: A genotype is YAML or JSON keyed by segment (V, D, J), each listing allele names of the bound reference, e.g. 'V: [IGHV1-2*02, IGHV3-23*01]'. Germline sequences (a FASTA) go to --reference.`}
+      />
+      <p>
+        In the same R session, write the genotype as a YAML genotype, and the novel alleles' gapped sequences (TIgGER's{" "}
+        <code>novel_imgt</code>) after the gapped germlines:
+      </p>
+      <CodeBlock lang="r" title="R" code={TIGGER_BACK} />
+      <p>Then align with both, and build the germlines from the same file:</p>
+      <CodeTabs
+        cli={`alignair predict --model alignair4-igh-human --input reads.fasta --out alignair_donor.tsv \\
+  --reference germlines_with_novel.fasta --genotype donor.yaml
+CreateGermlines.py -d alignair_donor.tsv -r germlines_with_novel.fasta`}
+        python={`from alignair import Aligner, ReferenceSet, read_sequences
+from alignair.genotype import load_genotype
+
+reference = ReferenceSet.from_fasta("germlines_with_novel.fasta")
+aligner = Aligner.from_pretrained("alignair4-igh-human", reference=reference)
+donor = aligner.with_genotype(load_genotype("donor.yaml"))
+ids, reads, info = read_sequences("reads.fasta")
+donor.predict(reads, ids=ids).write_airr("alignair_donor.tsv")`}
+      />
+      <CodeBlock
+        title="shell"
+        code={`$ cut -f5 alignair_donor.tsv | cut -d, -f1 | sort | uniq -c | grep _G163A
+    840 IGHVF6-G21*12_G163A`}
+      />
+      <p>
+        840 of the 29,101 reads are now called to the novel allele (the fifth column is <code>v_call</code>). A YAML
+        genotype calls only the V alleles it lists, as TIgGER's <code>reassignAlleles</code> does: the reads of a gene
+        TIgGER left out of the genotype move to another gene or lose their V call (492 reads here). To keep such genes
+        whole, use <code>alignair genotype</code>'s GenotypeSet instead (
+        <DocLink to="from-immcantation?h=alignair-genotype">above</DocLink>).
+      </p>
+      <p>
+        The novel alleles carry the model's labels, as the table does. To work in IMGT names throughout, bind IMGT's
+        gapped germline set (<DocLink to="choose-a-model?h=bind-imgt">Call with IMGT's set</DocLink>) and use that file
+        where these steps use <code>germlines.fasta</code>: TIgGER and CreateGermlines read its IMGT/GENE-DB headers
+        too. On the same reads, with IMGT's human IGH set bound, TIgGER found the same novel allele as{" "}
+        <code>IGHV1-69*04_G54A</code>, and 840 reads were called to it. To translate labels instead, see{" "}
+        <DocLink to="choose-a-model?h=map-names">Map the labels to IMGT names</DocLink>.
+      </p>
+
+      <H3 id="v-call-genotyped">v_call_genotyped</H3>
+      <p>
+        TIgGER's <code>reassignAlleles</code> writes its genotyped calls to a new column, <code>v_call_genotyped</code>,
+        and the steps after it are pointed at that column (<code>DefineClones.py --vf v_call_genotyped</code>, for
+        example). A <code>--genotype</code> run needs no such step: its <code>v_call</code> already holds calls from
+        the donor's alleles, and AlignAIR writes no <code>v_call_genotyped</code> column. Point those steps at{" "}
+        <code>v_call</code>, or run <code>reassignAlleles</code> on AlignAIR's table if your pipeline expects the
+        column: it reads the table as it is.
+      </p>
+
+      <H3 id="tigger-or-alignair">TIgGER, alignair genotype or --infer-genotype?</H3>
+      <DocTable
+        head={["You want", "Use"]}
+        rows={[
+          [
+            "Novel alleles",
+            <>
+              TIgGER's <code>findNovelAlleles</code>. AlignAIR finds none: it calls only alleles of the germline set it
+              runs with.
+            </>,
+          ],
+          [
+            "A genotype from unmutated reads only, as in a heavily mutated repertoire",
+            <>
+              TIgGER's <code>inferGenotype</code> (unmutated reads by default), or its Bayesian form,{" "}
+              <code>inferGenotypeBayesian</code>.
+            </>,
+          ],
+          [
+            "A genotype without R, from any tool's AIRR table, that leaves genes with little evidence open",
+            <>
+              <code>alignair genotype</code>, then <code>--genotype genotype.json</code>.
+            </>,
+          ],
+          [
+            "The genotype applied in the same run, settling the reads whose v_call ties an allele of the genotype with others",
+            <code>--infer-genotype</code>,
+          ],
+        ]}
+      />
 
       <H2 id="clonal-clustering">Clonal clustering: Change-O and SCOPer</H2>
       <p>Change-O's clonal clustering runs on the table from CreateGermlines:</p>
-      <CodeBlock code={`DefineClones.py -d alignair_changeo_germ-pass.tsv --act set --model ham --norm len --dist 0.16`} />
+      <CodeBlock code={`DefineClones.py -d alignair_germ-pass.tsv --act set --model ham --norm len --dist 0.16`} />
       <p>
         <code>--act set</code> groups reads by every gene of a tied call, so AlignAIR's comma-separated calls are used
         whole. The threshold 0.16 is only an example: choose yours from your data's distance-to-nearest distribution
-        (SHazaM). The result, <code>alignair_changeo_germ-pass_clone-pass.tsv</code>, adds a <code>clone_id</code>{" "}
-        column.
+        (SHazaM). The result, <code>alignair_germ-pass_clone-pass.tsv</code>, adds a <code>clone_id</code>{" "}
+        column. T cells need no threshold (<DocLink to="from-mixcr?h=tcr-clonotypes">T-cell clonotypes</DocLink>).
       </p>
       <p>
         SCOPer reads the same table in R. Its clone functions group rows by <code>v_call</code> and <code>j_call</code>{" "}
@@ -750,7 +980,7 @@ genotyped 32 of 39 V genes -> genotype.json`}
         list from{" "}
         <a href="https://nf-co.re/airrflow/usage" target="_blank" rel="noreferrer">airrflow's usage docs</a> for the
         version you run. airrflow then builds germlines and clones with Change-O and SCOPer from its own germline
-        reference: give it the table prepared for CreateGermlines (
+        reference: give it AlignAIR's table as it is (CreateGermlines reads it,{" "}
         <DocLink to="from-immcantation?h=create-germlines">above</DocLink>), and a reference whose allele names match
         the table's (OGRDB labels for the IG models).{" "}
         <a href="https://nf-co.re/airrflow/parameters" target="_blank" rel="noreferrer">Its parameter docs</a> say how

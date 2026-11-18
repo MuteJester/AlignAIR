@@ -296,9 +296,30 @@ def _text(markup: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>|[{}]", "", markup)).strip()
 
 
+_CODE_PROPS = re.compile(r"\b(?:code|cli|python)=\{`.*?`\}|\b(?:code|cli|python)=\"[^\"]*\"", re.DOTALL)
+
+
+def _prose(markup: str) -> str:
+    """The words a reader sees in a stretch of page source: code blocks, JSX comments and tags gone, entities
+    decoded, spacing collapsed."""
+    import html
+    markup = _CODE_PROPS.sub("", markup)
+    markup = re.sub(r"\{/\*.*?\*/\}", "", markup, flags=re.DOTALL).replace('{" "}', " ")
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>|[{}]", "", markup))).strip()
+
+
+def section_texts(chunk: str) -> dict[str, str]:
+    """Each heading's prose in a page's source, up to the next heading (the search index matches it last)."""
+    chunk = chunk.rsplit("</>", 1)[0]                   # the page body ends at its fragment's close
+    headings = list(_HEADING.finditer(chunk))
+    return {match.group(1): _prose(chunk[match.end():following.start() if following else len(chunk)])
+            for match, following in zip(headings, headings[1:] + [None])}
+
+
 def search_index() -> list:
-    """What the search box finds: every docs page and its headings (from the page sources), every CLI option,
-    output column, model and error code; each with the link it opens."""
+    """What the search box finds: every docs page and its headings (from the page sources; a page carries its lead and
+    a heading its section's prose as ``body``), every CLI option, output column, model and error code; each with the
+    link it opens."""
     entries = []
     for source in sorted(PAGES.glob("pages-*.tsx")):
         text = source.read_text()
@@ -309,10 +330,13 @@ def search_index() -> list:
             title = re.search(_FIELD.format("title"), chunk)
             section = re.search(_FIELD.format("section"), chunk)
             title = title.group(1) if title else slug
+            lead = re.search(_FIELD.format("lead"), chunk)
             entries.append({"kind": "page", "title": title, "text": section.group(1) if section else "",
-                            "href": f"#/docs/{slug}"})
+                            "href": f"#/docs/{slug}", "body": lead.group(1) if lead else ""})
+            prose = section_texts(chunk)
             entries += [{"kind": "heading", "title": _text(heading), "text": title,
-                         "href": f"#/docs/{slug}?h={anchor}"} for anchor, heading in _HEADING.findall(chunk)]
+                         "href": f"#/docs/{slug}?h={anchor}", "body": prose.get(anchor, "")}
+                        for anchor, heading in _HEADING.findall(chunk)]
     for command, entry in cli_options().items():
         for group in entry["groups"]:
             entries += [{"kind": "option", "title": ", ".join(option["flags"]),

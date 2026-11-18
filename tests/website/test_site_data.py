@@ -104,3 +104,11 @@ def test_a_report_of_another_pair_of_tools_is_refused(tmp_path):
     path.write_text(json.dumps(report))
     with pytest.raises(ValueError, match="igblast"):
         _site_data().comparison([path], None)
+
+
+def test_the_search_index_holds_each_sections_prose():
+    # Words that are only in a page's text (Cell Ranger, slurm, mouse) must find it: each heading carries its prose.
+    site_data = _site_data()
+    chunk = ('<H2 id="a">First</H2>\n<p>Cell <code>x</code> Ranger&apos;s file,{" "}\n  split</p>'
+             '<CodeBlock code={`alignair predict`} />\n<H3 id="b">Second</H3><p>slurm</p>')
+    assert site_data.section_texts(chunk) == {"a": "Cell x Ranger's file, split", "b": "slurm"}

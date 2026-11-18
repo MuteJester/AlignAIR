@@ -1,4 +1,5 @@
 import errorsData from "../../data/error-codes.json";
+import InlineText from "./InlineText";
 
 interface ErrorCode {
   code: string;
@@ -32,8 +33,8 @@ export default function ErrorTable() {
                 <span className="font-mono text-[0.85em] font-semibold text-brand-700 dark:text-brand-300">{error.code}</span>
                 <span className="block text-xs text-slate-500">{error.class} · exit {error.exit_code}{error.retryable ? " · retryable" : ""}</span>
               </td>
-              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{error.meaning}</td>
-              <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{error.action}</td>
+              <td className="px-4 py-3 text-slate-600 dark:text-slate-300"><InlineText text={error.meaning} /></td>
+              <td className="px-4 py-3 text-slate-600 dark:text-slate-300"><InlineText text={error.action} /></td>
             </tr>
           ))}
         </tbody>

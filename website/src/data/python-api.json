@@ -281,7 +281,7 @@
   {
     "name": "alignair.__version__",
     "kind": "constant",
-    "signature": " = '0+unknown'",
+    "signature": " = '3.0.0'",
     "doc": "",
     "members": [],
     "anchor": "alignair.__version__"

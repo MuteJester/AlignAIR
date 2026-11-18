@@ -30,3 +30,21 @@ test("a query that matches nothing, or nothing at all, returns no results", () =
   assert.deepEqual(rank(index, "zebrafish"), []);
   assert.deepEqual(rank(index, "   "), []);
 });
+
+test("a locus code finds its model before the pages whose title merely starts with it", () => {
+  const withTrain: SearchEntry[] = [
+    { kind: "page", title: "Train a model for your germline set", text: "Train or fine-tune", href: "#/docs/train" },
+    { kind: "model", title: "alignair4-tra-human", text: "TRA · HUMAN_TCRA_IMGT", href: "#/docs/model-cards?h=alignair4-tra-human" },
+  ];
+  assert.equal(rank(withTrain, "TRA")[0].title, "alignair4-tra-human");
+});
+
+test("a phrase only in a section's prose finds that section, after every title match", () => {
+  const withBody: SearchEntry[] = [
+    ...index,
+    { kind: "heading", title: "A 10x example", text: "Join sample and cell metadata", href: "#/docs/metadata-join?h=10x",
+      body: "Cell Ranger's contig file mixes the chains of a cell" },
+  ];
+  assert.equal(rank(withBody, "cell ranger")[0].href, "#/docs/metadata-join?h=10x");
+  assert.equal(rank(withBody, "genotype").at(-1)?.kind !== "heading", true);
+});
