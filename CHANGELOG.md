@@ -3,7 +3,7 @@
 All notable changes to AlignAIR are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow semantic versioning.
 
-## [4.0.0] - 2026-11-18
+## [4.0.0] - 2026-11-19
 
 AlignAIR 4 is a new network and a new model contract: AlignAIR 3 model files do not run on it. Its pretrained models
 are `alignair4-<locus>-human` 1.0.0, one per locus (IGH, IGK, IGL, TRA, TRB, TRD, TRG).
