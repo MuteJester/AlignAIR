@@ -3,6 +3,8 @@
 The chip's allele scores are each allele's likelihood relative to the read's best allele (the bank scan's
 posterior divided by its maximum: the best allele scores 1). The set keeps every allele scoring at least the
 threshold (0.5 by default), best first, at most ``cap`` of them, and never empty (the best allele always stays).
+Alleles of the same score (a saturated head gives several alleles one float32 score) keep the bank's order: numpy's
+default sort orders ties differently across versions and CPUs, which would make the set depend on them.
 """
 from __future__ import annotations
 
@@ -12,13 +14,13 @@ from .state import GeneCall
 
 
 def _kept(p: np.ndarray, threshold: float, cap: int) -> tuple[np.ndarray, np.ndarray]:
-    """The indices of the alleles scoring at least ``threshold`` (the best one if none does), best first and at most
-    ``cap``, with their scores."""
+    """The indices of the alleles scoring at least ``threshold`` (the best one if none does), best first (ties in the
+    bank's order) and at most ``cap``, with their scores."""
     p = np.asarray(p, dtype=np.float64)
     idx = np.where(p >= threshold)[0]
     if len(idx) == 0:
         idx = np.array([int(p.argmax())])
-    idx = idx[np.argsort(-p[idx])][:cap]
+    idx = idx[np.argsort(-p[idx], kind="stable")][:cap]
     return idx, p[idx]
 
 

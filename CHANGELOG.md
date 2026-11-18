@@ -200,6 +200,9 @@ are `alignair4-<locus>-human` 1.0.0, one per locus (IGH, IGK, IGL, TRA, TRB, TRD
   traceback.
 
 ### Fixed
+- Alleles with exactly the same score (a confident model gives several alleles one score) keep the germline set's
+  order in a candidate set, so the same read gets the same candidates, and the same call, on every numpy version and
+  CPU; numpy's default sort ordered such ties differently between versions.
 - The AIRR table, the `--rejects-out` file and the table `--infer-genotype` re-calls rows into end their lines with
   `\n`, as other AIRR tools write them; they ended them with `\r\n`, which broke awk and other Unix tools.
 - `alignair benchmark` no longer fails at its defaults on a short locus such as TRB: a stratum whose 5' loss leaves a
