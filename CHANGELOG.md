@@ -200,6 +200,12 @@ are `alignair4-<locus>-human` 1.0.0, one per locus (IGH, IGK, IGL, TRA, TRB, TRD
   traceback.
 
 ### Fixed
+- On Windows, saving a training checkpoint (`alignair train`, `alignair demo`, `run_training`) no longer fails with
+  `OSError: [Errno 9] Bad file descriptor`: the checkpoint is flushed to disk through a handle open for writing, which
+  Windows requires.
+- A registry given as a Windows folder (`--registry C:\models`, `ALIGNAIR_REGISTRY` or the config file's
+  `registries`) opens its models; the drive letter was read as a URL scheme and the folder dropped. A
+  `file:///C:/models` URL names that folder too, and the relative `file://catalog` form is unchanged.
 - Alleles with exactly the same score (a confident model gives several alleles one score) keep the germline set's
   order in a candidate set, so the same read gets the same candidates, and the same call, on every numpy version and
   CPU; numpy's default sort ordered such ties differently between versions.

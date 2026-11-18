@@ -1,4 +1,7 @@
 """Per-file atomic publication preserves completed artifacts on writer and OS failures."""
+import errno
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +28,23 @@ def test_writer_sees_a_sibling_temporary_while_the_old_destination_stays_readabl
         assert path.read_bytes() == b'old'
         Path(temporary).write_bytes(b'new')
     atomic.atomic_write(path, write)
+    assert path.read_bytes() == b'new' and list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.skipif(sys.platform == 'win32', reason="Windows' own fsync refuses a read-only descriptor: the tests above")
+def test_the_contents_are_flushed_through_a_descriptor_open_for_writing(tmp_path, monkeypatch):
+    """Windows' fsync (``_commit``, FlushFileBuffers) needs a handle with write access and refuses a read-only one
+    with EBADF, where POSIX's flushes either: an fsync that refuses a read-only descriptor, as Windows' does, still
+    publishes the file."""
+    import fcntl
+    flush = os.fsync
+    def windows_fsync(descriptor):
+        if fcntl.fcntl(descriptor, fcntl.F_GETFL) & os.O_ACCMODE == os.O_RDONLY:
+            raise OSError(errno.EBADF, 'Bad file descriptor')
+        flush(descriptor)
+    monkeypatch.setattr(atomic.os, 'fsync', windows_fsync)
+    path = tmp_path / 'artifact'
+    atomic.atomic_write(path, lambda temporary: Path(temporary).write_bytes(b'new'))
     assert path.read_bytes() == b'new' and list(tmp_path.iterdir()) == [path]
 
 

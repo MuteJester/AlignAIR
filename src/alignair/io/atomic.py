@@ -9,7 +9,8 @@ from ..errors import error_context
 def atomic_write(path, writer, *, stage="artifact_write"):
     """Run writer(temporary_path); failure preserves the previous file and removes the temporary.
 
-    File contents are fsynced before replacement. This is a per-file operation, not a directory
+    File contents are fsynced before replacement, through a descriptor open for writing: Windows' fsync
+    (FlushFileBuffers) refuses a read-only one. This is a per-file operation, not a directory
     transaction or a guarantee of directory-entry persistence after power loss. Writer/OS exceptions
     retain their original types; domain errors inherit the supplied stage and destination context.
     """
@@ -20,7 +21,7 @@ def atomic_write(path, writer, *, stage="artifact_write"):
     try:
         with error_context(stage=stage, path=str(path)):
             writer(temporary)
-            with open(temporary, "rb") as stream:
+            with open(temporary, "r+b") as stream:
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
     finally:

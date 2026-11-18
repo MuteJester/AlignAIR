@@ -31,6 +31,28 @@ def test_artifact_url_per_scheme():
     assert sources.artifact_url("file:///srv/reg", "registry.json") == "file:///srv/reg/registry.json"
 
 
+def test_a_local_source_is_joined_as_a_path_a_windows_drive_too():
+    """A directory source is a path, not a URL: a Windows drive (``C:``) is not read as a URL scheme, which would drop
+    the directory and leave the artifact's path relative to the working directory."""
+    assert sources.artifact_url("/srv/reg", "models/m.alignair") == "/srv/reg/models/m.alignair"
+    assert sources.artifact_url("C:\\Users\\me\\reg", "models/m.alignair") == "C:\\Users\\me\\reg/models/m.alignair"
+    assert sources.artifact_url("C:/reg/registry.json", "registry.json") == "C:/reg/registry.json"
+
+
+def test_a_file_url_of_a_windows_drive_names_the_drive_path():
+    """``file:///C:/reg`` (RFC 8089's form of a Windows path) names ``C:/reg``, as ``url2pathname`` reads it, not
+    ``/C:/reg``, which Windows cannot open; ``file:///srv/reg`` stays absolute, the docs' ``file://catalog`` relative
+    and ``file://C:\\reg`` as written."""
+    assert sources.local_path("file:///C:/reg/models/m.alignair") == "C:/reg/models/m.alignair"
+    assert sources.local_path("file:///d:") == "d:"
+    assert sources.local_path(sources.artifact_url("file:///C:/reg/registry.json", "models/m.alignair")) == \
+        "C:/reg/models/m.alignair"
+    assert sources.local_path("file:///srv/reg/registry.json") == "/srv/reg/registry.json"
+    assert sources.local_path("file://catalog/registry.json") == "catalog/registry.json"
+    assert sources.local_path("file://C:\\reg\\registry.json") == "C:\\reg\\registry.json"
+    assert sources.local_path("file:///CD:/x") == "/CD:/x"                      # not a drive letter
+
+
 def test_load_registry_from_file_scheme(tmp_path):
     reg = {"schema": "alignair.registry.v1", "models": {
         "human-igh": {"latest": "2.1.0", "versions": {

@@ -18,6 +18,7 @@ import contextlib
 import http.client
 import json
 import os
+import re
 import urllib.error
 from collections.abc import Iterable
 from urllib.parse import urljoin
@@ -115,13 +116,22 @@ def artifact_url(source: str, relpath: str, *, revision: str = "main") -> str:
     base = _base(source)
     if base.startswith("file://"):
         return base + relpath
+    if "://" not in base:          # a local path, joined as one: urljoin reads a Windows drive (C:) as a URL scheme
+        return os.path.join(base, relpath)
     return urljoin(base, relpath)
 
 
+# A Windows drive after a file URL's third slash (``file:///C:/reg``, RFC 8089's form of a Windows path).
+_DRIVE_AFTER_SLASH = re.compile(r"/[A-Za-z]:(?=[/\\]|$)")
+
+
 def local_path(url: str) -> str | None:
-    """The filesystem path of a ``file://`` URL or a bare path; None for a remote URL."""
+    """The filesystem path of a ``file://`` URL or a bare path; None for a remote URL. A Windows drive after the
+    third slash (``file:///C:/reg``) loses the slash before it, as ``urllib``'s ``url2pathname`` drops it: ``C:/reg``.
+    """
     if url.startswith("file://"):
-        return url[len("file://"):]
+        path = url[len("file://"):]
+        return path[1:] if _DRIVE_AFTER_SLASH.match(path) else path
     if "://" not in url:
         return url
     return None
