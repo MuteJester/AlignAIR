@@ -222,6 +222,23 @@ def _reference_line(dc) -> str:
     return f"{name} ({detail})" if detail else name
 
 
+# The model card's validation measures, in a user's words: (report key, label, unit).
+_CARD_MEASURES = (
+    ("v_allele_top1", "V allele", "%"), ("d_allele_top1", "D allele", "%"), ("j_allele_top1", "J allele", "%"),
+    ("d_presence_acc", "D present or absent", "%"), ("orientation_acc", "Orientation", "%"),
+    ("v_seg_mae", "V boundaries", "nt"), ("d_seg_mae", "D boundaries", "nt"), ("j_seg_mae", "J boundaries", "nt"),
+    ("mutation_mae", "Mutation rate", "rate"), ("indel_mae", "Indel count", "count"),
+)
+
+
+def _card_value(value, unit: str) -> str:
+    if unit == "%":
+        return f"{100 * float(value):.1f}%"
+    if unit == "nt":
+        return f"{float(value):.2f} nt"
+    return f"{float(value):.3f}" if unit == "rate" else f"{float(value):.2f}"
+
+
 def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=(), model_id=None,
                 model_version=None) -> None:
     """The bundle's ``model_card.md``: the model, its reference by name and version, allele counts, training, intended
@@ -261,7 +278,12 @@ def _write_card(path: str, training: dict, manifest: dict, report: dict, *, dcs=
               f"alignair predict --input reads.fasta --out out.tsv --model {model} --reference germline.fasta",
               "```", "", "## Validation", ""]
     if report:
-        lines += ["Fixed held-out stream:", ""] + [f"- {k}: {v}" for k, v in sorted(report.items())]
+        shown = [f"- {label}: {_card_value(report[key], unit)}" for key, label, unit in _CARD_MEASURES if key in report]
+        lines += [("Measured on up to 192 simulated reads per germline set, held out from training, on the model's "
+                   "own calls before they are refined against the germline (`alignair benchmark` scores the final "
+                   "calls). Allele and orientation rates are the share right; boundary, mutation and indel figures "
+                   "are mean errors."), ""] + shown + [
+                  "", "`alignair export` writes every measure to `validation_report.json` beside the model."]
     else:
         lines += ["Validation metrics are pending: this bundle was exported without validation."]
     lines += ["", "## License and citation", "",

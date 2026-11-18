@@ -47,10 +47,17 @@ def test_the_card_points_at_the_repositorys_license_and_citation(card):
     assert "LICENSE" in card and "CITATION.cff" in card
 
 
-def test_with_validation_the_metrics_are_listed_and_no_marker(tmp_path):
+def test_with_validation_the_card_names_its_measures_plainly(tmp_path):
+    """A user reads the card through `alignair info`: the measures in their words, what they were measured on, and
+    where the full report is; not the export's internal metric names."""
     manifest = {"loci": [{"locus": "IGH"}], "genes": {"V": {"n": 2}, "J": {"n": 1}}}
+    report = {"v_allele_top1": 0.5, "d_allele_top1": 0.75, "j_seg_mae": 0.3688, "orientation_acc": 1.0,
+              "bank_v_size": 41.5, "scan_v_top1": 1.0, "parse_v_start_exact": 1.0, "coord_v_top1": 0.99,
+              "shm_brier": 0.02, "anchor_v_exact": 0.99}
     path = tmp_path / "card.md"
-    _write_card(str(path), {"steps": 5}, manifest, {"v_allele_top1": 0.5},
-                dcs=resolve_dataconfigs(["HUMAN_IGH_OGRDB"]))
+    _write_card(str(path), {"steps": 5}, manifest, report, dcs=resolve_dataconfigs(["HUMAN_IGH_OGRDB"]))
     text = path.read_text()
-    assert "- v_allele_top1: 0.5" in text and "pending" not in text
+    assert "- V allele: 50.0%" in text and "- D allele: 75.0%" in text and "- J boundaries: 0.37 nt" in text
+    assert "- Orientation: 100.0%" in text and "validation_report.json" in text and "pending" not in text
+    for internal in ("bank", "scan", "parse", "coord", "brier", "anchor", "_top1", "_mae"):
+        assert internal not in text.split("## Validation")[1].split("## License")[0]
