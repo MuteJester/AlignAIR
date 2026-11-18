@@ -685,8 +685,8 @@ def test_the_pilot_runs_classify():
     from alignair_assay.real.fetch import PILOT_DONORS, fetch_reads
 
     found = {}
-    for donor, run in PILOT_DONORS.items():
-        r1, r2, record = fetch_reads(run, DATA)
+    for donor in PILOT_PROTOCOLS:  # the pilot's eight: the test donors' reads are read only by a claim run
+        r1, r2, record = fetch_reads(PILOT_DONORS[donor], DATA)
         assert record.quality == "full"
         protocol, evidence = classify_protocol(*preprocess.read_head(r1, r2))
         found[donor] = protocol

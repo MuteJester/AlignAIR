@@ -400,7 +400,7 @@ Each subpackage is a layer and may import only the layers in its row.
 | `workflow` | build → run → speed → score → report orchestration over a run directory: `build` (one suite), `scoring` (`score_file`, score and comparison reports and their files, shared by `score`, `compare` and `all`), `speed` (the speed protocol: `speed_set`, `measure`, `speed_configs`, `host_info`, `run_speed`), `summary` (the run summary, read back from the run directory), `orchestrate` (`RunConfig`, `run_all`, `score_and_report`), `manifest` (the run directory's manifest, shared by `all` and `real`: `manifest_record`, and `changed_fields` and `describe_changes` to name what a refused configuration changes) and `diagnose` (`evaluate`, the evaluator behind `diagnose`: the diagnostics layer orchestrated over a run directory, cached per suite, with its report), and `audit` (a package: `run_audit` in `audit.run`, the readiness gate behind `audit`, over the checks of `audit.stored` (the stored runs' self-checks), `audit.reproducible`, `audit.nulls` (the null comparisons, the positive control and the cross-surface agreement) and `audit.igblast` (IgBLAST's bands, live and stored), on the records of `audit.base`), and `show` (`show_case`, `show_read`: one read looked up across a run directory's files) | everything except cli |
 | `diagnostics` | model diagnostics for AlignAIR, run in process (see Diagnostics): `replay` (the product's predict pipeline run stage by stage with hooks, with substitutions), `heads` (head-level metrics), `ablation` (truth-substitution variants and stage contributions), `profile` (per-module and per-stage speed), `identity` (the model key: `weights_sha256` and the AlignAIR code identity) and `api_predict` (the alignair-api runner's subprocess, run by module name: AlignAIR's public API on a FASTA, written as the CLI writes it) | core, truth, airr, metrics, stats, scoring, suites, diagnostics |
 | `real.genotype` | real donors' genotypes from genomic sequencing (see Real data): `RealAllele`, `RealGenotype`, the VDJbase loader (`load_vdjbase_csv`), the OGRDB IUIS map (`IuisMap`), the D-call filter (`filter_d`), `merge_identical`, `upto` (IMGT position 318), the paper's novel alleles (`sd3_novel`, `sd3_only`) and the genotype arm's alleles (`arm_alleles`) | core, real.genotype |
-| `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the pilot pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
+| `real.fetch` | verified downloads under the data root (see Real data): each pilot run's reads (`fetch_reads`: AWS ODP at full quality, converted in the pinned sra-tools container, else ENA's FASTQs), the genotype files (`fetch_genotype_files`), `quality_kind` (full or SRA-Lite) and `fetch_manifest`; the donor pins (`PILOT_DONORS`, `PILOT_SPLIT`, `VDJBASE_SAMPLE`, `SRA_TOOLS_IMAGE`) | core, real.fetch |
 | `real.locus` | the genes each donor's genomic contigs capture (see Real data): the contig BAM read in the pinned samtools container (`contig_spans`, `parse_sam_alignments`, `parse_sam_spans`, `SAMTOOLS_IMAGE`), IGenotyper's gene coordinates (`read_gene_coords`), what each contig holds over each gene (`interval_bases`, `span_evidence`), the capture, uncalled and resolved rules (`captured_genes`, `spanned_by_haplotype`, `with_capture`) and `donor_capture`, which records how it was computed | core, real.genotype, real.locus |
 | `real.preprocess` | annotation-free preprocessing of a real run (see Real data): the protocol classifier (`classify_protocol`), the pRESTO recipes (`recipe`) run in the pinned Immcantation container (`IMMCANTATION_IMAGE`), the primers (`VH_PRIMERS`, `C_PRIMERS_MULTIPLEX`, `CREGION_RC`), the cap (`cap_sequences`), the primer spans (`primer_spans`) and `preprocess_run` | core, real.preprocess |
 | `real.truth` | each real read's tool-neutral truth (see Real data): `RealTruth` and `real_truths`, the observed span (`observed_span`, `mask_primers`), IMGT codon 104 (`cys104_end`), the known answer (`known_match`, `known_answer`), the Cys104 anchor (`cys104_in_read`), the junction (`junction_by_motif`) and `clonotype_clusters` | core, real.genotype, real.truth |
@@ -1744,9 +1744,10 @@ ids are refused naming the difference.
 
 P3 scores the tools on real human IGH repertoires (BioProject PRJNA555323; Rodriguez et al. 2023, Nat Commun
 14:4419) against each donor's own alleles from genomic long-read sequencing, published by VDJbase (genomic study
-P25, CC0). P3a is the pilot: eight donors, each with one AIRR-seq run and a genomic genotype, four on the dev split
-and four locked on the test split. `real` (`workflow.real`) runs it from the raw reads to `real/real_summary.json`
-and its report, `real/real_report.md` (The report, below). AlignAIR's genotype arm runs through `alignair-api` (see
+P25, CC0). P3a is the pilot: eight donors, each with one AIRR-seq run and a genomic genotype, now all on the dev
+split; four more donors, drawn by the pilot's rule continued, are locked on the test split (see Splits). `real`
+(`workflow.real`) runs them from the raw reads to `real/real_summary.json` and its report, `real/real_report.md`
+(The report, below). AlignAIR's genotype arm runs through `alignair-api` (see
 The genotype arm).
 
 **Running it.**
@@ -1754,7 +1755,7 @@ The genotype arm).
 ```
 python -m alignair_assay real --run-dir RUN --data-root ROOT --donors SC-23,SC-11,W-97,W-133 --igblast-dir DIR
 python -m alignair_assay real --run-dir RUN --data-root ROOT --stop-after preprocess \
-    --donors SC-23,SC-11,W-97,W-133,SC-4,SC-6,W-89,W-131
+    --donors SC-23,SC-11,W-97,W-133,SC-4,SC-6,W-89,W-131,SC-13,SC-17,W-110,W-52
 ```
 
 - Docker must be running; the pinned images are pulled on first use, and an image whose digest is not the pinned
@@ -2142,10 +2143,13 @@ call (`classify`, `classify_v`, `read_calls`); `classify_v_call` does it for one
   own sequence: VDJbase names an allele by its locus, and SC-11 carries `IGHV3-30-3*03_g150a` with IGHV3-30*01's
   sequence and `IGHV3-23D*01_t13g` with IGHV3-23*04's (1,268 known answers), which no call by sequence can place.
 
-**Splits.** The pilot dev donors are SC-23, SC-11, W-97 and W-133; the test donors SC-4, SC-6, W-89 and W-131 are
-locked for claims. `real` refuses a test donor unless `--split test` is given, and a dev donor in a `--split test`
-run; `--stop-after preprocess` takes any of them, since it scores nothing. Iterate on dev; score the test split once,
-for a claim.
+**Splits.** The dev donors are the pilot's eight: SC-23, SC-11, W-97, W-133, SC-4, SC-6, W-89 and W-131 (the last
+four were its first test donors; scored on 2026-11-05, they then informed the V-call design, so they moved to dev).
+The test donors SC-13, SC-17, W-110 and W-52 are locked for claims: the pilot's rule continued (the next two
+smallest single-AIRR-seq-run paired donors of each prefix by run bytes, skipping the pilot, among donors with a
+VDJbase P25 genomic sample), drawn on 2026-11-18 before their reads were fetched. `real` refuses a test donor
+unless `--split test` is given, and a dev donor in a `--split test` run; `--stop-after preprocess` takes any of
+them, since it scores nothing. Iterate on dev; score the test split once, for a claim.
 
 **The report (`real/real_report.md`, `report.real`).** It renders `real_summary.json`, and shows nothing the
 summary does not hold. Its first page is the summary:

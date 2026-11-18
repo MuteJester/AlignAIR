@@ -1,5 +1,6 @@
-"""Verified downloads for the real-data pilot: each pilot run's reads, at full quality where AWS ODP has them, and
-the donors' genotype files, all under a data root (``--data-root``), never in a run directory.
+"""Verified downloads for the real-data donors (the pilot's eight and the locked test split's four): each donor's
+run's reads, at full quality where AWS ODP has them, and the donors' genotype files, all under a data root
+(``--data-root``), never in a run directory.
 
 Everything fetched is pinned here (size, md5 or S3 ETag, read count, commit, image digest, and for the converted
 reads the md5 of each mate's uncompressed FASTQ, which unlike its gzip does not depend on zlib), so a fresh data
@@ -34,9 +35,9 @@ first ``QUALITY_RECORDS``), with the qualities ENA dropped. It falls back to the
 missing or converts to Lite qualities, and records why; the record's ``quality`` is the alphabet the reads have
 (``quality_kind``), ``"full"`` only when both mates are. It stops with ``FetchError`` (naming the file) on any other
 failure: Docker missing or another image digest (before any download), a download that is not the pinned file, a
-read count that is not ENA's, or a file changed since its record. All eight pilot runs convert at full quality,
-with ENA's read counts and ENA's first records; on W-97 (SRR23654538) all 103,049 pairs have ENA's names and bases,
-with 27 quality symbols where ENA has two.
+read count that is not ENA's, or a file changed since its record. All twelve runs convert at full quality, with
+ENA's read counts and ENA's first records; on W-97 (SRR23654538) all 103,049 pairs have ENA's names and bases, with
+27 quality symbols where ENA has two.
 
 The records live in ``<data root>/fetch/`` (``reads/<run>.json``, ``genotypes/<donor>.json``) and
 ``fetch_manifest`` gathers them into ``<data root>/fetch_manifest.json``. A reads record is reused only while it is
@@ -64,31 +65,42 @@ from pathlib import Path
 from alignair_assay.core import container
 from alignair_assay.core.provenance import sha256_file
 
-# --- the pilot ---------------------------------------------------------------------------------------------------
+# --- the donors --------------------------------------------------------------------------------------------------
 
-# Donor -> its AIRR-seq run (``metadata/donor_runs.tsv``, ``data_type`` airrseq). Each pilot donor has one such run:
-# the pilot was drawn from the donors with one, so it is the run the pilot download put under ``airrseq/<donor>/``.
+# Donor -> its AIRR-seq run (``metadata/donor_runs.tsv``, ``data_type`` airrseq). The pilot (the first eight) is the
+# four smallest single-AIRR-seq-run paired donors of each prefix (SC, W) by run bytes; the last four are the next two
+# of each prefix, skipping the pilot, among donors with a VDJbase P25 genomic sample (the rule continued, 2026-11-18,
+# before their reads were fetched). Each donor has one such run, the one under ``airrseq/<donor>/``.
 PILOT_DONORS: dict[str, str] = {
     "SC-23": "SRR23446586", "SC-4": "SRR23446584", "SC-11": "SRR23446589", "SC-6": "SRR23446583",
     "W-97": "SRR23654538", "W-89": "SRR23654540", "W-133": "SRR23654572", "W-131": "SRR23654574",
+    "SC-13": "SRR23446578", "SC-17": "SRR23446566", "W-110": "SRR23654535", "W-52": "SRR23654555",
 }
-PILOT_SPLIT: dict[str, tuple[str, ...]] = {"dev": ("SC-23", "SC-11", "W-97", "W-133"),
-                                           "test": ("SC-4", "SC-6", "W-89", "W-131")}
-# Donor -> its VDJbase genomic sample (study P25), from the genomic subjects of VDJbase's API.
+# dev: the pilot's eight (SC-4, SC-6, W-89 and W-131, its first test donors, informed the V-call design); test: the
+# four drawn after them, locked for claims and scored once.
+PILOT_SPLIT: dict[str, tuple[str, ...]] = {
+    "dev": ("SC-23", "SC-11", "W-97", "W-133", "SC-4", "SC-6", "W-89", "W-131"),
+    "test": ("SC-13", "SC-17", "W-110", "W-52"),
+}
+# Donor -> its VDJbase genomic sample (study P25), from the genomic subjects of VDJbase's API (``id`` ->
+# ``sample_identifier``, ``genotypes/vdjbase_genomic_api/genomic_subjects_Homo_sapiens_IGH.json``).
 VDJBASE_SAMPLE: dict[str, str] = {
     "SC-23": "P25_I58_S1", "SC-4": "P25_I61_S1", "SC-11": "P25_I48_S1", "SC-6": "P25_I62_S1",
     "W-97": "P25_I151_S1", "W-89": "P25_I145_S1", "W-133": "P25_I93_S1", "W-131": "P25_I91_S1",
+    "SC-13": "P25_I49_S1", "SC-17": "P25_I53_S1", "W-110": "P25_I74_S1", "W-52": "P25_I119_S1",
 }
 # Run -> its read pairs (ENA ``read_count``).
 READ_PAIRS: dict[str, int] = {
     "SRR23446586": 164_664, "SRR23446584": 942_871, "SRR23446589": 989_139, "SRR23446583": 1_004_290,
     "SRR23654538": 103_049, "SRR23654540": 113_652, "SRR23654572": 127_136, "SRR23654574": 153_516,
+    "SRR23446578": 1_105_811, "SRR23446566": 1_349_052, "SRR23654535": 155_697, "SRR23654555": 138_033,
 }
 
 # --- the reads ---------------------------------------------------------------------------------------------------
 
 ODP_URL = "https://sra-pub-run-odp.s3.amazonaws.com/sra/{run}/{run}"
-# Run -> its ODP object's size and S3 ETag (a multipart ETag of ``S3_PART_SIZE`` parts), as served on 2026-10-20.
+# Run -> its ODP object's size and S3 ETag (a multipart ETag of ``S3_PART_SIZE`` parts), as served on 2026-10-20 (the
+# last four on 2026-11-18).
 ODP_OBJECT: dict[str, tuple[int, str]] = {
     "SRR23446586": (52_438_634, "0794d0683c283513b6bc1687d13c77fb-7"),
     "SRR23446584": (310_026_894, "cd927d94c04f71b4410ec6a05db39926-37"),
@@ -98,6 +110,10 @@ ODP_OBJECT: dict[str, tuple[int, str]] = {
     "SRR23654540": (37_441_494, "210f3afc2bae7e2a4e668a30f288bf48-5"),
     "SRR23654572": (39_949_090, "17d45b70a0621c1474a1c0e50296d541-5"),
     "SRR23654574": (49_003_723, "cd1e33178674dabfa360ca168861ba73-6"),
+    "SRR23446578": (356_571_722, "2223dc37c16eaaa8cad012158516a4f8-43"),
+    "SRR23446566": (438_165_427, "9aecc5697b57f387fcf3d637ef08b79b-53"),
+    "SRR23654535": (49_165_383, "539f576ad3e4fb887ac542fd43f397ec-6"),
+    "SRR23654555": (43_745_393, "8b85f1c86f64acf34bcc345b439f17b1-6"),
 }
 # Run -> the md5s of its converted mates' uncompressed FASTQ streams (mate 1, mate 2): what ``sra_commands`` makes
 # of the pinned object, independent of the zlib that gzips it. Checked on every conversion at full quality.
@@ -110,6 +126,10 @@ FASTQ_MD5: dict[str, tuple[str, str]] = {
     "SRR23654540": ("40de9891d3c09f2e073306a7baf7935a", "3e01c6f0eca47a2a5b8a7b7061ccbb03"),
     "SRR23654572": ("035049578eec0c912c2f70276519d47a", "8c8e64cd4f5f69ae9918f79e0291e8a8"),
     "SRR23654574": ("9230266de4a700043545e737aaed4f26", "fbee1a2eedc70e8df6717fd8e64a3fe6"),
+    "SRR23446578": ("68d43bb8ec12b528d102ca4095b6e05b", "74cdf9bf9dc0d859604139f331e23d86"),
+    "SRR23446566": ("6475d75f391919198563b5d6b81c4557", "71af8622a931df8dad41e09eae4e43b6"),
+    "SRR23654535": ("aff322e7fd268c130008cfb3f358bc5a", "1b18cc58d9b8fdcb8e3f45826ece30d0"),
+    "SRR23654555": ("e90880cd5e3a01c6e9ad91306ba31243", "45202d5602447deb3ef7697d0dfbe54a"),
 }
 # The part size the ODP objects were uploaded in (the AWS CLI's default), which their multipart ETags depend on.
 S3_PART_SIZE = 8 * 1024 * 1024
@@ -132,6 +152,14 @@ ENA_FASTQ: dict[str, tuple[tuple[str, int, str], tuple[str, int, str]]] = {
                     ("SRR23654572_2.fastq.gz", 6_512_400, "4f6708b8cc423196e8362263d95ad2ef")),
     "SRR23654574": (("SRR23654574_1.fastq.gz", 4_886_487, "b2f3b42d8b33709cad141aaa3ede3dcd"),
                     ("SRR23654574_2.fastq.gz", 7_610_428, "7e4dd5c561c1e04906e2089a9b09a204")),
+    "SRR23446578": (("SRR23446578_1.fastq.gz", 67_706_493, "4c4f3c3044a8cb54e6d876b726653e18"),
+                    ("SRR23446578_2.fastq.gz", 65_040_101, "54d768fb511c7e638f09015141e5a513")),
+    "SRR23446566": (("SRR23446566_1.fastq.gz", 88_361_081, "dcce6637f86c011e1328ee37168abf36"),
+                    ("SRR23446566_2.fastq.gz", 86_908_690, "353d29fa397fb4c40082a5ed76e575b3")),
+    "SRR23654535": (("SRR23654535_1.fastq.gz", 5_342_347, "3f3199b0702e807bfdf3af8fc2de4aa7"),
+                    ("SRR23654535_2.fastq.gz", 7_938_642, "c878cda2e62a802c6e3784353d78a054")),
+    "SRR23654555": (("SRR23654555_1.fastq.gz", 6_431_763, "5f6e8c683a41f199ac2aac7646366923"),
+                    ("SRR23654555_2.fastq.gz", 8_190_019, "b3d0b69876022ea735375500e14f770a")),
 }
 # ncbi/sra-tools 3.4.1, pushed 2026-03-30 (image sha256:cc7a4a445f5b...); fasterq-dump and vdb-validate 3.4.1.
 SRA_TOOLS_IMAGE = ("ncbi/sra-tools:3.4.1"
@@ -157,6 +185,10 @@ VDJBASE_FILES: dict[str, tuple[tuple[int, str], tuple[int, str]]] = {
     "P25_I145_S1": ((370_616, "875e4b6f84bd45ad41de6f35f5b39ef1"), (5_195_148, "495afca25a11cf6424bea24452b65adf")),
     "P25_I93_S1": ((253_128, "44bdf4f695ff2836d624c56d04e1b936"), (4_680_640, "48801776e304d9c50d58b124723c3ec1")),
     "P25_I91_S1": ((296_782, "57d99f5a1910d4f5667ec25c0e04b4af"), (3_935_340, "1ed9713a0bb578b84a707f7df9f2f62a")),
+    "P25_I49_S1": ((277_581, "039aae0fb2106a37bc8d98901f7166d0"), (3_495_424, "54171d28f1585b1da04608f50c711ff1")),
+    "P25_I53_S1": ((343_841, "70a51fd72930116e362cd1bd3d9f313b"), (3_060_631, "a95d1d0993e4884c56593c1b642a9ad0")),
+    "P25_I74_S1": ((343_536, "7ba289424326fbc4155a404acb9e14b8"), (5_025_692, "25b880a03c46e822abc045386ecc3de6")),
+    "P25_I119_S1": ((218_641, "0a75e8c415a4f48b6a803df074d1e81a"), (5_997_098, "df796ea45d49fefbeca66d148d2bbf98")),
 }
 OGRDB_PATH = "genotypes/ogrdb_human_IGH_VDJ/Homo_sapiens_IGH_VDJ_rev_8.json"
 OGRDB_URL = "https://ogrdb.airr-community.org/api/germline/set/G00060/8/airr"

@@ -135,17 +135,40 @@ def test_quality_kind_refuses_what_is_not_a_fastq(tmp_path):
 
 # --- the pilot ---------------------------------------------------------------------------------------------------
 
-def test_pilot_split_covers_all_pilot_donors_once():
+def test_the_split_covers_every_donor_once():
     donors = [donor for split in ("dev", "test") for donor in PILOT_SPLIT[split]]
-    assert sorted(donors) == sorted(PILOT_DONORS) and len(donors) == len(set(donors)) == 8
+    assert sorted(donors) == sorted(PILOT_DONORS) and len(donors) == len(set(donors)) == 12
     assert set(PILOT_SPLIT) == {"dev", "test"}
-    assert PILOT_SPLIT["dev"] == ("SC-23", "SC-11", "W-97", "W-133")
+    # the pilot's eight are dev (its first test four informed the V-call design); the four donors the pilot's rule
+    # gives next are the locked test split
+    assert PILOT_SPLIT["dev"] == ("SC-23", "SC-11", "W-97", "W-133", "SC-4", "SC-6", "W-89", "W-131")
+    assert PILOT_SPLIT["test"] == ("SC-13", "SC-17", "W-110", "W-52")
     assert set(VDJBASE_SAMPLE) == set(PILOT_DONORS)
-    assert len(set(PILOT_DONORS.values())) == 8 and len(set(VDJBASE_SAMPLE.values())) == 8
+    assert len(set(PILOT_DONORS.values())) == 12 and len(set(VDJBASE_SAMPLE.values())) == 12
     assert PILOT_DONORS["SC-23"] == "SRR23446586" and PILOT_DONORS["W-97"] == "SRR23654538"
     assert VDJBASE_SAMPLE["SC-23"] == "P25_I58_S1" and VDJBASE_SAMPLE["W-97"] == "P25_I151_S1"
-    for run in PILOT_DONORS.values():
-        assert run in fetch.READ_PAIRS and run in fetch.ODP_OBJECT and run in fetch.ENA_FASTQ
+    assert {donor: (PILOT_DONORS[donor], VDJBASE_SAMPLE[donor]) for donor in PILOT_SPLIT["test"]} == {
+        "SC-13": ("SRR23446578", "P25_I49_S1"), "SC-17": ("SRR23446566", "P25_I53_S1"),
+        "W-110": ("SRR23654535", "P25_I74_S1"), "W-52": ("SRR23654555", "P25_I119_S1")}
+    assert [fetch.READ_PAIRS[PILOT_DONORS[donor]] for donor in PILOT_SPLIT["test"]] == [
+        1_105_811, 1_349_052, 155_697, 138_033]
+
+
+def test_every_donor_has_every_pin():
+    for donor, run in PILOT_DONORS.items():
+        for table in (fetch.READ_PAIRS, fetch.ODP_OBJECT, fetch.FASTQ_MD5, fetch.ENA_FASTQ):
+            assert run in table, (donor, run)
+        size, etag = fetch.ODP_OBJECT[run]
+        assert size > 0 and len(etag.partition("-")[0]) == 32
+        assert all(len(md5) == 32 for md5 in fetch.FASTQ_MD5[run])
+        assert [name for name, _, _ in fetch.ENA_FASTQ[run]] == [f"{run}_1.fastq.gz", f"{run}_2.fastq.gz"]
+        assert [spec.path for spec in fetch.ena_specs(run)] == [
+            f"airrseq/{donor}/{run}/{run}_{mate}.fastq.gz" for mate in (1, 2)]
+        assert len(fetch.recipe_digest(run)) == 64
+        specs = genotype_specs(donor)
+        assert specs["vdjbase_csv"].path == f"genotypes/vdjbase_genomic_samples/{VDJBASE_SAMPLE[donor]}.csv"
+        assert all(len(spec.md5) == 32 and spec.bytes > 0 for spec in specs.values())
+    assert set(fetch.VDJBASE_FILES) == set(VDJBASE_SAMPLE.values())
 
 
 def test_the_sra_tools_image_is_pinned_by_digest():
@@ -801,7 +824,7 @@ def test_fetch_manifest_lists_what_was_fetched(tmp_path, monkeypatch):
     entry = manifest["reads"][RUN]
     assert entry["path"] == f"airrseq_odp/{DONOR}/{RUN}" and entry["quality"] == "full" and entry["md5"] == record.md5
     assert manifest["quality"] == {RUN: "full"}
-    assert RUN not in manifest["pending"]["reads"] and len(manifest["pending"]["reads"]) == 7
+    assert RUN not in manifest["pending"]["reads"] and len(manifest["pending"]["reads"]) == len(PILOT_DONORS) - 1
     assert sorted(manifest["pending"]["genotypes"]) == sorted(PILOT_DONORS)
     assert len(manifest["code_sha256"]) == 64
 
@@ -818,21 +841,33 @@ def _linked_root(tmp_path: Path) -> Path:
     return root
 
 
+def _tsv(path: Path) -> list[dict]:
+    with path.open(encoding="utf-8") as handle:
+        header = handle.readline().rstrip("\n").split("\t")
+        return [dict(zip(header, line.rstrip("\n").split("\t"))) for line in handle]
+
+
 @needs_data
 def test_the_pins_are_the_data_roots_metadata():
     root = Path(DATA)
-    with (root / "metadata/donor_runs.tsv").open(encoding="utf-8") as handle:
-        header = handle.readline().rstrip("\n").split("\t")
-        rows = [dict(zip(header, line.rstrip("\n").split("\t"))) for line in handle]
+    rows = _tsv(root / "metadata/donor_runs.tsv")
+    ena = {row["run_accession"]: row for row in _tsv(root / "metadata/ena_read_runs.tsv")}
     for donor, run in PILOT_DONORS.items():
         runs = [row for row in rows if row["donor"] == donor and row["data_type"] == "airrseq"]
         assert [row["run"] for row in runs] == [run]
         assert int(runs[0]["read_count"]) == fetch.READ_PAIRS[run]
         assert (root / "airrseq" / donor / run).is_dir()
+        # ENA's file report lists the run's FASTQs with the pinned sizes and md5s
+        listed = ena[run]
+        assert listed["sample_alias"] == donor and int(listed["read_count"]) == fetch.READ_PAIRS[run]
+        pinned = [(ena_fastq_url(run, name).removeprefix("https://"), str(size), md5)
+                  for name, size, md5 in fetch.ENA_FASTQ[run]]
+        assert list(zip(*(listed[key].split(";") for key in ("fastq_ftp", "fastq_bytes", "fastq_md5")))) == pinned
+    # the pilot download's own listing: the eight pilot runs' FASTQs
     with (root / "metadata/pilot_files.tsv").open(encoding="utf-8") as handle:
         listed = {tuple(line.split("\t")[2:5]) for line in handle.read().splitlines()}
-    pinned = {(ena_fastq_url(run, name).removeprefix("https://"), str(size), md5)
-              for run in PILOT_DONORS.values() for name, size, md5 in fetch.ENA_FASTQ[run]}
+    pinned = {(ena_fastq_url(PILOT_DONORS[donor], name).removeprefix("https://"), str(size), md5)
+              for donor in PILOT_SPLIT["dev"] for name, size, md5 in fetch.ENA_FASTQ[PILOT_DONORS[donor]]}
     assert pinned == listed
 
 

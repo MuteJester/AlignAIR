@@ -202,7 +202,7 @@ def check_config(cfg: RealConfig) -> None:
         raise ValueError(f"stop_after must be None or one of {', '.join(STOP_AFTER)}, got {cfg.stop_after!r}")
     for donor in cfg.donors:
         if donor not in PILOT_DONORS:
-            raise ValueError(f"unknown donor {donor}: the pilot donors are {', '.join(PILOT_SPLIT['dev'])} (dev) and "
+            raise ValueError(f"unknown donor {donor}: the donors are {', '.join(PILOT_SPLIT['dev'])} (dev) and "
                              f"{', '.join(PILOT_SPLIT['test'])} (test)")
         if cfg.stop_after is not None:
             continue  # nothing is scored: any pilot donor, its split recorded

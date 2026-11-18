@@ -291,18 +291,21 @@ def _config(tmp_path: Path, **overrides) -> RealConfig:
 
 def test_refuses_test_donors_on_dev(tmp_path, fakes):
     layout = RunLayout(tmp_path / "run")
-    with pytest.raises(ValueError, match=r"SC-4 is a test donor.*--split test"):
-        run_real(_config(tmp_path, donors=("W-97", "SC-4")), layout)
+    with pytest.raises(ValueError, match=r"SC-13 is a test donor.*--split test"):
+        run_real(_config(tmp_path, donors=("W-97", "SC-13")), layout)
     # and a dev donor in a test run, or a donor outside the pilot
     with pytest.raises(ValueError, match="W-97 is a dev donor"):
         run_real(_config(tmp_path, donors=("W-97",), split="test"), layout)
+    # the pilot's first test donors are dev now: they informed the design
+    with pytest.raises(ValueError, match=r"SC-4 is a dev donor.*SC-13, SC-17, W-110, W-52"):
+        run_real(_config(tmp_path, donors=("SC-4",), split="test"), layout)
     with pytest.raises(ValueError, match=r"unknown donor XX-1.*SC-23"):
         run_real(_config(tmp_path, donors=("XX-1",)), layout)
     assert not layout.root.exists()
     assert fakes.captures == fakes.preprocessed == [] and FakeTool.runs == []
     # asked explicitly, a test donor runs
-    summary = run_real(_config(tmp_path, donors=("SC-4",), split="test"), layout)
-    assert summary["donors"]["SC-4"]["status"] == "done" and summary["config"]["split"] == "test"
+    summary = run_real(_config(tmp_path, donors=("SC-13",), split="test"), layout)
+    assert summary["donors"]["SC-13"]["status"] == "done" and summary["config"]["split"] == "test"
 
 
 def test_stop_after_preprocess_classifies_every_donor_without_scoring(tmp_path, fakes, monkeypatch, capsys):
@@ -316,13 +319,13 @@ def test_stop_after_preprocess_classifies_every_donor_without_scoring(tmp_path, 
     monkeypatch.setattr(real_steps, "check_images", lambda found: images.append(dict(found)) or {
         name: {"image": image, "id": "sha256:x", "repo_digests": [image]} for name, image in found.items()})
     layout = RunLayout(tmp_path / "run")
-    cfg = _config(tmp_path, donors=("W-97", "SC-4"), stop_after="preprocess", igblast_dir=None,
+    cfg = _config(tmp_path, donors=("W-97", "SC-13"), stop_after="preprocess", igblast_dir=None,
                   alignair_checkpoint=None)
     summary = run_real(cfg, layout)
-    assert fakes.captures == fakes.preprocessed == ["W-97", "SC-4"]
+    assert fakes.captures == fakes.preprocessed == ["W-97", "SC-13"]
     assert fakes.truths == [] and FakeTool.runs == [] and FakeTool.prepares == []
     assert set(images[0]) == {"sra_tools", "samtools", "immcantation"}  # no AlignAIR image: no tool runs
-    for donor, split in (("W-97", "dev"), ("SC-4", "test")):
+    for donor, split in (("W-97", "dev"), ("SC-13", "test")):
         block = summary["donors"][donor]
         assert block["status"] == "done" and block["stopped_after"] == "preprocess" and block["split"] == split
         assert set(block["steps"]) == {"fetch", "genotype", "preprocess"}
@@ -334,14 +337,14 @@ def test_stop_after_preprocess_classifies_every_donor_without_scoring(tmp_path, 
     manifest = json.loads(layout.real_manifest().read_text())
     assert manifest["identity"]["stop_after"] == "preprocess" and manifest["identity"]["settings"] == {}
     # a rerun reuses every step
-    again = run_real(cfg, layout)["donors"]["SC-4"]["steps"]
-    assert {step["status"] for step in again.values()} == {"reused"} and fakes.preprocessed == ["W-97", "SC-4"]
+    again = run_real(cfg, layout)["donors"]["SC-13"]["steps"]
+    assert {step["status"] for step in again.values()} == {"reused"} and fakes.preprocessed == ["W-97", "SC-13"]
     # through the command line too
-    args = ["real", "--run-dir", str(layout.root), "--data-root", cfg.data_root, "--donors", "W-97,SC-4", "--cap",
+    args = ["real", "--run-dir", str(layout.root), "--data-root", cfg.data_root, "--donors", "W-97,SC-13", "--cap",
             "30", "--threads", "2", "--stop-after", "preprocess"]
     capsys.readouterr()
     assert main(args) == 0
-    assert "SC-4 preprocess: reused" in capsys.readouterr().out
+    assert "SC-13 preprocess: reused" in capsys.readouterr().out
     # scoring the dev donor in the same run directory is another configuration (--force); its preprocessing is reused
     monkeypatch.setattr(real_steps, "sensitivity_genes", lambda data_root: {
         "genes": [], "sd3_alleles": 0, "missing_alleles": 0, "cohort": {}, "files": {}})
@@ -349,10 +352,10 @@ def test_stop_after_preprocess_classifies_every_donor_without_scoring(tmp_path, 
         run_real(_config(tmp_path), layout)
     summary = run_real(_config(tmp_path), layout, force=True)
     assert summary["donors"]["W-97"]["steps"]["preprocess"]["status"] == "reused"
-    assert fakes.preprocessed == ["W-97", "SC-4"] and fakes.truths == ["W-97"]
+    assert fakes.preprocessed == ["W-97", "SC-13"] and fakes.truths == ["W-97"]
     # without --stop-after, the test donor is refused as before, and another stop is refused
     with pytest.raises(ValueError, match="--split test"):
-        run_real(_config(tmp_path, donors=("SC-4",)), RunLayout(tmp_path / "other"))
+        run_real(_config(tmp_path, donors=("SC-13",)), RunLayout(tmp_path / "other"))
     with pytest.raises(ValueError, match="stop_after"):
         run_real(_config(tmp_path, stop_after="truth"), RunLayout(tmp_path / "other"))
 
@@ -1036,7 +1039,7 @@ def test_the_cli_runs_and_refuses(tmp_path, fakes, capsys):
     out = capsys.readouterr().out
     assert "W-97 preprocess: done" in out and "summary:" in out
     assert f"report: {tmp_path / 'run' / 'real' / 'real_report.md'}" in out
-    assert main([*args[:6], "SC-4", *args[7:]]) == 2
+    assert main([*args[:6], "SC-13", *args[7:]]) == 2
     assert "--split test" in capsys.readouterr().err
 
 

@@ -218,7 +218,7 @@ def _real_run(root: Path, donors: dict) -> RunLayout:
     return layout
 
 
-DEV_DONORS = ("SC-23", "SC-11", "W-97", "W-133")
+DEV_DONORS = ("SC-23", "SC-11", "W-97", "W-133", "SC-4", "SC-6", "W-89", "W-131")
 
 
 def _dev(**donors) -> dict:
@@ -227,9 +227,9 @@ def _dev(**donors) -> dict:
 
 
 def test_every_dev_donor_must_pass_its_self_check(tmp_path):
-    real = _real_run(tmp_path / "real", {**_dev(), "SC-4": _donor(status="failed")})
+    real = _real_run(tmp_path / "real", {**_dev(), "SC-13": _donor(status="failed")})
     found = audit.real_oracle(real)
-    assert found["status"] == "pass" and found["n"] == 10000  # the test donor SC-4 is not read
+    assert found["status"] == "pass" and found["n"] == 20000  # the test donor SC-13 is not read
     assert set(found["evidence"]["donors"]) == set(DEV_DONORS)
     for bad in (_donor(status="unchecked"), _donor(pipeline=False), _donor(decoys=False),
                 _donor(block_status="stopped")):
@@ -250,7 +250,7 @@ def test_every_dev_donor_must_be_in_the_stored_run(tmp_path):
 def test_truth_health_flags_warn_and_never_fail(tmp_path):
     real = _real_run(tmp_path / "real", _dev(W_97=_donor(flagged=("IGHV3-23",))))
     found = audit.real_truth_health(real)
-    assert found["status"] == "warn" and found["n"] == 200000
+    assert found["status"] == "warn" and found["n"] == 400000
     assert found["evidence"]["flags"] == {"W-97": [{"gene": "IGHV3-23", "reads": 12, "clonotypes": 11,
                                                     "alleles": {"IGHVF1-G1*01": 12}, "h0_only": False}]}
     assert "W-97 IGHV3-23" in found["evidence"]["summary"]
@@ -265,7 +265,7 @@ def test_truth_health_flags_warn_and_never_fail(tmp_path):
 def test_igblast_known_answers_on_the_shared_arm_must_reach_99_percent(tmp_path):
     # the genotype arm's ref_known_top1 (0.98 here) is not held to the band: the donor's genotype may not hold it
     found = audit.real_known_band(_real_run(tmp_path / "real", _dev(SC_23=_donor(known=(0.99, 1.0)))))
-    assert found["status"] == "pass" and found["n"] == 10000
+    assert found["status"] == "pass" and found["n"] == 20000
     assert "W-97 known_top1 99.5% (n=2500), ref_known_top1 99.9% (n=5000)" in found["evidence"]["summary"]
     for known in ((0.989, 1.0), (1.0, 0.9899), (None, 1.0)):
         found = audit.real_known_band(_real_run(tmp_path / "low", _dev(SC_23=_donor(known=known))))
