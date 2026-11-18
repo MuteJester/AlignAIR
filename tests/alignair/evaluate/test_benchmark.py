@@ -137,3 +137,30 @@ def test_without_a_dataconfig_the_benchmark_says_which_of_the_cards_it_generates
     assert benchmark.dataconfig_name(SimpleNamespace(dataconfig=None), "m.alignair") == "A"
     note = capsys.readouterr().err
     assert "A" in note and "B" in note and "--dataconfig" in note
+
+
+def test_a_stratum_never_holds_an_empty_read():
+    """short_janchor cuts 150-350 nt off the 5' end: on a short locus (TRB) some simulated reads have no bases left,
+    which the aligner refuses, so `alignair benchmark` failed at its defaults. A stratum draws reads with bases."""
+    import GenAIRR.data as gd
+    from alignair.evaluate.benchmark import generate_labeled
+    records = generate_labeled(gd.HUMAN_TCRB_IMGT, default_strata()["short_janchor"], 200, 3)   # the CLI's 4th stratum
+    assert len(records) == 200 and [r for r in records if not r["sequence"]] == []
+
+
+def test_a_stratum_that_leaves_no_read_is_refused_by_name(monkeypatch):
+    import itertools
+
+    import GenAIRR.data as gd
+    from alignair.errors import ConfigurationError
+    from alignair.evaluate.benchmark import generate_labeled
+    from alignair.genairr import experiment
+
+    class Empty:                                   # a stratum whose every simulated read has lost all its bases
+        def stream_records(self, n=None, seed=0):
+            return itertools.repeat({"sequence": ""})
+    monkeypatch.setattr(experiment, "build_experiment", lambda *args, **kwargs: Empty())
+    with pytest.raises(ConfigurationError, match="short_janchor") as refused:
+        generate_labeled(gd.HUMAN_TCRB_IMGT, default_strata()["short_janchor"], 5, 0, stratum="short_janchor")
+    assert refused.value.context["stratum"] == "short_janchor"
+    assert refused.value.context["dataconfig"] == "HUMAN_TCRB_IMGT"

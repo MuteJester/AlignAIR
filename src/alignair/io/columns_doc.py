@@ -21,6 +21,9 @@ _GENE = {"v": "V", "d": "D", "j": "J"}
 _REGION = {"fwr1": "framework region 1", "cdr1": "CDR1", "fwr2": "framework region 2", "cdr2": "CDR2",
            "fwr3": "framework region 3", "cdr3": "CDR3", "fwr4": "framework region 4"}
 _POSITION = "1-based position"
+# where a read position counts: AIRR's positions in the read are in sequence, or in its reverse complement when the
+# row is reverse-complemented
+_IN_SEQUENCE = "in sequence (in its reverse complement when rev_comp is T)"
 
 _FIXED = {
     "sequence_id": ColumnDoc("string", "", "The read's id: the input record's id (a repeated id gets a _dupN suffix), "
@@ -41,8 +44,8 @@ _FIXED = {
     "stop_codon": ColumnDoc("T/F", "", "T when the aligned sequence holds a stop codon in the V reading frame."),
     "sequence_alignment": ColumnDoc("nucleotides", "", "The aligned read, IMGT-gapped (dots in the V gaps)."),
     "germline_alignment": ColumnDoc("nucleotides", "", "The germline the read aligns to, IMGT-gapped, position "
-                                                       "for position with sequence_alignment (N in the junction's "
-                                                       "untemplated bases)."),
+                                                       "for position with sequence_alignment, N in the untemplated "
+                                                       "bases (np1, np2)."),
     "sequence_alignment_aa": ColumnDoc("amino acids", "", "sequence_alignment translated."),
     "germline_alignment_aa": ColumnDoc("amino acids", "", "germline_alignment translated."),
     "junction": ColumnDoc("nucleotides", "", "The junction: CDR3 with its conserved anchors (V's Cys to J's Trp or "
@@ -50,9 +53,10 @@ _FIXED = {
     "junction_aa": ColumnDoc("amino acids", "", "The junction translated (X for an incomplete codon)."),
     "junction_length": ColumnDoc("integer", "nt", "The junction's length in nucleotides."),
     "junction_aa_length": ColumnDoc("integer", "aa", "The junction's length in amino acids."),
-    "np1": ColumnDoc("nucleotides", "", "The untemplated bases between V and D (between V and J without a D)."),
+    "np1": ColumnDoc("nucleotides", "", "The untemplated bases between V and D; without a D call (a D too short "
+                                        "to call included), all the bases between V and J."),
     "np1_length": ColumnDoc("integer", "nt", "The length of np1."),
-    "np2": ColumnDoc("nucleotides", "", "The untemplated bases between D and J."),
+    "np2": ColumnDoc("nucleotides", "", "The untemplated bases between D and J; empty without a D call."),
     "np2_length": ColumnDoc("integer", "nt", "The length of np2."),
     "mutation_rate": ColumnDoc("number", "fraction 0-1", "AlignAIR's estimate of the read's somatic mutation rate "
                                                          "over its V, D and J."),
@@ -72,6 +76,21 @@ _FIXED = {
 }
 
 
+def _v_germline() -> dict[str, ColumnDoc]:
+    """The V germline positions: in the IMGT-gapped germline, as Change-O's MakeDb writes and its CreateGermlines reads
+    them."""
+    return {
+        "v_germline_start": ColumnDoc("integer", "1-based position, IMGT-gapped",
+                                      "Where the V part of sequence_alignment starts in the IMGT-gapped V germline: 1, "
+                                      "as the alignment starts at the germline's first position, with dots where the "
+                                      "read does not reach (v_cigar's N gives where the read's V starts in the "
+                                      "germline). Empty for a row without the alignment."),
+        "v_germline_end": ColumnDoc("integer", "1-based position, IMGT-gapped",
+                                    "Where the V alignment ends in the IMGT-gapped V germline, its gaps counted, as "
+                                    "Change-O counts it. Empty for a row without the alignment."),
+    }
+
+
 def _gene_columns(g: str) -> dict[str, ColumnDoc]:
     gene = _GENE[g]
     return {
@@ -81,30 +100,43 @@ def _gene_columns(g: str) -> dict[str, ColumnDoc]:
         f"{g}_identity": ColumnDoc("number", "fraction 0-1", f"The fraction of the aligned {gene} bases that match "
                                                              f"the germline."),
         f"{g}_cigar": ColumnDoc("CIGAR", "", f"The {gene} alignment of the read against its germline, as a CIGAR "
-                                             f"string."),
-        f"{g}_sequence_start": ColumnDoc("integer", _POSITION, f"Where {gene} starts in sequence."),
-        f"{g}_sequence_end": ColumnDoc("integer", _POSITION, f"Where {gene} ends in sequence."),
-        f"{g}_germline_start": ColumnDoc("integer", _POSITION, f"Where the alignment starts in the {gene} germline."),
-        f"{g}_germline_end": ColumnDoc("integer", _POSITION, f"Where the alignment ends in the {gene} germline."),
+                                             f"string over the whole read: S for the read before {gene}, N for the "
+                                             f"germline bases before it, the alignment (M, I, D), S for the read "
+                                             f"after it. It counts ungapped germline bases."),
+        f"{g}_sequence_start": ColumnDoc("integer", _POSITION, f"Where {gene} starts {_IN_SEQUENCE}."),
+        f"{g}_sequence_end": ColumnDoc("integer", _POSITION, f"Where {gene} ends {_IN_SEQUENCE}."),
+        **(_v_germline() if g == "v" else {
+            f"{g}_germline_start": ColumnDoc("integer", _POSITION, f"Where the alignment starts in the {gene} "
+                                                                   f"germline."),
+            f"{g}_germline_end": ColumnDoc("integer", _POSITION, f"Where the alignment ends in the {gene} "
+                                                                 f"germline.")}),
         f"{g}_sequence_alignment": ColumnDoc("nucleotides", "", f"The read's {gene} part of sequence_alignment."),
         f"{g}_germline_alignment": ColumnDoc("nucleotides", "", f"The {gene} germline's part of germline_alignment."),
         f"{g}_sequence_alignment_aa": ColumnDoc("amino acids", "", f"{g}_sequence_alignment translated."),
         f"{g}_germline_alignment_aa": ColumnDoc("amino acids", "", f"{g}_germline_alignment translated."),
-        f"{g}_alignment_start": ColumnDoc("integer", "position", f"Where {gene} starts in sequence_alignment."),
-        f"{g}_alignment_end": ColumnDoc("integer", "position", f"Where {gene} ends in sequence_alignment."),
+        f"{g}_alignment_start": ColumnDoc("integer", _POSITION, f"Where {gene} starts in sequence_alignment and "
+                                                                f"germline_alignment."),
+        f"{g}_alignment_end": ColumnDoc("integer", _POSITION, f"Where {gene} ends in sequence_alignment and "
+                                                              f"germline_alignment."),
         f"{g}_call_set": ColumnDoc("string", "", f"The candidate set: the {gene} alleles the model scored as "
                                                  f"possible before the germline refinement, comma-separated (the "
                                                  f"{g}_call can fall outside it)."),
     }
 
 
+# what a region holds beyond its name: FWR4 is IMGT's FR4, as IgBLAST and Change-O's MakeDb cut it
+_REGION_SPAN = {"fwr4": ": IMGT's FR4, from the J's Trp or Phe codon (the junction's last codon) to the end of the J"}
+
+
 def _region_columns(region: str) -> dict[str, ColumnDoc]:
     name = _REGION[region]
     return {
-        region: ColumnDoc("nucleotides", "", f"The read's {name}."),
+        region: ColumnDoc("nucleotides", "", f"The read's {name}{_REGION_SPAN.get(region, '')}."),
         f"{region}_aa": ColumnDoc("amino acids", "", f"The {name} translated."),
-        f"{region}_start": ColumnDoc("integer", _POSITION, f"Where the {name} starts in sequence."),
-        f"{region}_end": ColumnDoc("integer", _POSITION, f"Where the {name} ends in sequence."),
+        f"{region}_start": ColumnDoc("integer", _POSITION, f"Where the {name} starts {_IN_SEQUENCE}: its first "
+                                                           f"read base."),
+        f"{region}_end": ColumnDoc("integer", _POSITION, f"Where the {name} ends {_IN_SEQUENCE}: its last read "
+                                                         f"base."),
     }
 
 

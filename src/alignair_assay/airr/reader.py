@@ -2,7 +2,9 @@
 
 Turns any tool's AIRR output into normalized ``Prediction`` records: 0-based half-open
 coordinates, CIGARs stripped of leading/trailing ``S``/``N``/``H``, and malformed values
-mapped to ``None`` with a message in ``Prediction.invalid`` (never an exception). Junction
+mapped to ``None`` with a message in ``Prediction.invalid`` (never an exception). The V germline span is read from
+the V CIGAR (ungapped, as AIRR defines a CIGAR), as tables in Change-O's frame (MakeDb's, AlignAIR's) count
+``v_germline_start``/``_end`` in the IMGT-gapped germline. Junction
 coordinates a tool does not report are derived from its CDR3 coordinates (the junction is the
 CDR3 plus the two anchor codons). ``load_airr_tsv`` reads a file; ``rows_to_predictions`` reads rows
 already in memory with the same parser.
@@ -99,20 +101,35 @@ def _entries(val: str | None) -> tuple[str, ...]:
     return tuple(x.strip() for x in val.split(",") if x.strip())
 
 
-def _normalize_cigar(raw: str, gene: str, seq_start, seq_end, germ_start, germ_end,
-                     invalid: list[str]) -> str | None:
+def _strip_clips(raw: str, gene: str, invalid: list[str]) -> tuple[list, int | None, bool] | None:
+    """``raw``'s operations without their leading and trailing S/N/H, the germline bases its leading N skips (None
+    without a leading N), and whether it opens with S; None (with a message) for a malformed CIGAR or an interior clip
+    or skip."""
     try:
         ops = parse_cigar(raw)
     except ValueError:
         invalid.append(f"{gene}_cigar: malformed CIGAR {raw!r}")
         return None
+    opens_s = bool(ops) and ops[0][1] == "S"
+    lead_n = None
     while ops and ops[0][1] in _CLIP:
+        if ops[0][1] == "N":
+            lead_n = (lead_n or 0) + ops[0][0]
         ops.pop(0)
     while ops and ops[-1][1] in _CLIP:
         ops.pop()
     if any(op in _CLIP or op == "P" for _, op in ops):
         invalid.append(f"{gene}_cigar: interior clip/skip op in {raw!r}")
         return None
+    return ops, lead_n, opens_s
+
+
+def _normalize_cigar(raw: str, gene: str, seq_start, seq_end, germ_start, germ_end,
+                     invalid: list[str]) -> str | None:
+    stripped = _strip_clips(raw, gene, invalid)
+    if stripped is None:
+        return None
+    ops = stripped[0]
     if None in (seq_start, seq_end, germ_start, germ_end):
         invalid.append(f"{gene}_cigar: dropped, coordinates unavailable to validate {raw!r}")
         return None
@@ -122,6 +139,31 @@ def _normalize_cigar(raw: str, gene: str, seq_start, seq_end, germ_start, germ_e
         invalid.append(f"{gene}_cigar: {raw!r} disagrees with coordinates")
         return None
     return format_cigar(ops) or None
+
+
+def _v_germline_span(raw: str, seq_len: int | None, germ_start: int | None,
+                     germ_end: int | None) -> tuple[int, int] | None:
+    """The V germline span in the ungapped germline, over the CIGAR's M/D/=/X bases from where the V starts: the
+    CIGAR's leading N (AIRR: the germline bases skipped before the alignment); else ``germ_start``, when the
+    positions count ungapped bases (their span is the CIGAR's); else the germline's first base, when the CIGAR is the
+    AIRR form over the whole query (it opens with S or covers the whole read), whose N is required whenever the V
+    starts later. Tables in Change-O's frame (MakeDb's, AlignAIR's) write ``v_germline_start``/``_end`` in the
+    IMGT-gapped germline from its first position, which a CIGAR, counting no IMGT gap, does not follow. None when
+    neither says where the V starts: a core CIGAR beside gapped positions (AlignAIR 3's), or a MakeDb CIGAR with
+    neither S nor N, which cannot be told from it."""
+    stripped = _strip_clips(raw, "v", [])
+    if stripped is None:
+        return None
+    ops, lead_n, opens_s = stripped
+    germ_len = sum(n for n, op in ops if op in "MD=X")
+    if lead_n is not None:
+        return lead_n, lead_n + germ_len
+    if germ_start is not None and germ_end is not None and germ_end - germ_start == germ_len:
+        return germ_start, germ_end
+    whole_read = seq_len is not None and sum(n for n, op in parse_cigar(raw) if op in "MIS=X") == seq_len
+    if opens_s or whole_read:
+        return 0, germ_len
+    return None
 
 
 def _segment(row: dict, gene: str, seq_len: int | None, invalid: list[str]) -> PredSegment:
@@ -139,7 +181,13 @@ def _segment(row: dict, gene: str, seq_len: int | None, invalid: list[str]) -> P
         germ_start = germ_end = None
     cigar = None
     raw = _text(row, f"{gene}_cigar")
-    if raw is not None:
+    # the V germline span is the CIGAR's (ungapped, as AIRR defines it), whatever frame the positions count in
+    span = _v_germline_span(raw, seq_len, germ_start, germ_end) if raw is not None and gene == "v" else None
+    if span is not None:
+        cigar = _normalize_cigar(raw, gene, seq_start, seq_end, *span, invalid)
+        if cigar is not None:
+            germ_start, germ_end = span
+    elif raw is not None:
         cigar = _normalize_cigar(raw, gene, seq_start, seq_end, germ_start, germ_end, invalid)
     return PredSegment(calls[0] if calls else None, call_set,
                        seq_start, seq_end, germ_start, germ_end, cigar)

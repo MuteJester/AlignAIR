@@ -32,13 +32,28 @@ def default_strata() -> dict:
     }
 
 
-def generate_labeled(dataconfig: DataConfig, params: dict, n: int, seed: int) -> list[dict]:
-    """``n`` labelled records (truth calls + coords + junction) from the GenAIRR experiment the training records use."""
+def generate_labeled(dataconfig: DataConfig, params: dict, n: int, seed: int, *,
+                     stratum: str | None = None) -> list[dict]:
+    """``n`` labelled records (truth calls + coords + junction) from the GenAIRR experiment the training records use.
+    A record with no bases left (a stratum's 5' loss can take a whole short read, as short_janchor does on TRB) is
+    skipped: there is no read to align. ConfigurationError, naming ``stratum`` and the dataconfig, when nearly every
+    record is empty."""
     from ..genairr.experiment import build_experiment
     p = dict(params)
     p.setdefault("invert_d_prob", 0.0)
     exp = build_experiment(dataconfig, p, allow_curatable=True)
-    return list(itertools.islice(exp.stream_records(n=None, seed=seed), n))
+    drawn = itertools.islice(exp.stream_records(n=None, seed=seed), 10 * max(n, 1))
+    records = list(itertools.islice((record for record in drawn if record.get("sequence")), n))
+    if len(records) < n:
+        from ..genairr.catalog import name_of
+        source = name_of(dataconfig) or "the dataconfig"
+        raise ConfigurationError(f"the {stratum or 'benchmark'} stratum leaves fewer than {n} of {10 * n} reads "
+                                 f"simulated from {source} with any bases",
+                                 context={"stratum": stratum, "dataconfig": name_of(dataconfig), "reads": n,
+                                          "with_bases": len(records)},
+                                 hint="its 5' and 3' losses are longer than this germline set's reads; choose other "
+                                      "strata (--strata)")
+    return records
 
 
 def _call_correct(pred_call, truth_call) -> bool:
@@ -99,7 +114,7 @@ def run_benchmark(model: AlignAIR, reference: ReferenceSet, dataconfig: DataConf
     aligner = Aligner.from_model(model, reference, device=device)
     out: dict = {}
     for i, (name, params) in enumerate(strata.items()):
-        truth = generate_labeled(dataconfig, params, n, seed + i)
+        truth = generate_labeled(dataconfig, params, n, seed + i, stratum=name)
         preds = aligner.predict([r["sequence"] for r in truth], batch_size=batch_size).records
         out[name] = {"n": len(truth), **score(truth, preds)}
     return out

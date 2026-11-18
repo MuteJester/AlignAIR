@@ -58,6 +58,7 @@ def test_stream_preserves_order_counts_and_chunks(tmp_path):
     assert [r["sequence_id"] for r in rows] == [f"r{i}" for i in range(10)]   # order preserved
     rej = _rows(tmp_path / "rej.tsv")
     assert len(rej) == 1 and rej[0]["reason"] == "ambiguous"
+    assert b"\r" not in (tmp_path / "rej.tsv").read_bytes() + (tmp_path / "out.tsv").read_bytes()   # \n line ends
 
 
 def test_stream_counts_partial_status(tmp_path):

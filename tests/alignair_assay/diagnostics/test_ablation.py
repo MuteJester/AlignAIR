@@ -218,12 +218,10 @@ def test_baseline_rows_are_the_replay_and_score_like_the_product_tsv(make_shaped
 # The junction and the clone key are not among them: the chip takes its junction from its predicted anchors, not from
 # the germline alignment the variant substitutes.
 FED = re.compile(r"[vdj]\.(seq|germ)_(start|end)_|[vdj]\.top1_in_set$|orientation\.|airr\.sequence_ok$")
-# Excluded from the equality check: the V germline coordinates. AlignAIR's AIRR assembly (compute_alignment_positions)
-# writes them in IMGT-gapped numbering, whatever germline alignment it is given. That is tracked on the AlignAIR
-# fix-list; this test neither asserts nor depends on it. When the assembly writes them in ungapped germline
-# coordinates, drop this exclusion. The junction coordinates are compared: the reader takes them from the row's
-# CDR3 positions, which AlignAIR writes 1-based in the read, as AIRR defines them.
-REENCODED = re.compile(r"v\.germ_(start|end)_")
+# Every one of them is compared, the V germline coordinates included: AlignAIR's table writes v_germline_start/_end in
+# the IMGT-gapped germline (Change-O's frame), and the reader takes the V germline span from the V CIGAR, which counts
+# ungapped germline bases as AIRR defines it. The junction coordinates are compared too: the reader takes them from the
+# row's CDR3 positions, which AlignAIR writes 1-based in the read, as AIRR defines them.
 
 
 def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped_model, s0_cases, s0_truths,
@@ -243,8 +241,6 @@ def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped
         for name, value in case.items():
             if not FED.match(name):
                 continue
-            if REENCODED.match(name):
-                continue
             assert final[case_id][name] == value, (case_id, name)
             equal += 1
     assert equal > 50 * 15
@@ -252,7 +248,7 @@ def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped
     # matcher places every segment where the oracle does, a D shorter than its end anchor included.
     own = results["true_calls"].scores
     differing = sorted({name for c in oracle for name in oracle[c]
-                        if FED.match(name) and not REENCODED.match(name) and own[c][name] != final[c][name]})
+                        if FED.match(name) and own[c][name] != final[c][name]})
     assert differing == []
 
 

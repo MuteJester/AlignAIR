@@ -119,3 +119,22 @@ def test_a_fasta_name_with_one_segment_letter_is_placed_by_it(tmp_path):
     p.write_text(">myV1\nACGTACGT\n>myJ1\nCCCCAAAA\n")
     reference = ReferenceSet.from_fasta(str(p))
     assert (reference.gene("V").names, reference.gene("J").names) == (["myV1"], ["myJ1"])
+
+
+def test_an_imgt_gene_db_header_names_its_allele(tmp_path):
+    """IMGT/GENE-DB headers (``>X00369|IGHV3-11*04|Homo sapiens|F|V-REGION|...``), as in Immcantation's germline files,
+    name the allele in their second field; the allele is that name, as Change-O reads it, not the header's first word."""
+    v, d, j = gdata.HUMAN_IGH_OGRDB.v_alleles, gdata.HUMAN_IGH_OGRDB.d_alleles, gdata.HUMAN_IGH_OGRDB.j_alleles
+    first = {segment: next(iter(alleles.values()))[0] for segment, alleles in (("V", v), ("D", d), ("J", j))}
+    path = tmp_path / "imgt.fasta"
+    path.write_text("".join(f">X0000{i}|{a.name}|Homo sapiens|F|{s}-REGION|1..10|10 nt|1| | | | |10+0=10| | |\n"
+                            f"{a.ungapped_seq}\n" for i, (s, a) in enumerate(first.items())))
+    reference = ReferenceSet.from_fasta(str(path))
+    assert {segment: list(reference.gene(segment).names) for segment in "VDJ"} == {
+        segment: [allele.name] for segment, allele in first.items()}
+
+
+def test_a_header_whose_description_holds_a_bar_keeps_its_first_word(tmp_path):
+    path = tmp_path / "g.fasta"
+    path.write_text(">IGHV1-2*02 Homo sapiens|F|V-REGION\nACGTACGT\n>IGHD3-10*01\nGGGGTTTT\n>IGHJ6*02\nCCCCAAAA\n")
+    assert ReferenceSet.from_fasta(str(path)).gene("V").names == ["IGHV1-2*02"]

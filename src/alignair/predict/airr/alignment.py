@@ -2,8 +2,10 @@
 
 Pure per-read functions over a read's ``GermlineAlignment`` of each gene (``v``, ``d``, ``j``; ``d`` None for a read
 without a D placement) and the reference's germlines by allele name (``GermlineMaps``). ``has_d`` says whether the read
-is assembled with a D (its locus has one and the D presence head did not gate it out); ``short_d`` that its D is too
-short to call, so its germline alignment is the read's own bases.
+is assembled with a D region (its locus has one and the D presence head did not find it absent); ``d_called`` that the
+D is also called (not too short to call), so the bases around it are its NP regions and its germline lies under it.
+Positions are 0-based and end-exclusive, in the read or in the alignment strings; the AIRR writer
+(``io.airr``) writes them 1-based and closed.
 """
 from __future__ import annotations
 
@@ -37,22 +39,56 @@ def _count_gaps(ref: str) -> int:
     return ref.count(".")
 
 
-def _germline_placed(seq: str, v: GermlineAlignment) -> list[str] | None:
+def _germline_placed(seq: str, v: GermlineAlignment) -> list[tuple[str, int | None]] | None:
     """The read base on each V germline position from ``v.germ_start`` to ``v.germ_end`` along ``v.cigar`` (which
-    describes ``seq[v.seq_start:v.seq_end]`` against that germline span): ``-`` where the read lacks the germline base,
-    and a read base the germline lacks is left out. None when the CIGAR does not span both windows."""
+    describes ``seq[v.seq_start:v.seq_end]`` against that germline span), with its read position: ``-`` (no position)
+    where the read lacks the germline base, and a read base the germline lacks is left out. None when the CIGAR does
+    not span both windows."""
     placed, r = [], v.seq_start
     for count, op in cigar_ops(v.cigar):
         if op in ALIGNED:
-            placed.extend(seq[r:r + count])
+            placed.extend((seq[p], p) for p in range(r, min(r + count, len(seq))))
             r += count
         elif op in "DN":
-            placed.extend("-" * count)
+            placed.extend([("-", None)] * count)
         else:                                          # I, S: read bases without a germline position
             r += count
     if not placed or r != v.seq_end or len(placed) != v.germ_end - v.germ_start:
         return None
     return placed
+
+
+def _v_columns(seq: str, v_ref_gapped: str, v: GermlineAlignment) -> list[tuple[str, int | None]]:
+    """Each column of the V part of the read's alignment, the IMGT-gapped V germline up to ``v.germ_end``: its
+    character and the read position of its base (None for a ``.`` or ``-``). Along a ``v.cigar`` that spans the V
+    window each read base sits in its own germline column; without one the V bases fill the germline columns in
+    order. Germline the read does not cover is ``.``."""
+    v_ref_trimmed = v_ref_gapped[: v.germ_end + _count_gaps(v_ref_gapped)]
+    placed = _germline_placed(seq, v)
+    if placed is None:
+        placed = [(seq[p], p) for p in range(v.seq_start, min(v.seq_end, len(seq)))]
+    cells = iter([(".", None)] * v.germ_start + placed)
+    columns, started = [], False
+    for ref_base in v_ref_trimmed:
+        if ref_base != ".":
+            started = True
+            columns.append(next(cells, (".", None)))
+        else:
+            columns.append((".", None) if started else next(cells, (".", None)))
+    return columns
+
+
+def sequence_alignment_columns(seq: str, v_ref_gapped: str, v: GermlineAlignment,
+                               j_seq_end: int) -> tuple[str, list[int | None]] | None:
+    """``build_sequence_alignment``'s alignment and, for each of its columns, the read position of the base in it
+    (None for a gap column, a base the read lacks, or germline the read does not cover); None without a V germline.
+    A region of the alignment spans the read from its first to its last position."""
+    if not v_ref_gapped:
+        return None
+    columns = _v_columns(seq, v_ref_gapped, v)
+    after = range(v.seq_end, min(j_seq_end, len(seq)))
+    return ("".join(c for c, _ in columns) + seq[v.seq_end:j_seq_end],
+            [p for _, p in columns] + list(after))
 
 
 def build_sequence_alignment(seq: str, v_ref_gapped: str, v: GermlineAlignment, j_seq_end: int) -> str | None:
@@ -61,32 +97,17 @@ def build_sequence_alignment(seq: str, v_ref_gapped: str, v: GermlineAlignment, 
     read lacks is ``-`` and a read base the germline lacks is left out (IMGT's indel correction), so a V indel moves
     no later column. Without one the V bases fill the germline columns in order. Germline the read does not cover
     is ``.``."""
-    if not v_ref_gapped:
-        return None
-    v_ref_trimmed = v_ref_gapped[: v.germ_end + _count_gaps(v_ref_gapped)]
-    placed = _germline_placed(seq, v)
-    seq_to_gap = "".join(placed) if placed is not None else seq[v.seq_start:v.seq_end]
-    if v.germ_start > 0:
-        seq_to_gap = "." * v.germ_start + seq_to_gap
-    seq_iter = iter(seq_to_gap)
-    aligned, started = [], False
-    for ref_base in v_ref_trimmed:
-        if ref_base != ".":
-            started = True
-            aligned.append(next(seq_iter, "."))
-        else:
-            aligned.append("." if started else next(seq_iter, "."))
-    return "".join(aligned) + seq[v.seq_end:j_seq_end]
+    built = sequence_alignment_columns(seq, v_ref_gapped, v, j_seq_end)
+    return None if built is None else built[0]
 
 
 def compute_np_regions(seq: str, v: GermlineAlignment, d: GermlineAlignment | None, j: GermlineAlignment,
-                       has_d: bool) -> tuple[str, str | None]:
-    """The NP regions: with a D, the bases between V and D and between D and J (empty without a D placement);
-    without, the bases between V and J, and no second region."""
-    if not has_d:
+                       d_called: bool) -> tuple[str, str | None]:
+    """The NP regions: with a called D, the bases between V and D and between D and J; without one (a locus without
+    a D, a D the presence head found absent or too short to call), every base between V and J, and no second region,
+    as Change-O reads a row without a D call."""
+    if not d_called or d is None:
         return seq[v.seq_end:j.seq_start], None
-    if d is None:
-        return "", ""
     return seq[v.seq_end:d.seq_start], seq[d.seq_end:j.seq_start]
 
 
@@ -112,37 +133,28 @@ def _germline_along(germ: str, read_len: int, cigar: str) -> str:
     return germ[:read_len].ljust(read_len, ".")
 
 
-def _d_region(seq: str, germlines: GermlineMaps, d_name: str, v: GermlineAlignment, d: GermlineAlignment | None,
-              j: GermlineAlignment, np1: str, np2: str, short_d: bool) -> str:
-    """The germline between V and J of a read with a D: a short D's is the read's own bases there; otherwise the NP
-    bases as they are around the D germline laid on its read bases along its CIGAR."""
-    if short_d:
-        return seq[v.seq_end:j.seq_start]
-    d_ref = germlines.d.get(d_name, "")
-    d_part = ""
-    if d_ref and d is not None:
-        d_part = d_ref[d.germ_start: d.germ_end + _count_gaps(d_ref)]
-        if d_part:
-            d_part = _germline_along(d_part, max(0, j.seq_start - v.seq_end - len(np1) - len(np2 or "")), d.cigar)
-    return np1 + d_part + (np2 or "")
-
-
-def build_germline_alignment(seq: str, germlines: GermlineMaps, names: Mapping[str, str], v: GermlineAlignment,
+def build_germline_alignment(germlines: GermlineMaps, names: Mapping[str, str], v: GermlineAlignment,
                              d: GermlineAlignment | None, j: GermlineAlignment, np1: str, np2: str | None, *,
-                             has_d: bool, short_d: bool = False) -> str:
+                             d_called: bool) -> str:
     """The germline under ``build_sequence_alignment``'s columns: the IMGT-gapped V germline up to ``v.germ_end``,
-    then for the read after V its NP bases as they are and the D and J germlines each on its own read bases along its
-    CIGAR (``_germline_along``), so a D or J indel, or a germline span of another length than its read span, moves no
-    later column. ``names`` holds each gene's called allele (the D's empty without a call)."""
+    then N for each untemplated base (``np1``, ``np2``) and the called D and the J germlines each on its own read bases
+    along its CIGAR (``_germline_along``), so a D or J indel, or a germline span of another length than its read span,
+    moves no later column. ``names`` holds each gene's called allele; without a called D (``d_called``) every base
+    between V and J is untemplated (``compute_np_regions``)."""
     v_ref = germlines.v_gapped.get(names["v"], "")
     v_part = v_ref[:v.germ_end + _count_gaps(v_ref)] if v_ref else ""
     j_ref = germlines.j.get(names["j"], "")
     j_part = j_ref[j.germ_start: j.germ_end + _count_gaps(j_ref)] if j_ref else ""
     if j_part:
         j_part = _germline_along(j_part, j.seq_end - j.seq_start, j.cigar)
-    if has_d:
-        return v_part + _d_region(seq, germlines, names.get("d", ""), v, d, j, np1, np2, short_d) + j_part
-    return v_part + np1 + j_part
+    middle = "N" * len(np1)
+    if d_called and d is not None:
+        d_ref = germlines.d.get(names.get("d", ""), "")
+        d_part = d_ref[d.germ_start: d.germ_end + _count_gaps(d_ref)] if d_ref else ""
+        if d_part:
+            d_part = _germline_along(d_part, max(0, j.seq_start - v.seq_end - len(np1) - len(np2 or "")), d.cigar)
+        middle += d_part + "N" * len(np2 or "")
+    return v_part + middle + j_part
 
 
 def compute_alignment_positions(v_ref_gapped: str, v: GermlineAlignment, d: GermlineAlignment | None,
@@ -150,8 +162,10 @@ def compute_alignment_positions(v_ref_gapped: str, v: GermlineAlignment, d: Germ
     """Each segment's positions in the (IMGT-gapped) alignment strings. The V part spans the gapped germline up to
     ``v.germ_end`` (``build_sequence_alignment``) and the read after V follows it base for base, so a read position
     past V sits ``p - v.seq_end`` columns after the V part, wherever V starts in its germline and whatever its indels.
-    The germline coordinates stay the aligner's: they are positions in the germline, which the alignment's gaps do
-    not move."""
+    The V part starts at the gapped germline's first position, so its alignment positions are also its positions in
+    the IMGT-gapped V germline (the AIRR table's ``v_germline_start``/``_end``, as Change-O counts them). The record's
+    germline coordinates stay the aligner's: positions in the ungapped germline, which the alignment's gaps do not
+    move."""
     v_end = v.germ_end + (_count_gaps(v_ref_gapped) if v_ref_gapped else 0)
     d_start_al = d_end_al = None
     if has_d and d is not None:

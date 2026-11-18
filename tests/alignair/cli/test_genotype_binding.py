@@ -193,8 +193,27 @@ def test_bound_to_annotates_a_reference_against_the_aligners_own(tmp_path):
         {k: r[k] for k in keys} for r in aligner.predict(reads, batch_size=4).to_dicts()]
 
 
+def test_a_genotype_set_restricts_only_the_genes_it_names(tmp_path):
+    """An AIRR GenotypeSet lists the genes its rule could genotype (TIgGER's, and ``alignair genotype``'s): the genes it
+    leaves out keep all their alleles. A YAML/JSON genotype keeps its per-segment meaning."""
+    from alignair import model_file
+    from alignair.genotype import genotype_bank, load_genotype
+    from alignair.genotype.infer import gene_of
+    reference = model_file.load_model(str(TEST_CHIP)).reference
+    names = list(reference.gene("V").names)
+    gene, allele = gene_of(names[0]), names[0]                  # IGHVF1-G1, a gene with several alleles
+    path = tmp_path / "genotype.json"
+    path.write_text(json.dumps({"genotype_class_list": [{"documented_alleles": [{"label": allele}]}]}))
+    kept = list(genotype_bank(reference, load_genotype(str(path))).gene("V").names)
+    assert [name for name in kept if gene_of(name) == gene] == [allele]
+    assert [name for name in kept if gene_of(name) != gene] == [name for name in names if gene_of(name) != gene]
+    path.write_text(json.dumps({"V": [allele]}))
+    assert list(genotype_bank(reference, load_genotype(str(path))).gene("V").names) == [allele]
+
+
 def test_predict_takes_the_genotype_alignair_genotype_wrote(fasta, tmp_path):
-    """``alignair genotype``'s GenotypeSet goes straight back into ``predict --genotype``."""
+    """``alignair genotype``'s GenotypeSet goes straight back into ``predict --genotype``: the gene it genotyped is
+    called from its alleles, and the reads of the genes it left open keep their calls."""
     import csv
 
     from alignair import model_file
@@ -204,12 +223,45 @@ def test_predict_takes_the_genotype_alignair_genotype_wrote(fasta, tmp_path):
     with open(table, "w", newline="") as handle:
         writer = csv.writer(handle, delimiter="\t")
         writer.writerow(["sequence_id", "v_call"])
-        writer.writerows([[f"r{i}", names[i % 3]] for i in range(60)])
+        writer.writerows([[f"r{i}", names[0]] for i in range(60)])      # the gene's reads all name one allele
     genotype = tmp_path / "genotype.json"
     assert main(["genotype", str(table), "--out", str(genotype), "--min-reads", "1"]) == 0
+    from alignair.genotype import genotype_bank, load_genotype
+    reference = model_file.load_model(str(TEST_CHIP)).reference
+    kept = list(genotype_bank(reference, load_genotype(str(genotype))).gene("V").names)
+    assert [name for name in kept if gene_of(name) == gene_of(names[0])] == [names[0]]     # it restricts its gene
+    assert len(kept) == len(reference.gene("V").names) - 2                                  # and nothing else
     out = tmp_path / "out.tsv"
     assert main(["predict", "--model", str(TEST_CHIP), "--input", str(fasta), "--out", str(out),
                  "--genotype", str(genotype), "--device", "cpu", "--quiet"]) == 0
     with open(out) as handle:
         calls = {row["v_call"].split(",")[0] for row in csv.DictReader(handle, delimiter="\t") if row["v_call"]}
-    assert calls <= set(names)
+    genotyped = {gene_of(name) for name in names}
+    assert {call for call in calls if gene_of(call) in genotyped} <= {names[0]}
+    assert {gene_of(call) for call in calls} - genotyped                    # the open genes are still called
+
+
+@pytest.mark.parametrize("extra, field", [({"deleted_genes": [{"label": "IGHVF1-G2"}]}, "deleted_genes"),
+                                          ({"undocumented_alleles": [{"allele_name": "IGHVF1-G1*01_A100G"}]},
+                                           "undocumented_alleles")])
+def test_a_genotype_set_with_deleted_genes_or_novel_alleles_is_refused(tmp_path, extra, field):
+    """AlignAIR reads a GenotypeSet's documented alleles; a set that also deletes genes or lists undocumented (novel)
+    alleles would be misread, so it is refused by name rather than half-applied."""
+    from alignair.errors import ConfigurationError
+    from alignair.genotype import load_genotype
+    path = tmp_path / "genotype.json"
+    path.write_text(json.dumps({"genotype_class_list": [{"documented_alleles": [{"label": "IGHVF1-G1*01"}], **extra}]}))
+    with pytest.raises(ConfigurationError, match=field):
+        load_genotype(str(path))
+
+
+@pytest.mark.parametrize("genotype_set", [{"genotype_class_list": [{"documented_alleles": ["IGHVF1-G1*01"]}]},
+                                          {"genotype_class_list": "IGHVF1-G1*01"},
+                                          {"genotype_class_list": [["IGHVF1-G1*01"]]}])
+def test_a_malformed_genotype_set_is_a_configuration_error(tmp_path, genotype_set):
+    from alignair.errors import ConfigurationError
+    from alignair.genotype import load_genotype
+    path = tmp_path / "genotype.json"
+    path.write_text(json.dumps(genotype_set))
+    with pytest.raises(ConfigurationError):
+        load_genotype(str(path))

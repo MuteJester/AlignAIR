@@ -26,10 +26,10 @@ from . import quality
 from .alignment import (
     GermlineMaps,
     build_germline_alignment,
-    build_sequence_alignment,
     compute_alignment_positions,
     compute_np_regions,
     extract_segment_alignments,
+    sequence_alignment_columns,
     translate_alignment,
 )
 from .regions import anchor_junction_fields, extract_regions
@@ -61,8 +61,7 @@ def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bo
     out = dict(light)                  # preserve the light record (calls/coords/cigar/orientation/likelihoods)
     out.setdefault("locus", FALLBACK_LOCUS)          # a read that carries no locus
     # a D the D presence head gated (predict.results): an absent one is assembled as a read without a D (one NP region
-    # between V and J); a short one keeps its span, and its germline alignment is the read's bases between V and J, as
-    # it has no call
+    # between V and J); a short one keeps its span, but as it has no call the bases between V and J are untemplated
     presence = read.d_presence
     has_d = has_d and presence != D_CLASSES[ABSENT]
     short_d = presence == D_CLASSES[SHORT]
@@ -96,16 +95,22 @@ def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bo
     names = {"v": _first(v_call), "j": _first(read.genes["j"].call_field),
              "d": "" if d_gene is None else _first(d_gene.call_field)}
     v_ref_gapped = germlines.v_gapped.get(names["v"], "")
+    # a D without a call (too short to call) keeps its span but is no D of the germline: the bases between V and J are
+    # one NP region, as Change-O reads a row without a D call
+    d_called = has_d and not short_d and bool(names["d"]) and d is not None
 
-    seq_alignment = build_sequence_alignment(seq, v_ref_gapped, v, j.seq_end)
-    np1, np2 = compute_np_regions(seq, v, d, j, has_d)
-    germ_alignment = build_germline_alignment(seq, germlines, names, v, d, j, np1, np2, has_d=has_d, short_d=short_d)
+    seq_alignment, read_positions = sequence_alignment_columns(seq, v_ref_gapped, v, j.seq_end) or (None, None)
+    np1, np2 = compute_np_regions(seq, v, d, j, d_called)
+    germ_alignment = build_germline_alignment(germlines, names, v, d, j, np1, np2, d_called=d_called)
     positions = compute_alignment_positions(v_ref_gapped, v, d, j, has_d)
+    if seq_alignment is None:
+        # no gapped alignment (a called V the reference holds no gapped form of): no positions in one
+        positions = dict.fromkeys(positions)
     seq_aa = translate_alignment(seq_alignment)
     germ_aa = translate_alignment(germ_alignment)
     seg = (extract_segment_alignments(seq_alignment, germ_alignment, seq_aa, germ_aa, positions, has_d)
            if seq_alignment and germ_alignment else {})
-    regions = extract_regions(seq_alignment, seq_aa)
+    regions = extract_regions(seq_alignment, seq_aa, read_positions)
 
     out.update({"sequence_alignment": seq_alignment, "germline_alignment": germ_alignment,
                 "sequence_alignment_aa": seq_aa, "germline_alignment_aa": germ_aa,
@@ -119,9 +124,8 @@ def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bo
                                          seg.get(f"{g}_germline_alignment"))
         if ident is not None:
             out[f"{g}_identity"] = ident
-    if short_d:
-        # the short D's germline alignment is the read's own bases: no statistic of a germline it does not name, only
-        # its read alignment
+    if has_d and not d_called:
+        # a D without a call (a short one) names no germline: no statistic of one, only its read alignment
         out.update(d_identity=None, d_germline_alignment=None, d_germline_alignment_aa=None)
     if not germ_alignment or not seq_alignment:    # ran the math but a core product is missing
         return _partial(out, "incomplete_alignment")

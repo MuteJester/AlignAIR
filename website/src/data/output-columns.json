@@ -171,7 +171,7 @@
     "name": "germline_alignment",
     "kind": "nucleotides",
     "unit": "",
-    "meaning": "The germline the read aligns to, IMGT-gapped, position for position with sequence_alignment (N in the junction's untemplated bases).",
+    "meaning": "The germline the read aligns to, IMGT-gapped, position for position with sequence_alignment, N in the untemplated bases (np1, np2).",
     "presets": [
       "full",
       "airr"
@@ -240,7 +240,7 @@
     "name": "np1",
     "kind": "nucleotides",
     "unit": "",
-    "meaning": "The untemplated bases between V and D (between V and J without a D).",
+    "meaning": "The untemplated bases between V and D; without a D call (a D too short to call included), all the bases between V and J.",
     "presets": [
       "full"
     ]
@@ -258,7 +258,7 @@
     "name": "np2",
     "kind": "nucleotides",
     "unit": "",
-    "meaning": "The untemplated bases between D and J.",
+    "meaning": "The untemplated bases between D and J; empty without a D call.",
     "presets": [
       "full"
     ]
@@ -276,7 +276,7 @@
     "name": "v_cigar",
     "kind": "CIGAR",
     "unit": "",
-    "meaning": "The V alignment of the read against its germline, as a CIGAR string.",
+    "meaning": "The V alignment of the read against its germline, as a CIGAR string over the whole read: S for the read before V, N for the germline bases before it, the alignment (M, I, D), S for the read after it. It counts ungapped germline bases.",
     "presets": [
       "full",
       "core",
@@ -287,7 +287,7 @@
     "name": "d_cigar",
     "kind": "CIGAR",
     "unit": "",
-    "meaning": "The D alignment of the read against its germline, as a CIGAR string.",
+    "meaning": "The D alignment of the read against its germline, as a CIGAR string over the whole read: S for the read before D, N for the germline bases before it, the alignment (M, I, D), S for the read after it. It counts ungapped germline bases.",
     "presets": [
       "full",
       "core",
@@ -298,7 +298,7 @@
     "name": "j_cigar",
     "kind": "CIGAR",
     "unit": "",
-    "meaning": "The J alignment of the read against its germline, as a CIGAR string.",
+    "meaning": "The J alignment of the read against its germline, as a CIGAR string over the whole read: S for the read before J, N for the germline bases before it, the alignment (M, I, D), S for the read after it. It counts ungapped germline bases.",
     "presets": [
       "full",
       "core",
@@ -309,7 +309,7 @@
     "name": "v_sequence_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where V starts in sequence.",
+    "meaning": "Where V starts in sequence (in its reverse complement when rev_comp is T).",
     "presets": [
       "full",
       "core"
@@ -319,7 +319,7 @@
     "name": "v_sequence_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where V ends in sequence.",
+    "meaning": "Where V ends in sequence (in its reverse complement when rev_comp is T).",
     "presets": [
       "full",
       "core"
@@ -328,8 +328,8 @@
   {
     "name": "v_germline_start",
     "kind": "integer",
-    "unit": "1-based position",
-    "meaning": "Where the alignment starts in the V germline.",
+    "unit": "1-based position, IMGT-gapped",
+    "meaning": "Where the V part of sequence_alignment starts in the IMGT-gapped V germline: 1, as the alignment starts at the germline's first position, with dots where the read does not reach (v_cigar's N gives where the read's V starts in the germline). Empty for a row without the alignment.",
     "presets": [
       "full",
       "core"
@@ -338,8 +338,8 @@
   {
     "name": "v_germline_end",
     "kind": "integer",
-    "unit": "1-based position",
-    "meaning": "Where the alignment ends in the V germline.",
+    "unit": "1-based position, IMGT-gapped",
+    "meaning": "Where the V alignment ends in the IMGT-gapped V germline, its gaps counted, as Change-O counts it. Empty for a row without the alignment.",
     "presets": [
       "full",
       "core"
@@ -349,7 +349,7 @@
     "name": "d_sequence_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where D starts in sequence.",
+    "meaning": "Where D starts in sequence (in its reverse complement when rev_comp is T).",
     "presets": [
       "full",
       "core"
@@ -359,7 +359,7 @@
     "name": "d_sequence_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where D ends in sequence.",
+    "meaning": "Where D ends in sequence (in its reverse complement when rev_comp is T).",
     "presets": [
       "full",
       "core"
@@ -389,7 +389,7 @@
     "name": "j_sequence_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where J starts in sequence.",
+    "meaning": "Where J starts in sequence (in its reverse complement when rev_comp is T).",
     "presets": [
       "full",
       "core"
@@ -399,7 +399,7 @@
     "name": "j_sequence_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where J ends in sequence.",
+    "meaning": "Where J ends in sequence (in its reverse complement when rev_comp is T).",
     "presets": [
       "full",
       "core"
@@ -447,7 +447,7 @@
     "name": "fwr1_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 1 starts in sequence.",
+    "meaning": "Where the framework region 1 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "presets": [
       "full"
     ]
@@ -456,7 +456,7 @@
     "name": "fwr1_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 1 ends in sequence.",
+    "meaning": "Where the framework region 1 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "presets": [
       "full"
     ]
@@ -483,7 +483,7 @@
     "name": "cdr1_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the CDR1 starts in sequence.",
+    "meaning": "Where the CDR1 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "presets": [
       "full"
     ]
@@ -492,7 +492,7 @@
     "name": "cdr1_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the CDR1 ends in sequence.",
+    "meaning": "Where the CDR1 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "presets": [
       "full"
     ]
@@ -519,7 +519,7 @@
     "name": "fwr2_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 2 starts in sequence.",
+    "meaning": "Where the framework region 2 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "presets": [
       "full"
     ]
@@ -528,7 +528,7 @@
     "name": "fwr2_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 2 ends in sequence.",
+    "meaning": "Where the framework region 2 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "presets": [
       "full"
     ]
@@ -555,7 +555,7 @@
     "name": "cdr2_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the CDR2 starts in sequence.",
+    "meaning": "Where the CDR2 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "presets": [
       "full"
     ]
@@ -564,7 +564,7 @@
     "name": "cdr2_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the CDR2 ends in sequence.",
+    "meaning": "Where the CDR2 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "presets": [
       "full"
     ]
@@ -591,7 +591,7 @@
     "name": "fwr3_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 3 starts in sequence.",
+    "meaning": "Where the framework region 3 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "presets": [
       "full"
     ]
@@ -600,7 +600,7 @@
     "name": "fwr3_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 3 ends in sequence.",
+    "meaning": "Where the framework region 3 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "presets": [
       "full"
     ]
@@ -627,7 +627,7 @@
     "name": "cdr3_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the CDR3 starts in sequence.",
+    "meaning": "Where the CDR3 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "presets": [
       "full"
     ]
@@ -636,7 +636,7 @@
     "name": "cdr3_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the CDR3 ends in sequence.",
+    "meaning": "Where the CDR3 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "presets": [
       "full"
     ]
@@ -645,7 +645,7 @@
     "name": "fwr4",
     "kind": "nucleotides",
     "unit": "",
-    "meaning": "The read's framework region 4.",
+    "meaning": "The read's framework region 4: IMGT's FR4, from the J's Trp or Phe codon (the junction's last codon) to the end of the J.",
     "presets": [
       "full"
     ]
@@ -663,7 +663,7 @@
     "name": "fwr4_start",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 4 starts in sequence.",
+    "meaning": "Where the framework region 4 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "presets": [
       "full"
     ]
@@ -672,7 +672,7 @@
     "name": "fwr4_end",
     "kind": "integer",
     "unit": "1-based position",
-    "meaning": "Where the framework region 4 ends in sequence.",
+    "meaning": "Where the framework region 4 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "presets": [
       "full"
     ]
@@ -716,8 +716,8 @@
   {
     "name": "v_alignment_start",
     "kind": "integer",
-    "unit": "position",
-    "meaning": "Where V starts in sequence_alignment.",
+    "unit": "1-based position",
+    "meaning": "Where V starts in sequence_alignment and germline_alignment.",
     "presets": [
       "full"
     ]
@@ -725,8 +725,8 @@
   {
     "name": "v_alignment_end",
     "kind": "integer",
-    "unit": "position",
-    "meaning": "Where V ends in sequence_alignment.",
+    "unit": "1-based position",
+    "meaning": "Where V ends in sequence_alignment and germline_alignment.",
     "presets": [
       "full"
     ]
@@ -770,8 +770,8 @@
   {
     "name": "d_alignment_start",
     "kind": "integer",
-    "unit": "position",
-    "meaning": "Where D starts in sequence_alignment.",
+    "unit": "1-based position",
+    "meaning": "Where D starts in sequence_alignment and germline_alignment.",
     "presets": [
       "full"
     ]
@@ -779,8 +779,8 @@
   {
     "name": "d_alignment_end",
     "kind": "integer",
-    "unit": "position",
-    "meaning": "Where D ends in sequence_alignment.",
+    "unit": "1-based position",
+    "meaning": "Where D ends in sequence_alignment and germline_alignment.",
     "presets": [
       "full"
     ]
@@ -824,8 +824,8 @@
   {
     "name": "j_alignment_start",
     "kind": "integer",
-    "unit": "position",
-    "meaning": "Where J starts in sequence_alignment.",
+    "unit": "1-based position",
+    "meaning": "Where J starts in sequence_alignment and germline_alignment.",
     "presets": [
       "full"
     ]
@@ -833,8 +833,8 @@
   {
     "name": "j_alignment_end",
     "kind": "integer",
-    "unit": "position",
-    "meaning": "Where J ends in sequence_alignment.",
+    "unit": "1-based position",
+    "meaning": "Where J ends in sequence_alignment and germline_alignment.",
     "presets": [
       "full"
     ]

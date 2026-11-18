@@ -231,7 +231,7 @@
         "name": "from_fasta",
         "kind": "method",
         "signature": "(path: str) -> ReferenceSet",
-        "doc": "Load a genotype FASTA (``>allele_name`` headers + DNA). Each allele's segment (V/D/J) is read from its name\n(``_infer_segment``); an InputError names the alleles it cannot be read from, and those named twice with two\nsequences.\n\nLike :meth:`from_alleles`, the result can be bound to a model or trained against."
+        "doc": "Load a genotype FASTA (``>allele_name`` headers + DNA; an IMGT/GENE-DB header, ``>X00369|IGHV3-11*04|Homo\nsapiens|F|...``, names its allele in the field with a ``*``, as Change-O reads it). Each allele's segment\n(V/D/J) is read from its name (``_infer_segment``); an InputError names the alleles it cannot be read from, and\nthose named twice with two sequences.\n\nLike :meth:`from_alleles`, the result can be bound to a model or trained against."
       }
     ],
     "anchor": "alignair.referenceset"
@@ -281,7 +281,7 @@
   {
     "name": "alignair.__version__",
     "kind": "constant",
-    "signature": " = '3.0.0'",
+    "signature": " = '0+unknown'",
     "doc": "",
     "members": [],
     "anchor": "alignair.__version__"
@@ -414,7 +414,7 @@
     "name": "alignair.genotype.genotype_bank",
     "kind": "function",
     "signature": "(reference: ReferenceSet, genotype: Mapping[str, Iterable[str]]) -> ReferenceSet",
-    "doc": "``reference``'s subset of the alleles ``genotype`` names (``{gene letter: allele names}``, any case), in the\nreference's order and with its locus schema (every locus stays, its ranges over the kept alleles); a gene it\ndoes not name keeps all its alleles. ConfigurationError for a key that is not a segment (V, D, J), gene names\nincluded, or an entry that is not a list of names (one string, say); UnknownAlleleError when it names alleles\nthe reference does not hold (give their sequences in the reference); InputError when it leaves a gene with no\nallele.",
+    "doc": "``reference``'s subset of the alleles ``genotype`` names (``{gene letter: allele names}``, any case), in the\nreference's order and with its locus schema (every locus stays, its ranges over the kept alleles); a segment it\ndoes not name keeps all its alleles, and so, for a ``GenesOnly`` genotype (an AIRR GenotypeSet), does every gene\nit does not name. ConfigurationError for a key that is not a segment (V, D, J), gene names\nincluded, or an entry that is not a list of names (one string, say); UnknownAlleleError when it names alleles\nthe reference does not hold (give their sequences in the reference); InputError when it leaves a gene with no\nallele.",
     "members": [],
     "anchor": "alignair.genotype.genotype_bank"
   },
@@ -422,7 +422,7 @@
     "name": "alignair.genotype.load_genotype",
     "kind": "function",
     "signature": "(path: str) -> dict[str, set[str]]",
-    "doc": "Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment\nworks too; the sequences are ignored), or an AIRR GenotypeSet such as ``alignair genotype`` writes. Returns\n``{segment: set(names)}``, segments lower-case. ConfigurationError for a file that is not such a mapping, or one\nkeyed by gene names. ``genotype_bank`` checks its alleles against a\nreference.",
+    "doc": "Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment\nworks too; the sequences are ignored), or an AIRR GenotypeSet such as ``alignair genotype`` writes. Returns\n``{segment: set(names)}``, segments lower-case; for a GenotypeSet, a ``GenesOnly`` (the genes it does not name keep\nall their alleles). ConfigurationError for a file that is not such a mapping, or one keyed by gene names.\n``genotype_bank`` checks its alleles against a reference.",
     "members": [],
     "anchor": "alignair.genotype.load_genotype"
   },
@@ -696,7 +696,7 @@
         "name": "from_fasta",
         "kind": "method",
         "signature": "(path: str) -> ReferenceSet",
-        "doc": "Load a genotype FASTA (``>allele_name`` headers + DNA). Each allele's segment (V/D/J) is read from its name\n(``_infer_segment``); an InputError names the alleles it cannot be read from, and those named twice with two\nsequences.\n\nLike :meth:`from_alleles`, the result can be bound to a model or trained against."
+        "doc": "Load a genotype FASTA (``>allele_name`` headers + DNA; an IMGT/GENE-DB header, ``>X00369|IGHV3-11*04|Homo\nsapiens|F|...``, names its allele in the field with a ``*``, as Change-O reads it). Each allele's segment\n(V/D/J) is read from its name (``_infer_segment``); an InputError names the alleles it cannot be read from, and\nthose named twice with two sequences.\n\nLike :meth:`from_alleles`, the result can be bound to a model or trained against."
       }
     ],
     "anchor": "alignair.reference.referenceset"

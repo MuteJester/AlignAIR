@@ -73,7 +73,7 @@ def merge(first: str, second: str, rows, out: str) -> None:
     wanted, tmp = set(rows), f"{out}.tmp.{os.getpid()}"
     with open(first, newline="") as kept, open(second, newline="") as moved, open(tmp, "w", newline="") as target:
         kept_rows, moved_rows = csv.reader(kept, delimiter="\t"), csv.reader(moved, delimiter="\t")
-        writer = csv.writer(target, delimiter="\t")
+        writer = csv.writer(target, delimiter="\t", lineterminator="\n")
         writer.writerow(next(kept_rows))
         next(moved_rows)
         for index, row in enumerate(kept_rows):

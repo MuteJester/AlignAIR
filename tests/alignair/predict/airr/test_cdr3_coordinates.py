@@ -22,8 +22,9 @@ V_GERM_START = 5                                               # the read starts
 NP = "GGGAAA"
 
 
-def _reference():
-    genes = {"V": SimpleNamespace(names=["V1*01"], sequences=[V_GERM], gapped={"V1*01": V_GAPPED}, anchors={}),
+def _reference(v_gapped=None):
+    v_gapped = {"V1*01": V_GAPPED} if v_gapped is None else v_gapped
+    genes = {"V": SimpleNamespace(names=["V1*01"], sequences=[V_GERM], gapped=v_gapped, anchors={}),
              "J": SimpleNamespace(names=["J1*01"], sequences=[J_GERM], gapped=None, anchors={"J1*01": J_ANCHOR})}
     return SimpleNamespace(genes=set(genes), gene=genes.__getitem__, loci=[])
 
@@ -83,3 +84,32 @@ def test_a_written_row_gives_the_cdr3_as_1_based_closed_positions_in_the_read(in
 def test_a_row_without_a_cdr3_writes_none():
     written = _build_row("r", "ACGT", {"sequence": "ACGT", "cdr3_start": None, "cdr3_end": None}, "IGH")
     assert written["cdr3_start"] is None and written["cdr3_end"] is None
+
+
+def test_fwr4_is_imgts_fr4_from_the_j_trp_codon():
+    """IMGT's FR4 starts at the J Trp (or Phe) codon, IMGT position 118, the junction's last codon, and runs to the
+    J's end, as IgBLAST and Change-O's MakeDb write it: the codon after the CDR3. Written, it starts one past
+    ``cdr3_end``."""
+    record = _record()
+    row = build_airr([record], _reference(), has_d=False)[0]
+    read, junction_end = record.sequence, row["junction_end"]
+    assert (row["fwr4_start"], row["fwr4_end"]) == (junction_end - 3, len(read))
+    assert row["fwr4"] == read[junction_end - 3:] and row["fwr4"][:3] == row["junction"][-3:] == "TGG"
+    assert row["fwr4_aa"].startswith("WGQG")
+    written = _build_row("r", read, row, "IGH")
+    assert written["fwr4_start"] == written["cdr3_end"] + 1
+    assert written["sequence"][written["fwr4_start"] - 1:written["fwr4_end"]] == written["fwr4"]
+
+
+def test_a_v_without_a_gapped_form_has_no_alignment_positions():
+    """A called V allele the reference holds no IMGT-gapped form of (a bound reference that gaps its other alleles)
+    gets no gapped alignment: the row is partial, and it writes no alignment positions and no V germline positions,
+    which count in the IMGT-gapped germline. Its v_cigar still places the V in the ungapped germline."""
+    record = _record()
+    row = build_airr([record], _reference(v_gapped={"V2*01": V_GAPPED}), has_d=False)[0]
+    assert row["airr_assembly_status"] == "partial" and not row.get("sequence_alignment")
+    written = _build_row("r", record.sequence, row, "IGH")
+    blank = ("v_germline_start", "v_germline_end", "v_alignment_start", "v_alignment_end", "j_alignment_start",
+             "j_alignment_end")
+    assert {key: written[key] for key in blank} == dict.fromkeys(blank)
+    assert written["v_cigar"].startswith(f"{V_GERM_START}N") and written["j_germline_start"] == 1

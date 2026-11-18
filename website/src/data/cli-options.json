@@ -243,7 +243,7 @@
             "choices": null,
             "required": false,
             "repeatable": false,
-            "help": "a donor's genotype: JSON/YAML {V|D|J: [allele names]} or the AIRR GenotypeSet `alignair genotype` writes; calls come only from its alleles, a subset of the reference (--reference may add novel alleles)",
+            "help": "a donor's genotype: JSON/YAML {V|D|J: [allele names]} (calls come only from the alleles of each segment it names) or the AIRR GenotypeSet `alignair genotype` writes (genes it does not name keep all their alleles); a subset of the reference (--reference may add novel alleles)",
             "anchor": "predict-genotype"
           },
           {
@@ -256,7 +256,7 @@
             "choices": null,
             "required": false,
             "repeatable": false,
-            "help": "germline FASTA (V, D and J alleles) to call from, novel alleles included. Missing IMGT gaps and anchors are taken from the model's own reference (the same allele, or a close same-length variant)",
+            "help": "germline FASTA (V, D and J alleles) to call from, novel alleles included. A missing IMGT gap or anchor is taken from the same allele in the model's own reference, for a V also from a close same-length variant, else found from the sequence",
             "anchor": "predict-reference"
           },
           {

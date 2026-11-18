@@ -40,28 +40,50 @@ def check_segment_values(genotype, *, source: str = "the genotype is not {V|D|J:
                                      hint=FORMAT_HINT)
 
 
+class GenesOnly(dict):
+    """A genotype that restricts only the genes it names, as an AIRR GenotypeSet does: its rule (TIgGER's, and
+    ``alignair genotype``'s) lists the genes it could genotype, so ``genotype_bank`` keeps every allele of the genes it
+    leaves out. A plain ``{segment: [allele names]}`` restricts each segment it names to those alleles."""
+
+
 def load_genotype(path: str) -> dict[str, set[str]]:
     """Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment
     works too; the sequences are ignored), or an AIRR GenotypeSet such as ``alignair genotype`` writes. Returns
-    ``{segment: set(names)}``, segments lower-case. ConfigurationError for a file that is not such a mapping, or one
-    keyed by gene names. ``genotype_bank`` checks its alleles against a
-    reference."""
+    ``{segment: set(names)}``, segments lower-case; for a GenotypeSet, a ``GenesOnly`` (the genes it does not name keep
+    all their alleles). ConfigurationError for a file that is not such a mapping, or one keyed by gene names.
+    ``genotype_bank`` checks its alleles against a reference."""
     with open(path) as f:
         text = f.read()
     data = _parse(text, path)
-    if "genotype_class_list" in data:                   # an AIRR GenotypeSet (``alignair genotype`` writes one)
+    genes_only = "genotype_class_list" in data          # an AIRR GenotypeSet (``alignair genotype`` writes one)
+    if genes_only:
         data = _segments_of_genotype_set(data, path)
     check_segment_keys(data, source=f"{path}", context={"path": path})
     check_segment_values(data, source=f"{path} is not a YAML or JSON genotype", context={"path": path})
-    return {str(g).lower(): {str(n) for n in names} for g, names in data.items()}
+    genotype = {str(g).lower(): {str(n) for n in names} for g, names in data.items()}
+    return GenesOnly(genotype) if genes_only else genotype
 
 
 def _segments_of_genotype_set(genotype_set: dict, path: str) -> dict[str, list[str]]:
     """The documented alleles of every genotype in an AIRR GenotypeSet, by segment (the letter after the locus in each
-    name: IGHV1-2*02 is V). ConfigurationError for a label whose segment its name does not tell."""
+    name: IGHV1-2*02 is V). ConfigurationError for a label whose segment its name does not tell, for a set that is not
+    shaped as the AIRR schema gives it, and for one that deletes genes or lists undocumented (novel) alleles, which
+    would otherwise be misread."""
+    def refused(reason, **context):
+        return ConfigurationError(f"{path}: {reason}", context={"path": path, **context}, hint=FORMAT_HINT)
+    genotypes = genotype_set.get("genotype_class_list") or []
+    if not isinstance(genotypes, list) or not all(isinstance(genotype, dict) for genotype in genotypes):
+        raise refused("its genotype_class_list is not a list of Genotype objects")
     segments: dict[str, list[str]] = {}
-    for genotype in genotype_set.get("genotype_class_list") or []:
-        for allele in genotype.get("documented_alleles") or []:
+    for genotype in genotypes:
+        for field in ("deleted_genes", "undocumented_alleles"):
+            if genotype.get(field):
+                raise refused(f"its {field} are not read: AlignAIR reads a GenotypeSet's documented_alleles only",
+                              field=field)
+        alleles = genotype.get("documented_alleles") or []
+        if not isinstance(alleles, list) or not all(isinstance(allele, dict) for allele in alleles):
+            raise refused("its documented_alleles are not a list of objects with a label")
+        for allele in alleles:
             label = str(allele.get("label", ""))
             match = _GENE_NAME.match(label)
             if match is None:

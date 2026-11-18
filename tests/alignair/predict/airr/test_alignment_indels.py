@@ -55,21 +55,21 @@ _D_DEL_READ = "ACGTACGT" + "TT" + "GGCC" + "A" + "TTTGGG"
 def _germline(seq, d_cigar, j_start=15, j_germline="TTTGGG", j_cigar="6M"):
     germlines = GermlineMaps(v_gapped={"V1": GAPPED}, j={"J1": j_germline}, d={"D1": "GGACC"})
     v, d, j = _at(0, 8, 0, 8), _at(10, j_start - 1, 0, 5, d_cigar), _at(j_start, len(seq), 0, len(j_germline), j_cigar)
-    return build_germline_alignment(seq, germlines, {"v": "V1", "d": "D1", "j": "J1"}, v, d, j, "TT", "A",
-                                    has_d=True)
+    return build_germline_alignment(germlines, {"v": "V1", "d": "D1", "j": "J1"}, v, d, j, "TT", "A", d_called=True)
 
 
 def test_germline_alignment_lays_the_d_germline_along_its_cigar():
-    # the deleted germline base has no read column, so the D germline takes the read's 4 columns and J stays in place
+    # the deleted germline base has no read column, so the D germline takes the read's 4 columns and J stays in place;
+    # the untemplated bases around the D are N
     germ = _germline(_D_DEL_READ, "2M1D2M")
-    assert germ == "AC.GT.ACGT" + "TT" + "GGCC" + "A" + "TTTGGG"
+    assert germ == "AC.GT.ACGT" + "NN" + "GGCC" + "N" + "TTTGGG"
     positions = compute_alignment_positions(GAPPED, _at(0, 8, 0, 8), _at(10, 14), _at(15, 21), has_d=True)
     assert germ[positions["j_alignment_start"]:positions["j_alignment_end"]] == "TTTGGG"
 
 
 def test_germline_alignment_puts_a_gap_where_the_read_has_a_base_the_j_germline_lacks():
     seq = "ACGTACGT" + "TT" + "GGACC" + "A" + "TTTAGGG"
-    assert _germline(seq, "5M", j_start=16, j_cigar="3M1I3M").endswith("A" + "TTT-GGG")
+    assert _germline(seq, "5M", j_start=16, j_cigar="3M1I3M").endswith("N" + "TTT-GGG")
 
 
 def test_segment_identity_counts_only_the_germline_the_read_covers():

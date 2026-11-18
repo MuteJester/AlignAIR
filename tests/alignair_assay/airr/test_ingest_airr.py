@@ -167,3 +167,77 @@ def test_rows_already_read_parse_like_the_file(tmp_path, monkeypatch):
     monkeypatch.setattr(reader, "rows_to_predictions", lambda rows: seen.append(list(rows)) or ({}, {}))
     load_airr_tsv(path)
     assert seen == [[dict(zip(header, row)) for row in rows]]
+
+
+V_HEADER = ["sequence_id", "sequence", "v_call", "v_sequence_start", "v_sequence_end", "v_germline_start",
+            "v_germline_end", "v_cigar"]
+
+
+def test_the_v_germline_span_of_an_imgt_gapped_row_comes_from_its_cigar(tmp_path):
+    """AlignAIR's table (and Change-O's MakeDb's) counts the V germline positions in the IMGT-gapped germline, from
+    its first position: v_germline_start is 1 and v_germline_end counts the gaps. The AIRR CIGAR counts ungapped
+    germline bases, its N the germline skipped before the V, so the V germline span is read from it: here germline
+    255..300 for a read V of 44 bases with one deleted germline base."""
+    rows = [
+        # AlignAIR: the whole query, S for the read after V; v_germline_end the gapped end
+        ["alignair", SEQ, "IGHV1*01", "1", "44", "1", "330", "255N26M1D18M76S"],
+        # a partial AlignAIR row: no gapped alignment, so no V germline positions; the CIGAR still places the V
+        ["partial", SEQ, "IGHV1*01", "1", "44", "", "", "255N26M1D18M76S"],
+        # AlignAIR, the read's V starting at the germline's first base: no N
+        ["from_first", SEQ, "IGHV1*01", "1", "44", "1", "70", "26M1D18M76S"],
+    ]
+    preds, stats = load_airr_tsv(_write(tmp_path / "g.tsv", V_HEADER, rows))
+    assert stats["invalid_rows"] == 0
+    spans = {sid: (p.segments["v"].germ_start, p.segments["v"].germ_end, p.segments["v"].cigar)
+             for sid, p in preds.items()}
+    assert spans == {"alignair": (255, 300, "26M1D18M"), "partial": (255, 300, "26M1D18M"),
+                     "from_first": (0, 45, "26M1D18M")}
+
+
+def test_a_makedb_row_reads_its_v_germline_span_from_its_cigar(tmp_path):
+    """MakeDb (igblast) writes the V germline positions IMGT-gapped from position 1 and a CIGAR with = and X, a leading
+    S and N but no trailing S. With a leading N, or a leading S and no N (the V at the germline's first base), the
+    CIGAR places the V. A V at both the read's and the germline's first base has neither: that CIGAR cannot be told
+    from an AlignAIR 3 core CIGAR (below), so it is dropped with its message."""
+    rows = [
+        ["offset", SEQ, "IGHV1*01", "1", "44", "1", "330", "255N4=1X21=1D18="],
+        ["flank", SEQ, "IGHV1*01", "11", "54", "1", "70", "10S26=1D17=1X"],
+        ["at_first_bases", SEQ, "IGHV1*01", "1", "44", "1", "70", "26=1D17=1X"],
+    ]
+    preds, stats = load_airr_tsv(_write(tmp_path / "m.tsv", V_HEADER, rows))
+    assert [(preds[s].segments["v"].germ_start, preds[s].segments["v"].germ_end) for s in ("offset", "flank")] \
+        == [(255, 300), (0, 45)]
+    assert preds["offset"].segments["v"].cigar == "4=1X21=1D18="
+    assert preds["at_first_bases"].segments["v"].cigar is None
+    assert preds["at_first_bases"].invalid == ("v_cigar: '26=1D17=1X' disagrees with coordinates",)
+    assert stats["invalid_rows"] == 1
+
+
+def test_an_alignair_3_row_keeps_its_positions_and_drops_its_v_cigar(tmp_path):
+    """An AlignAIR 3 row (a benchmark run's ``human_igh_ogrdb_broad:moderate_full:000000``): a core CIGAR, no S or N,
+    with the V germline positions IMGT-gapped from position 1. Its CIGAR does not say where the V starts in the
+    germline and the positions do not count ungapped bases (320, not the CIGAR's 290), so the CIGAR is dropped and
+    flagged, as before."""
+    sequence = ("ACGT" * 91)[:362]
+    row = ["human_igh_ogrdb_broad:moderate_full:000000", sequence, "IGHVF10-G40*07", "1", "290", "1", "320",
+           "1D27M1I262M"]
+    preds, stats = load_airr_tsv(_write(tmp_path / "v3.tsv", V_HEADER, [row]))
+    p = preds["human_igh_ogrdb_broad:moderate_full:000000"]
+    v = p.segments["v"]
+    assert (v.seq_start, v.seq_end, v.germ_start, v.germ_end, v.cigar) == (0, 290, 0, 320, None)
+    assert p.invalid == ("v_cigar: '1D27M1I262M' disagrees with coordinates",) and stats["invalid_rows"] == 1
+
+
+def test_the_assay_writer_round_trips_a_v_spanning_the_whole_read(tmp_path):
+    """The assay's own table: a core CIGAR over the whole read with ungapped germline positions (10..110). The
+    positions agree with the CIGAR, so they place the V: a core CIGAR over the whole read is not read as an AIRR CIGAR
+    without an N (germline from 0)."""
+    from alignair_assay.airr.writer import write_airr_tsv
+    from alignair_assay.core.prediction import PredSegment, Prediction
+    segment = PredSegment("IGHV1*01", ("IGHV1*01",), 0, 100, 10, 110, "100M")
+    written = Prediction(sequence_id="r", sequence="ACGT" * 25, segments={"v": segment, "d": PredSegment(),
+                                                                          "j": PredSegment()})
+    path = tmp_path / "w.tsv"
+    write_airr_tsv([written], path)
+    preds, stats = load_airr_tsv(path)
+    assert preds["r"].segments["v"] == segment and stats["invalid_rows"] == 0

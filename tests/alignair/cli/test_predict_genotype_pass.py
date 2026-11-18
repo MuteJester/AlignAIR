@@ -132,3 +132,13 @@ def test_the_run_metadata_records_the_pass_and_counts_the_rows_written(model_fil
     assert run["counts"]["complete_assemblies"] == statuses["complete"]
     assert run["counts"]["partial_assemblies"] == statuses["partial"]
     assert sum(run["airr_assembly_partial_reasons"].values()) == statuses["partial"]
+
+
+def test_the_merged_table_ends_its_lines_with_a_newline_alone(tmp_path):
+    """The genotype pass rewrites the table it re-called rows into; it ends lines as the AIRR writer does (\\n)."""
+    from alignair.cli.genotype_pass import merge
+    first, second, out = tmp_path / "first.tsv", tmp_path / "second.tsv", tmp_path / "out.tsv"
+    first.write_text("sequence_id\tv_call\nr0\tA\nr1\tB\n")
+    second.write_text("sequence_id\tv_call\nr1\tC\n")
+    merge(str(first), str(second), [1], str(out))
+    assert out.read_bytes() == b"sequence_id\tv_call\nr0\tA\nr1\tC\n"

@@ -2,7 +2,9 @@
 
 - absent: the D is dropped (no call, no D coordinates), and the row is assembled as a read without a D: the bases
   between V and J are one NP region (np1), and the sequence and germline alignments still line up;
-- too short to call: the D call is empty (an abstention) and the D's span is kept;
+- too short to call: the D call is empty (an abstention) and the D's span is kept, but without a call the bases
+  between V and J are one NP region (np1), untemplated (N) in the germline alignment, as Change-O reads a row without
+  a D call;
 - callable: the row is the ungated one.
 
 The row carries the class (``d_presence``). The stub wraps the test chip, whose own head it overrides."""
@@ -96,16 +98,19 @@ def test_a_short_d_row_abstains_and_keeps_its_span(golden):
         assert row["d_presence"] == "short" and row["airr_assembly_status"] == "complete"
         assert (row["d_call"], row["d_calls"], row["d_likelihoods"]) == ("", [], [])
         assert all(row[key] == before[key] for key in D_FIELDS + V_J_FIELDS)
-        assert (row["np1"], row["np2"]) == (before["np1"], before["np2"])
+        sequence = row["sequence"]
+        assert row["np1"] == sequence[row["v_sequence_end"]:row["j_sequence_start"]] and not row["np2"]
+        assert row["np1_length"] == row["j_sequence_start"] - row["v_sequence_end"] and row["np2_length"] == 0
+        if row["germline_alignment"]:
+            assert set(row["germline_alignment"][row["v_alignment_end"]:row["j_alignment_start"]]) == {"N"}
         aligned += _alignments_line_up_as_before(row, before)
         assert (row["junction"], row["productive"]) == (before["junction"], before["productive"])
     assert aligned >= 2
 
 
 def test_a_short_d_row_reports_no_statistic_of_a_d_germline_it_does_not_name(golden):
-    """A short D has no call, so its germline alignment is the read's own bases (the Short-D path): its identity and
-    germline alignment would describe the read against itself (identity 1.0). The row leaves them empty, and keeps the
-    D's read alignment."""
+    """A short D has no call, so it names no germline (its germline alignment is untemplated, N): its identity and
+    germline alignment would describe no germline. The row leaves them empty, and keeps the D's read alignment."""
     ungated, gated = _rows(golden, 1)
     for before, row in zip(ungated, gated):
         assert before["d_identity"] is not None and before["d_germline_alignment"]

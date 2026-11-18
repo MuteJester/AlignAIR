@@ -16,4 +16,4 @@ def _demo_weights(out):
 def test_two_demo_runs_train_the_same_model(tmp_path):
     first, second = _demo_weights(tmp_path / "a"), _demo_weights(tmp_path / "b")
     assert first.keys() == second.keys()
-    assert all(torch.equal(first[key], second[key]) for key in first)
+    assert [key for key in first if not torch.equal(first[key], second[key])] == []    # names the weights that differ

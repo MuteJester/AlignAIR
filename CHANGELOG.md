@@ -21,8 +21,11 @@ contract: AlignAIR 3 model files do not run on it.
   check are gone; novel alleles are callable without retraining.
 - **`--genotype` binds the genotype's subset of the reference as the bank.** Genotype files are YAML or JSON keyed by
   segment (`V`, `D`, `J`); a name the bound reference does not hold is refused, as is a segment left with no allele.
-  `--genotype-method` and the post-hoc genotype masks are removed. A read whose V gene is outside the genotype gets no
-  V call (`airr_assembly_status` `partial`, reason `no_v`).
+  `--genotype-method` and the post-hoc genotype masks are removed. A read whose V gene is outside the genotype is
+  called to the closest allele the genotype allows, or, when none is close, gets no V call (`airr_assembly_status`
+  `partial`, reason `no_v`). `--genotype` also reads the AIRR GenotypeSet that `alignair genotype` and
+  `--genotype-out` write (each allele's segment from its name); a GenotypeSet restricts only the genes it names, so
+  the genes its rule left open keep all their alleles, while a YAML/JSON genotype restricts each segment it names.
 - **Calls.** `v_call` lists, after the call, the V alleles that match the read as well (IgBLAST's convention for
   equally scoring alleles); an allele the read matches at more bases than the model's V call becomes the call; on a
   multi-locus model each read keeps to one locus and the record carries its V call's locus; a D-presence head gates
@@ -133,6 +136,27 @@ contract: AlignAIR 3 model files do not run on it.
 - **`alignair info MODEL`** takes a model file, a registry id (`id@version`) or `hf://org/repo`, with `--registry`,
   `--offline`, `--revision` and `--hf-token`; `alignair benchmark` and `alignair models get|path` take `--revision`
   and `--hf-token` too.
+- `alignair predict --help` lists its options by purpose (model, input and output, output columns, metadata join,
+  genotype and reference, performance, quality gates, messages). The CLI describes itself as V(D)J allele assignment
+  for IG and TCR repertoires, and its refusals and help texts use plain words.
+- **The AIRR table follows the AIRR schema's positions and CIGARs, and Change-O reads it as written.** Every position
+  is 1-based and closed: `*_alignment_start` and the FWR/CDR starts and ends (now positions in `sequence`, from a
+  region's first to its last read base, blank where the read does not reach) were 0-based or counted in
+  `sequence_alignment`. Each CIGAR spans the whole read (`4N291M73S`). `v_germline_start`/`v_germline_end` count in
+  the IMGT-gapped V germline from its first position, as Change-O's MakeDb writes them (empty for a row without the
+  gapped alignment). `germline_alignment` holds N in the untemplated bases. A row without a D call, a too-short D
+  included, holds every base between V and J in `np1`. FWR4 is IMGT's FR4, from the J's Trp or Phe codon (the
+  junction's last codon) to the end of the J, as IgBLAST and MakeDb cut it; it used to start after that codon.
+  `CreateGermlines.py` builds the germlines from the table without a preparation step (2,855 of 2,872 complete rows of
+  3,000 real IGH reads; the rest have an indel in their J alignment). Python records keep Python's terms (0-based,
+  end excluded).
+- `--reference` reads IMGT/GENE-DB headers (`>X00369|IGHV3-11*04|Homo sapiens|F|...`, as in Immcantation's germline
+  files): the allele is the field with a `*`, as Change-O reads it, not the header's first word.
+- `examples/reads.fasta` is 20 clean, productive human IGH reads, written by `examples/make_example_reads.py`.
+- The README and the documentation website are rewritten for repertoire researchers: install and a first alignment,
+  pages for IgBLAST, MiXCR and Immcantation users, how-tos for real data, the results and how far to trust them, a
+  reference generated from the code (every CLI option, output column, error code and model), training and
+  fine-tuning, and, apart, the developer pages. Addresses of the old pages redirect to their replacements.
 - The `test` extra adds ruff (`>=0.17.1,<0.18`): `tests/quality/test_lint.py` fails on any finding in `src/alignair`
   under `pyproject.toml`'s `[tool.ruff]` settings.
 
@@ -147,6 +171,10 @@ contract: AlignAIR 3 model files do not run on it.
   passes over the input infer the donor's V genotype by TIgGER's frequency rule, re-call the reads it settles, and
   write it as an AIRR GenotypeSet.
 - `alignair predict --threads N`: on the CPU, N single-threaded worker processes.
+- `alignair reference export MODEL --fasta OUT --gapped`: the model's V alleles IMGT-gapped, as Change-O's
+  `CreateGermlines.py` reads them; a V allele without a gapped form is refused by name.
+- `alignair train --init-from MODEL` (a model file, registry id or `hf://` repo) and `TrainingConfig(init_from=)`:
+  start a run from a model's weights (those whose shapes match; the rest start fresh).
 - `alignair export CHECKPOINT OUT_DIR [--model-id --model-version --description --no-validate --overwrite]`: a training
   checkpoint becomes a pickle-free bundle (model, model card, reference manifest, validation report) whose card the
   catalog accepts as it is. The model card names the model, its reference and version (e.g. OGRDB V8), allele counts,
@@ -165,6 +193,13 @@ contract: AlignAIR 3 model files do not run on it.
   `ALIGNAIR_<THING>_<STATE>` (`..._NOT_FOUND`, `..._UNAVAILABLE`, `..._INVALID`, ...), a category, the CLI's exit
   code, `retryable` and a context; `alignair --error-format json` prints it as one JSON object, and `--debug` adds the
   traceback.
+
+### Fixed
+- The AIRR table, the `--rejects-out` file and the table `--infer-genotype` re-calls rows into end their lines with
+  `\n`, as other AIRR tools write them; they ended them with `\r\n`, which broke awk and other Unix tools.
+- `alignair benchmark` no longer fails at its defaults on a short locus such as TRB: a stratum whose 5' loss leaves a
+  simulated read no bases (`short_janchor`) draws another read, and a stratum that leaves almost none is refused with
+  a hint to choose other strata.
 
 ### Removed
 - The amino-acid (protein) track: `predict-aa`, `predict_aa`, `load_aa_model`, protein references and class labels,

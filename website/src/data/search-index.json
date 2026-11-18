@@ -2036,13 +2036,13 @@
   {
     "kind": "option",
     "title": "--genotype",
-    "text": "alignair predict: a donor's genotype: JSON/YAML {V|D|J: [allele names]} or the AIRR GenotypeSet `alignair genotype` writes; calls come only from its alleles, ",
+    "text": "alignair predict: a donor's genotype: JSON/YAML {V|D|J: [allele names]} (calls come only from the alleles of each segment it names) or the AIRR GenotypeSet `a",
     "href": "#/docs/cli?h=predict-genotype"
   },
   {
     "kind": "option",
     "title": "--reference",
-    "text": "alignair predict: germline FASTA (V, D and J alleles) to call from, novel alleles included. Missing IMGT gaps and anchors are taken from the model's own refer",
+    "text": "alignair predict: germline FASTA (V, D and J alleles) to call from, novel alleles included. A missing IMGT gap or anchor is taken from the same allele in the ",
     "href": "#/docs/cli?h=predict-reference"
   },
   {
@@ -3014,7 +3014,7 @@
   {
     "kind": "column",
     "title": "germline_alignment",
-    "text": "The germline the read aligns to, IMGT-gapped, position for position with sequence_alignment (N in the junction's untemplated bases).",
+    "text": "The germline the read aligns to, IMGT-gapped, position for position with sequence_alignment, N in the untemplated bases (np1, np2).",
     "href": "#/docs/column-dictionary?h=germline_alignment"
   },
   {
@@ -3056,7 +3056,7 @@
   {
     "kind": "column",
     "title": "np1",
-    "text": "The untemplated bases between V and D (between V and J without a D).",
+    "text": "The untemplated bases between V and D; without a D call (a D too short to call included), all the bases between V and J.",
     "href": "#/docs/column-dictionary?h=np1"
   },
   {
@@ -3068,7 +3068,7 @@
   {
     "kind": "column",
     "title": "np2",
-    "text": "The untemplated bases between D and J.",
+    "text": "The untemplated bases between D and J; empty without a D call.",
     "href": "#/docs/column-dictionary?h=np2"
   },
   {
@@ -3080,55 +3080,55 @@
   {
     "kind": "column",
     "title": "v_cigar",
-    "text": "The V alignment of the read against its germline, as a CIGAR string.",
+    "text": "The V alignment of the read against its germline, as a CIGAR string over the whole read: S for the read before V, N for the germline bases b",
     "href": "#/docs/column-dictionary?h=v_cigar"
   },
   {
     "kind": "column",
     "title": "d_cigar",
-    "text": "The D alignment of the read against its germline, as a CIGAR string.",
+    "text": "The D alignment of the read against its germline, as a CIGAR string over the whole read: S for the read before D, N for the germline bases b",
     "href": "#/docs/column-dictionary?h=d_cigar"
   },
   {
     "kind": "column",
     "title": "j_cigar",
-    "text": "The J alignment of the read against its germline, as a CIGAR string.",
+    "text": "The J alignment of the read against its germline, as a CIGAR string over the whole read: S for the read before J, N for the germline bases b",
     "href": "#/docs/column-dictionary?h=j_cigar"
   },
   {
     "kind": "column",
     "title": "v_sequence_start",
-    "text": "Where V starts in sequence.",
+    "text": "Where V starts in sequence (in its reverse complement when rev_comp is T).",
     "href": "#/docs/column-dictionary?h=v_sequence_start"
   },
   {
     "kind": "column",
     "title": "v_sequence_end",
-    "text": "Where V ends in sequence.",
+    "text": "Where V ends in sequence (in its reverse complement when rev_comp is T).",
     "href": "#/docs/column-dictionary?h=v_sequence_end"
   },
   {
     "kind": "column",
     "title": "v_germline_start",
-    "text": "Where the alignment starts in the V germline.",
+    "text": "Where the V part of sequence_alignment starts in the IMGT-gapped V germline: 1, as the alignment starts at the germline's first position, wi",
     "href": "#/docs/column-dictionary?h=v_germline_start"
   },
   {
     "kind": "column",
     "title": "v_germline_end",
-    "text": "Where the alignment ends in the V germline.",
+    "text": "Where the V alignment ends in the IMGT-gapped V germline, its gaps counted, as Change-O counts it. Empty for a row without the alignment.",
     "href": "#/docs/column-dictionary?h=v_germline_end"
   },
   {
     "kind": "column",
     "title": "d_sequence_start",
-    "text": "Where D starts in sequence.",
+    "text": "Where D starts in sequence (in its reverse complement when rev_comp is T).",
     "href": "#/docs/column-dictionary?h=d_sequence_start"
   },
   {
     "kind": "column",
     "title": "d_sequence_end",
-    "text": "Where D ends in sequence.",
+    "text": "Where D ends in sequence (in its reverse complement when rev_comp is T).",
     "href": "#/docs/column-dictionary?h=d_sequence_end"
   },
   {
@@ -3146,13 +3146,13 @@
   {
     "kind": "column",
     "title": "j_sequence_start",
-    "text": "Where J starts in sequence.",
+    "text": "Where J starts in sequence (in its reverse complement when rev_comp is T).",
     "href": "#/docs/column-dictionary?h=j_sequence_start"
   },
   {
     "kind": "column",
     "title": "j_sequence_end",
-    "text": "Where J ends in sequence.",
+    "text": "Where J ends in sequence (in its reverse complement when rev_comp is T).",
     "href": "#/docs/column-dictionary?h=j_sequence_end"
   },
   {
@@ -3182,13 +3182,13 @@
   {
     "kind": "column",
     "title": "fwr1_start",
-    "text": "Where the framework region 1 starts in sequence.",
+    "text": "Where the framework region 1 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "href": "#/docs/column-dictionary?h=fwr1_start"
   },
   {
     "kind": "column",
     "title": "fwr1_end",
-    "text": "Where the framework region 1 ends in sequence.",
+    "text": "Where the framework region 1 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "href": "#/docs/column-dictionary?h=fwr1_end"
   },
   {
@@ -3206,13 +3206,13 @@
   {
     "kind": "column",
     "title": "cdr1_start",
-    "text": "Where the CDR1 starts in sequence.",
+    "text": "Where the CDR1 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "href": "#/docs/column-dictionary?h=cdr1_start"
   },
   {
     "kind": "column",
     "title": "cdr1_end",
-    "text": "Where the CDR1 ends in sequence.",
+    "text": "Where the CDR1 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "href": "#/docs/column-dictionary?h=cdr1_end"
   },
   {
@@ -3230,13 +3230,13 @@
   {
     "kind": "column",
     "title": "fwr2_start",
-    "text": "Where the framework region 2 starts in sequence.",
+    "text": "Where the framework region 2 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "href": "#/docs/column-dictionary?h=fwr2_start"
   },
   {
     "kind": "column",
     "title": "fwr2_end",
-    "text": "Where the framework region 2 ends in sequence.",
+    "text": "Where the framework region 2 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "href": "#/docs/column-dictionary?h=fwr2_end"
   },
   {
@@ -3254,13 +3254,13 @@
   {
     "kind": "column",
     "title": "cdr2_start",
-    "text": "Where the CDR2 starts in sequence.",
+    "text": "Where the CDR2 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "href": "#/docs/column-dictionary?h=cdr2_start"
   },
   {
     "kind": "column",
     "title": "cdr2_end",
-    "text": "Where the CDR2 ends in sequence.",
+    "text": "Where the CDR2 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "href": "#/docs/column-dictionary?h=cdr2_end"
   },
   {
@@ -3278,13 +3278,13 @@
   {
     "kind": "column",
     "title": "fwr3_start",
-    "text": "Where the framework region 3 starts in sequence.",
+    "text": "Where the framework region 3 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "href": "#/docs/column-dictionary?h=fwr3_start"
   },
   {
     "kind": "column",
     "title": "fwr3_end",
-    "text": "Where the framework region 3 ends in sequence.",
+    "text": "Where the framework region 3 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "href": "#/docs/column-dictionary?h=fwr3_end"
   },
   {
@@ -3302,19 +3302,19 @@
   {
     "kind": "column",
     "title": "cdr3_start",
-    "text": "Where the CDR3 starts in sequence.",
+    "text": "Where the CDR3 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "href": "#/docs/column-dictionary?h=cdr3_start"
   },
   {
     "kind": "column",
     "title": "cdr3_end",
-    "text": "Where the CDR3 ends in sequence.",
+    "text": "Where the CDR3 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "href": "#/docs/column-dictionary?h=cdr3_end"
   },
   {
     "kind": "column",
     "title": "fwr4",
-    "text": "The read's framework region 4.",
+    "text": "The read's framework region 4: IMGT's FR4, from the J's Trp or Phe codon (the junction's last codon) to the end of the J.",
     "href": "#/docs/column-dictionary?h=fwr4"
   },
   {
@@ -3326,13 +3326,13 @@
   {
     "kind": "column",
     "title": "fwr4_start",
-    "text": "Where the framework region 4 starts in sequence.",
+    "text": "Where the framework region 4 starts in sequence (in its reverse complement when rev_comp is T): its first read base.",
     "href": "#/docs/column-dictionary?h=fwr4_start"
   },
   {
     "kind": "column",
     "title": "fwr4_end",
-    "text": "Where the framework region 4 ends in sequence.",
+    "text": "Where the framework region 4 ends in sequence (in its reverse complement when rev_comp is T): its last read base.",
     "href": "#/docs/column-dictionary?h=fwr4_end"
   },
   {
@@ -3362,13 +3362,13 @@
   {
     "kind": "column",
     "title": "v_alignment_start",
-    "text": "Where V starts in sequence_alignment.",
+    "text": "Where V starts in sequence_alignment and germline_alignment.",
     "href": "#/docs/column-dictionary?h=v_alignment_start"
   },
   {
     "kind": "column",
     "title": "v_alignment_end",
-    "text": "Where V ends in sequence_alignment.",
+    "text": "Where V ends in sequence_alignment and germline_alignment.",
     "href": "#/docs/column-dictionary?h=v_alignment_end"
   },
   {
@@ -3398,13 +3398,13 @@
   {
     "kind": "column",
     "title": "d_alignment_start",
-    "text": "Where D starts in sequence_alignment.",
+    "text": "Where D starts in sequence_alignment and germline_alignment.",
     "href": "#/docs/column-dictionary?h=d_alignment_start"
   },
   {
     "kind": "column",
     "title": "d_alignment_end",
-    "text": "Where D ends in sequence_alignment.",
+    "text": "Where D ends in sequence_alignment and germline_alignment.",
     "href": "#/docs/column-dictionary?h=d_alignment_end"
   },
   {
@@ -3434,13 +3434,13 @@
   {
     "kind": "column",
     "title": "j_alignment_start",
-    "text": "Where J starts in sequence_alignment.",
+    "text": "Where J starts in sequence_alignment and germline_alignment.",
     "href": "#/docs/column-dictionary?h=j_alignment_start"
   },
   {
     "kind": "column",
     "title": "j_alignment_end",
-    "text": "Where J ends in sequence_alignment.",
+    "text": "Where J ends in sequence_alignment and germline_alignment.",
     "href": "#/docs/column-dictionary?h=j_alignment_end"
   },
   {

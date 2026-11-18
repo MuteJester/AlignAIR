@@ -67,13 +67,14 @@ def register(sub) -> None:
     perf.add_argument("--chunk-size", type=int, default=20000,
                    help="stream the input in chunks of this many reads (default 20000)")
     genotype.add_argument("--genotype", default=None,
-                   help="a donor's genotype: JSON/YAML {V|D|J: [allele names]} or the AIRR GenotypeSet `alignair "
-                        "genotype` writes; calls come only from its alleles, a subset of the reference "
-                        "(--reference may add novel alleles)")
+                   help="a donor's genotype: JSON/YAML {V|D|J: [allele names]} (calls come only from the alleles "
+                        "of each segment it names) or the AIRR GenotypeSet `alignair genotype` writes (genes it "
+                        "does not name keep all their alleles); a subset of the reference (--reference may add "
+                        "novel alleles)")
     genotype.add_argument("--reference", default=None,
-                   help="germline FASTA (V, D and J alleles) to call from, novel alleles included. Missing IMGT "
-                        "gaps and anchors are taken from the model's own reference (the same allele, or a close "
-                        "same-length variant)")
+                   help="germline FASTA (V, D and J alleles) to call from, novel alleles included. A missing IMGT "
+                        "gap or anchor is taken from the same allele in the model's own reference, for a V also "
+                        "from a close same-length variant, else found from the sequence")
     genotype.add_argument("--infer-genotype", action="store_true",
                    help="infer the donor's V genotype from the reads' own calls (TIgGER's frequency rule on the "
                         "reads whose V call is a single allele) and re-call the reads whose call it excludes while "
@@ -138,7 +139,7 @@ def _stream_predict(aligner, io: RunIO, *, out_path, batch_size, rejects_out, po
             rej_tmp = f"{rejects_out}.tmp.{os.getpid()}"
             rej_f = open(rej_tmp, "w", newline="")  # noqa: SIM115 - closed, then published or removed, below
             rej_w = csv.DictWriter(rej_f, fieldnames=["sequence_id", "position", "reason", "sequence"],
-                                   delimiter="\t")
+                                   delimiter="\t", lineterminator="\n")
             rej_w.writeheader()
         with closing(iter_sequence_batches(io.input_path, chunk_size=io.chunk_size,
                                             seq_column=io.seq_column, id_column=io.id_column,

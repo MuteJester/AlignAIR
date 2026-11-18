@@ -313,9 +313,10 @@ class ReferenceSet:
 
     @classmethod
     def from_fasta(cls, path: str) -> ReferenceSet:
-        """Load a genotype FASTA (``>allele_name`` headers + DNA). Each allele's segment (V/D/J) is read from its name
-        (``_infer_segment``); an InputError names the alleles it cannot be read from, and those named twice with two
-        sequences.
+        """Load a genotype FASTA (``>allele_name`` headers + DNA; an IMGT/GENE-DB header, ``>X00369|IGHV3-11*04|Homo
+        sapiens|F|...``, names its allele in the field with a ``*``, as Change-O reads it). Each allele's segment
+        (V/D/J) is read from its name (``_infer_segment``); an InputError names the alleles it cannot be read from, and
+        those named twice with two sequences.
 
         Like :meth:`from_alleles`, the result can be bound to a model or trained against."""
         genes: dict[str, dict[str, str]] = {"V": {}, "D": {}, "J": {}}
@@ -342,7 +343,7 @@ class ReferenceSet:
                     continue
                 if line.startswith(">"):
                     _flush()
-                    name = line[1:].split()[0]
+                    name = _allele_name(line[1:])
                     chunks = []
                 else:
                     chunks.append(line)
@@ -356,6 +357,16 @@ class ReferenceSet:
             raise InputError(f"{path} names {len(twice)} alleles twice with two sequences: {', '.join(twice[:5])}",
                              context={"path": path, "alleles": twice}, hint="Give each allele one name.")
         return cls.from_alleles({g: m for g, m in genes.items() if m})
+
+
+def _allele_name(header: str) -> str:
+    """A FASTA header's allele name: its first word, or, for a ``|``-separated IMGT/GENE-DB header, the first field
+    holding a ``*`` (``X00369|IGHV3-11*04|Homo sapiens|F|...`` -> ``IGHV3-11*04``)."""
+    if "|" in header:
+        named = [field.strip() for field in header.split("|") if "*" in field]
+        if named:
+            return named[0].split()[0]
+    return header.split()[0]
 
 
 # An IG/TR locus code and the segment letter after it, anywhere in an allele name (``_infer_segment``).

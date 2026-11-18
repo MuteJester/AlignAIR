@@ -22,8 +22,10 @@ def test_writer_full_airr_roundtrip():
         "v_call": "IGHV1-1*01", "d_call": "IGHD1-1*01", "j_call": "IGHJ1*01",
         "v_calls": ["IGHV1-1*01", "IGHV1-1*02"],
         "v_sequence_start": 0, "v_sequence_end": 8, "v_germline_start": 2, "v_germline_end": 10,
+        "v_alignment_start": 0, "v_alignment_end": 11,
         "v_cigar": "8M", "junction": "TGTGCG", "junction_aa": "CA", "junction_length": 6,
-        "fwr1": "ACGT", "cdr3": "GCG", "v_identity": 0.99, "sequence_alignment": "ACGTACGT",
+        "fwr1": "..ACG.T", "fwr1_start": 0, "fwr1_end": 4, "cdr3": "GCG", "v_identity": 0.99,
+        "sequence_alignment": "..ACG.TACGT",
     }
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
@@ -34,12 +36,53 @@ def test_writer_full_airr_roundtrip():
         assert row["sequence_id"] == "read1"
         assert row["rev_comp"] == "T"                 # orientation_id 1 -> reoriented
         assert row["v_sequence_start"] == "1"         # 0-based 0 -> 1-based 1
-        assert row["v_germline_start"] == "3"         # 0-based 2 -> 1-based 3
         assert row["v_sequence_end"] == "8"           # AIRR end (inclusive) == our end-exclusive
-        assert row["v_cigar"] == "8M"
+        # the V germline positions are the V part's in the IMGT-gapped germline, from its first position (Change-O's)
+        assert (row["v_germline_start"], row["v_germline_end"]) == ("1", "11")
+        assert (row["v_alignment_start"], row["v_alignment_end"]) == ("1", "11")
+        assert (row["fwr1_start"], row["fwr1_end"]) == ("1", "4")
+        assert row["v_cigar"] == "2N8M4S"             # the whole query: 2 germline bases skipped, 4 read bases after
         assert row["junction"] == "TGTGCG"            # assembled AIRR biology passes through
-        assert row["cdr3"] == "GCG" and row["fwr1"] == "ACGT"
+        assert row["cdr3"] == "GCG" and row["fwr1"] == "..ACG.T"
         assert row["v_call_set"] == "IGHV1-1*01,IGHV1-1*02"
+    finally:
+        os.remove(tmp)
+
+
+def test_a_cigar_spans_the_whole_query_whatever_clips_the_record_gives():
+    """A CIGAR opens with S for the read before the segment and N for the germline before it, and closes with S for
+    the read after it; S or N the record's CIGAR already carries are the coordinates' own, so they are not doubled."""
+    rec = {"sequence": "ACGTACGTACGTACGTACGTACGTACGTAC", "orientation_id": 0, "v_call": "IGHV1-1*01",
+           "d_call": "IGHD1-1*01", "j_call": "IGHJ1*01",
+           "v_sequence_start": 0, "v_sequence_end": 20, "v_germline_start": 0, "v_germline_end": 20, "v_cigar": "20M",
+           "d_sequence_start": 20, "d_sequence_end": 24, "d_germline_start": 3, "d_germline_end": 7,
+           "d_cigar": "20S3N4M6S",
+           "j_sequence_start": 24, "j_sequence_end": 30, "j_germline_start": 5, "j_germline_end": 12,
+           "j_cigar": "3M1D3M"}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["r"], [rec["sequence"]], [rec])
+        row = _read_rows(tmp)[0]
+        assert (row["v_cigar"], row["d_cigar"], row["j_cigar"]) == ("20M10S", "20S3N4M6S", "24S5N3M1D3M")
+        assert (row["d_germline_start"], row["d_germline_end"], row["j_germline_start"]) == ("4", "7", "6")
+        # a record without the assembled alignment has no IMGT-gapped V germline positions
+        assert (row["v_germline_start"], row["v_germline_end"]) == ("", "")
+    finally:
+        os.remove(tmp)
+
+
+def test_an_empty_region_has_no_positions():
+    """AIRR's closed intervals cannot hold an empty region: an FWR4 the J ends at, or a region the read does not
+    reach, is written without positions."""
+    rec = {"sequence": "ACGTACGTAC", "orientation_id": 0, "v_call": "IGHV1-1*01", "v_sequence_start": 0,
+           "v_sequence_end": 10, "fwr4": "", "fwr4_start": 10, "fwr4_end": 10, "fwr1": "...", "fwr1_start": None,
+           "fwr1_end": None, "cdr3": "GTA", "cdr3_start": 2, "cdr3_end": 5}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["r"], [rec["sequence"]], [rec])
+        row = _read_rows(tmp)[0]
+        assert [row[k] for k in ("fwr4_start", "fwr4_end", "fwr1_start", "fwr1_end")] == ["", "", "", ""]
+        assert (row["cdr3_start"], row["cdr3_end"]) == ("3", "5")
     finally:
         os.remove(tmp)
 
@@ -203,6 +246,8 @@ def test_needs_assembly_skips_for_light_selections():
     assert needs_assembly("minimal") is False                    # calls + productive only
     assert needs_assembly("v_call,j_call") is False
     assert needs_assembly("v_call,cdr3") is True                 # a region field needs assembly
+    assert needs_assembly("v_cigar,j_germline_start") is False
+    assert needs_assembly("v_germline_end") is True              # counted in the IMGT-gapped germline
 
 
 def test_writer_rejects_prediction_count_mismatch():
@@ -305,3 +350,18 @@ def test_the_table_has_no_extension_column_alignair_never_fills():
     never = {f"{g}_{k}" for g in "vdj" for k in ("resolved_call", "call_level", "set_confidence")} | {"is_contaminant"}
     assert not never & set(COLUMNS)
     assert {"v_call_set", "d_call_set", "j_call_set", "orientation", "input_sequence"} <= set(COLUMNS)
+
+
+def test_a_written_table_ends_its_lines_with_a_newline_alone(tmp_path, capsys):
+    """IgBLAST, Change-O's MakeDb and the airr library end an AIRR TSV's lines with a newline alone, as awk and the
+    other Unix tools read them: so does a written table, to a file or to standard output."""
+    rec = {"sequence": "ACGT", "orientation_id": 0, "v_call": "IGHV1-1*01", "v_sequence_start": 0,
+           "v_sequence_end": 4}
+    path = tmp_path / "t.tsv"
+    write_airr(str(path), ["r1", "r2"], ["ACGT", "ACGT"], [rec, dict(rec)])
+    data = path.read_bytes()
+    assert b"\r" not in data and data.count(b"\n") == 3
+    with AirrWriter("-", columns="minimal") as writer:
+        writer.write(["r1"], ["ACGT"], [rec])
+    out = capsys.readouterr().out
+    assert "\r" not in out and out.count("\n") == 2
