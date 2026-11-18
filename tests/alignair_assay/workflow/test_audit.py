@@ -1053,7 +1053,7 @@ def _fake_positive(monkeypatch, layout: RunLayout, *, effect="worse", row=None, 
 
 def test_the_positive_control_sees_the_perturbed_head_get_worse(tmp_path, monkeypatch):
     layout = RunLayout(tmp_path / "null_sim")
-    cfg = _config(tmp_path, device="cuda")
+    cfg = _config(tmp_path)                          # on the CPU: ``evaluate`` is a stand-in, so no GPU is needed
     seen = _fake_positive(monkeypatch, layout)
     found = audit.positive_diagnose(cfg, layout, RunLayout(tmp_path / "positive"))
     assert found["status"] == "pass" and found["n"] == 20, found["reason"]
@@ -1495,7 +1495,7 @@ def _fake_checks(monkeypatch, *, raising: str | None = None, statuses: dict | No
     return roots
 
 
-def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch, capsys):
+def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch, capsys, genairr_preimported):
     from alignair_assay.core.provenance import CODE_SUFFIXES, tree_digest
 
     cfg = _stored_runs(tmp_path)
@@ -1528,16 +1528,19 @@ def test_the_audit_runs_every_check_and_writes_its_record(tmp_path, monkeypatch,
     package = Path(audit.__file__).resolve().parents[2]  # workflow/audit/__init__.py -> alignair_assay
     code = tree_digest(package, suffixes=CODE_SUFFIXES)
     assert record["provenance"]["audit_code_sha256"] == code and f"`{code[:12]}`" in layout.audit_md.read_text()
-    # the GenAIRR it ran: the frozen copy's digest, and what was frozen (the tests run a frozen copy)
+    # the GenAIRR it ran: the frozen copy's digest, and what was frozen (the tests run a frozen copy, unless the
+    # session runs the live GenAIRR or imported another before the assay conftest could freeze it)
     import os
 
     from alignair_assay.core.freeze import LIVE_ENV, frozen_record
 
     genairr = record["provenance"]["genairr"]
     assert record["provenance"]["genairr_freeze"] == frozen_record(genairr["genairr_source"])
-    if os.environ.get(LIVE_ENV) != "1":
+    if os.environ.get(LIVE_ENV) != "1" and genairr_preimported is None:
         assert record["provenance"]["genairr_freeze"]["genairr_source_sha256"] == genairr["genairr_source_sha256"]
         assert "a frozen copy of commit" in layout.audit_md.read_text()
+    else:
+        assert "**live** (not a frozen copy" in layout.audit_md.read_text()
     # each check is printed once, as it finishes
     printed = capsys.readouterr().out.splitlines()
     assert [line.split(":")[0] for line in printed if line.startswith("audit ")] == [

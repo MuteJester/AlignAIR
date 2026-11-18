@@ -141,10 +141,11 @@ def test_a_milestone_of_another_genairr_source_than_the_caches_is_refused(rig, t
 
 
 def test_a_milestone_without_a_genairr_source_digest_is_refused_on_another_genairr_version(rig, tmp_path, capsys):
+    import GenAIRR
     milestones = milestone_copy(rig, tmp_path, genairr_source_sha256=REMOVED, header={'genairr_version': '2.1.0'})
     assert main([*arguments(rig, 'other-genairr'), '--against-milestone', str(milestones)]) == 2
     error = capsys.readouterr().err
-    assert "genairr_version '2.1.0', not '2.2.0'" in error and 'record cache' in error
+    assert f"genairr_version '2.1.0', not '{GenAIRR.__version__}'" in error and 'record cache' in error
     assert not (rig.screens / 'other-genairr').exists()
 
 

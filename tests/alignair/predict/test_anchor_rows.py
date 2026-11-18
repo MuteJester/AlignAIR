@@ -15,7 +15,7 @@ from alignair.core.tokens import TOKEN_DICT
 from alignair.predict.decode import decode_anchors
 from alignair.predict.junction import derive_junction
 
-from tests.alignair.predict.golden_rows import FIXTURE, golden_model, predict_rows
+from tests.alignair.predict.golden_rows import FIXTURE, assert_rows_match, golden_model, predict_rows
 
 JUNCTION_KEYS = ("junction", "junction_aa", "junction_length", "junction_aa_length", "junction_start", "junction_end",
                  "cdr3", "cdr3_aa", "cdr3_start", "cdr3_end")
@@ -57,10 +57,12 @@ def test_anchors_refuse_a_non_finite_logit_on_an_allowed_slot():
 @pytest.mark.integration
 def test_the_test_chips_rows_are_unchanged(golden):
     """The test chip's rows on the golden reads (full length, with and without a V indel, J-anchored amplicons, a
-    read longer than the window, a reverse-complemented read) are the rows recorded for it, each with its anchors."""
+    read longer than the window, a reverse-complemented read) are the rows recorded for it (``assert_rows_match``:
+    exact but for float sums and near-tied candidates, which another CPU or thread count may move), each with its
+    anchors."""
     fixture = json.loads(FIXTURE.read_text())
     rows = predict_rows(*golden, fixture["reads"])
-    assert rows == fixture["rows"]
+    assert_rows_match(rows, fixture["rows"])
     assert all("v_anchor" in row and "j_anchor" in row for row in rows)
 
 

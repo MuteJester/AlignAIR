@@ -9,7 +9,9 @@ starts all run one copy while the live checkout is edited. ``ALIGNAIR_ASSAY_GENA
 The tests that build suites carry the ``genairr_build`` marker. The freeze takes only when nothing imported GenAIRR
 before this conftest: true of ``pytest tests/alignair_assay`` (the repository's own plugins import ``alignair``
 lazily), not of a whole-repository session, whose product conftests import ``alignair`` (and so GenAIRR) first; that
-session runs the GenAIRR they imported, with a warning (``PREIMPORTED`` names it).
+session runs the GenAIRR they imported, with a warning (``PREIMPORTED`` names it), and leaves ``sys.path`` and
+``PYTHONPATH`` as they were: with the copy first there, the processes it starts (spawned training data workers take
+this process's ``sys.path``) would import another GenAIRR than this process runs.
 
 **Network.** The repository's isolation fixture forbids every external connection in every test. A test gated by
 ``ALIGNAIR_ASSAY_NETWORK=1``, which downloads pinned files, asks for ``network``: the real socket functions, taken
@@ -38,8 +40,9 @@ if os.environ.get(freeze.LIVE_ENV) != "1":
         PREIMPORTED = loaded.__file__
         warnings.warn(f"GenAIRR was imported from {loaded.__file__} before the assay tests froze it: these tests "
                       f"run that copy, not {FROZEN}", stacklevel=1)
-    sys.path.insert(0, str(FROZEN))
-    os.environ["PYTHONPATH"] = os.pathsep.join([str(FROZEN), *filter(None, [os.environ.get("PYTHONPATH")])])
+    else:
+        sys.path.insert(0, str(FROZEN))
+        os.environ["PYTHONPATH"] = os.pathsep.join([str(FROZEN), *filter(None, [os.environ.get("PYTHONPATH")])])
 
 import json  # noqa: E402
 

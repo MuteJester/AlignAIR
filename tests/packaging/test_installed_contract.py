@@ -1,6 +1,8 @@
 """The wheel job's contract script (``installed_contract.py``) runs here on the source tree, so a public name it still
 calls after the name is removed fails the suite, not only the wheel and release jobs. Its two "this is an installed
-copy" checks are pointed at the source tree; everything after them runs as in CI."""
+copy" checks are pointed at the source tree, and the script imports the alignair this test imported (its package root
+first on ``PYTHONPATH``: in CI an installed alignair is importable too); everything after them runs as in CI."""
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +26,7 @@ importlib.util.find_spec = lambda name, *a, **k: None if name == "alignair_lab" 
 sys.argv = ["installed_contract.py", "--forbid-source", {str(tmp_path)!r}]
 runpy.run_path({str(SCRIPT)!r}, run_name="__main__")
 """
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=600)
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [package_root, os.environ.get("PYTHONPATH")]))}
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=600, env=env)
     assert result.returncode == 0, result.stderr[-3000:]
     assert "Installed distribution contracts passed" in result.stdout

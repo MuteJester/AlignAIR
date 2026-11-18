@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 import torch
@@ -23,6 +24,15 @@ from alignair_lab.convert import LAB_CHIPS, convert_lab_chip, run_convert
 from tests.alignair.model_file.conftest import write_v3_header_file
 
 pytestmark = pytest.mark.integration
+
+
+# The sources a subprocess imports, first on its PYTHONPATH: alignair_lab and alignair_assay are never installed, and
+# an installed alignair may be.
+SOURCE = str(Path(__file__).resolve().parents[2] / "src")
+
+
+def _source_env(env: dict) -> dict:
+    return {**env, "PYTHONPATH": os.pathsep.join(filter(None, [SOURCE, env.get("PYTHONPATH")]))}
 
 
 # Settings of AlignAIR 3's configuration a lab chip file's configuration carried (the converter drops them).
@@ -62,7 +72,7 @@ def save_toy_lab_chip(path, lab_name: str, *, chip_copy=None) -> str:
 def rows_in_clean_process(path, reads: list[str]) -> list[dict]:
     """``golden.predict_rows(path, reads)`` in a subprocess whose environment lacks ``ALIGNAIR_ARCHITECTURE_MODULES``
     (the lab never registered), as JSON rows."""
-    env = {key: value for key, value in os.environ.items() if key != "ALIGNAIR_ARCHITECTURE_MODULES"}
+    env = _source_env({key: value for key, value in os.environ.items() if key != "ALIGNAIR_ARCHITECTURE_MODULES"})
     code = ("import json, sys; from alignair_assay.diagnostics.golden import predict_rows; "
             "print(json.dumps(predict_rows(sys.argv[1], json.loads(sys.argv[2]))))")
     out = subprocess.run([sys.executable, "-c", code, str(path), json.dumps(reads)], capture_output=True, text=True,
@@ -119,7 +129,7 @@ def test_a_non_chip_model_file_is_refused(tmp_path):
 def test_the_cli_converts_a_lab_chip_without_trust_pickle(tmp_path):
     src = save_toy_lab_chip(tmp_path / "lab.alignair", "lab-chipw64-v1")
     out = subprocess.run([sys.executable, "-m", "alignair_lab", "convert", src, str(tmp_path / "v4.alignair")],
-                         capture_output=True, text=True)
+                         capture_output=True, text=True, env=_source_env(dict(os.environ)))
     assert out.returncode == 0, out.stderr
     assert "chip-v1" in out.stdout and read_metadata(str(tmp_path / "v4.alignair"))["sections"]
 

@@ -11,7 +11,7 @@ import pytest
 from alignair.aligner import Aligner
 from alignair.cli.main import main
 from alignair.train.config import TrainingConfig
-from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP, predict_rows
+from tests.alignair.predict.golden_rows import FIXTURE, TEST_CHIP, assert_rows_match, predict_rows
 
 pytestmark = pytest.mark.component
 
@@ -33,4 +33,4 @@ def test_loading_takes_no_dataconfigs_or_trust_pickle():
 def test_an_existing_model_file_loads_and_predicts_its_rows():
     fixture = json.loads(FIXTURE.read_text())
     aligner = Aligner.from_pretrained(str(TEST_CHIP), device="cpu")
-    assert predict_rows(aligner.model.eval(), aligner.reference, fixture["reads"]) == fixture["rows"]
+    assert_rows_match(predict_rows(aligner.model.eval(), aligner.reference, fixture["reads"]), fixture["rows"])

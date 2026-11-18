@@ -239,8 +239,12 @@ def _resolve_reference(value):
     return value
 
 
+# The default mix, built once: the policy is frozen, so every call may share it.
+_DEFAULT_POLICY = CurriculumStreamPolicy()
+
+
 def training_records(dataconfigs: Iterable, *,
-                     policy: CurriculumStreamPolicy = CurriculumStreamPolicy(),  # noqa: B008 - frozen, so shared safely
+                     policy: CurriculumStreamPolicy = _DEFAULT_POLICY,
                      seed: int = 0,
                      record_source: RecordSource | None = None,
                      purpose: str = 'training', start_step: int = 0) -> Iterator[Mapping]:
