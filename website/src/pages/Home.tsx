@@ -74,7 +74,6 @@ export default function Home() {
 
       {/* Install, one command, and what you get back */}
       <section aria-label="Quick start" className="mt-8">
-        {/* PENDING-V4-PUBLISH: the release tag in this URL is set when the release is cut. */}
         <CodeBlock
           title="shell"
           code={`$ pip install alignair\n$ curl -LO https://raw.githubusercontent.com/MuteJester/AlignAIR/v4.0.0/examples/reads.fasta\n$ alignair predict --model alignair4-igh-human --input reads.fasta --out out.tsv\naligned 20 reads (0 dropped) -> out.tsv`}

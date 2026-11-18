@@ -274,7 +274,6 @@ const firstAlignment: DocPage = {
         The example file holds twenty productive human IGH reads, simulated with GenAIRR. Download it into an empty
         folder:
       </p>
-      {/* PENDING-V4-PUBLISH: the release tag in this URL is set when the release is cut. */}
       <CodeBlock code={`curl -LO https://raw.githubusercontent.com/MuteJester/AlignAIR/v4.0.0/examples/reads.fasta`} />
       <p>
         With Docker, the same file is already in the image, at <code>/app/examples/reads.fasta</code>.

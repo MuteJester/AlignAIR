@@ -196,7 +196,6 @@ const changelog: DocPage = {
   lead: "What AlignAIR 4 brings, in short; every change is in the changelog on GitHub.",
   body: () => (
     <>
-      {/* PENDING-V4-PUBLISH: check this summary against CHANGELOG.md's release section when the release is cut. */}
       <p>
         The full list of changes, release by release, is in{" "}
         <Ext href={`${REPO}/blob/main/CHANGELOG.md`}>CHANGELOG.md</Ext> on GitHub. The main changes of AlignAIR 4:
@@ -223,7 +222,7 @@ const changelog: DocPage = {
         </li>
         <li>
           <code>--genotype</code> limits the calls to a donor's alleles; <code>--infer-genotype</code> infers the
-          donor's V genotype from the reads in the same run, by TIgGER's frequency rule; <code>alignair genotype</code>{" "}
+          donor's V genotype from the reads in the same run, by a frequency rule like TIgGER's; <code>alignair genotype</code>{" "}
           writes one from any AIRR table as an AIRR GenotypeSet (<DocLink to="donor-genotype">Align with a donor
           genotype</DocLink>).
         </li>
@@ -243,7 +242,9 @@ const changelog: DocPage = {
           The junction and productivity follow by rule from the V Cys and J Trp/Phe codons found in the read.
         </li>
         <li>
-          The output is an AIRR rearrangement table (99 columns, or a preset with <code>--columns</code>), with a{" "}
+          The output is an AIRR rearrangement table whose positions and CIGARs follow the AIRR schema and which
+          Change-O's <code>CreateGermlines.py</code> reads as written; a read cut inside its J is marked partial. It
+          has 99 columns, or a preset with <code>--columns</code>, and a{" "}
           <code>.run.json</code> record of the model, germline set and options beside it (
           <DocLink to="output-columns">Output columns explained</DocLink>).
         </li>

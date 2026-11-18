@@ -54,7 +54,6 @@ AlignAIR environment
 
 Download 20 example human IGH reads and align them with the IGH model:
 
-<!-- PENDING-V4-PUBLISH: the release tag in this URL (v4.0.0) is set when the release is cut. -->
 ```bash
 curl -LO https://raw.githubusercontent.com/MuteJester/AlignAIR/v4.0.0/examples/reads.fasta
 alignair predict --model alignair4-igh-human --input reads.fasta --out out.tsv

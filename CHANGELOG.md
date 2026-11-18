@@ -3,19 +3,19 @@
 All notable changes to AlignAIR are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow semantic versioning.
 
-## [Unreleased]
+## [4.0.0] - 2026-11-18
 
-These changes make up AlignAIR 4 (the release number is not set yet). AlignAIR 4 is a new network and a new model
-contract: AlignAIR 3 model files do not run on it.
+AlignAIR 4 is a new network and a new model contract: AlignAIR 3 model files do not run on it. Its pretrained models
+are `alignair4-<locus>-human` 1.0.0, one per locus (IGH, IGK, IGL, TRA, TRB, TRD, TRG).
 
 ### Changed
 - **One network, the chip (`chip-v1`).** A dilated-convolution trunk gives every base its features once; a region
   parser, V/J anchor heads, a mutation reader and per-segment scans of the bound reference's alleles read them, and
   deterministic steps refine the calls and boundaries against the germline. The `conv-v1` network is removed.
 - **AlignAIR 3 model files are refused** with the version that runs them: a `.pt`, a `conv-v1` `.alignair`, or a
-  container without `reference_json` ("this is an AlignAIR 3 model ...; use alignair<4 to run it"). The hub catalog's
-  current entries (`alignair-igh-human`, `alignair-igkl-human`, `alignair-tcrb-human` at 1.0.0) are AlignAIR 3
-  models; AlignAIR 4 pretrained models are to be published one per locus.
+  container without `reference_json` ("this is an AlignAIR 3 model ...; use alignair<4 to run it"). The hub catalog keeps
+  the AlignAIR 3 entries (`alignair-igh-human`, `alignair-igkl-human`, `alignair-tcrb-human` at 1.0.0) for
+  AlignAIR 3; AlignAIR 4's are the `alignair4-<locus>-human` models.
 - **The reference is an input, not weights.** A model scores the alleles of the reference it is bound to: its
   embedded reference by default, or another one (see Added). The fixed-reference contract and its reference-identity
   check are gone; novel alleles are callable without retraining.

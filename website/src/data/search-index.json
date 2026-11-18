@@ -676,14 +676,14 @@
     "title": "Germline sets and genotypes",
     "text": "Changelog",
     "href": "#/docs/changelog?h=germline-sets-and-genotypes",
-    "body": "A model calls from the germline set it is given. --reference germline.fasta binds your own set, novel alleles and new genes included, with no training; missing IMGT gaps and anchors are filled from the model's own alleles (Use your own germline reference). --genotype limits the calls to a donor's alleles; --infer-genotype infers the donor's V genotype from the reads in the same run, by TIgGER's frequency rule; alignair genotype writes one from any AIRR table as an AIRR GenotypeSet (Align with a donor genotype). alignair reference export --gapped writes a model's germline set with IMGT-gapped V alleles, as Change-O's CreateGermlines.py needs."
+    "body": "A model calls from the germline set it is given. --reference germline.fasta binds your own set, novel alleles and new genes included, with no training; missing IMGT gaps and anchors are filled from the model's own alleles (Use your own germline reference). --genotype limits the calls to a donor's alleles; --infer-genotype infers the donor's V genotype from the reads in the same run, by a frequency rule like TIgGER's; alignair genotype writes one from any AIRR table as an AIRR GenotypeSet (Align with a donor genotype). alignair reference export --gapped writes a model's germline set with IMGT-gapped V alleles, as Change-O's CreateGermlines.py needs."
   },
   {
     "kind": "heading",
     "title": "Calls and output",
     "text": "Changelog",
     "href": "#/docs/changelog?h=calls-and-output",
-    "body": "v_call lists, after the call, the alleles that match the read equally well, as IgBLAST does; an allele of the germline set that matches the read at more bases than the model's call becomes the call. The junction and productivity follow by rule from the V Cys and J Trp/Phe codons found in the read. The output is an AIRR rearrangement table (99 columns, or a preset with --columns), with a .run.json record of the model, germline set and options beside it ( Output columns explained)."
+    "body": "v_call lists, after the call, the alleles that match the read equally well, as IgBLAST does; an allele of the germline set that matches the read at more bases than the model's call becomes the call. The junction and productivity follow by rule from the V Cys and J Trp/Phe codons found in the read. The output is an AIRR rearrangement table whose positions and CIGARs follow the AIRR schema and which Change-O's CreateGermlines.py reads as written; a read cut inside its J is marked partial. It has 99 columns, or a preset with --columns, and a .run.json record of the model, germline set and options beside it ( Output columns explained)."
   },
   {
     "kind": "heading",
