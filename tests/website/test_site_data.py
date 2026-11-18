@@ -90,6 +90,40 @@ def test_the_comparison_reads_a_locked_test_split_run(tmp_path):
                                                         "verdict": "b_better"}
 
 
+def _real_report() -> dict:
+    def measure(a, b, verdict):
+        return {"a": {"mean": a}, "b": {"mean": b}, "mean_a_paired": a, "mean_b_paired": b, "delta": b - a,
+                "ci95": [b - a - 0.001, b - a + 0.001], "verdict": verdict, "n_paired": 21290, "n_clusters": 20870}
+    def protocol(donors):
+        shared = {"arm": "shared", "a": "igblast", "b": "alignair-api@alignair4-igh-human", "donors": donors,
+                  "overall": {"real.v.unsupported": measure(0.052, 0.051, "tie_or_inconclusive"),
+                              "real.v.known_top1": measure(0.995, 0.997, "b_better"),
+                              "real.v.no_call": measure(0.0, 0.0, "no_variation")}}
+        return {"donors": donors, "comparisons": [shared, {**shared, "arm": "genotype"}]}
+    race, multiplex = protocol(["SC-13", "SC-17"]), protocol(["W-110", "W-52"])
+    return {"kind": "alignair_assay.real_summary", "config": {"split": "test"},
+            "donors": {"SC-13": {"reads": "x" * 10_000}},
+            "pooled": {"donors": ["SC-13", "SC-17", "W-110", "W-52"], "comparisons": race["comparisons"],
+                       "protocols": {"race": race, "multiplex": multiplex}}}
+
+
+def test_the_comparison_keeps_the_real_data_runs_declared_measures_only(tmp_path):
+    """The real-data report is large (per-donor detail); the page shows its pre-declared measure and the known-answer
+    accuracy beside it, per protocol and pooled, on the shared arm."""
+    sim, real = tmp_path / "report.json", tmp_path / "real.json"
+    sim.write_text(json.dumps(_report("test")))
+    real.write_text(json.dumps(_real_report()))
+    out = _site_data().comparison([sim], real)["real"]
+    assert out["donors"] == ["SC-13", "SC-17", "W-110", "W-52"]
+    assert sorted(out["scopes"]) == ["multiplex", "pooled", "race"]
+    assert out["scopes"]["race"]["donors"] == ["SC-13", "SC-17"]
+    assert out["scopes"]["race"]["measures"]["real.v.known_top1"] == {
+        "igblast": 0.995, "alignair": 0.997, "delta": 0.997 - 0.995, "ci95": [0.997 - 0.995 - 0.001,
+        0.997 - 0.995 + 0.001], "verdict": "b_better", "paired": 21290, "clonotypes": 20870}
+    assert sorted(out["scopes"]["pooled"]["measures"]) == ["real.v.known_top1", "real.v.unsupported"]
+    assert len(json.dumps(out)) < 5000
+
+
 def test_the_committed_comparison_is_pending_or_from_a_test_split_run():
     comparison = json.loads((DATA / "comparison.json").read_text())
     assert comparison["status"] in ("pending", "ready")

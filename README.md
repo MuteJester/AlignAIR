@@ -152,11 +152,12 @@ Every option, with its default, is on the [CLI reference](https://mutejester.git
 
 ## How it compares
 
-<!-- PENDING-V4-NUMBERS: confirm this paragraph against the locked test-split run and add its headline numbers. -->
-On simulated repertoires with known truth, AlignAIR matches or beats IgBLAST on every measure, on all seven loci. The
-largest gains are in the D allele call and in the exact V, D and J boundaries; on the V call, the junction and
-productivity both tools are close to exact. The [comparison page](https://mutejester.github.io/AlignAIR/#/docs/comparison)
-shows every measure, ties included, and the method.
+On simulated reads held out from development (all seven loci, 13 test suites), AlignAIR is better than IgBLAST on
+151 of 491 measure comparisons: the V mutation count (38 of 40), the J allele (25 of 49), segment boundaries, the exact
+junction and clone key, the D allele, and calling no V on a read too short to show one. On real IGH repertoires of four
+donors whose alleles are known from their genomes, the two tools' V calls are equally well supported, and AlignAIR
+calls the reads with a known answer right more often (99.7% vs 99.5% on 5' RACE libraries). The
+[comparison page](https://mutejester.github.io/AlignAIR/#/docs/comparison) shows every measure and the method.
 
 **When another tool is the better choice:**
 

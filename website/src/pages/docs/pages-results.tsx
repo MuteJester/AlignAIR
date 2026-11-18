@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { CodeBlock, Callout } from "../../components/ui";
 import ComparisonTable from "../../components/data/ComparisonTable";
+import ComparisonWins from "../../components/data/ComparisonWins";
+import RealComparison from "../../components/data/RealComparison";
 import { DocTable, DocLink, H2, H3, type DocPage } from "./doc-kit";
 
 const SECTION = "Understand the results";
@@ -812,6 +814,28 @@ const comparison: DocPage = {
         page says what it measures and how to read the results.
       </p>
 
+      <H2 id="at-a-glance">Results at a glance</H2>
+      <p>
+        On held-out simulated reads of all seven loci (the 13 suites, 600 to 3,000 reads each), AlignAIR is better than
+        IgBLAST on these measures:
+      </p>
+      <ComparisonWins />
+      <p>
+        Each line counts the comparisons (one measure, on one suite of one locus) where AlignAIR is significantly
+        better, out of every comparison of that measure; the example is its largest gain. Every measure of every suite is in{" "}
+        <DocLink to="comparison?h=results">Every measure, per locus</DocLink>.
+      </p>
+      <p>
+        On real IGH repertoires of four donors whose alleles are known from their genomes (
+        <DocLink to="comparison?h=real-data">how</DocLink>):
+      </p>
+      <RealComparison />
+      <p>
+        On real repertoires, the two tools' V calls are equally well supported by the donors' genomes. On the reads
+        whose answer the genome settles, AlignAIR calls it right more often: on 5' RACE libraries, and over all four
+        donors.
+      </p>
+
       <H2 id="method">How it was measured</H2>
 
       <H3 id="same-germline-set">The same germline set</H3>
@@ -854,7 +878,8 @@ const comparison: DocPage = {
       <p>
         IG reads carry somatic hypermutation; TCR reads do not, as T cells do not hypermutate. A suite or part of a
         suite that needs a D or hypermutation is left out on a locus without it: D observability runs on IGH, TRB and
-        TRD, clonal lineages on the IG loci.
+        TRD, clonal lineages on the IG loci. Novel alleles needs four V genes able to carry a novel allele; TRD and TRG
+        have too few, so it runs on the other five loci.
       </p>
 
       <H3 id="measures">The measures</H3>
@@ -935,10 +960,8 @@ const comparison: DocPage = {
         </li>
       </ul>
 
-      <H2 id="results">Results on simulated reads</H2>
-      {/* PENDING-V4-NUMBERS: the headline results from the locked test-split run go here, one line per measure with its
-          numbers, before the tables (owner: headline wins up front, the full tables with ties below). */}
-      <p>One table per suite, every measure, ties included.</p>
+      <H2 id="results">Every measure, per locus</H2>
+      <p>One table per suite, every measure, per locus.</p>
       <H3 id="results-igh">IGH</H3>
       <ComparisonTable locus="IGH" />
       <H3 id="results-igk">IGK</H3>
@@ -983,9 +1006,9 @@ const comparison: DocPage = {
         The other loci have no such check on real reads: for IGK, IGL and the four TCR loci, the simulated results
         above are the measure.
       </p>
-      {/* PENDING-V4-NUMBERS: the locked run's real-data results (its pre-declared measure per protocol, with the
-          known-answer accuracy beside it), reported as the run's report gives them, wins, ties or losses alike. */}
-      <p className="text-sm text-slate-500">Results of the locked test run appear here.</p>
+      <p>
+        The results are in <DocLink to="comparison?h=at-a-glance">Results at a glance</DocLink> at the top of this page.
+      </p>
 
       <H2 id="your-own-data">On your own data</H2>
       <p>

@@ -1282,6 +1282,13 @@
   },
   {
     "kind": "heading",
+    "title": "Results at a glance",
+    "text": "Comparison with IgBLAST",
+    "href": "#/docs/comparison?h=at-a-glance",
+    "body": "On held-out simulated reads of all seven loci (the 13 suites, 600 to 3,000 reads each), AlignAIR is better than IgBLAST on these measures: Each line counts the comparisons (one measure, on one suite of one locus) where AlignAIR is significantly better, out of every comparison of that measure; the example is its largest gain. Every measure of every suite is in Every measure, per locus. On real IGH repertoires of four donors whose alleles are known from their genomes ( how): On real repertoires, the two tools' V calls are equally well supported by the donors' genomes. On the reads whose answer the genome settles, AlignAIR calls it right more often: on 5' RACE libraries, and over all four donors."
+  },
+  {
+    "kind": "heading",
     "title": "How it was measured",
     "text": "Comparison with IgBLAST",
     "href": "#/docs/comparison?h=method",
@@ -1306,7 +1313,7 @@
     "title": "The 13 suites",
     "text": "Comparison with IgBLAST",
     "href": "#/docs/comparison?h=suites",
-    "body": "[id, title, what]) /> IG reads carry somatic hypermutation; TCR reads do not, as T cells do not hypermutate. A suite or part of a suite that needs a D or hypermutation is left out on a locus without it: D observability runs on IGH, TRB and TRD, clonal lineages on the IG loci."
+    "body": "[id, title, what]) /> IG reads carry somatic hypermutation; TCR reads do not, as T cells do not hypermutate. A suite or part of a suite that needs a D or hypermutation is left out on a locus without it: D observability runs on IGH, TRB and TRD, clonal lineages on the IG loci. Novel alleles needs four V genes able to carry a novel allele; TRD and TRG have too few, so it runs on the other five loci."
   },
   {
     "kind": "heading",
@@ -1324,10 +1331,10 @@
   },
   {
     "kind": "heading",
-    "title": "Results on simulated reads",
+    "title": "Every measure, per locus",
     "text": "Comparison with IgBLAST",
     "href": "#/docs/comparison?h=results",
-    "body": "One table per suite, every measure, ties included."
+    "body": "One table per suite, every measure, per locus."
   },
   {
     "kind": "heading",
@@ -1383,7 +1390,7 @@
     "title": "Real IGH repertoires",
     "text": "Comparison with IgBLAST",
     "href": "#/docs/comparison?h=real-data",
-    "body": "Simulation is not the whole story, so the comparison also scores both tools on real human IGH repertoires where each donor's own alleles are known: The data. AIRR-seq of donors from BioProject PRJNA555323 ( Rodriguez et al., Nature Communications 2023), whose IGH loci were also sequenced with long reads, so each donor's alleles are known from the genome (VDJbase). Four donors are held back for this run. The reads are prepared with pRESTO, as the study did, and both tools align them against the IGH model's germline set. The measure, declared before the run. The share of each tool's V calls that the donor's genome does not carry (lower is better). A call counts as carried when it equals one of the donor's alleles up to IMGT position 318. Reads called into genes where the genomic truth is incomplete are left out for both tools. The tools are compared on the same reads, per library protocol (5' RACE and multiplex PCR), with tests clustered by clonotype. Beside it. On the reads whose V matches exactly one of the donor's alleles, how often each tool calls that allele. The other loci have no such check on real reads: for IGK, IGL and the four TCR loci, the simulated results above are the measure. Results of the locked test run appear here."
+    "body": "Simulation is not the whole story, so the comparison also scores both tools on real human IGH repertoires where each donor's own alleles are known: The data. AIRR-seq of donors from BioProject PRJNA555323 ( Rodriguez et al., Nature Communications 2023), whose IGH loci were also sequenced with long reads, so each donor's alleles are known from the genome (VDJbase). Four donors are held back for this run. The reads are prepared with pRESTO, as the study did, and both tools align them against the IGH model's germline set. The measure, declared before the run. The share of each tool's V calls that the donor's genome does not carry (lower is better). A call counts as carried when it equals one of the donor's alleles up to IMGT position 318. Reads called into genes where the genomic truth is incomplete are left out for both tools. The tools are compared on the same reads, per library protocol (5' RACE and multiplex PCR), with tests clustered by clonotype. Beside it. On the reads whose V matches exactly one of the donor's alleles, how often each tool calls that allele. The other loci have no such check on real reads: for IGK, IGL and the four TCR loci, the simulated results above are the measure. The results are in Results at a glance at the top of this page."
   },
   {
     "kind": "heading",

@@ -14,7 +14,7 @@ interface Comparison {
   loci?: Record<string, { reference: string; suites: { name: string; title: string; cases: number; rows: Row[] }[] }>;
 }
 
-export const COMPARISON = comparisonData as Comparison;
+export const COMPARISON = comparisonData as unknown as Comparison;
 
 function verdictLabel(verdict: string): string {
   if (/b_better|alignair/i.test(verdict) && !/igblast/i.test(verdict)) return "AlignAIR better";

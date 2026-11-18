@@ -282,8 +282,30 @@ def comparison(simulated: list[Path], real: Path | None) -> dict:
         report = json.loads(Path(real).read_text())
         if report.get("config", {}).get("split") not in (None, "test"):
             raise ValueError(f"{real}: not a test-split real-data report")
-        out["real"] = report
+        out["real"] = _real_summary(report)
     return out
+
+
+# The real-data run's pre-declared measure (the share of V calls the donor's genome does not carry, lower is better)
+# and the known-answer accuracy beside it.
+REAL_MEASURES = ("real.v.unsupported", "real.v.known_top1")
+
+
+def _real_summary(report: dict) -> dict:
+    """What the comparison page shows of a real-data report: its donors and, per protocol and pooled, the shared arm's
+    declared measures (each tool's paired mean, the difference, its 95% CI, the verdict and the paired counts)."""
+    pooled = report["pooled"]
+
+    def scope(entry: dict) -> dict:
+        shared = next(c for c in entry["comparisons"] if c["arm"] == "shared")
+        return {"donors": list(entry.get("donors") or shared.get("donors") or []),
+                "measures": {name: {"igblast": row["mean_a_paired"], "alignair": row["mean_b_paired"],
+                                    "delta": row["delta"], "ci95": row["ci95"], "verdict": row["verdict"],
+                                    "paired": row["n_paired"], "clonotypes": row["n_clusters"]}
+                             for name, row in shared["overall"].items() if name in REAL_MEASURES}}
+    scopes = {name: scope(entry) for name, entry in pooled["protocols"].items()}
+    scopes["pooled"] = scope(pooled)
+    return {"donors": list(pooled["donors"]), "scopes": scopes}
 
 
 # ---------------------------------------------------------------------------------------- search index
