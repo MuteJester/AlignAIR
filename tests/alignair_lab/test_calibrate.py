@@ -17,6 +17,7 @@ def calibrate_arguments(rig, root, *extra, seeds='0,1,2'):
     return ['calibrate', '--steps', '2', '--init-seeds', seeds, *options('--model-option'), *common(rig, root), *extra]
 
 
+@pytest.mark.heavy
 def test_calibrate_trains_the_missing_baseline_screens_and_writes_the_null_band(rig, baseline, tmp_path, capsys):
     root = tmp_path / 'screens'
     shutil.copytree(baseline, root / 'base0')                    # the registered baseline screen, reused

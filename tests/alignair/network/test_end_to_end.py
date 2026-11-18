@@ -13,6 +13,7 @@ OPTIONS = {"architecture": "chip-v1", "embed_dim": 8}
 
 
 @pytest.mark.parametrize("channels", [64, 16])
+@pytest.mark.heavy
 def test_a_tiny_chip_trains_reloads_predicts_airr_rows_and_resumes(tmp_path, channels):
     request = TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", steps=2, batch_size=2, device="cpu", seed=31,
                                           val_every=1, model_options={**OPTIONS, "trunk_channels": channels})
@@ -39,6 +40,7 @@ def test_a_tiny_chip_trains_reloads_predicts_airr_rows_and_resumes(tmp_path, cha
     assert steps == [3] and read_training_state(resumed.model_path).step == 3
 
 
+@pytest.mark.heavy
 def test_predict_with_another_reference_calls_only_its_alleles(tmp_path):
     """``alignair predict --reference``: the chip (reference-agnostic) calls from the FASTA it is given, a novel V the
     training reference lacks included."""

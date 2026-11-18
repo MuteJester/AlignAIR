@@ -224,6 +224,7 @@ FED = re.compile(r"[vdj]\.(seq|germ)_(start|end)_|[vdj]\.top1_in_set$|orientatio
 # row's CDR3 positions, which AlignAIR writes 1-based in the read, as AIRR defines them.
 
 
+@pytest.mark.heavy
 def test_true_germline_scores_like_the_oracle_on_assembly_fed_fields(make_shaped_model, s0_cases, s0_truths,
                                                                     reference):
     # The "igh" shaped model predicts no indel, so the assembly's gate on the predicted productivity and indels

@@ -65,6 +65,7 @@ def test_aligner_predict_returns_a_result_labelled_with_the_models_locus():
 
 
 @pytest.mark.slow
+@pytest.mark.heavy
 def test_train_api_end_to_end(tmp_path):
     """TrainingConfig -> run_training -> TrainingRun.best_aligner -> predict, no private imports."""
     from alignair import Aligner, TrainingConfig, run_training

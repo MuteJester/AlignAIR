@@ -163,6 +163,7 @@ def test_invalid_requests_are_rejected_before_any_process_starts(options):
 
 
 @pytest.mark.parametrize('in_worker', [True])
+@pytest.mark.heavy
 def test_assembled_batches_with_novel_alleles_equal_the_serial_batches(igh, in_worker):
     import dataclasses
 

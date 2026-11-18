@@ -57,6 +57,7 @@ def test_parallel_training_with_flanks_reproduces_the_serial_flanked_records_and
     assert_same_weights(weights(serial.model_path), weights(parallel.model_path))
 
 
+@pytest.mark.heavy
 def test_resume_accepts_another_worker_count_and_continues_the_serial_stream(tmp_path):
     first = run_training(request(steps=2), out_path=str(tmp_path / 'first.alignair'))
     serial, serial_records = trained(request(resume_path=first.model_path), tmp_path / 'serial.alignair')
@@ -69,6 +70,7 @@ def test_resume_accepts_another_worker_count_and_continues_the_serial_stream(tmp
     assert resumed_again.steps == 4
 
 
+@pytest.mark.heavy
 def test_workers_stop_when_training_finishes_fails_or_is_interrupted(tmp_path, monkeypatch):
     before = set(multiprocessing.active_children())
     seen = []

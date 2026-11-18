@@ -8,7 +8,7 @@ from alignair.train.records.streams import CurriculumStreamPolicy, training_reco
 from tests.support.record_workers import parallel_records
 from tests.support.training_streams import assert_same_runs, run, serial_records
 
-pytestmark = [pytest.mark.acceptance, pytest.mark.slow]
+pytestmark = [pytest.mark.acceptance, pytest.mark.slow, pytest.mark.heavy]
 
 RECIPE = CurriculumStreamPolicy((0.3, 0.6, 0.9), 0.25, 1)      # progresses, heavy_shm, short_boost
 

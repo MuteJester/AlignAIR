@@ -122,6 +122,7 @@ def test_heldout_scores_count_each_donors_reads_against_its_own_alleles(tmp_path
 
 
 @pytest.mark.integration
+@pytest.mark.heavy
 def test_a_novel_screen_trains_from_the_novel_cache_and_writes_its_verdict(rig, baseline):
     from alignair_lab.cli import main
     from tests.alignair_lab.rig import common, options

@@ -1,7 +1,7 @@
-import hashlib
 import json
 import math
 import random
+from pathlib import Path
 from statistics import NormalDist
 
 import numpy as np
@@ -185,9 +185,13 @@ def test_no_pairs_inconclusive():
 
 # --- cluster-aware comparisons ------------------------------------------------------------------------------------
 
-# compare()'s output on _golden_data() before clusters existed (commit 4e3b920), as the SHA-256 of its JSON with
-# sorted keys: with every cluster a singleton, the output must stay byte for byte what it was.
-GOLDEN_SHA256 = "3122f09e070dc576f5636b36f25826c62905d21767ba7b49dbccee591b72db75"
+# compare()'s output on _golden_data() before clusters existed (commit 4e3b920), recorded as JSON with sorted keys
+# (fixtures/stats_compare_golden.json): with every cluster a singleton, the output must stay what it was, every name,
+# count, verdict and test exact and every float within FLOAT_REL of its recorded value. Not to the bit: the p-values
+# come from the C library's erfc, whose last bit differs between releases (glibc 2.39 and 2.43 give two of them one
+# ulp apart, so the output's SHA-256 is f88a108c... on Ubuntu 24.04 and 3122f09e... on 26.04).
+GOLDEN = Path(__file__).resolve().parents[1] / "fixtures" / "stats_compare_golden.json"
+FLOAT_REL = 1e-12
 
 
 def _golden_data():
@@ -211,12 +215,27 @@ def _without_clusters(result: dict) -> dict:
             for name, entry in result.items()}
 
 
-def test_singleton_clusters_keep_the_output_byte_for_byte():
+def _assert_recorded(got, want, where="output"):
+    """``got`` is the recorded ``want``: the same keys, lengths, types and values, a float within ``FLOAT_REL``."""
+    if isinstance(want, dict):
+        assert isinstance(got, dict) and sorted(got) == sorted(want), where
+        for key, value in want.items():
+            _assert_recorded(got[key], value, f"{where}.{key}")
+    elif isinstance(want, list):
+        assert isinstance(got, list) and len(got) == len(want), where
+        for index, (item, value) in enumerate(zip(got, want)):
+            _assert_recorded(item, value, f"{where}[{index}]")
+    elif isinstance(want, float):
+        assert type(got) is float and got == pytest.approx(want, rel=FLOAT_REL, abs=0.0), (where, got, want)
+    else:
+        assert type(got) is type(want) and got == want, (where, got, want)
+
+
+def test_singleton_clusters_keep_the_output():
     a, b = _golden_data()
     metrics = ["bin", "cont", "x_err", "few", "absent"]
     plain = compare(a, b, metrics, lower_is_better={"x_err"})
-    text = json.dumps(to_dict(_without_clusters(plain)), sort_keys=True)
-    assert hashlib.sha256(text.encode()).hexdigest() == GOLDEN_SHA256
+    _assert_recorded(json.loads(json.dumps(to_dict(_without_clusters(plain)))), json.loads(GOLDEN.read_text()))
     # Every case its own cluster, by name, by omission or by an empty mapping: the same output.
     for clusters in ({}, {cid: f"k{cid}" for cid in a}, {"c000": "only"}):
         assert compare(a, b, metrics, lower_is_better={"x_err"}, clusters=clusters) == plain

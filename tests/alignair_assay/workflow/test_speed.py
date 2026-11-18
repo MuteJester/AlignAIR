@@ -130,6 +130,13 @@ def _s1_reads(layout: RunLayout, n: int) -> list[tuple[str, str]]:
 
 
 @pytest.fixture
+def sixteen_cpus(monkeypatch):
+    """A host of 16 logical CPUs, for the configurations of 8 threads (the protocol refuses more threads than the host
+    has, and a CI runner may have 4); a test asks for it before reading ``os.cpu_count()``."""
+    monkeypatch.setattr(speed.os, "cpu_count", lambda: 16)
+
+
+@pytest.fixture
 def small_protocol(monkeypatch):
     """The protocol at 10 and 60 reads, 2 runs each, so S1 at scale 0.02 can be timed."""
     monkeypatch.setattr(speed, "N_TINY", 10)
@@ -237,7 +244,7 @@ def test_host_info_keys(tmp_path, monkeypatch):
     assert bare["gpu"] is None and bare["docker"] is None and bare["logical_cpus"] == os.cpu_count()
 
 
-def test_speed_configs():
+def test_speed_configs(sixteen_cpus):
     cfg = RunConfig(suites=("S1",), tools=("igblast", "alignair"), threads=8, igblast_dir="/opt/igblast",
                     alignair_checkpoint="/models/m.alignair")
     configs = dict(speed_configs(cfg, cuda=True))
@@ -295,7 +302,7 @@ def test_speed_refuses_alignair_api(built, tmp_path, capsys):
     assert not RunLayout(root).speed_json.exists()
 
 
-def test_speed_checked_with_the_config():
+def test_speed_checked_with_the_config(sixteen_cpus):
     base = dict(suites=("S0", "S1"), tools=("oracle", "quick"), scale=0.8, speed=True)
     check_config(RunConfig(**base))
     for overrides, message in ((dict(suites=("S0",)), "add S1 to --suites"),

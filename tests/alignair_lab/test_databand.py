@@ -38,6 +38,7 @@ def test_a_run_left_without_done_json_is_refused_not_reused(tmp_path):
 
 
 @pytest.mark.timeout(900)
+@pytest.mark.heavy
 def test_the_data_band_trains_each_seed_and_pairs_every_two(rig, tmp_path):
     record = run_data_band(seeds=(0, 1, 2), steps=2, schedule="constant", name="band", parallel=3,
                            **_small(rig, tmp_path))
@@ -54,6 +55,7 @@ def test_the_data_band_trains_each_seed_and_pairs_every_two(rig, tmp_path):
     assert again == {**done, "reused": True}                                   # a finished run is reused
 
 
+@pytest.mark.heavy
 def test_a_finished_run_of_another_request_is_refused_not_reused(tmp_path):
     first = train_run(tmp_path / "run", seed=0, steps=2, schedule="constant", device="cpu", data_workers=1,
                       model_options=SMALL)
@@ -69,6 +71,7 @@ def test_a_finished_run_of_another_request_is_refused_not_reused(tmp_path):
 
 
 @pytest.mark.timeout(900)
+@pytest.mark.heavy
 def test_a_failed_data_band_resumes_with_its_finished_runs(rig, tmp_path, monkeypatch):
     import alignair_assay.workflow.diagnose as diagnose
     from alignair_lab import databand

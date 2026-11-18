@@ -73,6 +73,7 @@ def test_local_paths_ignore_revision_and_registry_configuration(tmp_path, monkey
     path = tmp_path / "model.alignair"
     path.write_bytes(b"local")
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))   # the home ``~`` expands to on Windows, where HOME is not read
     def refuse(**kwargs):
         raise AssertionError("local paths must not read registry configuration")
     monkeypatch.setattr(sources, "resolve_sources", refuse)
@@ -110,7 +111,8 @@ def test_a_configured_registry_resolves_the_model(configuration, tmp_path, monke
     else:
         cfg = tmp_path / "config"
         cfg.mkdir()
-        (cfg / "config.toml").write_text(f'registries = ["{src}"]\n')
+        # a TOML literal string ('...'), as a Windows path needs: a basic string ("...") reads its backslashes as escapes
+        (cfg / "config.toml").write_text(f"registries = ['{src}']\n")
         monkeypatch.setenv("ALIGNAIR_CONFIG_DIR", str(cfg))
     path = cache.resolve_model("human-igh@2.1.0", **kwargs)
     assert hashlib.sha256(path.read_bytes()).hexdigest() == sha

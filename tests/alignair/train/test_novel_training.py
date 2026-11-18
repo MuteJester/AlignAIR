@@ -27,6 +27,7 @@ def trained(config, path):
     return run, records
 
 
+@pytest.mark.heavy
 def test_a_novel_allele_run_trains_on_their_reads_and_saves_the_dataconfigs_reference(tmp_path):
     run, records = trained(request(steps=6, batch_size=16), tmp_path / "novel.alignair")
     assert any(NOVEL_FIELD in record for _, batch in records for record in batch)
@@ -42,6 +43,7 @@ def test_a_run_without_novel_alleles_records_none(tmp_path):
     assert "novel_alleles" not in read_metadata(run.model_path)["training"]["train_args"]
 
 
+@pytest.mark.heavy
 def test_parallel_training_with_novel_alleles_reproduces_the_serial_records_and_weights(tmp_path):
     import torch
     serial, serial_records = trained(request(steps=4, batch_size=16), tmp_path / "serial.alignair")
@@ -51,6 +53,7 @@ def test_parallel_training_with_novel_alleles_reproduces_the_serial_records_and_
     assert left.keys() == right.keys() and all(torch.equal(value, right[key]) for key, value in left.items())
 
 
+@pytest.mark.heavy
 def test_a_novel_allele_run_validates_on_batches_with_their_rows(tmp_path, capsys):
     trained(request(steps=2, batch_size=16, val_every=1), tmp_path / "validated.alignair")
     assert "VAL score" in capsys.readouterr().out

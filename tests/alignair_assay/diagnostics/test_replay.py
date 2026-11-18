@@ -54,6 +54,7 @@ def _inputs(s0_reads) -> tuple[list[str], list[str]]:
 # --- equivalence with the product -----------------------------------------------------------------------------
 
 @pytest.mark.parametrize("variant", ["igh", "igh_varied_orientation", "igk", "unshaped"])
+@pytest.mark.heavy
 def test_replay_equals_product_pipeline_untrained_model(variant, make_shaped_model, make_small_model, s0_reads):
     model, reference_set = (make_small_model("HUMAN_IGH_OGRDB", seed=0) if variant == "unshaped"
                             else make_shaped_model(variant))
@@ -345,6 +346,7 @@ def test_calls_replace_the_selected_alleles(make_shaped_model, s0_reads):
         _sub(model, reference_set, seqs, ids, calls={"v": [GeneCall((), ())] * n})
 
 
+@pytest.mark.heavy
 def test_germline_alignments_replace_the_matcher(make_shaped_model, s0_reads, monkeypatch):
     model, reference_set = make_shaped_model("igh")
     ids, seqs = _inputs(s0_reads)
@@ -475,6 +477,7 @@ def test_a_product_stage_change_reaches_the_replay(small_model, s0_reads, monkey
     assert all(len(call.names) == 1 for call in out.calls["v"])
 
 
+@pytest.mark.heavy
 def test_scattered_germline_substitutions_land_on_their_reads(make_shaped_model, s0_reads, monkeypatch):
     model, reference_set = make_shaped_model("igh")
     ids, seqs = _inputs(s0_reads)
@@ -493,6 +496,7 @@ def test_scattered_germline_substitutions_land_on_their_reads(make_shaped_model,
     assert matched == [n - len(held)] and out.airr_rows == base.airr_rows
 
 
+@pytest.mark.heavy
 def test_a_substituted_v_call_holds_its_read_out_of_better_v(make_shaped_model, s0_reads):
     model, reference_set = make_shaped_model("igh")
     ids, seqs = _inputs(s0_reads)

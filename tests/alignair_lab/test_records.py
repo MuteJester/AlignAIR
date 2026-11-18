@@ -466,6 +466,7 @@ def test_a_policy_with_inverted_ds_records_their_share_in_the_manifest():
     assert set(fields) - {"inverted_d"} == set(policy_fields(POLICY))
 
 
+@pytest.mark.heavy
 def test_a_novel_cache_written_in_segments_is_the_serial_stream(tmp_path):
     from alignair.reference.variants import NOVEL_FIELD
     from alignair.train.records.novel import NovelAlleles

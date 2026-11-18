@@ -150,6 +150,7 @@ markers = [
     "model_validation: Requires pre-fetched checksum-pinned public model artifacts",
     "performance: Resource-behavior checks with explicit budgets",
     "slow: Slow tests (real model/reference; excluded from fast runs via -m 'not slow')",
+    "heavy: Trains a model, a lab screen or a record cache end to end, minutes on a 4-CPU CI runner: CI runs them in a job of their own with a longer per-test timeout (-m heavy), the other test jobs without them (-m 'not heavy')",
 ]
 
 [tool.coverage.run]

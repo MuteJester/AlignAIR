@@ -5,7 +5,7 @@ import torch
 from alignair.cli.main import main
 from alignair.model_file import load_model
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.heavy]
 
 
 def _demo_weights(out):

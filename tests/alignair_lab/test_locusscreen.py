@@ -30,6 +30,7 @@ def _options(rig, igk_build, tmp_path, **extra):
 
 
 @pytest.mark.timeout(1800)
+@pytest.mark.heavy
 def test_the_locus_screen_trains_each_arm_and_scores_each_locus(rig, igk_build, tmp_path, monkeypatch):
     """A screen whose scoring fails is recorded failed; run again, it resumes with every finished run reused, then
     scores each locus."""
@@ -80,6 +81,7 @@ def test_an_arm_scored_on_a_locus_without_a_build_is_refused(rig, igk_build, tmp
     assert not any(tmp_path.iterdir())
 
 
+@pytest.mark.heavy
 def test_reused_runs_are_checked_and_a_mismatch_stops_the_screen(rig, igk_build, tmp_path):
     from alignair_lab.runs import train_run
     reused = tmp_path / "reused"

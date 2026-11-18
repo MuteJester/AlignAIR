@@ -45,6 +45,7 @@ def test_an_unversioned_name_is_refused(scratch_registry, name):
 
 
 @pytest.mark.parametrize('name', architectures.registered())
+@pytest.mark.heavy
 def test_a_candidate_trains_reloads_and_resumes(name, tmp_path):
     request = TrainingConfig.from_genairr('HUMAN_IGH_OGRDB', steps=2, batch_size=2, device='cpu', seed=31,
                                           val_every=1, model_options={'architecture': name, **SMALL})
@@ -63,6 +64,7 @@ def test_a_candidate_trains_reloads_and_resumes(name, tmp_path):
     assert steps == [3] and read_training_state(resumed.model_path).step == 3
 
 
+@pytest.mark.heavy
 def test_data_workers_never_build_a_model(scratch_registry, tmp_path):
     """The candidate is registered in this process only: a spawned worker that built a model could not find it."""
     import GenAIRR.data as gd

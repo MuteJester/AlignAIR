@@ -813,12 +813,13 @@ python -m pytest`}
         Every test declares exactly one layer, usually with <code>pytestmark</code> at the top of its module:{" "}
         <code>component</code> (deterministic contracts, with injected inputs where needed), <code>integration</code> (the
         real simulator, processes, files) or <code>acceptance</code> (public guarantees). Collection fails otherwise
-        (&ldquo;declare exactly one QA layer&rdquo;). Four more markers describe what a test needs:
+        (&ldquo;declare exactly one QA layer&rdquo;). Five more markers describe what a test needs:
       </p>
       <DocTable
         head={["Marker", "Meaning"]}
         rows={[
           [<code>slow</code>, <>A real model or reference; leave it out of fast runs with <code>-m "not slow"</code>.</>],
+          [<code>heavy</code>, <>Trains a model, a lab screen or a record cache end to end: minutes on a 4-CPU machine. CI runs them in a job of their own (<code>-m heavy --timeout=1800</code>) and the other test jobs with <code>-m "not heavy"</code>.</>],
           [<code>performance</code>, "Resource behaviour with an explicit budget."],
           [<code>model_validation</code>, "Needs the pre-fetched, checksum-pinned public models."],
           [<code>claim_evidence</code>, "A test that a release claim names; added automatically."],
