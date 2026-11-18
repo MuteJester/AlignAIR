@@ -9,8 +9,9 @@ import json
 import platform
 import sys
 
-_CRITICAL = ("torch", "numpy")
-_OPTIONAL = ("pandas", "GenAIRR", "safetensors", "zstandard", "huggingface_hub", "parasail")
+# import names of the core dependencies (pyproject `dependencies`) and of the optional extras (`zstd`, `hub`)
+_CRITICAL = ("torch", "numpy", "GenAIRR", "safetensors", "yaml", "platformdirs")
+_OPTIONAL = ("zstandard", "huggingface_hub")
 
 
 def register(sub) -> None:
@@ -28,6 +29,7 @@ def _module_version(name: str) -> str:
 
 
 def diagnostics() -> dict:
+    """The environment report: versions, devices, kernels and the cache and config directories."""
     from .. import __version__
     info = {"alignair": __version__, "python": sys.version.split()[0],
             "platform": platform.platform(), "executable": sys.executable}
@@ -40,24 +42,30 @@ def diagnostics() -> dict:
             info["mps_available"] = bool(torch.backends.mps.is_available())
     except Exception as e:                             # noqa: BLE001
         info["torch"] = f"MISSING ({e})"
-    for mod in _OPTIONAL + tuple(m for m in _CRITICAL if m != "torch"):
+    for mod in tuple(m for m in _CRITICAL if m != "torch") + _OPTIONAL:
         info[mod] = _module_version(mod)
-    try:                                               # resolved device + per-OS cache/config locations
-        from ..aligner import resolve_device
+    try:                                               # the device "auto" resolves to
+        from ..core.runtime import resolve_device
         info["device_auto"] = resolve_device("auto")
-    except Exception:                                  # noqa: BLE001
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass
-    try:    # germline-CIGAR kernel: the compiled Cython extension, or the pure-Python fallback
-        from ..predict.heuristic_matcher import DERIVE_BACKEND
+    # the two kernels, each on its own: compiled (Cython) when built, else its pure-Python / torch fallback
+    try:
+        from ..predict.germline.cigar import DERIVE_BACKEND
         info["derive_backend"] = DERIVE_BACKEND
-    except Exception:                                  # noqa: BLE001
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
+        pass
+    try:
+        from ..network.refine.v_rescore import VBAND_BACKEND
+        info["vband_backend"] = VBAND_BACKEND
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass
     try:
         from ..registry.cache import cache_root
-        from ..registry.sources import _config_dir
+        from ..registry.sources import config_dir
         info["cache_dir"] = str(cache_root())
-        info["config_dir"] = _config_dir()
-    except Exception:                                  # noqa: BLE001
+        info["config_dir"] = config_dir()
+    except Exception:                                  # noqa: BLE001, S110 - a diagnostic reports what it can read
         pass
     return info
 
@@ -72,5 +80,5 @@ def run(args) -> int:
             print(f"  {k:16s} {v}")
     missing = [m for m in _CRITICAL if str(info.get(m, "")).startswith("MISSING")]
     if missing:
-        print(f"WARNING: missing critical dependency: {missing} — install with `pip install alignair[cli]`")
+        print(f"WARNING: missing core dependency: {missing} — reinstall AlignAIR with `pip install alignair`")
     return 0                                            # doctor is a diagnostic: healthy exit is always 0

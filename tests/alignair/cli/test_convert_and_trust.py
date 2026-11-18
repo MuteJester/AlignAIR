@@ -1,75 +1,63 @@
-""".pt pickle-gating in api.load_model + convert upgrade paths."""
-from argparse import Namespace
+"""AlignAIR 3 checkpoints are refused with the version that reads them, by ``Aligner.from_pretrained`` and by
+``alignair predict``; a safe model file needs no pickle consent."""
 
 import GenAIRR.data as gd
 import pytest
 import torch
 
-from alignair import api
+from alignair import Aligner
 from alignair import model_file as mf
-from alignair.cli import convert
-from alignair.core import AlignAIR
-from alignair.core.config import AlignAIRConfig
-from alignair.model_file import container as C, serialize
+from alignair.core import prepare_model
+from alignair.errors import ModelError
+from alignair.reference import ReferenceSet
+
+pytestmark = pytest.mark.integration
 
 
 def _model():
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
-    return AlignAIR(cfg).eval(), cfg
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=128, embed_dim=4,
+                          trunk_channels=8)
+    return setup.build_model().eval()
 
 
-def _legacy_pt(tmp_path):
-    model, cfg = _model()
-    p = str(tmp_path / "legacy.pt")
-    torch.save({"config": cfg.__dict__, "model": model.state_dict(), "step": 7}, p)
-    return p
+def _v3_pt(tmp_path):
+    path = str(tmp_path / "legacy.pt")
+    torch.save({"config": {"v_allele_count": 2, "j_allele_count": 2}, "model": {}, "step": 7}, path)
+    return path
 
 
-def test_api_load_pt_requires_trust_pickle(tmp_path):
-    p = _legacy_pt(tmp_path)
-    with pytest.raises(ValueError, match="trust"):
-        api.load_model(p, dataconfigs=["HUMAN_IGH_OGRDB"])            # default refuses pickle
-    m, ref = api.load_model(p, dataconfigs=["HUMAN_IGH_OGRDB"], trust_pickle=True)
-    assert m is not None and ref.gene("V").names
+def test_from_pretrained_refuses_a_pt_checkpoint(tmp_path):
+    with pytest.raises(ModelError, match=r"AlignAIR 3 checkpoint .*alignair<4"):
+        Aligner.from_pretrained(_v3_pt(tmp_path), device="cpu")
 
 
-def test_api_load_no_pickle_alignair_needs_no_trust(tmp_path):
-    model, _ = _model()
+def test_from_pretrained_needs_no_trust_for_a_pickle_free_model_file(tmp_path):
     p = str(tmp_path / "m.alignair")
-    mf.save_model(p, model, dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
+    mf.save_model(p, _model(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"], training={"steps": 1, "batch_size": 1},
                   include_trusted_pickle=False)
-    m, ref = api.load_model(p)                                       # no trust, no dataconfig needed
-    assert m is not None and ref.gene("V").gapped
+    aligner = Aligner.from_pretrained(p, device="cpu")               # no trust, no dataconfig needed
+    assert aligner.model is not None and aligner.reference.gene("V").gapped
 
 
-def test_convert_pt_to_no_pickle_alignair(tmp_path):
-    src = _legacy_pt(tmp_path)
-    dst = str(tmp_path / "out.alignair")
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=["HUMAN_IGH_OGRDB"],
-                                 trust_pickle=False)) == 1           # refuse without trust
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=["HUMAN_IGH_OGRDB"],
-                                 trust_pickle=True)) == 0
-    secs = mf.read_metadata(dst)["sections"]
-    assert "reference_json" in secs and not any(k.startswith("dataconfig/") for k in secs)
-    m, ref = api.load_model(dst)                                     # safe-loadable, no trust
-    assert m is not None
+def test_predict_refuses_a_pt_checkpoint_with_the_version_that_runs_it(tmp_path, capsys):
+    from alignair.cli.main import main
+    reads = tmp_path / "reads.fasta"
+    reads.write_text(">r\nACGT\n")
+    rc = main(["predict", "--model", _v3_pt(tmp_path), "--input", str(reads), "--out", str(tmp_path / "out.tsv"),
+               "--offline", "--quiet"])
+    err = capsys.readouterr().err
+    assert rc != 0 and "AlignAIR 3 checkpoint" in err and "alignair<4" in err
+    assert not (tmp_path / "out.tsv").exists()
 
 
-def test_convert_legacy_alignair_upgrades_to_safe(tmp_path):
-    # craft a legacy .alignair WITH pickle dataconfig but NO reference_json, then upgrade it
-    model, cfg = _model()
-    header = {"format_version": 1, "model_class": "AlignAIR",
-              "training": {"steps": 3, "batch_size": 2},
-              "reference": {"dataconfigs": [{"index": 0, "section": "dataconfig/0", "name": "HUMAN_IGH_OGRDB"}]},
-              "_formats": {"config": "json", "weights": "safetensors", "dataconfig/0": "python-pickle"}}
-    src = str(tmp_path / "legacy.alignair")
-    C.write_container(src, header, {
-        "config": (serialize.config_to_bytes(cfg), "zlib"),
-        "weights": (serialize.state_dict_to_bytes(model.state_dict()), "none"),
-        "dataconfig/0": (serialize.dataconfig_to_bytes(gd.HUMAN_IGH_OGRDB), "zstd")})
-    dst = str(tmp_path / "upgraded.alignair")
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=False)) == 1
-    assert convert.run(Namespace(src=src, dst=dst, dataconfig=None, trust_pickle=True)) == 0
-    secs = mf.read_metadata(dst)["sections"]
-    assert "reference_json" in secs and not any(k.startswith("dataconfig/") for k in secs)
-    api.load_model(dst)                                              # now safe-loadable
+@pytest.mark.parametrize("payload,message", [(None, "model file does not exist"), (b"", "not an AlignAIR model file"),
+                                             (b">read\nACGT\n", "not an AlignAIR model file")],
+                         ids=["missing", "empty", "fasta"])
+def test_a_file_that_is_no_checkpoint_is_not_called_an_alignair_3_one(tmp_path, payload, message):
+    path = tmp_path / "model.alignair"
+    if payload is not None:
+        path.write_bytes(payload)
+    with pytest.raises(ModelError, match=message) as caught:
+        Aligner.from_pretrained(str(path), device="cpu")
+    assert "alignair<4" not in str(caught.value)

@@ -1,0 +1,114 @@
+[
+  {
+    "id": "alignair4-igh-human",
+    "locus": "IGH",
+    "chain": "BCR_HEAVY",
+    "species": "Human",
+    "germline_set": "HUMAN_IGH_OGRDB",
+    "naming": "OGRDB",
+    "alleles": {
+      "V": 198,
+      "D": 33,
+      "J": 7
+    },
+    "training_steps": 320000,
+    "licence": "GPL-3.0-or-later",
+    "anchor": "alignair4-igh-human"
+  },
+  {
+    "id": "alignair4-igk-human",
+    "locus": "IGK",
+    "chain": "BCR_LIGHT_KAPPA",
+    "species": "Human",
+    "germline_set": "HUMAN_IGK_OGRDB",
+    "naming": "OGRDB",
+    "alleles": {
+      "V": 168,
+      "D": 0,
+      "J": 8
+    },
+    "training_steps": 320000,
+    "licence": "GPL-3.0-or-later",
+    "anchor": "alignair4-igk-human"
+  },
+  {
+    "id": "alignair4-igl-human",
+    "locus": "IGL",
+    "chain": "BCR_LIGHT_LAMBDA",
+    "species": "Human",
+    "germline_set": "HUMAN_IGL_OGRDB",
+    "naming": "OGRDB",
+    "alleles": {
+      "V": 181,
+      "D": 0,
+      "J": 10
+    },
+    "training_steps": 320000,
+    "licence": "GPL-3.0-or-later",
+    "anchor": "alignair4-igl-human"
+  },
+  {
+    "id": "alignair4-tra-human",
+    "locus": "TRA",
+    "chain": "TCR_ALPHA",
+    "species": "Human",
+    "germline_set": "HUMAN_TCRA_IMGT",
+    "naming": "IMGT",
+    "alleles": {
+      "V": 76,
+      "D": 0,
+      "J": 68
+    },
+    "training_steps": 320000,
+    "licence": "GPL-3.0-or-later",
+    "anchor": "alignair4-tra-human"
+  },
+  {
+    "id": "alignair4-trb-human",
+    "locus": "TRB",
+    "chain": "TCR_BETA",
+    "species": "Human",
+    "germline_set": "HUMAN_TCRB_IMGT",
+    "naming": "IMGT",
+    "alleles": {
+      "V": 98,
+      "D": 3,
+      "J": 16
+    },
+    "training_steps": 340000,
+    "licence": "GPL-3.0-or-later",
+    "anchor": "alignair4-trb-human"
+  },
+  {
+    "id": "alignair4-trd-human",
+    "locus": "TRD",
+    "chain": "TCR_DELTA",
+    "species": "Human",
+    "germline_set": "HUMAN_TCRD_IMGT",
+    "naming": "IMGT",
+    "alleles": {
+      "V": 14,
+      "D": 3,
+      "J": 4
+    },
+    "training_steps": 340000,
+    "licence": "GPL-3.0-or-later",
+    "anchor": "alignair4-trd-human"
+  },
+  {
+    "id": "alignair4-trg-human",
+    "locus": "TRG",
+    "chain": "TCR_GAMMA",
+    "species": "Human",
+    "germline_set": "HUMAN_TCRG_IMGT",
+    "naming": "IMGT",
+    "alleles": {
+      "V": 20,
+      "D": 0,
+      "J": 6
+    },
+    "training_steps": 320000,
+    "licence": "GPL-3.0-or-later",
+    "anchor": "alignair4-trg-human"
+  }
+]

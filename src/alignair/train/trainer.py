@@ -1,499 +1,316 @@
-"""Training loop for the faithful AlignAIR model on the GenAIRR gym stream.
-
-``build_batch`` adapts the reusable ``gym_collate`` output (tokens, query coords, allele multi-hot,
-mutation/indel/productive) into the model's input + target dicts. ``train_step`` runs one
-optimizer step and applies the TF weight *constraints* (analysis-head kernel clamps + Kendall
-log-var clamps) after ``optimizer.step()``.
-"""
+"""Training loop for the AlignAIR model on GenAIRR record streams."""
 from __future__ import annotations
 
-import glob
 import itertools
-import os
-import re
-import shutil
+import math
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
-import torch
-import torch.nn.functional as F
+from ..core.runtime import restore_model_state
+from ..core.setup import ModelSetup
+from ..data.training import prepare_training_data
+from ..errors import ConfigurationError, ModelNotFoundError, error_context
+from ..genairr.catalog import dataconfig_name
+from ..genairr.identity import recorded_genairr_source
+from ..io.files import sha256_file
+from ..tasks import TrainingTasks, build_tasks
+from .checkpoints import (
+    best_checkpoint_path,
+    latest_checkpoint,
+    load_training_checkpoint,
+    save_checkpoint,
+    save_rotating,
+    validate_continuation,
+)
+from .loop import training_iterations
+from .random_state import restore_rng_state as _restore_rng
+from .records.streams import (
+    INDEL_FORM,
+    CurriculumStreamPolicy,
+    effective_mutation_caps,
+    selection_supported,
+    training_records,
+)
+from .setup import build_training_engine
 
-from ..core.config import AlignAIRConfig
-from .gym import build_experiment, build_targets, gym_collate
-from ..nn.heads.orientation import NUM_ORIENTATIONS, apply_orientation
+if TYPE_CHECKING:
+    from .config import TrainingConfig
 
-
-def build_batch(records, reference_set, cfg: AlignAIRConfig, device: str = "cpu",
-                augment_orientation: bool = True):
-    """(records, reference) -> (model_input, targets), tokens padded/truncated to max_seq_length.
-
-    The gym stream is forward-only, so ``augment_orientation`` applies a random orientation (one of
-    4) to each read's tokens and supplies the label — the model learns to detect and self-correct it,
-    while the segmentation/allele targets stay in the forward frame (correction re-canonicalizes).
-    """
-    bundles = [build_targets(r, reference_set, cfg.has_d) for r in records]
-    b = gym_collate(bundles, reference_set, cfg.has_d)
-    L = cfg.max_seq_length
-    tok = b["tokens"]
-    tok = F.pad(tok, (0, L - tok.shape[1])) if tok.shape[1] < L else tok[:, :L]
-
-    if augment_orientation:
-        orient = torch.randint(0, NUM_ORIENTATIONS, (tok.shape[0],))
-        tok = apply_orientation(tok, tok != 0, orient)
-    else:
-        orient = torch.zeros(tok.shape[0], dtype=torch.long)
-    batch_in = {"tokenized_sequence": tok.to(device), "orientation": orient.to(device)}
-
-    genes = ["v", "j"] + (["d"] if cfg.has_d else [])
-    targets: dict = {}
-    for g in genes:
-        targets[f"{g}_start"] = b[f"{g}_start"].float().unsqueeze(-1).to(device)
-        targets[f"{g}_end"] = b[f"{g}_end"].float().unsqueeze(-1).to(device)
-        targets[f"{g}_allele"] = b[f"{g}_allele"].to(device)
-    for k in ("mutation_rate", "indel_count", "productive"):
-        targets[k] = b[k].to(device)
-    targets["orientation"] = orient.to(device)
-    if getattr(cfg, "num_chain_types", 1) > 1:        # multi-chain: supervise the chain_type/locus head
-        targets["chain_type"] = b["chain_type"].to(device)
-    # per-position edit-state labels (forward frame; the model canonicalizes internally) padded to L
-    st = b["state_labels"]
-    st = F.pad(st, (0, L - st.shape[1]), value=-100) if st.shape[1] < L else st[:, :L]
-    targets["state_labels"] = st.to(device)
-    return batch_in, targets
+# The id of how a run's curriculum records and targets are built, recorded as ``train_args["recipe"]``; it changes
+# whenever the records or targets a run of the same options trains on change. "v4": every stream draws from its own
+# reserved seed block, a selected fraction of each full-length component is drawn under productive_only(), the
+# sequencing errors are at the chip's level (``SEQUENCING_ERROR_SCALE``), and the allele-set and mutation-rate targets
+# are ``data.targets``'. The record mix it draws is ``records.streams.CurriculumStreamPolicy``'s.
+RECIPE = 'v4'
 
 
-def train_step(model, batch_in, targets, cfg, logvars, opt, *, step: int = 0, grad_clip=None):
-    """One optimizer step. Aborts (``NonFiniteLossError``) if the loss is NaN/Inf *before* corrupting
-    the weights; measures the gradient norm and clips to ``grad_clip`` when given. Returns
-    ``(total, parts, grad_norm)``."""
-    from ..core.losses import hierarchical_loss
-    from .guards import NonFiniteLossError, check_finite_loss
-    model.train()
-    out = model(batch_in)
-    total, parts = hierarchical_loss(out, targets, cfg, logvars)
-    parts_f = {k: float(v.detach()) for k, v in parts.items()}
-    check_finite_loss(step, float(total.detach()), parts_f)     # fail fast, before backward corrupts grads
-    opt.zero_grad()
-    total.backward()
-    # a finite loss can still have non-finite GRADIENTS (e.g. d/dx sqrt(x) at 0); reject them BEFORE
-    # clipping/stepping — otherwise the step corrupts the weights. clip_grad_norm_ itself
-    # turns an inf grad into NaN, so this check must precede it.
-    if not all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters()):
-        raise NonFiniteLossError(f"non-finite gradient at step {step} (loss was finite: {float(total):.3g}). "
-                                 f"Lower the learning rate or add gradient clipping (--grad-clip).")
-    # grads are now finite: measure the norm (inf clip = measure-only) or clip to `grad_clip`
-    grad_norm = float(torch.nn.utils.clip_grad_norm_(model.parameters(),
-                                                     grad_clip if grad_clip is not None else float("inf")))
-    opt.step()
-    model.clamp_params()                       # analysis-head kernel constraints
-    for uw in logvars.values():
-        uw.apply_constraints()                 # Kendall log-var clamp
-    return float(total.detach()), parts_f, grad_norm
+@dataclass(frozen=True)
+class TrainingOutcome:
+    """This invocation's completed updates and best checkpoint, never inferred from old files."""
+    model: object
+    steps: int
+    best_model_path: str | None
 
 
-def save_checkpoint(path, cfg, model, logvars, step, opt=None, *, dataconfigs=None, train_args=None):
-    """Write a self-contained .alignair model file (weights + config + logvars + optimizer + RNG
-    states + embedded dataconfig + training summary) — everything needed to CONTINUE training."""
-    import random
-
-    import numpy as np
-
-    from .. import model_file as mf
-    rng = {"python": random.getstate(), "numpy": np.random.get_state(), "torch": torch.get_rng_state()}
-    if torch.cuda.is_available():
-        rng["cuda"] = torch.cuda.get_rng_state_all()
-    ta = dict(train_args or {})
-    training = {"steps": step, "batch_size": ta.get("batch_size", 0), "lr": ta.get("lr"),
-                "progresses": ta.get("progresses"), "heavy_shm": ta.get("heavy_shm"),
-                "short_boost": ta.get("short_boost"), "seed": ta.get("seed"), "train_args": ta}
-    mf.save_model(path, model, dataconfigs=dataconfigs or [], training=training,
-                  logvars=logvars, optimizer=opt, rng=rng)
-
-
-def _ext(path: str) -> str:
-    for e in (".alignair", ".pt"):
-        if path.endswith(e):
-            return e
-    return ".alignair"
-
-
-def _stem(base_path: str) -> str:
-    e = _ext(base_path)
-    return base_path[:-len(e)] if base_path.endswith(e) else base_path
-
-
-def _step_of(path: str) -> int:
-    m = re.search(r"\.step(\d+)\.(?:alignair|pt)$", path)
-    return int(m.group(1)) if m else -1
-
-
-def save_rotating(base_path, cfg, model, logvars, step, opt, keep=3, *, dataconfigs=None, train_args=None):
-    """Write a full resumable .alignair into a rotating cycle of `keep` step-named files (so the
-    3 latest states are always retained), and refresh `base_path` as a copy of the newest (for
-    convenient --resume / benchmarking). A killed save can't corrupt older slots."""
-    stem, ext = _stem(base_path), _ext(base_path)
-    path = f"{stem}.step{step}{ext}"
-    save_checkpoint(path, cfg, model, logvars, step, opt, dataconfigs=dataconfigs, train_args=train_args)
-    shutil.copyfile(path, base_path)                      # base == newest
-    for old in sorted(glob.glob(f"{stem}.step*{ext}"), key=_step_of)[:-keep]:
-        if old != path:
-            try:
-                os.remove(old)
-            except OSError:
-                pass
-    return path
-
-
-def latest_checkpoint(base_path):
-    """Highest-step rotating checkpoint (falls back to base_path), or None if nothing exists."""
-    stem = _stem(base_path)
-    files = glob.glob(f"{stem}.step*.alignair") + glob.glob(f"{stem}.step*.pt")
-    if files:
-        return max(files, key=_step_of)
-    return base_path if os.path.exists(base_path) else None
-
-
-def _stream_records(dataconfig, params, seed):
-    p = dict(params)
-    p.setdefault("invert_d_prob", 0.0)
-    exp = build_experiment(dataconfig, p, allow_curatable=True)
-    yield from exp.stream_records(n=None, seed=seed)
-
-
-def _amplicon_specs(progresses, heavy_shm, short_boost=1, mutation_cap=None):
-    """Training data mix as two orthogonal axes: corruption background (curriculum ``progress``) x
-    amplicon mode (GenAIRR ``end_loss`` profile). All short-read shaping is native GenAIRR end-loss —
-    no post-hoc cropping — so every V/D/J coordinate is engine-correct.
-
-    - ``progresses`` streams: full-length reads at increasing corruption (rehearsal + noise).
-    - amplicon streams: short reads by *one-sided* end-loss (never trimmed to empty) — V/FR-anchored
-      keeps the 5' (trims 3'), J-anchored keeps the 3'/J (trims 5'); plus a bounded both-ends fragment.
-    - heavy-SHM stream: full-length high-mutation (the heavy-SHM-V corner).
-
-    ``short_boost`` repeats the amplicon block N times to up-weight short reads (as independent
-    seeded streams) — e.g. a fine-tune that concentrates on short/cropped reads while retaining the
-    full-length rehearsal streams. ``short_boost=1`` is the default balanced mix.
-    """
-    from .gym import Curriculum
-    cur = Curriculum()
-    specs = [dict(cur.params(pr)) for pr in progresses]        # full-length, corruption ramp
-    bg = dict(cur.params(0.6))                                 # moderate corruption background
-
-    def amp(e5, e3):
-        s = dict(bg); s["end_loss_5"] = e5; s["end_loss_3"] = e3
-        return s
-
-    amplicons = [
-        amp((0, 15), (150, 350)),                             # V / FR-anchored amplicon (keep 5')
-        amp((150, 350), (0, 15)),                             # J-anchored amplicon (keep 3'/J)
-        amp((70, 175), (70, 175)),                            # short fragment (both ends, bounded)
-    ]
-    specs += amplicons * max(1, int(short_boost))
-    if heavy_shm > 0:
-        hs = dict(cur.params(0.3)); hs["mutation_rate"] = heavy_shm   # heavy-SHM, full length
-        specs.append(hs)
-    if mutation_cap is not None:                    # loci without SHM (TCR): cap the S5F mutation rate
-        for s in specs:
-            s["mutation_rate"] = min(s["mutation_rate"], mutation_cap)
-    return specs
-
-
-def _is_tcr(dataconfig) -> bool:
-    """TCR loci do not undergo somatic hypermutation (T-cells lack AID), and GenAIRR refuses
-    ``mutate()`` on them."""
-    return "TCR" in str(getattr(dataconfig.metadata, "chain_type", "")).upper()
-
-
-def _cap_for(dataconfig, mutation_cap):
-    """The SHM cap for ONE locus's stream. A TCR locus is always capped to 0 regardless of the
-    run-level cap; an IG locus keeps the run-level cap (normally ``None`` = uncapped). Deriving this
-    per dataconfig is what lets a MIXED IG+TCR run keep full SHM on its IG streams — a single global
-    cap (``0.0`` if any locus is TCR) would wrongly disable SHM for IGH."""
-    return 0.0 if _is_tcr(dataconfig) else mutation_cap
-
-
-def _dc_name(dataconfig) -> str:
-    """A stable, human-meaningful key for one dataconfig: its canonical GenAIRR name (e.g.
-    ``HUMAN_TCRA_IMGT``) for a built-in, else its own name, else its chain type (custom references)."""
+def _novel_policy(policy: CurriculumStreamPolicy, dataconfigs, reference_set) -> tuple[CurriculumStreamPolicy,
+                                                                                       str | None]:
+    """``(policy, unavailable)``: the policy the run draws its records with, and why it draws no novel alleles though
+    ``policy`` asks for them (None when it draws them, or none were asked for). Novel alleles cannot be drawn for a
+    reference of several species or of none, or for a dataconfig with no eligible V (``_check_novel_alleles``); the
+    run then trains on the reference's alleles alone, as a run GenAIRR cannot select records for trains unselected."""
+    if policy.novel_alleles is None:
+        return policy, None
     try:
-        import GenAIRR.data as gd
-        # `vars()` = already-materialized module attributes only, so this never triggers a lazy build
-        # of every shipped dataconfig (a dir()+getattr scan does, and costs ~0.5s).
-        for k, v in vars(gd).items():
-            if v is dataconfig and not k.startswith("_"):
-                return k
-    except Exception:                                  # noqa: BLE001 - naming must never break training
-        pass
-    name = getattr(dataconfig, "name", None)
-    if name and str(name).strip().lower() not in ("none", "unnamed"):
-        return str(name)
-    ct = getattr(getattr(dataconfig, "metadata", None), "chain_type", "unknown")
-    return str(getattr(ct, "value", ct))
+        _check_novel_alleles(dataconfigs, reference_set, policy.novel_alleles)
+    except ConfigurationError as error:
+        if error.context.get("field") != "novel_alleles":
+            raise
+        print(f"novel alleles unavailable: {error.message}; the run trains on the reference's alleles alone",
+              flush=True)
+        return replace(policy, novel_alleles=None), error.message
+    return policy, None
 
 
-def _effective_mutation_caps(dataconfigs, mutation_cap) -> dict:
-    """The SHM cap ACTUALLY applied to each locus's stream, keyed by dataconfig name.
-
-    The run-level ``mutation_cap`` is only the *request*; TCR loci are always capped to 0
-    (:func:`_cap_for`). A checkpoint that recorded only the request would misstate the training
-    distribution — e.g. a TRA run would read ``mutation_cap: null, heavy_shm: 0.25`` while every TRA
-    stream actually saw zero SHM. Recording the effective per-locus caps makes the card reproducible."""
-    out: dict = {}
-    for i, dc in enumerate(dataconfigs):
-        key = _dc_name(dc)
-        if key in out:                                 # two panels of one locus: keep both, disambiguated
-            key = f"{key}#{i}"
-        out[key] = _cap_for(dc, mutation_cap)
-    return out
-
-
-def _mixed_stream(dataconfig, progresses, heavy_shm, seed, short_boost=1, mutation_cap=None):
-    """Round-robin the amplicon-mode mix (:func:`_amplicon_specs`) so every batch spans full-length
-    clean/hard + heavy-SHM + V-anchored/J-anchored/fragment short reads, all GenAIRR-native. The SHM
-    cap is resolved for THIS locus (:func:`_cap_for`), so each locus in a multi-locus run gets its own
-    biology."""
-    specs = _amplicon_specs(progresses, heavy_shm, short_boost, _cap_for(dataconfig, mutation_cap))
-    streams = [_stream_records(dataconfig, s, seed + i) for i, s in enumerate(specs)]
-    yield from itertools.chain.from_iterable(zip(*streams))
+def _check_novel_alleles(dataconfigs, reference_set, spec) -> None:
+    """ConfigurationError unless every dataconfig has an eligible V (``novel_support``) and every locus of the reference
+    is of one and the same species (one species per model); prints what each epoch draws."""
+    from .records.novel import novel_support
+    species = {info.species for info in reference_set.loci}
+    if None in species:
+        raise ConfigurationError("novel alleles train a model of one named species; the reference names none (a "
+                                 "custom reference)", context={"field": "novel_alleles"})
+    if len(species) != 1:
+        raise ConfigurationError(f"novel alleles train a model of one species; the reference's loci are of "
+                                 f"{sorted(species)}", context={"field": "novel_alleles"})
+    for dataconfig in dataconfigs:
+        genes = novel_support(dataconfig, spec)
+        print(f"novel alleles: {dataconfig_name(dataconfig)}: {max(1, round(spec.gene_fraction * genes))} of {genes} "
+              f"eligible V genes per epoch of {spec.epoch_records} records", flush=True)
 
 
-def _multi_locus_stream(dataconfigs, progresses, heavy_shm, seed, short_boost=1, mutation_cap=None):
-    """Interleave each locus's :func:`_mixed_stream`, tagging every record with its chain **class id**
-    (the index of its locus among the DISTINCT loci, == the ``AlignAIRConfig`` chain_type order) so the
-    collate builds valid chain_type/locus supervision even when two dataconfigs share a locus (e.g. two
-    IGH panels) — labelling by raw dataconfig position would emit an out-of-range class.
-    Reads are drawn round-robin across dataconfigs for a balanced batch."""
-    from ..reference.reference_set import _locus_of
-    order: list = []
-    for dc in dataconfigs:
-        lc = _locus_of(dc.metadata.chain_type)
-        if lc not in order:
-            order.append(lc)
-    class_of = [order.index(_locus_of(dc.metadata.chain_type)) for dc in dataconfigs]
+def _train(setup: ModelSetup, model, sources, config: TrainingConfig, policy: CurriculumStreamPolicy, *,
+           device: str = "cpu", save_path: str | None = None, on_iteration=None, record_source=None,
+           log_every: int = 50, save_every: int = 2000, val_batches: int = 4) -> TrainingOutcome:
+    """Train ``model``, built from ``setup``, for ``config`` on ``policy``'s curriculum records of ``sources`` (the
+    run's resolved dataconfigs); ``run_training`` is the public way in, and ``config.record_policy()`` its policy.
 
-    def tagged(stream, ci):
-        for rec in stream:
-            rec["chain_type"] = ci
-            yield rec
-    streams = [tagged(_mixed_stream(dc, progresses, heavy_shm, seed + 1013 * i, short_boost, mutation_cap),
-                      class_of[i]) for i, dc in enumerate(dataconfigs)]
-    yield from itertools.chain.from_iterable(zip(*streams))
+    ``policy.indel_fraction`` weights the curriculum's polymerase-indel counts
+    (``records.streams.CurriculumStreamPolicy``), and ``policy.selected_fraction`` of each full-length component's
+    records are drawn under GenAIRR's ``productive_only()``. The run records them in ``train_args`` with its ``recipe``
+    (``RECIPE``) and each component's selected share. When GenAIRR cannot draw productive records from one of
+    ``sources`` (``records.streams.selection_supported``), the run draws no selected records, says so, and lists those
+    references in ``train_args["selection_unavailable"]``; when novel alleles cannot be drawn for them
+    (``_novel_policy``), it draws none, says so, and records why in ``train_args["novel_alleles_unavailable"]``.
+    ``train_args["flanks"]`` records the policy's flanks, and a run with inverted Ds records
+    ``train_args["inverted_d"]``.
 
+    ``record_source`` (``records.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces the
+    GenAIRR provider of every curriculum stream of the run: training and validation. With
+    ``config.data_workers`` > 0 it runs in the worker processes, so it must be picklable (a module-level function or a
+    picklable object). None generates the records with GenAIRR.
 
-def _restore_rng(rng: dict) -> None:
-    """Restore Python/NumPy/Torch(/CUDA) RNG state saved in a checkpoint so resumed augmentation,
-    dropout and shuffling continue from the same generators. The GenAIRR data *stream* is
-    re-seeded by ``seed + start`` — resume is statistically reproducible, not bitwise (a mid-stream
-    generator position is not restored); this restores everything else."""
-    if not rng:
-        return
-    import random
-
-    import numpy as np
+    ``train_args`` also record the run's provenance: ``init_seed``, the seed the caller drew the model's initial
+    weights from (``TrainingConfig.init_seed``; None: from ``seed``), ``grad_clip``, ``started_from`` (None for a
+    run from its initial weights, ``"resume"`` or ``"init_from"``; either of these also records the
+    ``source_checkpoint_sha256``) and the ``genairr_source_sha256`` of the GenAIRR it imports
+    (``genairr_source_sha256``; None when a file of the package cannot be read).
+    """
+    tasks, sources = _preflight(setup, model, sources, record_source=record_source, on_iteration=on_iteration)
+    reference_set, steps, batch_size, val_every = setup.reference, config.steps, config.batch_size, config.val_every
+    data = prepare_training_data(setup, device=device)
+    schedule = config.schedule
+    schedule_metadata = schedule.to_dict() if schedule is not None else None
+    # before any record is drawn: an eligible V, one species, GenAIRR's consent
+    novel_policy, novel_unavailable = _novel_policy(policy, sources, reference_set)
+    source_policy, unselectable = _record_policy(novel_policy, sources)
+    engine = build_training_engine(model, tasks=tasks, device=device, lr=config.lr, grad_clip=config.grad_clip,
+                                   schedule=schedule)
+    # the order that matters: the RNG restore (a resume), then the validation batches, then the training stream
+    start, resume_from = _restore_or_warm_start(model, engine, setup, config, schedule_metadata, device=device)
+    train_args = _train_args(sources, config, policy, source_policy, unselectable, novel_unavailable, schedule_metadata,
+                             started_from="resume" if resume_from else "init_from" if config.init_from else None,
+                             source_checkpoint=resume_from or config.init_from)
+    val_set = _validation_batches(sources, source_policy, data, config, record_source=record_source,
+                                  val_batches=val_batches)
+    stream, batch_adapter, workers = _training_source(sources, source_policy, setup, data, config, start=start,
+                                                      device=device, record_source=record_source)
+    best_score, best_path = float("-inf"), None
+    completed = start                              # last successful update, including early exhaustion
     try:
-        if rng.get("python") is not None:
-            random.setstate(rng["python"])
-        if rng.get("numpy") is not None:
-            np.random.set_state(rng["numpy"])
-        if rng.get("torch") is not None:
-            torch.set_rng_state(_as_byte_tensor(rng["torch"]))
-        if rng.get("cuda") is not None and torch.cuda.is_available():
-            torch.cuda.set_rng_state_all([_as_byte_tensor(s) for s in rng["cuda"]])
-    except (RuntimeError, ValueError, TypeError) as e:
-        print(f"WARNING: could not fully restore RNG state ({e}); continuing with re-seeded RNG", flush=True)
+        for iteration in training_iterations(engine, stream, batch_adapter, start_step=start,
+                                             stop_step=steps, batch_size=batch_size):
+            step = completed = iteration.step
+            if on_iteration is not None:
+                on_iteration(iteration)
+            if log_every and step % log_every == 0:
+                _log_iteration(iteration, steps)
+            if val_set and step % val_every == 0:  # validation + best-checkpoint selection
+                vscore = _validate(engine, val_set, step, steps)
+                if save_path and not math.isnan(vscore) and vscore > best_score:
+                    best_score, best_path = vscore, best_checkpoint_path(save_path)
+                    save_checkpoint(best_path, model, reference_set, step, engine.optimizer, dataconfigs=sources,
+                                    train_args={**train_args, "val_score": vscore}, scheduler=engine.scheduler)
+            if save_path and save_every and step % save_every == 0:
+                save_rotating(save_path, model, reference_set, step, engine.optimizer, dataconfigs=sources,
+                              train_args=train_args, scheduler=engine.scheduler)
+    finally:
+        if workers is not None:                    # finished, failed or interrupted: no worker outlives the run
+            workers.close()
+    if save_path:                                  # save the ACTUAL completed step, not the requested one
+        save_rotating(save_path, model, reference_set, completed, engine.optimizer, dataconfigs=sources,
+                      train_args=train_args, scheduler=engine.scheduler)
+    return TrainingOutcome(model, completed, best_path)
 
 
-def _as_byte_tensor(state):
-    return state if isinstance(state, torch.Tensor) else torch.tensor(state, dtype=torch.uint8)
+def _preflight(setup: ModelSetup, model, sources, *, record_source, on_iteration) -> tuple[TrainingTasks, list]:
+    """``(tasks, sources)``: the model's tasks and the run's dataconfigs as a list, after refusing a model that is not
+    the setup's and a record source or callback that cannot be called (ConfigurationError). ``TrainingConfig``
+    validated the rest at construction."""
+    model_config = getattr(model, 'cfg', setup.config)
+    if model_config != setup.config:
+        raise ConfigurationError('training configuration differs from the constructed model',
+                                 context={'field': 'config'},
+                                 hint='Construct a new model with the intended configuration before training.')
+    if record_source is not None and not callable(record_source):
+        raise ConfigurationError('record_source must be callable or None', context={'field': 'record_source'})
+    if on_iteration is not None and not callable(on_iteration):
+        raise ConfigurationError('on_iteration must be callable or None')
+    tasks = build_tasks(model_config)
+    return tasks, list(sources) if isinstance(sources, (list, tuple)) else [sources]
 
 
-@torch.no_grad()
-def validate(model, val_batches, cfg) -> tuple[dict, float]:
-    """Mean per-task metrics over a fixed held-out set of ``(input, targets)`` batches, plus a scalar
-    validation score (mean V/D/J allele top-1-in-set — higher is better) used for best-checkpoint
-    selection. The batches are frozen (fixed seed, immutable) so the score is comparable across steps."""
-    was_training = model.training
-    model.eval()
-    agg: dict = {}
-    for inp, tgt in val_batches:
-        for k, v in eval_metrics(model(inp), tgt, cfg).items():
-            agg.setdefault(k, []).append(v)
-    if was_training:
-        model.train()
-    import math as _m
-    mean = {k: (sum(vs) / len(vs)) for k, vs in agg.items() if vs}
-    top1s = [mean[f"{g}_allele_top1"] for g in ("v", "d", "j") if f"{g}_allele_top1" in mean]
-    score = sum(top1s) / len(top1s) if top1s and not any(_m.isnan(x) for x in top1s) else float("nan")
-    return mean, score
+def _record_policy(requested, dataconfigs) -> tuple[CurriculumStreamPolicy, list[str]]:
+    """``(policy, unselectable)``: the policy the run draws its records with, and the dataconfigs GenAIRR cannot draw
+    productive records from (an incompletely annotated custom reference). With any, the whole run draws no selected
+    records, says so, and records them in train_args."""
+    unselectable = ([dataconfig_name(dataconfig) for dataconfig in dataconfigs if not selection_supported(dataconfig)]
+                    if requested.selected_fraction else [])
+    if unselectable:
+        print(f"selection unavailable for {', '.join(unselectable)}: GenAIRR cannot draw productive records from "
+              "it, so the run draws no selected records", flush=True)
+    return (replace(requested, selected_fraction=0) if unselectable else requested), unselectable
 
 
-def eval_metrics(out: dict, targets: dict, cfg) -> dict:
-    """Per-task quality on a batch (AlignAIR heads) — the ModelXRay ``task_eval`` for this model
-    family: allele top-1-in-set, segmentation MAE, orientation accuracy, mutation/indel MAE,
-    productivity accuracy."""
-    m = {}
-    for g in ["v", "j"] + (["d"] if cfg.has_d else []):
-        top1 = out[f"{g}_allele"].argmax(-1)
-        in_set = targets[f"{g}_allele"].gather(1, top1.unsqueeze(1)).squeeze(1)
-        m[f"{g}_allele_top1"] = float((in_set > 0.5).float().mean())
-        m[f"{g}_seg_mae"] = sum(
-            float((out[f"{g}_{b}"].squeeze(-1) - targets[f"{g}_{b}"].squeeze(-1)).abs().mean())
-            for b in ("start", "end")) / 2
-    if "orientation_logits" in out and "orientation" in targets:
-        m["orientation_acc"] = float((out["orientation_logits"].argmax(-1)
-                                      == targets["orientation"]).float().mean())
-    if "chain_type_logits" in out and "chain_type" in targets:
-        m["chain_type_acc"] = float((out["chain_type_logits"].argmax(-1)
-                                     == targets["chain_type"]).float().mean())
-    m["mutation_mae"] = float((out["mutation_rate"] - targets["mutation_rate"]).abs().mean())
-    m["indel_mae"] = float((out["indel_count"] - targets["indel_count"]).abs().mean())
-    m["productive_acc"] = float(((out["productive"] > 0.5) == (targets["productive"] > 0.5)).float().mean())
-    if "state_logits" in out and "state_labels" in targets:
-        pred, lab = out["state_logits"].argmax(-1), targets["state_labels"]
-        valid = lab != -100
-        m["state_acc"] = float((pred[valid] == lab[valid]).float().mean()) if valid.any() else float("nan")
-        for name, idx in (("sub", 1), ("ins", 2), ("del", 3)):    # recall on the rare edit classes
-            gt = valid & (lab == idx)
-            m[f"state_{name}_recall"] = float((pred[gt] == idx).float().mean()) if gt.any() else float("nan")
-    return m
-
-
-def train(model, reference_set, dataconfigs, cfg, logvars, *, steps=2000, batch_size=32,
-          lr=3e-4, progresses=(0.3, 0.6, 0.9), heavy_shm=0.25, short_boost=1, seed=0, device="cpu",
-          log_every=50, save_path=None, save_every=2000, resume_path=None,
-          monitor_log=None, deep_every=500, mutation_cap=None, init_from=None, init_trust_pickle=False,
-          grad_clip=None, val_every=0, val_batches=4, resume_trust_pickle=False):
-    from .gym import Curriculum
-    from .guards import validate_training_request
-    dataconfigs = list(dataconfigs) if isinstance(dataconfigs, (list, tuple)) else [dataconfigs]
-    # preflight: fail fast on a bad request rather than after a long run
-    validate_training_request(steps=steps, batch_size=batch_size, lr=lr,
-                              max_seq_length=cfg.max_seq_length, reference=reference_set,
-                              progresses=progresses, heavy_shm=heavy_shm, short_boost=short_boost,
-                              grad_clip=grad_clip)
-
-    def _build_stream(sd):                         # single-locus mix, or interleaved multi-locus mix
-        if len(dataconfigs) > 1:
-            return _multi_locus_stream(dataconfigs, progresses, heavy_shm, sd, short_boost, mutation_cap)
-        dc = dataconfigs[0]
-        if len(progresses) > 1 or heavy_shm > 0 or short_boost > 1:
-            return _mixed_stream(dc, progresses, heavy_shm, sd, short_boost, mutation_cap)
-        return _stream_records(dc, _capped(dc, progresses[0]), sd)
-
-    def _capped(dc, pr):                           # curriculum params with THIS locus's SHM cap (TCR -> 0)
-        s = dict(Curriculum().params(pr))
-        cap = _cap_for(dc, mutation_cap)
-        if cap is not None:
-            s["mutation_rate"] = min(s["mutation_rate"], cap)
-        return s
-    model.to(device)
-    logvars.to(device)                         # Kendall log-vars must share the model's device
-    opt = torch.optim.AdamW(list(model.parameters()) + list(logvars.parameters()), lr=lr)
-
-    start = 0
+def _restore_or_warm_start(model, engine, setup: ModelSetup, config: TrainingConfig, schedule_metadata, *,
+                           device) -> tuple[int, str | None]:
+    """``(start, resume_from)``: a resume restores the latest checkpoint at ``config.resume_path`` (weights, optimizer,
+    scheduler and the process RNG) and starts at its step; a warm start (``config.init_from``) copies the
+    shape-compatible weights and starts at 0."""
+    resume_path, init_from, steps, lr = config.resume_path, config.init_from, config.steps, config.lr
+    schedule, short_boost, reference_set, cfg = config.schedule, config.short_boost, setup.reference, setup.config
     resume_from = latest_checkpoint(resume_path) if resume_path else None
+    if resume_path and resume_from is None:
+        raise ModelNotFoundError('resume checkpoint does not exist',
+                                 context={'field': 'resume_path', 'path': str(resume_path)})
     if resume_from:
-        from .. import model_file as mf
-        if mf.container.is_alignair_file(resume_from):
-            ts = mf.load_training_state(resume_from, device=device)
-            model.load_state_dict(ts.model.state_dict())
-            if ts.logvars_state:
-                logvars.load_state_dict(ts.logvars_state)
-            if ts.optimizer_state:
-                opt.load_state_dict(ts.optimizer_state)
-                for grp in opt.param_groups:    # honor the CLI lr on resume (e.g. lower lr for a fine-tune)
-                    grp["lr"] = lr
-            _restore_rng(ts.rng)  # continue the same RNG streams
-            start = ts.step
-        else:                                   # legacy .pt: arbitrary-code pickle -> require explicit trust
-            if not resume_trust_pickle:
-                raise ValueError(
-                    f"resuming a legacy .pt checkpoint ({resume_from}) runs torch.load (arbitrary-code "
-                    f"pickle); pass resume_trust_pickle=True only for a checkpoint you trust.")
-            ck = torch.load(resume_from, map_location=device, weights_only=False)   # legacy .pt (trusted)
-            model.load_state_dict(ck["model"]); logvars.load_state_dict(ck["logvars"])
-            if "optimizer" in ck:
-                opt.load_state_dict(ck["optimizer"])
-                for grp in opt.param_groups:
-                    grp["lr"] = lr
-            _restore_rng(ck.get("rng") or {})
-            start = int(ck.get("step", 0))
-        if steps <= start:  # nothing to do -> refuse rather than mis-save
-            raise ValueError(f"resume target steps={steps} is not beyond the checkpoint step {start}; "
-                             f"pass steps > {start} to continue training.")
-        print(f"RESUMED from {resume_from} at step {start} (lr={lr}, short_boost={short_boost})", flush=True)
-    elif init_from:                                # warm-start: copy the shape-compatible backbone
+        state = load_training_checkpoint(resume_from, device=device)
+        validate_continuation(state, cfg, reference_set, schedule=schedule_metadata, lr=lr)
+        restore_model_state(model, state.model_state, source=resume_from)
+        if state.optimizer_state is not None:
+            engine.optimizer.load_state_dict(state.optimizer_state)
+            if schedule is None:
+                for group in engine.optimizer.param_groups:     # scheduled runs retain their decayed rate
+                    group["lr"] = lr
+        if engine.scheduler is not None:
+            engine.scheduler.load_state_dict(state.scheduler_state)
+        with error_context(path=str(resume_from)):
+            _restore_rng(state.rng)
+        if steps <= state.step:  # nothing to do -> refuse rather than mis-save
+            raise ConfigurationError(f"resume target steps={steps} is not beyond the checkpoint step {state.step}; "
+                                     f"pass steps > {state.step} to continue training.", context={"field": "steps"})
+        print(f"RESUMED from {resume_from} at step {state.step} (lr={lr}, short_boost={short_boost})", flush=True)
+        return state.step, resume_from
+    if init_from:                                  # warm-start: copy the shape-compatible backbone
         from .transfer import load_source_state_dict, summarize, transfer_compatible_weights
-        src_sd = load_source_state_dict(init_from, device=device, trust_pickle=init_trust_pickle)
+        src_sd = load_source_state_dict(init_from, device=device)
         transferred, skipped = transfer_compatible_weights(model, src_sd)
         print(f"WARM-START from {init_from}\n{summarize(transferred, skipped)}", flush=True)
+    return 0, None
 
-    _train_args = {"lr": lr, "batch_size": batch_size, "progresses": list(progresses),
-                   "heavy_shm": heavy_shm, "short_boost": short_boost, "seed": seed, "steps": steps,
-                   # `mutation_cap` is the run-level REQUEST; `effective_mutation_caps` is what each
-                   # locus actually got (TCR -> 0). Without the latter the card misstates the training
-                   # distribution: a TRA run reads `mutation_cap: null, heavy_shm: 0.25` yet saw no SHM.
-                   "mutation_cap": mutation_cap,
-                   "effective_mutation_caps": _effective_mutation_caps(dataconfigs, mutation_cap)}
-    _dcs = dataconfigs
 
-    # ModelXRay: a read-only training X-ray over a fixed held-out probe batch
-    xray = probe_input = None
-    if monitor_log:
-        from ..xray import ModelXRay
-        ev = list(itertools.islice(_build_stream(seed + 99991), batch_size))
-        probe_input, probe_targets = build_batch(ev, reference_set, cfg, device)
-        from ..core.losses import hierarchical_loss
+def _train_args(sources, config: TrainingConfig, requested_policy, source_policy, unselectable, novel_unavailable,
+                schedule_metadata, *, started_from, source_checkpoint) -> dict:
+    """The run's ``train_args``: its request, its recipe and its provenance (see ``_train``)."""
+    requested = requested_policy
+    args = {"lr": config.lr, "batch_size": config.batch_size, "progresses": list(requested.progresses),
+            "heavy_shm": requested.heavy_shm, "short_boost": requested.short_boost, "seed": config.seed,
+            "steps": config.steps,
+            # source_mode, mutation_cap and indel_form are the values every run has trained with (the stream policy no
+            # longer has the fields), kept so train_args compare with every earlier checkpoint's;
+            # `effective_mutation_caps` is what each locus got (TCR -> 0).
+            "source_mode": "auto", "mutation_cap": None,
+            "recipe": RECIPE,
+            "indel_form": INDEL_FORM, "indel_fraction": list(source_policy.indel_fraction),
+            "selected_fraction": requested.selected_fraction,
+            "selected_shares": list(source_policy.selected_shares(force_mixture=len(sources) > 1)),
+            "selection_unavailable": unselectable,
+            "flanks": requested.flanks.to_dict() if requested.flanks is not None else None,
+            "schedule": schedule_metadata,
+            "effective_mutation_caps": effective_mutation_caps(sources),
+            # provenance only: worker processes reproduce the serial batches exactly
+            "data_workers": config.data_workers,
+            "init_seed": config.init_seed, "grad_clip": config.grad_clip,
+            "started_from": started_from,
+            "genairr_source_sha256": recorded_genairr_source()}
+    if source_policy.novel_alleles is not None:              # what the run drew, and why not when it was asked for
+        args["novel_alleles"] = source_policy.novel_alleles.to_dict()
+    if novel_unavailable is not None:
+        args["novel_alleles_unavailable"] = novel_unavailable
+    if requested.inverted_d:
+        args["inverted_d"] = requested.inverted_d
+    if source_checkpoint:          # not hashlib.file_digest: that is Python 3.11+, and the package supports 3.10
+        args['source_checkpoint_sha256'] = sha256_file(source_checkpoint)
+    return args
 
-        def task_eval(m, inp, _tg=probe_targets, _cfg=cfg):
-            return eval_metrics(m(inp), _tg, _cfg)
 
-        def task_losses(m, inp, _tg=probe_targets, _cfg=cfg, _lv=logvars):
-            return hierarchical_loss(m(inp), _tg, _cfg, _lv)[1]      # per-task loss tensors
+def _records(dataconfigs, policy, purpose: str, *, seed, record_source, start_step: int = 0):
+    """A curriculum record stream: each draws its own seed blocks (training resumes from (seed, step);
+    validation's are held out, disjoint from training's)."""
+    return training_records(dataconfigs, policy=policy, seed=seed, purpose=purpose,
+                            start_step=start_step, record_source=record_source)
 
-        xray = ModelXRay(model, lr=lr, log_path=monitor_log, deep_every=deep_every,
-                         uncertainty=logvars, task_eval=task_eval, task_losses=task_losses,
-                         shared_module="embedding")
 
-    # fixed-seed, immutable validation batches for best-checkpoint selection
+def _validation_batches(dataconfigs, policy, data, config: TrainingConfig, *, record_source, val_batches) -> list:
+    """The fixed-seed, immutable validation batches best-checkpoint selection scores (none without ``val_every``);
+    fewer when the stream runs out."""
+    seed, batch_size, val_every = config.seed, config.batch_size, config.val_every
     val_set = []
     if val_every and val_every > 0:
-        vstream = _build_stream(seed + 424242)         # a held-out seed, disjoint from training
+        vstream = _records(dataconfigs, policy, 'validation', seed=seed, record_source=record_source)
         for _ in range(max(1, int(val_batches))):
             vr = list(itertools.islice(vstream, batch_size))
             if len(vr) < batch_size:
                 break
-            val_set.append(build_batch(vr, reference_set, cfg, device, augment_orientation=False))
-    best_score = float("-inf")
+            with error_context(stage="training_validation", validation_batch=len(val_set)):
+                val_set.append(data.validation_adapter(vr))
+    return val_set
 
-    completed = start                              # the last step actually run (a short/early
-    stream = _build_stream(seed + start)           # stream must not let the final save claim `steps`)
-    for step in range(start + 1, steps + 1):
-        records = list(itertools.islice(stream, batch_size))
-        if len(records) < batch_size:
-            break
-        completed = step
-        batch_in, targets = build_batch(records, reference_set, cfg, device)
-        total, parts, grad_norm = train_step(model, batch_in, targets, cfg, logvars, opt,
-                                             step=step, grad_clip=grad_clip)
-        if step % log_every == 0:
-            line = (f"[{step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
-                    + " ".join(f"{k}={v:.2f}" for k, v in parts.items()))
-            if xray is not None:                   # reads this step's grads (pre next zero_grad)
-                rec = xray.observe(step, total, parts, probe_input=probe_input)
-                line += "  " + xray.summary_line(rec)
-            print(line, flush=True)
-        if val_set and step % val_every == 0:      # validation + best-checkpoint selection
-            vmetrics, vscore = validate(model, val_set, cfg)
-            print(f"[{step}/{steps}] VAL score {vscore:.4f}  "
-                  + " ".join(f"{k}={v:.3f}" for k, v in vmetrics.items()), flush=True)
-            if save_path and vscore == vscore and vscore > best_score:   # not NaN and improved
-                best_score = vscore
-                stem, ext = _stem(save_path), _ext(save_path)
-                save_checkpoint(f"{stem}.best{ext}", cfg, model, logvars, step, opt,
-                                dataconfigs=_dcs, train_args={**_train_args, "val_score": vscore})
-        if save_path and step % save_every == 0:
-            save_rotating(save_path, cfg, model, logvars, step, opt, dataconfigs=_dcs, train_args=_train_args)
-    if save_path:                                  # save the ACTUAL completed step, not the requested one
-        save_rotating(save_path, cfg, model, logvars, completed, opt, dataconfigs=_dcs, train_args=_train_args)
-    if xray is not None:
-        xray.close()
-    return model
+
+def _training_source(dataconfigs, policy, setup, data, config: TrainingConfig, *, start, device, record_source):
+    """``(records, batch_adapter, workers)``: the training stream and its adapter, built serially or, with
+    ``config.data_workers``, the same batches in worker processes (``workers``, to close; None when serial)."""
+    seed, batch_size, data_workers = config.seed, config.batch_size, config.data_workers
+    if not data_workers:
+        return _records(dataconfigs, policy, 'training', seed=seed, record_source=record_source,
+                        start_step=start), data.batch_adapter, None
+    from .assembly import TrainingStream, parallel_training_data
+    from .records.streams import stream_records
+    workers = parallel_training_data(
+        TrainingStream(tuple(dataconfigs), policy, seed, prepare_training_data(setup, device='cpu'), start_step=start),
+        batch_size=batch_size, workers=data_workers, device=device,
+        provider=stream_records if record_source is None else record_source)
+    return workers.records, workers.batch_adapter, workers
+
+
+def _log_iteration(iteration, steps: int) -> None:
+    total, parts, grad_norm = iteration.result
+    print(f"[{iteration.step}/{steps}] loss {total:.3f} gnorm {grad_norm:.2f} "
+          + " ".join(f"{k}={v:.2f}" for k, v in parts.items()), flush=True)
+
+
+def _validate(engine, val_set: list, step: int, steps: int) -> float:
+    """The validation score of the model now (printed with its metrics)."""
+    vmetrics, vscore = engine.validate(val_set)
+    print(f"[{step}/{steps}] VAL score {vscore:.4f}  "
+          + " ".join(f"{k}={v:.3f}" for k, v in vmetrics.items()), flush=True)
+    return vscore

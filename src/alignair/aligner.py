@@ -1,52 +1,42 @@
-"""Stable object API: the public surface for loading a model and predicting, plus a typed
-training entry. Everything here is a thin, documented wrapper over the internal functions
-(``load_model`` / ``predict`` / ``train``), so behavior is identical while the surface is stable, typed,
-and registry-aware.
+"""The inference surface: load a model (``Aligner.from_pretrained``) and predict, a typed and registry-aware wrapper
+over the prediction pipeline (``alignair.predict``).
 
     from alignair import Aligner
-    aligner = Aligner.from_pretrained("alignair-igh-v1", device="auto")   # path, catalog id, or id@rev
+    # a catalog id, a path, or id@version
+    aligner = Aligner.from_pretrained("alignair4-igh-human", device="auto")
     result = aligner.predict(["CAGGTGCAGCTG..."])
     result.write_airr("predictions.tsv")
 
-    from alignair import TrainingConfig, run_training
-    run = run_training(TrainingConfig.from_genairr("HUMAN_IGH_OGRDB", preset="desktop"), output_dir="runs/igh")
-    aligner = run.best_aligner()
-
-(The typed training entry is ``run_training`` rather than ``train`` because ``alignair.train`` is the
-training subpackage — a top-level ``train`` name would collide with it.)
+Training is ``alignair.run_training`` (``alignair.train``).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
-from typing import Iterator, Optional, Sequence
+import os
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-__all__ = ["Aligner", "PredictionResult", "TrainingConfig", "TrainingRun", "run_training",
-           "resolve_device"]
+from .core.runtime import resolve_device
+from .errors import ConfigurationError, InputError, MissingDependencyError, ModelError
+from .predict import PredictConfig
+from .predict import predict as _predict
+from .reference.loci import FALLBACK_LOCUS
 
+if TYPE_CHECKING:
+    from huggingface_hub import CommitInfo
 
-def resolve_device(device: str | None = "auto") -> str:
-    """Resolve a device request to a concrete backend. ``"auto"`` picks CUDA, else Apple MPS, else CPU.
-    An explicit ``"cuda"``/``"mps"`` that is unavailable falls back to CPU (reported by the caller)."""
-    import torch
-    if device in (None, "auto"):
-        if torch.cuda.is_available():
-            return "cuda"
-        mps = getattr(torch.backends, "mps", None)
-        if mps is not None and mps.is_available():
-            return "mps"
-        return "cpu"
-    d = str(device)
-    if d.startswith("cuda") and not torch.cuda.is_available():
-        return "cpu"
-    if d.startswith("mps"):
-        mps = getattr(torch.backends, "mps", None)
-        if mps is None or not mps.is_available():
-            return "cpu"
-    return d
+    from .core.model import AlignAIR
+    from .reference.reference_set import ReferenceSet
+
+__all__ = ["Aligner", "PredictionResult", "resolve_device"]
 
 
-def _auto_batch_size(device: str) -> int:
-    return 256 if device.startswith("cuda") else 64
+def auto_batch_size(device: str, workers: int = 1) -> int:
+    """256 on a GPU, 64 in one CPU process, 16 per single-threaded CPU worker (``alignair.parallel``), whose
+    activations then stay in its share of the cache."""
+    if device.startswith("cuda"):
+        return 256
+    return 16 if workers > 1 else 64
 
 
 @dataclass
@@ -54,9 +44,9 @@ class PredictionResult:
     """A typed prediction result: the AIRR-convention records plus convenience I/O. Iterable and
     ``len()``-able over the per-read records; ``write_airr`` emits the TSV; ``to_dicts`` returns the raw
     list. The coordinates in each record refer to that record's canonical ``sequence``."""
-    records: list
-    locus: str = "IGH"
-    ids: Optional[list] = None
+    records: list[dict]
+    locus: str = FALLBACK_LOCUS
+    ids: list[str] | None = None
 
     def __iter__(self) -> Iterator[dict]:
         return iter(self.records)
@@ -65,6 +55,7 @@ class PredictionResult:
         return len(self.records)
 
     def to_dicts(self) -> list:
+        """The records as a list of dicts, one per read."""
         return list(self.records)
 
     def _ids(self) -> list:
@@ -72,8 +63,9 @@ class PredictionResult:
             return list(self.ids)
         return [r.get("sequence_id") or f"seq{i}" for i, r in enumerate(self.records)]
 
-    def write_airr(self, path: str, *, columns=None) -> str:
-        """Write the records as an AIRR rearrangement TSV. Returns ``path``."""
+    def write_airr(self, path: str, *, columns: str | Sequence[str] | None = None) -> str:
+        """Write the records as an AIRR rearrangement TSV; ``columns`` selects the fields to emit (a preset name or
+        the field names; default: all). Returns ``path``."""
         from .io.airr import write_airr as _write
         # the record-owned post-crop pre-orientation read (falls back to canonical); the writer prefers
         # each record's own `input_sequence`, so this equals the CLI's orientation output exactly.
@@ -83,55 +75,49 @@ class PredictionResult:
 
 
 class Aligner:
-    """A loaded model plus its verified germline reference, ready to predict. Construct with
-    :meth:`from_pretrained` (a local path, a shipped catalog id, or ``id@revision``) — the single
-    inference entry point the CLI is a client of."""
+    """A loaded model bound to its germline reference, ready to predict. Construct with :meth:`from_pretrained` (a
+    local path, a shipped catalog id, or ``id@revision``); ``alignair predict`` loads its model through it."""
 
-    def __init__(self, model, reference, *, device: str = "cpu", model_path: Optional[str] = None,
-                 source_commit: Optional[str] = None):
-        self.model = model
+    def __init__(self, model: AlignAIR, reference: ReferenceSet, *, device: str = "auto",
+                 model_path: str | None = None, source_commit: str | None = None) -> None:
+        self.device = resolve_device(device)    # "auto": CUDA, then Apple MPS, then CPU
+        self.model = model.to(self.device)
         self.reference = reference
-        self.device = device
         self.model_path = model_path
         self.source_commit = source_commit     # resolved HF commit SHA (provenance), else None
 
     # ------------------------------------------------------------------ constructors
     @classmethod
-    def from_pretrained(cls, model: str, *, revision: str | None = None, device: str = "auto",
-                        reference=None, dataconfigs=None, registry=None, offline: bool = False,
-                        trust_pickle: bool = False, token: str | None = None) -> "Aligner":
+    def from_pretrained(cls, model: str | os.PathLike[str], *, revision: str | None = None, device: str = "auto",
+                        reference: ReferenceSet | None = None, registry: str | Iterable[str] | None = None,
+                        offline: bool = False,
+                        token: str | None = None) -> Aligner:
         """Load a model by local path, a Hugging Face repo (``hf://org/repo`` or ``org/repo`` — pulled
-        via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``). ``revision`` pins a
+        via ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``), looked up in the registries of
+        ``registry`` (a string is one registry; default: the configured ones). ``revision`` pins a
         HF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or
-        ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU)."""
-        from .api import load_model
-        from .registry import hf, resolve_model, sources as _sources
-        srcs = _sources.resolve_sources(list(registry) if registry else None)
-        if hf.is_hf_repo_spec(str(model)):
-            path = str(resolve_model(str(model), sources=srcs, offline=offline, token=token,
-                                     revision=revision))
-        else:                                  # catalog id: revision is the @version suffix
-            spec = f"{model}@{revision}" if revision and "@" not in str(model) else str(model)
-            path = str(resolve_model(spec, sources=srcs, offline=offline))
+        ``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``"auto"`` (CUDA→MPS→CPU). A
+        ``reference`` that holds alleles of a locus the model does not call is refused (ConfigurationError)."""
+        from .model_file import load_model
+        from .registry import hf, resolve_model
+        path = str(resolve_model(model, registry=registry, offline=offline, token=token, revision=revision))
         dev = resolve_device(device)
-        m, ref = load_model(path, dataconfigs=dataconfigs, reference=reference, device=dev,
-                            trust_pickle=trust_pickle)
-        return cls(m, ref, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
+        loaded = load_model(path, reference=reference, device=dev)
+        return cls(loaded.model, loaded.reference, device=dev, model_path=path, source_commit=hf.resolved_commit(path))
 
     def _assert_distributable(self) -> None:
         """Refuse to distribute a resumable checkpoint: those carry trusted **pickle** sections
         (dataconfig / train_state) and must not be published — export a pickle-free inference artifact
         first."""
         if not self.model_path:
-            raise ValueError("needs an aligner loaded from a file (model_path is unset)")
-        from .model_file import read_metadata
-        secs = read_metadata(self.model_path).get("sections", {})
-        pickle_secs = [k for k in secs if str(k).startswith("dataconfig/") or k == "train_state"]
+            raise ModelError("needs an aligner loaded from a file (model_path is unset)")
+        from .model_file import pickle_sections, read_metadata
+        pickle_secs = pickle_sections(read_metadata(self.model_path))
         if pickle_secs:
-            raise ValueError(
+            raise ModelError(
                 f"{self.model_path} is a resumable checkpoint with pickle sections {pickle_secs}; it is "
-                f"not distributable. Export a pickle-free inference artifact first "
-                f"(`alignair convert <in> <out>` / save with include_trusted_pickle=False).")
+                f"not distributable. Export a pickle-free bundle first: `alignair export {self.model_path} "
+                f"<out_dir>` (alignair.train.bundle.export_bundle), then share <out_dir>/model.alignair.")
 
     def save_pretrained(self, directory: str, *, filename: str = "model.alignair") -> str:
         """Copy the loaded model artifact into ``directory`` (for local distribution or a later
@@ -145,149 +131,175 @@ class Aligner:
         return dest
 
     def push_to_hub(self, repo_id: str, *, token: str | None = None, private: bool = True,
-                    filename: str = "model.alignair", create: bool = True, revision: str | None = None):
-        """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo. Requires
-        ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). Returns the upload result."""
+                    filename: str = "model.alignair", create: bool = True, revision: str | None = None) -> CommitInfo:
+        """Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo of its own, in one commit with the
+        bundle's ``model_card.md`` and ``reference_manifest.json`` when they sit beside the model file (as
+        ``alignair export`` writes them). Requires ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). For
+        the shared catalog repo, use ``alignair.registry.publish``'s ``publish_bundle`` and ``upload_version``.
+        Returns the commit."""
         import os
         self._assert_distributable()  # never upload a pickle checkpoint
         try:
-            from huggingface_hub import HfApi
+            import huggingface_hub
         except ImportError as e:                    # pragma: no cover - optional dep
-            raise ImportError("push_to_hub needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
-        api = HfApi(token=token or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+            raise MissingDependencyError("push_to_hub needs 'huggingface_hub' (`pip install alignair[hub]`)") from e
+        from .registry.hf import hf_token
+        api = huggingface_hub.HfApi(token=hf_token(token))
         if create:
             api.create_repo(repo_id, private=private, exist_ok=True, repo_type="model")
-        return api.upload_file(path_or_fileobj=self.model_path, path_in_repo=filename,
-                               repo_id=repo_id, repo_type="model", revision=revision)
+        folder = os.path.dirname(os.path.abspath(self.model_path))
+        files = [(self.model_path, filename)] + [(os.path.join(folder, name), name)
+                                                 for name in ("model_card.md", "reference_manifest.json")
+                                                 if os.path.isfile(os.path.join(folder, name))]
+        operations = [huggingface_hub.CommitOperationAdd(path_in_repo=dest, path_or_fileobj=src) for src, dest in files]
+        return api.create_commit(repo_id=repo_id, operations=operations, repo_type="model", revision=revision,
+                                 commit_message=f"Upload {filename}")
 
     @classmethod
-    def from_model(cls, model, reference, *, device: str = "auto") -> "Aligner":
-        """Wrap an already-loaded ``(model, reference)`` pair (e.g. straight from training)."""
-        dev = resolve_device(device)
-        return cls(model.to(dev), reference, device=dev)
+    def from_model(cls, model: AlignAIR, reference: ReferenceSet, *, device: str = "auto") -> Aligner:
+        """Wrap an already-loaded ``(model, reference)`` pair (e.g. straight from training), the model placed on
+        ``device``."""
+        return cls(model, reference, device=device)
+
+    def bound_to(self, reference: ReferenceSet) -> Aligner:
+        """An Aligner that predicts from ``reference`` (the alleles it calls from, e.g. a donor genotype's subset of
+        the reference): a copy of the model bound to it once, so later calls, and the workers a pool starts from it,
+        use those alleles with no per-call binding; the reference is annotated against this Aligner's own
+        (``alignair.reference.annotate``), as one given at load is; one that holds alleles of a locus the model does
+        not call is refused (ConfigurationError). This Aligner is unchanged. The copy is not a model file
+        (``model_path`` is unset), and its label schema names the reference's alleles."""
+        import copy
+
+        from .reference import annotate
+        reference = annotate(reference, known=self.reference)   # as a reference given at load is
+        model = copy.deepcopy(self.model)
+        model.bind_reference(reference)
+        return Aligner(model, reference, device=self.device, source_commit=self.source_commit)
+
+    def with_genotype(self, genotype: Mapping[str, Iterable[str]]) -> Aligner:
+        """An Aligner whose calls come from a donor's ``genotype`` (``{V|D|J: allele names}``, either case): this
+        Aligner bound once to the genotype's subset of its reference (``bound_to``); a gene it does not name keeps all
+        its alleles. This Aligner is unchanged. UnknownAlleleError for an allele the reference does not hold (give its
+        sequence in the reference), InputError for a gene left with no allele, ConfigurationError for a key that is
+        not V, D or J or an entry that is not a list of allele names."""
+        from .genotype.bank import genotype_bank
+        return self.bound_to(genotype_bank(self.reference, genotype))
 
     # ------------------------------------------------------------------ properties
     @property
+    def label_schema(self) -> dict:
+        """The identity of ``predict_raw``'s allele columns: each gene's alleles in the bound reference's order."""
+        genes = {gene: list(self.reference.gene(gene.upper()).names) for gene in self.model.cfg.genes}
+        return {"schema_version": 1, "genes": genes}
+
+    @property
     def loci(self) -> tuple:
-        return self.reference.locus_names() if hasattr(self.reference, "locus_names") else ()
+        """The bound reference's AIRR locus codes, in order (empty if it declares none)."""
+        return self.reference.locus_names()
 
     @property
     def default_locus(self) -> str:
-        loci = self.loci
-        return loci[0] if len(loci) == 1 else "IGH"
+        """The locus written for a record that carries none: the reference's one locus, else IGH."""
+        return self.reference.default_locus
 
     # ------------------------------------------------------------------ inference
-    def predict(self, sequences: Sequence[str], *, batch_size="auto", genotype=None,
-                genotype_method: str = "mask", airr: bool = True, **overrides) -> PredictionResult:
-        """Eagerly align a list of nucleotide strings, returning a :class:`PredictionResult`.
-        ``batch_size="auto"`` picks a device-appropriate size. ``genotype`` (a ``{gene: names}`` dict)
-        constrains calls to a donor subset of the trained reference."""
-        from .api import predict_sequences
-        bs = _auto_batch_size(self.device) if batch_size in (None, "auto") else int(batch_size)
-        if genotype is not None:
-            overrides["genotype"] = genotype
-            overrides["genotype_method"] = genotype_method
-        records = predict_sequences(self.model, self.reference, list(sequences), device=self.device,
-                                    batch_size=bs, airr=airr, **overrides)
-        return PredictionResult(records, locus=self.default_locus)
+    def _batch_size(self, batch_size: int | str | None) -> int:
+        """``batch_size`` as a number: ``"auto"`` or None is the device's size (``auto_batch_size``); any other string
+        is refused here, and any other value by ``PredictConfig``."""
+        if batch_size is None or batch_size == "auto":
+            return auto_batch_size(self.device)
+        if isinstance(batch_size, str):
+            raise ConfigurationError(f'batch_size must be a positive integer or "auto" (got {batch_size!r})',
+                                     context={"field": "batch_size"})
+        return batch_size
 
-    def predict_iter(self, sequences: "Iterator[str]", *, batch_size="auto", chunk_size: int = 20000,
-                     **kw) -> Iterator[dict]:
-        """Stream prediction over an iterable of sequences in bounded memory: yields per-read records,
-        predicting ``chunk_size`` reads at a time. Same options as :meth:`predict`."""
-        buf: list = []
-        for s in sequences:
-            buf.append(s)
-            if len(buf) >= chunk_size:
-                yield from self.predict(buf, batch_size=batch_size, **kw).records
-                buf = []
-        if buf:
-            yield from self.predict(buf, batch_size=batch_size, **kw).records
+    def predict(self, sequences: Sequence[str], *, ids: Sequence[str] | None = None,
+                batch_size: int | str | None = "auto", threshold: float | None = None, cap: int | None = None,
+                airr: bool = True) -> PredictionResult:
+        """Align nucleotide strings, returning a :class:`PredictionResult` of one record per sequence, in order: every
+        sequence given is predicted (``read_sequences`` and the CLI drop the reads of a file that are mostly not
+        bases; an empty one is refused here).
+
+        ``ids`` (one string per sequence) fill each record's ``sequence_id`` and the result's ``ids``.
+        ``batch_size="auto"`` (or None) picks a device-appropriate size. ``threshold`` and ``cap`` set the called
+        alleles of each gene (``v_calls``...): those scoring at least ``threshold`` relative to the best (default 0.5),
+        at most ``cap`` of them (default 3), never none. ``airr=False`` returns light records without the AIRR
+        assembly. To call from a donor's genotype, predict with :meth:`with_genotype`'s Aligner."""
+        if ids is not None:
+            sequences, ids = _named_reads(sequences, ids)
+        cfg = PredictConfig.for_model(self.model, self.reference, batch_size=self._batch_size(batch_size),
+                                      threshold=threshold, cap=cap, airr=airr)
+        records = _predict(self.model, sequences, self.reference, cfg, device=self.device)
+        if ids is not None:
+            records = [{"sequence_id": name, **record} for name, record in zip(ids, records)]
+        return PredictionResult(records, locus=self.default_locus, ids=ids)
+
+    def predict_raw(self, sequences: Sequence[str], *, batch_size: int | str | None = "auto") -> dict:
+        """The model's raw per-read output arrays; label_schema describes column identity.
+
+        This method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the
+        read's best allele, model-frame positions). The forward is the one ``predict`` runs (``predict.forward.
+        run_model``: reads batched by width bucket), so the arrays are the ones a read's row comes from.
+        """
+        import numpy as np
+
+        from .predict.forward import run_model
+        cfg = self.model.cfg
+        batches = run_model(self.model, sequences, PredictConfig(max_seq_length=cfg.max_seq_length,
+                                                                 batch_size=self._batch_size(batch_size)), self.device)
+        return {key: np.concatenate([batch[key] for batch in batches]) for key in batches[0]}
+
+    def predict_iter(self, sequences: Iterable[str], *, ids: Iterable[str] | None = None,
+                     batch_size: int | str | None = "auto", chunk_size: int = 20000, threshold: float | None = None,
+                     cap: int | None = None, airr: bool = True) -> Iterator[dict]:
+        """Stream prediction over an iterable of sequences in bounded memory: yields per-read records, predicting
+        ``chunk_size`` reads at a time (a positive integer). Same options as :meth:`predict`; ``ids`` may be an
+        iterable too (InputError when it runs out before the sequences, or after)."""
+        from itertools import islice, zip_longest
+        from numbers import Integral
+
+        from .data.inputs import sequence_batch_iterator
+        if isinstance(chunk_size, bool) or not isinstance(chunk_size, Integral) or chunk_size < 1:
+            raise ConfigurationError(f"chunk_size must be a positive integer (got {chunk_size!r})",
+                                     context={"field": "chunk_size"})
+        reads = sequence_batch_iterator(sequences)
+        names = _id_iterator(ids) if ids is not None else None
+        options = {"batch_size": batch_size, "threshold": threshold, "cap": cap, "airr": airr}
+        while True:
+            if names is None:
+                chunk, chunk_ids = list(islice(reads, chunk_size)), None
+            else:
+                pairs = list(islice(zip_longest(reads, names, fillvalue=_MISSING), chunk_size))
+                if any(item is _MISSING for pair in pairs for item in pair):
+                    raise InputError("ids and sequences differ in number", context={"field": "ids"})
+                chunk, chunk_ids = [read for read, _ in pairs], [name for _, name in pairs]
+            if not chunk:
+                return
+            yield from self.predict(chunk, ids=chunk_ids, **options).records
 
 
-# ============================================================================ training
-
-_PRESETS = {
-    "quick": {"steps": 300, "batch_size": 16, "val_every": 100},        # smoke / CI
-    "desktop": {"steps": 50_000, "batch_size": 64, "val_every": 2000},  # a single workstation GPU
-    "full": {"steps": 300_000, "batch_size": 128, "val_every": 5000},   # a full production run
-}
+_MISSING = object()
 
 
-@dataclass(frozen=True)
-class TrainingConfig:
-    """Typed, immutable training request (replaces unrestricted ``**overrides``). Build with
-    :meth:`from_genairr`; ``preset`` supplies resource-tuned defaults you can still override."""
-    dataconfigs: tuple
-    steps: int = 100_000
-    batch_size: int = 64
-    lr: float = 3e-4
-    device: str = "auto"
-    short_boost: int = 1
-    grad_clip: Optional[float] = None
-    val_every: int = 0
-    seed: int = 0
-
-    @classmethod
-    def from_genairr(cls, *dataconfigs: str, preset: str | None = None, **overrides) -> "TrainingConfig":
-        if preset is not None and preset not in _PRESETS:
-            raise ValueError(f"unknown preset {preset!r}; choose from {sorted(_PRESETS)}")
-        base = dict(_PRESETS.get(preset, {}))
-        base.update(overrides)
-        return cls(dataconfigs=tuple(dataconfigs), **base)
-
-    def with_(self, **changes) -> "TrainingConfig":
-        return replace(self, **changes)
+def _id_iterator(ids) -> Iterator:
+    """An iterator over ``ids``; InputError for a bare string, bytes or mapping, or a non-iterable."""
+    if isinstance(ids, (str, bytes, Mapping)):
+        raise InputError("ids must be a sequence of strings, one per sequence, not a bare string, bytes or mapping",
+                         context={"field": "ids"})
+    try:
+        return iter(ids)
+    except TypeError as exc:
+        raise InputError("ids must be a sequence of strings, one per sequence", context={"field": "ids"}) from exc
 
 
-@dataclass
-class TrainingRun:
-    """The result of a training run: the final and best checkpoint paths."""
-    model_path: str
-    best_model_path: Optional[str] = None
-    steps: int = 0
+def _named_reads(sequences, ids) -> tuple[list, list]:
+    """``(sequences, ids)`` as lists; InputError unless ``ids`` is one string per sequence."""
+    from .data.inputs import sequence_batch_iterator
+    reads, names = list(sequence_batch_iterator(sequences)), list(_id_iterator(ids))
+    if len(names) != len(reads):
+        raise InputError(f"{len(names)} ids for {len(reads)} sequences: give one id per sequence",
+                         context={"field": "ids"})
+    if not all(isinstance(name, str) for name in names):
+        raise InputError("ids must be strings", context={"field": "ids"})
+    return reads, names
 
-    def best_aligner(self, *, device: str = "auto") -> Aligner:
-        """Load the best (or final) checkpoint as an :class:`Aligner` ready to predict."""
-        return Aligner.from_pretrained(self.best_model_path or self.model_path, device=device)
-
-
-def run_training(config: TrainingConfig, *, output_dir: str | None = None,
-                 out_path: str | None = None) -> TrainingRun:
-    """Train a model from a typed :class:`TrainingConfig`. Writes ``<output_dir>/model.alignair`` (or
-    ``out_path``) plus a ``.best.alignair`` when ``val_every > 0``. Returns a :class:`TrainingRun`."""
-    import os
-
-    import GenAIRR.data as gd
-    from .core import AlignAIR
-    from .core.config import AlignAIRConfig
-    from .core.losses import make_logvars
-    from .reference.reference_set import ReferenceSet
-    from .train.guards import validate_training_request
-    from .train.trainer import train as _train
-
-    if not (output_dir or out_path):
-        raise ValueError("pass output_dir=... or out_path=...")
-    path = out_path or os.path.join(output_dir, "model.alignair")
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-
-    dcs = [getattr(gd, d) if isinstance(d, str) else d for d in config.dataconfigs]
-    reference = ReferenceSet.from_dataconfigs(*dcs)
-    cfg = AlignAIRConfig.from_dataconfigs(*dcs)
-    validate_training_request(steps=config.steps, batch_size=config.batch_size, lr=config.lr,
-                              max_seq_length=cfg.max_seq_length, reference=reference,
-                              grad_clip=config.grad_clip)
-    model = AlignAIR(cfg)
-    logvars = make_logvars(cfg)
-    dev = resolve_device(config.device)
-    # No run-level SHM cap: the trainer derives it PER dataconfig (TCR -> 0, IG -> uncapped), so a
-    # mixed IG+TCR run keeps full SHM on its IG streams. A global `0.0 if any(TCR)` would disable SHM
-    # for IGH in a combined IGH+TRB model.
-    _train(model, reference, dcs, cfg, logvars, steps=config.steps, batch_size=config.batch_size,
-           lr=config.lr, short_boost=config.short_boost, seed=config.seed, device=dev,
-           save_path=path, grad_clip=config.grad_clip, val_every=config.val_every)
-    stem, ext = os.path.splitext(path)
-    best = f"{stem}.best{ext}"
-    return TrainingRun(model_path=path, best_model_path=best if os.path.exists(best) else None,
-                       steps=config.steps)

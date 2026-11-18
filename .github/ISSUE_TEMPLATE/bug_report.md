@@ -18,13 +18,14 @@ alignair predict --input ... --out ... --model ...
 ```
 
 **Version**
-Output of `alignair --version` (e.g. `alignair 3.0.0`).
+Output of `alignair --version` (e.g. `alignair 4.0.0`).
 
 **Model**
-The model id you used, pinned (e.g. `alignair-igh-human@1.0.0`), or the path to your `.alignair` file.
+The model id you used (e.g. `alignair4-igh-human`, with `@version` if you pinned one), or the path to your
+`.alignair` file.
 
 **Environment**
-Paste the full output of `alignair doctor` (Python, PyTorch + CUDA/MPS, GenAIRR, parasail, cache dir):
+Paste the full output of `alignair doctor` (Python, PyTorch and the GPU it found, GenAIRR, the cache folder):
 
 ```
 <alignair doctor output>

@@ -1,47 +1,68 @@
-"""Direct Hugging Face Hub model loading.
+"""Loading a model straight from its own Hugging Face Hub repo.
 
-The catalog path (``registry.json`` under a source) still works; this adds the *one-repo-per-model*
-path used by `Aligner.from_pretrained("hf://org/repo")` / `"org/repo"`: pull the ``.alignair`` straight
-from a HF model repo via ``huggingface_hub`` — with revision (branch/tag/commit) pinning, tokens for
-private/gated repos, offline (``local_files_only``) mode, the standard HF cache, retries and resumable
-transfers. Both paths funnel through ``resolve_model`` so aliases stay a convenience, not a second
-incompatible loader.
+Besides the catalog path (``registry.json`` under a source), ``Aligner.from_pretrained("hf://org/repo")`` or
+``"org/repo"`` pulls the ``.alignair`` from a Hub model repo through ``huggingface_hub``, with revision (branch, tag or
+commit) pinning, tokens for private or gated repos, offline cache lookup, the standard HF cache, retries and resumable
+transfers. Both paths go through ``resolve_model``.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
+from ..errors import (
+    AlignAIRError,
+    InputError,
+    MissingDependencyError,
+    ModelNotFoundError,
+    OfflineError,
+    RegistryError,
+    RegistryUnavailableError,
+)
+from .sources import retryable_status
+
 DEFAULT_FILENAME = "model.alignair"
 
 
 def is_hf_repo_spec(spec: str) -> bool:
-    """True if ``spec`` names a HF model repo (``hf://org/repo`` or a bare ``org/repo``) rather than a
-    local path or a catalog id. A local path or a plain id (no ``/``) is not a HF repo spec."""
+    """True if ``spec`` names a HF model repo (``hf://org/repo[/file][@rev]`` or a bare ``org/repo[@rev]``) rather
+    than a local path or a catalog id. A bare spec with a file below the repo, or one naming a ``.alignair`` file, is
+    a path: only the ``hf://`` form reaches a file inside a repo."""
     if not spec or os.path.exists(spec):
         return False
     if spec.startswith("hf://"):
         return True
-    if "://" in spec:                                    # some other URL scheme (http/file)
+    if "://" in spec or names_model_file(spec):          # some other URL scheme (http/file), or a model file's path
         return False
-    return "/" in spec and not spec.startswith((".", "/", "~"))
+    body = spec.partition("@")[0]
+    return body.count("/") == 1 and not spec.startswith((".", "/", "~"))
+
+
+def names_model_file(spec: str) -> bool:
+    """True if a bare ``spec`` (no ``hf://``) names a model file: it ends in ``.alignair``, or has a path below
+    ``org/repo``."""
+    body = spec.partition("@")[0]
+    return body.endswith(".alignair") or body.count("/") > 1
 
 
 def parse_hf_spec(spec: str) -> tuple[str, str | None, str | None]:
     """Parse ``hf://org/repo[/sub/file.alignair][@rev]`` (or the ``hf://``-less form) into
     ``(repo_id, revision, filename)``. ``repo_id`` is the first two path segments; anything after is a
-    file path within the repo (default ``model.alignair``); ``@rev`` pins a branch/tag/commit."""
-    s = spec[len("hf://"):] if spec.startswith("hf://") else spec
+    file path within the repo (default ``model.alignair``); ``@rev`` pins a branch/tag/commit. An InputError when it
+    names no ``org/repo``."""
+    s = spec.removeprefix("hf://")
     body, _, rev = s.partition("@")
     parts = [p for p in body.split("/") if p]
     if len(parts) < 2:
-        raise ValueError(f"not a Hugging Face repo spec: {spec!r} (expected org/repo)")
+        raise InputError(f"not a Hugging Face repo spec: {spec!r} (expected org/repo)", context={"model": spec},
+                         hint="A Hugging Face model is hf://org/repo[@revision][/file.alignair].")
     repo_id = "/".join(parts[:2])
     filename = "/".join(parts[2:]) or None
     return repo_id, (rev or None), filename
 
 
-def _token(explicit: str | None) -> str | None:
+def hf_token(explicit: str | None) -> str | None:
+    """The Hugging Face token: ``explicit``, else ``$HF_TOKEN``, else ``$HUGGING_FACE_HUB_TOKEN``."""
     return explicit or os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
 
 
@@ -59,26 +80,74 @@ def resolved_commit(path: str | Path) -> str | None:
 def download_from_hub(spec: str, *, revision: str | None = None, filename: str | None = None,
                       token: str | None = None, offline: bool = False) -> Path:
     """Download a model's ``.alignair`` from a HF repo and return the local cached path. ``offline`` uses
-    ``local_files_only`` (no network; a cache miss raises a clear error). Requires ``huggingface_hub``."""
+    the local cache directly (no network; a cache miss is an OfflineError). A repo, revision or file the hub does not
+    have is a ModelNotFoundError; a hub that cannot be reached a retryable RegistryUnavailableError; a disk error
+    while the hub writes its cache stays an OSError (``_hub_failure``). Requires ``huggingface_hub``."""
     repo_id, spec_rev, spec_file = parse_hf_spec(spec)
     rev = revision or spec_rev
     fname = filename or spec_file or DEFAULT_FILENAME
     try:
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import hf_hub_download, try_to_load_from_cache
     except ImportError as e:                             # pragma: no cover - optional dep
-        raise ImportError(
+        raise MissingDependencyError(
             "loading a model directly from a Hugging Face repo needs 'huggingface_hub'; "
-            "install it with `pip install alignair[hub]` (or `[cli]`).") from e
+            "install it with `pip install alignair[hub]` (or `[cli]`).",
+            context={"dependency": "huggingface_hub", "stage": "model_download"}) from e
+    from .. import __version__
     try:
-        from .. import __version__ as _v
-    except Exception:                                    # noqa: BLE001
-        _v = "0"
-    try:
-        path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=_token(token),
-                               local_files_only=offline, library_name="alignair", library_version=_v)
+        if offline:
+            # Some SDK versions build telemetry headers even with local_files_only.
+            # The cache lookup API does not create a request or consult remote metadata.
+            cached = try_to_load_from_cache(repo_id=repo_id, filename=fname, revision=rev)
+            if isinstance(cached, str) and Path(cached).is_file():
+                return Path(cached)
+            raise FileNotFoundError(f"{repo_id}@{rev or 'main'}:{fname} is not in the local HF cache")
+        path = hf_hub_download(repo_id=repo_id, filename=fname, revision=rev, token=hf_token(token),
+                               library_name="alignair", library_version=__version__)
     except Exception as e:                               # normalize hub errors to an actionable message
-        hint = " (offline: not in the local HF cache)" if offline else ""
-        raise ValueError(
-            f"could not fetch {fname!r} from Hugging Face repo {repo_id!r} "
-            f"(revision {rev or 'main'}){hint}: {e}") from e
+        failure = _hub_failure(e, repo_id=repo_id, revision=rev, filename=fname, offline=offline)
+        if failure is None:
+            raise
+        raise failure from e
     return Path(path)
+
+
+def _is_transport_error(error: Exception) -> bool:
+    """Whether ``error`` is a network failure: a connection or timeout error, or one of the HTTP clients' own."""
+    return isinstance(error, (ConnectionError, TimeoutError)) or any(
+        cls.__module__.split(".")[0] in ("httpx", "requests", "urllib3") for cls in type(error).__mro__)
+
+
+def _hub_failure(error: Exception, *, repo_id: str, revision: str | None, filename: str,
+                 offline: bool) -> AlignAIRError | None:
+    """The error a failed hub download raises (``download_from_hub``), classified by what the hub said; the hub's own
+    offline mode (``HF_HUB_OFFLINE``) counts as offline. An invalid repo id or revision is an InputError, a gated repo
+    a RegistryError (access is needed), a network failure a RegistryUnavailableError (retryable unless the hub
+    answered that the request is wrong), and any other failure a RegistryError that is not retryable. None for a disk
+    error (an OSError that is not the network's): it is not the hub's failure and propagates as it is."""
+    from huggingface_hub import constants, utils
+    offline = offline or bool(getattr(constants, "HF_HUB_OFFLINE", False))
+    message = f"could not fetch {filename!r} from Hugging Face repo {repo_id!r} (revision {revision or 'main'})"
+    context = {"stage": "model_download", "repo_id": repo_id, "revision": revision, "filename": filename,
+               "offline": offline}
+    hint = "Check repository access, revision, connectivity, and local cache availability."
+    def hub(*names):
+        return tuple(getattr(utils, name) for name in names if hasattr(utils, name))
+    if offline:
+        return OfflineError(f"{message} (offline: not in the local HF cache)", context=context, hint=hint)
+    if isinstance(error, hub("HFValidationError")):
+        return InputError(f"{message}: {error}", context=context,
+                          hint="A Hugging Face model is hf://org/repo[@revision][/file.alignair].")
+    if isinstance(error, hub("GatedRepoError")):
+        return RegistryError(f"{message}: the repo is gated", context=context,
+                             hint="Request access on the hub, then pass a token (--hf-token, token= or $HF_TOKEN).")
+    if isinstance(error, hub("LocalEntryNotFoundError")):     # the hub unreachable, the file not cached
+        return RegistryUnavailableError(message, context=context, hint=hint)
+    if isinstance(error, hub("RepositoryNotFoundError", "RevisionNotFoundError", "EntryNotFoundError")):
+        return ModelNotFoundError(message, context=context, hint=hint)
+    if isinstance(error, hub("HfHubHTTPError")) or _is_transport_error(error):
+        status = getattr(getattr(error, "response", None), "status_code", None)
+        return RegistryUnavailableError(message, context=context, hint=hint, retryable=retryable_status(status))
+    if isinstance(error, OSError):
+        return None
+    return RegistryError(message, context=context, hint=hint)

@@ -6,7 +6,7 @@ name: Release
 # Safety / ordering:
 #  - `guard` refuses to publish unless the tag matches pyproject's version AND the tagged commit is
 #    contained in origin/main; `test` reruns the Linux suite on the tagged commit. Nothing builds
-#    until both pass.
+#    until guard, source tests, and required model/claim validation pass.
 #  - Wheels + sdist are built once and only downloaded — never rebuilt — by later jobs.
 #  - The irreversible step (PyPI, immutable) runs LAST: draft-release -> container images on Docker
 #    Hub + GHCR (reversible) -> protected PyPI -> flip the GitHub Release to published.
@@ -46,8 +46,16 @@ jobs:
           echo "guard OK"
 
   # 0b. Rerun the Linux test suite on the exact tagged commit.
+  model-validation:
+    needs: guard
+    uses: ./.github/workflows/model-validation.yml
+
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,12 +66,41 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dev]"
-          pytest -q
+          python -m pytest tests -q -n auto -m "not heavy" --junitxml=test-results/release-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-test-results
+          path: test-results/
+
+  # The heavy training tests (minutes each), as CI runs them: their own job, a 30-minute per-test limit.
+  test-heavy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install and run the heavy training tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
+          python -m pytest tests -q -n auto -m heavy --timeout=1800 --junitxml=test-results/release-heavy-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-heavy-test-results
+          path: test-results/
 
   # 1. Build the authoritative artifact set ONCE (only after guard + test pass).
   build-wheels:
     name: wheels on ${{ matrix.os }}
-    needs: [guard, test]
+    needs: [guard, test, test-heavy, model-validation]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -79,7 +116,7 @@ jobs:
           path: ./wheelhouse/*.whl
 
   build-sdist:
-    needs: [guard, test]
+    needs: [guard, test, test-heavy, model-validation]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,7 +149,8 @@ jobs:
           WHEEL=$(ls dist/alignair-*-cp311-cp311-manylinux*_x86_64.whl | head -1)
           test -n "$WHEEL"
           pip install "${WHEEL}[cli]"
-          ALIGNAIR=$(command -v alignair) sh scripts/release_smoke.sh "$RUNNER_TEMP/rel_smoke"
+          ALIGNAIR=$(command -v alignair) sh tests/packaging/release_smoke.sh "$RUNNER_TEMP/rel_smoke"
+          python tests/packaging/installed_contract.py --forbid-source "$PWD/src"
 
   # 3. Draft GitHub Release with all wheels + sdist + SHA-256 (before any irreversible publish).
   #    Idempotent: create if absent, re-upload with --clobber if a draft exists, refuse if public.
@@ -190,11 +228,10 @@ jobs:
             --user "$(id -u):$(id -g)" \
             --entrypoint sh \
             -e HOME=/out \
-            -v "$PWD/scripts:/scripts:ro" \
+            -v "$PWD/tests/packaging/release_smoke.sh:/release_smoke.sh:ro" \
             -v "$RUNNER_TEMP/rel_docker_smoke:/out" \
-            ${{ env.IMAGE }}:${{ steps.v.outputs.version }} /scripts/release_smoke.sh /out
-      # Push every :version first, then move :latest, so a failed push never leaves :latest on a
-      # version that has no PyPI release. Pre-releases (e.g. 3.1.0rc1) never move :latest.
+            ${{ env.IMAGE }}:${{ steps.v.outputs.version }} /release_smoke.sh /out
+      # Push versioned images before moving :latest; pre-releases leave :latest unchanged.
       - name: Push :version to Docker Hub and GHCR, then :latest (stable releases only)
         env:
           VERSION: ${{ steps.v.outputs.version }}

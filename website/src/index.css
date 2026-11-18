@@ -109,6 +109,8 @@
   }
   .prose-aa code:not(pre code) {
     @apply rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[0.85em] font-mono text-brand-700 dark:text-brand-300;
+    /* a long call or path wraps instead of widening the page on a phone */
+    overflow-wrap: anywhere;
   }
   .prose-aa strong {
     @apply font-semibold text-slate-900 dark:text-white;

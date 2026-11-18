@@ -1,27 +1,20 @@
-"""Genotype task 6: AIRR GenotypeSet emit + schema validation."""
+"""The AIRR GenotypeSet of an inferred genotype, and its schema validation."""
+import pytest
 from alignair.genotype.airr import to_genotype_set, validate
-from alignair.genotype.zygosity import GeneCall
+
+pytestmark = pytest.mark.component
 
 
 def _calls():
-    return [
-        GeneCall("IGHV1-2", [{"name": "IGHV1-2*01", "support": 0.9, "evidence": True}], "homozygous",
-                 False, [], novel=[{"promotable": True, "positions": [165], "sequence": "ACGT",
-                                    "source_mask": ["ref", "observed"]}]),
-        GeneCall("IGHD3-3", [], "deletion-candidate", True, [], []),
-        GeneCall("IGHJ4", [{"name": "IGHJ4*02", "support": 0.8, "evidence": True}], "homozygous",
-                 False, [], novel=[{"promotable": False, "positions": [10], "sequence": "TTTT"}]),
-    ]
+    return {"IGHV1-2": ["IGHV1-2*01", "IGHV1-2*02"], "IGHJ4": ["IGHJ4*02"]}
 
 
-def test_maps_documented_undocumented_deleted():
+def test_the_genotypes_alleles_are_one_locus_documented_alleles_in_order():
     gs, _ = to_genotype_set(_calls(), "IGH")
     gt = gs["genotype_class_list"][0]
-    labels = [d["label"] for d in gt["documented_alleles"]]
-    assert "IGHV1-2*01" in labels and "IGHJ4*02" in labels
-    assert any(u["sequence"] == "ACGT" for u in gt["undocumented_alleles"])   # promotable novel promoted
-    assert all(u["sequence"] != "TTTT" for u in gt["undocumented_alleles"])   # partial-coverage NOT promoted
-    assert {"label": "IGHD3-3"} in gt["deleted_genes"]
+    assert [d["label"] for d in gt["documented_alleles"]] == ["IGHV1-2*01", "IGHV1-2*02", "IGHJ4*02"]
+    assert gt["undocumented_alleles"] == [] and gt["deleted_genes"] == []
+    assert all(d["phasing"] is None for d in gt["documented_alleles"])
     assert gt["inference_process"] == "repertoire_sequencing" and gt["locus"] == "IGH"
 
 

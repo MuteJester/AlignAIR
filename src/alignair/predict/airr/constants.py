@@ -1,18 +1,14 @@
 """Constants for AIRR rearrangement formatting."""
 from __future__ import annotations
 
-# IMGT-numbered region boundaries (0-based on the IMGT-gapped alignment). None = per-sequence.
+# The IMGT-numbered FWR and CDR columns of the V (0-based, end-exclusive, on the IMGT-gapped alignment), which cut the
+# region's bases from the alignment; a region's start and end are read positions (``regions.extract_regions``). The
+# CDR3 and FWR4 (IMGT's FR4, from the J Trp or Phe codon) are the read's own, from its junction
+# (``regions.read_junction_fields``).
 IMGT_REGIONS = {
     "fwr1": (0, 78),
     "cdr1": (78, 114),
     "fwr2": (114, 165),
     "cdr2": (165, 195),
     "fwr3": (195, 312),
-    "cdr3": (312, None),
-    "fwr4": (None, None),
-    "junction": (309, None),
 }
-
-SHORT_D_SENTINEL = "Short-D"
-
-AIRR_BOOLEAN_COLUMNS = ("stop_codon", "vj_in_frame", "productive")

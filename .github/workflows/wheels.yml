@@ -12,6 +12,7 @@ on:
       - "pyproject.toml"
       - "setup.py"
       - "src/alignair/predict/_derive_cy.pyx"
+      - "src/alignair/refine/_vband_cy.pyx"
       - ".github/workflows/wheels.yml"
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - "pyproject.toml"
       - "setup.py"
       - "src/alignair/predict/_derive_cy.pyx"
+      - "src/alignair/refine/_vband_cy.pyx"
       - ".github/workflows/wheels.yml"
 
 jobs:

@@ -1,69 +1,47 @@
-"""Assemble full AIRR rearrangement records from predict() records + reference.
+"""Assemble full AIRR rearrangement records from each read's typed result (``predict.results.ReadResult``) +
+reference.
 
 Produces IMGT-gapped sequence_alignment, np1/np2, germline alignment, IMGT-frame positions,
-per-segment alignments, FWR/CDR regions, junction/CDR3 via the J anchor, and quality flags.
+per-segment alignments, FWR/CDR regions, the junction and CDR3 from the V and J anchors, and quality flags.
 Per-record ``try/except`` isolates edge cases (fall back to a bare row).
+
+A row starts from the read's light record (``predict.results.light_record``) and adds the assembly. A read takes its
+junction, CDR3, FWR4, frame, stop codon and productivity from its predicted V and J anchors (``ReadResult.junction``,
+over its V start and J end), in read coordinates; a read without anchors (from a core without anchor heads) has
+none of them. The rest of the assembly is the same for both. Every field it reads is the read's typed field; a gene's
+placement is its ``placed`` alignment (none for an absent gene).
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import TYPE_CHECKING
+
+from alignair.errors import AirrAssemblyError
+
+from ...core.d_presence import ABSENT, D_CLASSES, SHORT
+from ...core.orientation import COMPLEMENT, FORWARD
+from ...reference.genes import GENES
+from ...reference.loci import FALLBACK_LOCUS
+from ..results import ReadResult, light_record
 from . import quality
-from .alignment import (build_germline_alignment, build_sequence_alignment,
-                        compute_alignment_positions, compute_np_regions,
-                        extract_segment_alignments, translate_alignment)
-from .regions import cigar_has_indel, compute_junction, compute_junction_cigar, extract_regions
+from .alignment import (
+    GermlineMaps,
+    build_germline_alignment,
+    compute_alignment_positions,
+    compute_np_regions,
+    extract_segment_alignments,
+    sequence_alignment_columns,
+    translate_alignment,
+)
+from .regions import anchor_junction_fields, extract_regions
+
+if TYPE_CHECKING:
+    from ...reference.reference_set import ReferenceSet
 
 # Exceptions edge-case *data* can legitimately raise inside assembly (bad coords, missing anchors,
 # out-of-range slices). These are tagged as per-record assembly failures and tracked; anything else is
 # treated as a programming defect and re-raised loudly (see build_airr).
 _EXPECTED_ASSEMBLY_ERRORS = (ValueError, IndexError, KeyError)
-
-
-class AirrAssemblyError(Exception):
-    """AIRR assembly failed for one record. Carries the record identifier and the originating error so
-    an unexpected (non-data) failure surfaces with context instead of silently dropping AIRR fields."""
-
-    def __init__(self, ident, original):
-        self.ident = ident
-        self.original = original
-        super().__init__(f"AIRR assembly failed for {ident}: "
-                         f"{type(original).__name__}: {original}")
-
-
-def _germline_maps(reference):
-    v, j = reference.gene("V"), reference.gene("J")
-    v_gapped = v.gapped or {n: s for n, s in zip(v.names, v.sequences)}
-    j_ung = {n: s for n, s in zip(j.names, j.sequences)}
-    d_ung = {}
-    if "D" in reference.genes:
-        d = reference.gene("D")
-        d_ung = {n: s for n, s in zip(d.names, d.sequences)}
-    return v_gapped, j_ung, d_ung, (j.anchors or {})
-
-
-def _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=False) -> bool:
-    """Fix A: attach the indel-robust, read-coordinate junction (Cys / J-anchor mapped through the
-    CIGAR) when the read carries a V/J/D indel and the anchors can be placed — OR always when
-    ``force`` is set (TCR loci: their IMGT gapping breaks the gapped column-309 junction math, and the
-    read-coordinate path is exact for TCR; see the locus gate in :func:`build_airr`). Needs only coords
-    + CIGAR (no gapped `sequence_alignment`), so it runs before the guards below — even reads whose
-    heavy alignment math is skipped still get a correct junction. Returns True when applied."""
-    if not force and not (cigar_has_indel(rec.get("v_cigar")) or cigar_has_indel(rec.get("j_cigar"))
-                          or cigar_has_indel(rec.get("d_cigar"))):
-        return False
-    v_call = rec.get("v_call", "")
-    v_ref_gapped = v_gapped.get(v_call.split(",")[0], "") if v_call else ""
-    j_anchor = (j_anchors or {}).get(rec.get("j_call", "").split(",")[0], 0)
-    cj = compute_junction_cigar(seq, v_ref_gapped, rec.get("v_germline_start"),
-                                rec.get("v_sequence_start"), rec.get("v_sequence_end"),
-                                rec.get("v_cigar", ""), j_anchor, rec.get("j_germline_start"),
-                                rec.get("j_sequence_start"), rec.get("j_sequence_end"),
-                                rec.get("j_cigar", ""))
-    if cj is None:
-        return False
-    out.update(cj)
-    jl = cj.get("junction_length")
-    out["vj_in_frame"] = (jl % 3 == 0) if jl else None      # in-frame <=> junction length divisible by 3
-    return True
 
 
 def _partial(out: dict, reason: str) -> dict:
@@ -74,58 +52,79 @@ def _partial(out: dict, reason: str) -> dict:
     return out
 
 
-def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> dict:
-    seq = rec["sequence"]
-    out = dict(rec)                    # preserve the light record (calls/coords/cigar/orientation/likelihoods)
-    out.setdefault("locus", "IGH")
-    # the model's neural call is kept as `productive_prediction`; AIRR `productive` is a DERIVED fact
-    # (in-frame + no stop codon) set below once the alignment math runs. If it cannot be derived (this
-    # record skipped assembly), `productive` stays **blank/unknown** rather than presenting the neural
-    # guess as a definitive fact.
-    neural_productive = bool(rec.get("productive", True))
-    out["productive_prediction"] = neural_productive
-    out["productive"] = None
-    out["ar_indels"] = rec.get("indel_count")
-    cigar_junction = _apply_cigar_junction(out, rec, seq, v_gapped, j_anchors, force=is_tcr)
+def _j_cropped(read: ReadResult, j) -> bool:
+    """Whether the read was cut inside (or before) its J: cut to the model's window (``predict.results``: the end of
+    the read as given is dropped), with its J aligned up to that cut. In the model's forward frame the cut is the
+    read's end for a forward or a complemented read, and its start for a reverse-complemented or a reversed one, which
+    lose the bases before their V, not their J. The J kept is then a fragment (or a scrap the aligner stretched over
+    its germline) its call, junction and FWR4 rest on."""
+    if not read.cropped:
+        return False
+    if read.orientation_id in (FORWARD, COMPLEMENT):
+        return j.seq_end >= len(read.sequence)
+    return j.seq_start <= 0
+
+
+def _first(call_field: str) -> str:
+    """The first allele of a comma-joined call ("" for no call)."""
+    return call_field.split(",")[0]
+
+
+def _build_one(read: ReadResult, light: dict, germlines: GermlineMaps, has_d: bool) -> dict:
+    seq = read.sequence
+    out = dict(light)                  # preserve the light record (calls/coords/cigar/orientation/likelihoods)
+    out.setdefault("locus", FALLBACK_LOCUS)          # a read that carries no locus
+    # a D the D presence head gated (predict.results): an absent one is assembled as a read without a D (one NP region
+    # between V and J); a short one keeps its span, but as it has no call the bases between V and J are untemplated
+    presence = read.d_presence
+    has_d = has_d and presence != D_CLASSES[ABSENT]
+    short_d = presence == D_CLASSES[SHORT]
+    d_gene = read.genes.get("d")
+    v, d, j = read.genes["v"].placed, None if d_gene is None else d_gene.placed, read.genes["j"].placed
+    junction = read.junction()
+    predicted_nonproductive = False
+    if junction is not None:
+        # the junction, frame, stop codon and productivity come from the predicted V and J anchors over the read's V
+        # start and J end (ReadResult.junction), not from the alignment below; `productive_prediction` is the same call
+        out.update(anchor_junction_fields(seq, junction, None if j is None else j.seq_end))
+        out["productive_prediction"] = junction.productive
+        predicted_nonproductive = junction.productive is False
+    else:
+        out["productive_prediction"] = out["productive"] = None
+    out["ar_indels"] = read.indel_count
+    if not read.v_present:
+        # a read without a V (predict.v_presence): no junction or alignment hangs on a V; its D and J calls stand
+        return _partial(out, "no_v")
     # skip the heavy alignment math for clearly-garbage reads (predicted non-productive with multiple
-    # indels); the indel-robust junction above is already attached, and AIRR `productive` stays blank.
+    # indels); the junction above is already attached.
     # These are PARTIAL, not ok — germline_alignment / identity are not derivable.
-    if (not neural_productive) and (rec.get("indel_count") or 0) > 1:
+    if predicted_nonproductive and (read.indel_count or 0) > 1:
         return _partial(out, "nonproductive_indel")
-    v_call = rec.get("v_call", "")
-    if not v_call or rec.get("v_sequence_start") is None or rec.get("j_sequence_start") is None:
+    v_call = read.genes["v"].call_field
+    if not v_call or v is None or j is None:
         return _partial(out, "missing_calls_or_coordinates")
-    if rec.get("segmentation_low_quality"):        # V/J collapsed -> no feasible alignment
+    if read.low_quality:                           # V/J collapsed -> no feasible alignment
         return _partial(out, "collapsed_segment")
 
-    vss, vse = rec["v_sequence_start"], rec["v_sequence_end"]
-    vgs, vge = rec["v_germline_start"], rec["v_germline_end"]
-    jss, jse = rec["j_sequence_start"], rec["j_sequence_end"]
-    jgs, jge = rec.get("j_germline_start", 0), rec.get("j_germline_end", 0)
-    dss, dse = rec.get("d_sequence_start"), rec.get("d_sequence_end")
-    dgs, dge = rec.get("d_germline_start"), rec.get("d_germline_end")
-    v_ref_gapped = v_gapped.get(v_call.split(",")[0], "")
+    names = {"v": _first(v_call), "j": _first(read.genes["j"].call_field),
+             "d": "" if d_gene is None else _first(d_gene.call_field)}
+    v_ref_gapped = germlines.v_gapped.get(names["v"], "")
+    # a D without a call (too short to call) keeps its span but is no D of the germline: the bases between V and J are
+    # one NP region, as Change-O reads a row without a D call
+    d_called = has_d and not short_d and bool(names["d"]) and d is not None
 
-    seq_alignment = build_sequence_alignment(seq, v_ref_gapped, vss, vse, vgs, vge, jse)
-    np1, np2 = compute_np_regions(seq, vse, jss, dss, dse, chain)
-    germ_alignment = build_germline_alignment(seq, v_gapped, j_ung, d_ung, v_call,
-                                              rec.get("j_call", ""), rec.get("d_call"), vge, jgs,
-                                              jge, dgs, dge, np1, np2, vse, jss, chain)
-    positions = compute_alignment_positions(v_ref_gapped, vge, vss, dss, dse, jss, jse, chain)
+    seq_alignment, read_positions = sequence_alignment_columns(seq, v_ref_gapped, v, j.seq_end) or (None, None)
+    np1, np2 = compute_np_regions(seq, v, d, j, d_called)
+    germ_alignment = build_germline_alignment(germlines, names, v, d, j, np1, np2, d_called=d_called)
+    positions = compute_alignment_positions(v_ref_gapped, v, d, j, has_d)
+    if seq_alignment is None:
+        # no gapped alignment (a called V the reference holds no gapped form of): no positions in one
+        positions = dict.fromkeys(positions)
     seq_aa = translate_alignment(seq_alignment)
     germ_aa = translate_alignment(germ_alignment)
-    seg = (extract_segment_alignments(seq_alignment, germ_alignment, seq_aa, germ_aa, positions, chain)
+    seg = (extract_segment_alignments(seq_alignment, germ_alignment, seq_aa, germ_aa, positions, has_d)
            if seq_alignment and germ_alignment else {})
-    regions = extract_regions(seq_alignment, seq_aa)
-    # the indel-robust junction (if any) is already on `out`; otherwise derive it from the IMGT column
-    if cigar_junction:
-        junction = {}
-        vj_in_frame = out.get("vj_in_frame")
-    else:
-        junction = compute_junction(seq_alignment, seq_aa, rec.get("j_call", ""), j_anchors,
-                                    jss, vss, jgs, positions.get("j_alignment_end"))
-        vj_in_frame = quality.vj_in_frame(junction.get("cdr3_start"), junction.get("cdr3_end"),
-                                          positions.get("v_alignment_start"))
+    regions = extract_regions(seq_alignment, seq_aa, read_positions)
 
     out.update({"sequence_alignment": seq_alignment, "germline_alignment": germ_alignment,
                 "sequence_alignment_aa": seq_aa, "germline_alignment_aa": germ_aa,
@@ -134,25 +133,25 @@ def _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, chain, is_tcr=False) -> d
     out.update(positions)
     out.update(seg)
     out.update(regions)
-    out.update(junction)
-    out["stop_codon"] = quality.stop_codon(seq_aa)
-    out["vj_in_frame"] = vj_in_frame
-    for g in ("v", "d", "j"):                          # per-segment identity (was V-only)
+    for g in GENES:                                    # per-segment identity
         ident = quality.segment_identity(seg.get(f"{g}_sequence_alignment"),
                                          seg.get(f"{g}_germline_alignment"))
         if ident is not None:
             out[f"{g}_identity"] = ident
-    derived = quality.airr_productive(vj_in_frame, out["stop_codon"])   # AIRR productive = derived fact
-    if derived is not None:
-        out["productive"] = derived
+    if has_d and not d_called:
+        # a D without a call (a short one) names no germline: no statistic of one, only its read alignment
+        out.update(d_identity=None, d_germline_alignment=None, d_germline_alignment_aa=None)
     if not germ_alignment or not seq_alignment:    # ran the math but a core product is missing
         return _partial(out, "incomplete_alignment")
+    if _j_cropped(read, j):
+        return _partial(out, "j_cropped")
     out["airr_assembly_status"] = "complete"
     return out
 
 
-def build_airr(records: list, reference, chain: str = "heavy", strict: bool = False) -> list:
-    """Assemble full AIRR rows. Each returned record carries ``airr_assembly_status``:
+def build_airr(reads: Sequence[ReadResult], reference: ReferenceSet, *, has_d: bool = True,
+               strict: bool = False) -> list[dict]:
+    """Assemble full AIRR rows from each read's typed result. Each returned row carries ``airr_assembly_status``:
     ``"complete"`` (all expected products derived), ``"partial"`` (valid calls but a product could not
     be assembled — with a machine-readable ``airr_assembly_reason``), or ``"failed"`` (an exception,
     keeping the light fields + an ``airr_assembly_error``). Incomplete records are never reported as a
@@ -160,26 +159,25 @@ def build_airr(records: list, reference, chain: str = "heavy", strict: bool = Fa
 
     Expected data-edge exceptions become tagged failures; any other exception is a programming defect
     and is re-raised as :class:`AirrAssemblyError` with the record identifier. ``strict=True`` re-raises
-    even the expected data failures (used to gate release fixtures / tests that must assemble cleanly)."""
-    v_gapped, j_ung, d_ung, j_anchors = _germline_maps(reference)
-    v_names = reference.gene("V").names                          # locus gate: TCR (TRxV...) IMGT gapping
-    is_tcr = bool(v_names) and str(v_names[0]).upper().startswith("TR")  # breaks the gapped column-309
-    # per-record chain: a multi-chain union may mix loci, so assemble each record with ITS locus's
-    # has-D / heavy-vs-light policy rather than one global chain.
-    locus_hasd = {l.locus: l.has_d for l in getattr(reference, "loci", [])}
-    out = []                                                     # junction -> use the read-coordinate path
-    for i, rec in enumerate(records):
-        ident = rec.get("sequence_id") or f"record[{i}] {str(rec.get('sequence', ''))[:24]!r}"
-        rec_chain = ("heavy" if locus_hasd[rec["locus"]] else "light") if rec.get("locus") in locus_hasd \
-            else chain
+    even the expected data failures (used to gate release fixtures / tests that must assemble cleanly). ``has_d``
+    says whether the model calls a D: without one no read is assembled with a D; with one, a read is assembled with
+    its locus's D, and a read of a locus the reference does not describe with a D."""
+    germlines = GermlineMaps.of(reference)
+    # each read is assembled with its own locus's D (a reference of several loci may mix loci with and without one),
+    # and never with a D the model does not call
+    locus_hasd = {info.locus: info.has_d for info in reference.loci}
+    out = []
+    for i, read in enumerate(reads):
+        ident = f"record[{i}]"
+        light = light_record(read)
         try:
-            row = _build_one(rec, v_gapped, j_ung, d_ung, j_anchors, rec_chain, is_tcr)
+            row = _build_one(read, light, germlines, has_d and locus_hasd.get(read.locus, True))
             row.setdefault("airr_assembly_status", "complete")   # _build_one sets complete/partial
             out.append(row)
         except _EXPECTED_ASSEMBLY_ERRORS as e:
             if strict:
                 raise AirrAssemblyError(ident, e) from e
-            row = dict(rec)                # keep the light record (calls/coords) but TAG the failure
+            row = dict(light)              # keep the light record (calls/coords) but TAG the failure
             row["airr_assembly_status"] = "failed"
             row["airr_assembly_error"] = f"{type(e).__name__}: {e}"
             out.append(row)

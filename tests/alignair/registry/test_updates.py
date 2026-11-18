@@ -7,6 +7,8 @@ import pytest
 
 from alignair.registry import cache, updates
 
+pytestmark = pytest.mark.integration
+
 
 def _registry(tmp_path, latest="2.1.0"):
     d = tmp_path / "registry"
@@ -33,7 +35,7 @@ def env(tmp_path, monkeypatch):
 
 def test_notice_when_newer_available(env):
     s = io.StringIO()
-    notices = updates.maybe_notify_updates(sources_list=[env], stream=s)
+    notices = updates.maybe_notify_updates(registry=[env], stream=s)
     assert notices == [("human-igh", "2.1.0")]
     assert "human-igh 2.1.0" in s.getvalue() and "models update human-igh" in s.getvalue()
 
@@ -41,11 +43,11 @@ def test_notice_when_newer_available(env):
 def test_suppressed_when_pinned_offline_quiet_or_env(env, monkeypatch):
     for kw in ({"pinned": True}, {"offline": True}, {"quiet": True}):
         s = io.StringIO()
-        assert updates.maybe_notify_updates(sources_list=[env], stream=s, **kw) == []
+        assert updates.maybe_notify_updates(registry=[env], stream=s, **kw) == []
         assert s.getvalue() == ""
     monkeypatch.setenv("ALIGNAIR_NO_NETWORK", "1")
     s = io.StringIO()
-    assert updates.maybe_notify_updates(sources_list=[env], stream=s) == []
+    assert updates.maybe_notify_updates(registry=[env], stream=s) == []
     assert s.getvalue() == ""
 
 
@@ -57,11 +59,14 @@ def test_no_notice_when_up_to_date(tmp_path, monkeypatch):
     latest.write_bytes(b"cur")
     src = _registry(tmp_path, latest="2.1.0")
     s = io.StringIO()
-    assert updates.maybe_notify_updates(sources_list=[src], stream=s) == []
+    assert updates.maybe_notify_updates(registry=[src], stream=s) == []
     assert s.getvalue() == ""
 
 
-def test_unreachable_registry_is_silent(env):
+def test_unreachable_registry_is_silent(env, monkeypatch):
+    def unreachable(source, **kwargs):
+        raise OSError("registry unavailable")
+    monkeypatch.setattr(updates.sources, "load_registry", unreachable)
     s = io.StringIO()
-    assert updates.maybe_notify_updates(sources_list=["hf://unreachable/x"], stream=s) == []
+    assert updates.maybe_notify_updates(registry=["hf://unreachable/x"], stream=s) == []
     assert s.getvalue() == ""

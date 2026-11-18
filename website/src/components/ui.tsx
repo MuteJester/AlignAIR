@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Check, Copy, Info, AlertTriangle, Lightbulb } from "lucide-react";
 import { cn } from "../lib/util";
+import { commandText } from "../lib/tabs";
 
 /* -------------------------------------------------------------------------- */
 /* Button                                                                     */
@@ -115,7 +116,7 @@ export function Callout({
   return (
     <div className={cn("my-5 flex gap-3 rounded-xl border p-4", s.wrap)}>
       <Icon aria-hidden="true" className={cn("mt-0.5 h-5 w-5 shrink-0", s.ic)} />
-      <div className="text-sm text-slate-700 dark:text-slate-300">
+      <div className="min-w-0 text-sm text-slate-700 dark:text-slate-300">
         {title && <p className="mb-1 font-semibold text-slate-900 dark:text-white">{title}</p>}
         {children}
       </div>
@@ -137,7 +138,7 @@ export function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
-    navigator.clipboard?.writeText(code).then(() => {
+    navigator.clipboard?.writeText(commandText(code)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });

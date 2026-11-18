@@ -1,14 +1,20 @@
-import { useEffect } from "react";
-import { Navigate, useParams, Link, NavLink, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { Navigate, useParams, useLocation, Link, NavLink, useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight } from "lucide-react";
-import { DOC_SECTIONS, getDoc, firstDocSlug, adjacentDocs } from "./docs";
+import { DOCS, getDoc, firstDocSlug, adjacentDocs, audienceOf, sectionsFor } from "./docs";
+import { movedTo } from "./docs/nav";
+import type { DocPage } from "./docs/doc-kit";
 import { PageHeader } from "./docs/doc-kit";
+import Breadcrumbs from "../components/Breadcrumbs";
+import OnThisPage from "../components/OnThisPage";
+import { parseHeading } from "../lib/anchors";
 import { cn } from "../lib/util";
 
-function Sidebar({ current }: { current: string }) {
+/** The sidebar of the current journey: the user's sections, or the developers' when on a developer page. */
+function Sidebar({ current, sections }: { current: string; sections: { title: string; pages: DocPage[] }[] }) {
   return (
     <nav aria-label="Documentation" className="space-y-6">
-      {DOC_SECTIONS.map((section) => (
+      {sections.map((section) => (
         <div key={section.title}>
           <p className="mb-2 px-3 text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{section.title}</p>
           <ul className="space-y-0.5">
@@ -36,14 +42,25 @@ function Sidebar({ current }: { current: string }) {
 
 export default function DocsPage() {
   const { slug } = useParams<{ slug: string }>();
+  const { search } = useLocation();
   const doc = getDoc(slug);
   const navigate = useNavigate();
+  const article = useRef<HTMLElement>(null);
 
+  // Scroll to the heading the route names (?h=<id>), else to the top of a new page.
   useEffect(() => {
-    window.scrollTo({ top: 0 });
-  }, [slug]);
+    const heading = parseHeading(search);
+    const timer = window.setTimeout(() => {
+      const target = heading ? document.getElementById(heading) : null;
+      if (target) target.scrollIntoView({ block: "start" });
+      else window.scrollTo({ top: 0 });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [slug, search]);
 
   if (!slug) return <Navigate to={`/docs/${firstDocSlug()}`} replace />;
+  const moved = doc ? undefined : movedTo(`/docs/${slug}`);
+  if (moved) return <Navigate to={moved} replace />;
   if (!doc) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-24 text-center">
@@ -57,30 +74,27 @@ export default function DocsPage() {
     );
   }
 
+  const sections = sectionsFor(DOCS, audienceOf(doc.section));
   const { prev, next } = adjacentDocs(doc.slug);
-
-  const handleMobileNavChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    navigate(`/docs/${e.target.value}`);
-  };
 
   return (
     <div className="mx-auto flex max-w-7xl gap-8 px-4 py-8 sm:px-6">
       <aside className="hidden w-56 shrink-0 lg:block">
         <div className="sticky top-24 aa-scrollbar max-h-[calc(100vh-7rem)] overflow-y-auto pb-8">
-          <Sidebar current={doc.slug} />
+          <Sidebar current={doc.slug} sections={sections} />
         </div>
       </aside>
 
-      <article className="min-w-0 flex-1 max-w-3xl">
+      <article ref={article} className="min-w-0 max-w-3xl flex-1">
         <div className="mb-6 lg:hidden">
           <label htmlFor="docs-mobile-select" className="sr-only">Select documentation page</label>
           <select
             id="docs-mobile-select"
             value={doc.slug}
-            onChange={handleMobileNavChange}
+            onChange={(e) => navigate(`/docs/${e.target.value}`)}
             className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-sm focus:border-brand-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
           >
-            {DOC_SECTIONS.map((section) => (
+            {sections.map((section) => (
               <optgroup key={section.title} label={section.title}>
                 {section.pages.map((p) => (
                   <option key={p.slug} value={p.slug}>
@@ -92,6 +106,7 @@ export default function DocsPage() {
           </select>
         </div>
 
+        <Breadcrumbs section={doc.section} title={doc.title} />
         <PageHeader title={doc.title} lead={doc.lead} />
         <div className="prose-aa max-w-none">{doc.body()}</div>
 
@@ -104,9 +119,7 @@ export default function DocsPage() {
               <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                 <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" /> Previous
               </span>
-              <span className="mt-1 font-semibold text-slate-800 group-hover:text-brand-600 dark:text-slate-100">
-                {prev.title}
-              </span>
+              <span className="mt-1 font-semibold text-slate-800 group-hover:text-brand-600 dark:text-slate-100">{prev.title}</span>
             </Link>
           ) : (
             <div />
@@ -119,13 +132,17 @@ export default function DocsPage() {
               <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                 Next <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
               </span>
-              <span className="mt-1 font-semibold text-slate-800 group-hover:text-brand-600 dark:text-slate-100">
-                {next.title}
-              </span>
+              <span className="mt-1 font-semibold text-slate-800 group-hover:text-brand-600 dark:text-slate-100">{next.title}</span>
             </Link>
           )}
         </nav>
       </article>
+
+      <aside className="hidden w-52 shrink-0 xl:block">
+        <div className="sticky top-24">
+          <OnThisPage container={article} slug={doc.slug} />
+        </div>
+      </aside>
     </div>
   );
 }

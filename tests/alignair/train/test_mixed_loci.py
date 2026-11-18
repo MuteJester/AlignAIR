@@ -13,10 +13,15 @@ import itertools
 import GenAIRR.data as gd
 import pytest
 
-from alignair.train.build import required_segments
-from alignair.train.gym import Curriculum, build_experiment
-from alignair.train.trainer import (_amplicon_specs, _cap_for, _dc_name, _effective_mutation_caps,
-                                    _is_tcr)
+from alignair.train.bundle import required_segments
+from alignair.genairr.experiment import build_experiment
+from alignair.train.records import Curriculum
+from alignair.genairr.catalog import dataconfig_name
+from alignair.train.records.streams import (CurriculumStreamPolicy, mutation_cap_for, effective_mutation_caps)
+from alignair.genairr.catalog import is_tcr
+
+
+pytestmark = pytest.mark.integration
 
 _IGH = gd.HUMAN_IGH_OGRDB
 _TRA = gd.HUMAN_TCRA_IMGT
@@ -26,23 +31,23 @@ _PROGRESSES = (0.3, 0.6, 0.9)
 _HEAVY_SHM = 0.25
 
 
-def _rates(dc, mutation_cap=None):
+def _rates(dc):
     """The distinct SHM rates every stream of this locus would actually be simulated with."""
-    specs = _amplicon_specs(_PROGRESSES, _HEAVY_SHM, 1, _cap_for(dc, mutation_cap))
+    specs = CurriculumStreamPolicy(_PROGRESSES, _HEAVY_SHM, 1).parameters_for(dc)
     return sorted({round(s["mutation_rate"], 4) for s in specs})
 
 
 # --- IG + TCR: the SHM cap must be per locus, never global ------------------------------------
 
 def test_is_tcr_classifies_loci():
-    assert _is_tcr(_TRA) and _is_tcr(_TRB)
-    assert not _is_tcr(_IGH)
+    assert is_tcr(_TRA) and is_tcr(_TRB)
+    assert not is_tcr(_IGH)
 
 
 def test_tcr_loci_are_always_capped_to_zero_and_ig_is_untouched():
-    assert _cap_for(_TRA, None) == 0.0
-    assert _cap_for(_TRB, None) == 0.0
-    assert _cap_for(_IGH, None) is None            # IG keeps the run-level cap (uncapped by default)
+    assert mutation_cap_for(_TRA) == 0.0
+    assert mutation_cap_for(_TRB) == 0.0
+    assert mutation_cap_for(_IGH) is None                  # IG is uncapped
 
 
 def test_mixed_ig_tcr_keeps_shm_for_ig_and_zeroes_tcr():
@@ -53,40 +58,38 @@ def test_mixed_ig_tcr_keeps_shm_for_ig_and_zeroes_tcr():
     assert trb_rates == [0.0], f"TCR streams must have zero SHM, got {trb_rates}"
 
 
-def test_a_global_cap_would_have_broken_ig_shm():
-    """Guards the *reason* the cap is per-locus: a global 0.0 flattens IGH's whole ladder."""
-    global_capped = sorted({round(s["mutation_rate"], 4)
-                            for s in _amplicon_specs(_PROGRESSES, _HEAVY_SHM, 1, 0.0)})
-    assert global_capped == [0.0]
-    assert _rates(_IGH) != global_capped           # the per-locus path must NOT behave that way
+def test_the_tcr_zero_cap_leaves_the_ig_shm_ladder_whole():
+    """Guards the *reason* the cap is per locus: a global 0.0 would flatten IGH's whole ladder."""
+    assert _rates(_TRB) == [0.0]
+    assert len(_rates(_IGH)) > 1 and 0.0 not in _rates(_IGH)
 
 
 def test_tcr_streams_never_request_shm_from_genairr():
     """GenAIRR raises if mutate() is called on a TCR refdata, so every TCR spec must be rate 0."""
     for dc in (_TRA, _TRB):
-        specs = _amplicon_specs(_PROGRESSES, _HEAVY_SHM, 1, _cap_for(dc, None))
+        specs = CurriculumStreamPolicy(_PROGRESSES, _HEAVY_SHM).parameters_for(dc)
         assert all(s["mutation_rate"] == 0.0 for s in specs)
 
 
 # --- provenance: the card must record the caps that were ACTUALLY applied ----------------------
 
 def test_dc_name_resolves_canonical_genairr_names():
-    assert _dc_name(_TRA) == "HUMAN_TCRA_IMGT"
-    assert _dc_name(_IGH) == "HUMAN_IGH_OGRDB"
+    assert dataconfig_name(_TRA) == "HUMAN_TCRA_IMGT"
+    assert dataconfig_name(_IGH) == "HUMAN_IGH_OGRDB"
 
 
 def test_effective_caps_single_tcr_locus_records_the_zero():
     """A TRA run must not read as `mutation_cap: null` (uncapped) when it saw zero SHM."""
-    assert _effective_mutation_caps([_TRA], None) == {"HUMAN_TCRA_IMGT": 0.0}
+    assert effective_mutation_caps([_TRA]) == {"HUMAN_TCRA_IMGT": 0.0}
 
 
 def test_effective_caps_mixed_run_records_each_locus():
-    caps = _effective_mutation_caps([_IGH, _TRB], None)
+    caps = effective_mutation_caps([_IGH, _TRB])
     assert caps == {"HUMAN_IGH_OGRDB": None, "HUMAN_TCRB_IMGT": 0.0}
 
 
 def test_effective_caps_disambiguates_repeated_dataconfigs():
-    caps = _effective_mutation_caps([_IGH, _IGH], None)
+    caps = effective_mutation_caps([_IGH, _IGH])
     assert len(caps) == 2, f"a repeated dataconfig must not overwrite its twin: {caps}"
 
 
@@ -102,7 +105,7 @@ def test_required_segments_are_per_locus():
 def test_mixed_d_and_nond_validation_retains_every_locus(dc, name):
     """TRA+TRB: a union has_d would drop ALL TRA records (they have no D coordinates), silently
     reducing the validation report to TRB. Per-locus segments must retain both."""
-    params = dict(Curriculum().params(0.3))
+    params = {**Curriculum().params(0.3), "invert_d_prob": 0.05}
     params["mutation_rate"] = 0.0                          # TCR: no SHM
     exp = build_experiment(dc, params, allow_curatable=True)
     recs = list(itertools.islice(exp.stream_records(n=None, seed=7), 8))

@@ -7,8 +7,16 @@ on:
   workflow_dispatch:      # allow manual runs on any branch (e.g. to check the cross-platform matrix)
 
 jobs:
+  model-validation:
+    uses: ./.github/workflows/model-validation.yml
+
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      PYTHONDONTWRITEBYTECODE: "1"
     strategy:
       fail-fast: false
       matrix:
@@ -22,13 +30,81 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[cli]" pytest
+          pip install ".[cli,test]"
       - name: Smoke — CLI is wired
         run: |
           alignair --version
           alignair doctor
-      - name: Tests
-        run: pytest -q
+      - name: Tests (all but the heavy training tests, which test-heavy runs)
+        run: |
+          python -m pytest tests -q -n auto -m "not heavy" --cov=alignair \
+            --cov-report=xml:test-results/coverage.xml --cov-report=json:test-results/coverage.json \
+            --cov-report=html:test-results/htmlcov --junitxml=test-results/junit.xml
+      - name: Critical-file branch and statement coverage
+        if: matrix.python-version == '3.12'
+        run: python -m tests.support.coverage_gate --coverage test-results/coverage.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-python-${{ matrix.python-version }}
+          path: test-results/
+
+  # The tests marked heavy train a model, a lab screen or a record cache end to end: minutes each on a 4-CPU runner
+  # (the longest 7.5 without coverage, 15 under it), past the suite's 300 s per-test limit, and together more than half
+  # of the suite's time. They run once, here, on 3.12, without coverage and with a 30-minute per-test limit.
+  test-heavy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (CPU torch + package + test deps)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ".[cli,test]"
+      - name: Heavy training tests
+        run: python -m pytest tests -q -n auto -m heavy --timeout=1800 --junitxml=test-results/heavy.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: heavy-test-results
+          path: test-results/
+
+  test-independence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install ".[cli,test]"
+      - name: Component tests in a reproducible shuffled order
+        run: |
+          python -m pytest tests -q -m "component and not slow and not model_validation" \
+            --test-order=shuffle --order-seed=20261026 --junitxml=test-results/shuffled.xml
+      - name: Component tests in concurrent isolated workers
+        run: |
+          python -m pytest tests -q -m "component and not slow and not model_validation" \
+            -n 2 --junitxml=test-results/parallel.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shuffled-test-results
+          path: test-results/
 
   # The full suite runs on Linux (above). This job proves the package *runs* on macOS + Windows too,
   # exercising the platform-sensitive code paths — cross-process file locking (POSIX flock vs the
@@ -37,6 +113,7 @@ jobs:
   crossplatform:
     name: cross-platform (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -53,13 +130,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[cli]" pytest
+          pip install ".[cli,test]"
       - name: Smoke — CLI is wired
         run: |
           alignair --version
           alignair doctor
       - name: Platform-sensitive tests (I/O, container, registry locking, atomic replace, paths)
-        run: pytest -q tests/alignair/io tests/alignair/model_file tests/alignair/registry
+        run: python -m pytest -q tests/alignair/io tests/alignair/model_file tests/alignair/registry --junitxml=test-results/platform.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-results-${{ matrix.os }}
+          path: test-results/
 
   wheel:
     runs-on: ubuntu-latest
@@ -79,7 +161,10 @@ jobs:
           /tmp/wheelenv/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
           /tmp/wheelenv/bin/pip install "$(ls dist/*.whl)[cli]"
       - name: Release smoke (doctor -> demo -> validate-airr -> compare)
-        run: ALIGNAIR=/tmp/wheelenv/bin/alignair sh scripts/release_smoke.sh "$RUNNER_TEMP/wheel_smoke"
+        run: ALIGNAIR=/tmp/wheelenv/bin/alignair sh tests/packaging/release_smoke.sh "$RUNNER_TEMP/wheel_smoke"
+      - name: Installed public API contracts outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: /tmp/wheelenv/bin/python "$GITHUB_WORKSPACE/tests/packaging/installed_contract.py" --forbid-source "$GITHUB_WORKSPACE/src"
 
   conda:
     runs-on: ubuntu-latest
@@ -103,7 +188,7 @@ jobs:
           conda-build conda/ --output
       - name: Conda-env runtime smoke (conda pytorch + pip install + tiny demo)
         run: |
-          conda install -y "pytorch>=2.2" "numpy>=1.24" "pandas>=1.5" -c conda-forge
+          conda install -y "pytorch>=2.2" "numpy>=1.24" -c conda-forge
           pip install ".[cli]"          # GenAIRR + AlignAIR are PyPI-only for now
           alignair doctor
           alignair reference list
@@ -127,6 +212,6 @@ jobs:
             --user "$(id -u):$(id -g)" \
             --entrypoint sh \
             -e HOME=/out \
-            -v "$PWD/scripts:/scripts:ro" \
+            -v "$PWD/tests/packaging/release_smoke.sh:/release_smoke.sh:ro" \
             -v "$RUNNER_TEMP/docker_smoke:/out" \
-            alignair:ci /scripts/release_smoke.sh /out
+            alignair:ci /release_smoke.sh /out

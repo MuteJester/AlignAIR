@@ -7,11 +7,13 @@ import pytest
 
 from alignair.cli.main import build_parser
 
+pytestmark = pytest.mark.component
+
 # The contract surface. Every command here is referenced by a maintained wrapper (README / ci.yml /
-# Dockerfile / scripts/release_smoke.sh). Add here only alongside the wrapper that uses it.
+# Dockerfile / tests/packaging/release_smoke.sh). Add here only alongside the wrapper that uses it.
 CONTRACT_COMMANDS = {
-    "predict", "train", "demo", "doctor", "info", "models", "model", "reference",
-    "export-reference", "convert", "validate-airr", "compare", "analyze", "benchmark", "genotype",
+    "predict", "train", "demo", "doctor", "info", "models", "reference",
+    "validate-airr", "compare", "analyze", "benchmark", "genotype",
 }
 
 
@@ -47,6 +49,13 @@ def test_reference_subcommands_parse(sub):
 
 
 def test_release_smoke_commands_are_all_in_the_contract():
-    """The exact verbs scripts/release_smoke.sh invokes must all be contract commands."""
+    """The exact verbs tests/packaging/release_smoke.sh invokes must all be contract commands."""
     for cmd in ("doctor", "demo", "validate-airr", "compare"):
         assert cmd in CONTRACT_COMMANDS
+
+
+def test_train_help_bounds_the_data_workers_by_the_curriculum_streams():
+    """As ``TrainingConfig`` documents: a worker process serves one curriculum stream at most."""
+    (subcommands,) = [a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction)]
+    (workers,) = [a for a in subcommands.choices["train"]._actions if "--data-workers" in a.option_strings]
+    assert "at most 28 are used" in workers.help

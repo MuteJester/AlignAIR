@@ -1,4 +1,5 @@
-"""Repertoire + QC + validation reporting over an AIRR rearrangement TSV (`alignair analyze`)."""
+"""AIRR rearrangement tables (``tables`` reads them): the repertoire, QC and validation report (``report``,
+``alignair analyze``) and the tool-to-tool comparison (``compare``, ``alignair compare``)."""
 from .report import analyze_file, analyze_rows, format_text, qc, repertoire
 from .validate import validate_airr
 

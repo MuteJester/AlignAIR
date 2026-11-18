@@ -4,15 +4,26 @@ from __future__ import annotations
 import itertools
 import math
 import statistics
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
-from ..api import predict_sequences
+from ..aligner import Aligner
+from ..analyze.tables import first_call, num
+from ..errors import ConfigurationError, DataContractError
+from ..reference.genes import GENES
+
+if TYPE_CHECKING:
+    from GenAIRR import DataConfig
+
+    from ..core.model import AlignAIR
+    from ..reference.reference_set import ReferenceSet
 
 
 def default_strata() -> dict:
     """Named GenAIRR generation params: clean, moderate corruption, heavy-SHM, and a J-anchored short
-    amplicon. (The full 22-stratum head-to-head lives in the ``alignair_benchmark`` package.)"""
-    from ..train.gym import Curriculum
-    cur = Curriculum()
+    amplicon. The strata are pinned to the curriculum's uniform indel form, so they keep generating the same data."""
+    from ..train.records import Curriculum
+    cur = Curriculum(indel_form="uniform")
     return {
         "clean": dict(cur.params(0.1)),
         "moderate": dict(cur.params(0.6)),
@@ -21,28 +32,32 @@ def default_strata() -> dict:
     }
 
 
-def generate_labeled(dataconfig, params: dict, n: int, seed: int) -> list[dict]:
-    """``n`` labelled records (truth calls + coords + junction) from the GenAIRR gym stream."""
-    from ..train.gym import build_experiment
+def generate_labeled(dataconfig: DataConfig, params: dict, n: int, seed: int, *,
+                     stratum: str | None = None) -> list[dict]:
+    """``n`` labelled records (truth calls + coords + junction) from the GenAIRR experiment the training records use.
+    A record with no bases left (a stratum's 5' loss can take a whole short read, as short_janchor does on TRB) is
+    skipped: there is no read to align. ConfigurationError, naming ``stratum`` and the dataconfig, when nearly every
+    record is empty."""
+    from ..genairr.experiment import build_experiment
     p = dict(params)
     p.setdefault("invert_d_prob", 0.0)
     exp = build_experiment(dataconfig, p, allow_curatable=True)
-    return list(itertools.islice(exp.stream_records(n=None, seed=seed), n))
-
-
-def _first(call) -> str:
-    return str(call).split(",")[0].strip() if call else ""
-
-
-def _num(v):
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+    drawn = itertools.islice(exp.stream_records(n=None, seed=seed), 10 * max(n, 1))
+    records = list(itertools.islice((record for record in drawn if record.get("sequence")), n))
+    if len(records) < n:
+        from ..genairr.catalog import name_of
+        source = name_of(dataconfig) or "the dataconfig"
+        raise ConfigurationError(f"the {stratum or 'benchmark'} stratum leaves fewer than {n} of {10 * n} reads "
+                                 f"simulated from {source} with any bases",
+                                 context={"stratum": stratum, "dataconfig": name_of(dataconfig), "reads": n,
+                                          "with_bases": len(records)},
+                                 hint="its 5' and 3' losses are longer than this germline set's reads; choose other "
+                                      "strata (--strata)")
+    return records
 
 
 def _call_correct(pred_call, truth_call) -> bool:
-    pf = _first(pred_call)
+    pf = first_call(pred_call)
     truth_set = {c.strip() for c in str(truth_call or "").split(",") if c.strip()}
     return bool(pf) and pf in truth_set
 
@@ -53,8 +68,18 @@ def _mean(xs):
 
 def score(truth: list[dict], preds: list[dict]) -> dict:
     """Per-metric scores of ``preds`` against ``truth`` (aligned lists)."""
+    if len(truth) != len(preds):
+        raise DataContractError("benchmark truth and predictions have different record counts",
+                                context={"expected_rows": len(truth), "actual_rows": len(preds)})
+    for offset, (target, predicted) in enumerate(zip(truth, preds)):
+        if not isinstance(target, Mapping) or not isinstance(predicted, Mapping):
+            raise DataContractError("benchmark rows must be record mappings", context={"record_offset": offset})
+        if ('sequence_id' in target and 'sequence_id' in predicted
+                and target['sequence_id'] != predicted['sequence_id']):
+            raise DataContractError("benchmark truth and prediction IDs are misaligned",
+                                    context={"record_offset": offset})
     m: dict = {}
-    for g in ("v", "d", "j"):
+    for g in GENES:
         pairs = [(t, p) for t, p in zip(truth, preds) if t.get(f"{g}_call")]
         m[f"{g}_call_acc"] = _mean([_call_correct(p.get(f"{g}_call"), t.get(f"{g}_call")) for t, p in pairs])
     jt = [(t, p) for t, p in zip(truth, preds) if t.get("junction")]
@@ -65,30 +90,38 @@ def score(truth: list[dict], preds: list[dict]) -> dict:
     m["junction_len_mae"] = _mean([abs(len(p.get("junction") or "") - len(str(t["junction"]))) for t, p in jt])
     for g in ("v", "j"):
         for b in ("sequence_start", "sequence_end"):
-            errs = [abs(_num(p.get(f"{g}_{b}")) - _num(t.get(f"{g}_{b}")))
+            errs = [abs(num(p.get(f"{g}_{b}")) - num(t.get(f"{g}_{b}")))
                     for t, p in zip(truth, preds)
-                    if _num(p.get(f"{g}_{b}")) is not None and _num(t.get(f"{g}_{b}")) is not None]
+                    if num(p.get(f"{g}_{b}")) is not None and num(t.get(f"{g}_{b}")) is not None]
             m[f"{g}_{b}_mae"] = _mean(errs)
     m["productive_acc"] = _mean([bool(p.get("productive")) == bool(t.get("productive"))
                                  for t, p in zip(truth, preds)])
     return m
 
 
-def run_benchmark(model, reference, dataconfig, *, n: int = 200, seed: int = 0,
-                  strata_names: list[str] | None = None, device: str = "cpu", batch_size: int = 64) -> dict:
+def run_benchmark(model: AlignAIR, reference: ReferenceSet, dataconfig: DataConfig, *, n: int = 200,
+                  seed: int = 0, strata_names: list[str] | None = None, device: str = "cpu",
+                  batch_size: int = 64) -> dict:
+    """Score ``model`` on ``n`` reads per stratum (``default_strata``, or the named ones) generated from
+    ``dataconfig``: ``{stratum: {"n": ..., metric: value}}`` (``score``)."""
     strata = default_strata()
     if strata_names:
-        strata = {k: strata[k] for k in strata_names if k in strata}
+        unknown = [name for name in strata_names if name not in strata]
+        if unknown:
+            raise ConfigurationError(f"unknown benchmark strata {unknown}", context={"strata": unknown},
+                                     hint=f"the strata are {sorted(strata)}")
+        strata = {k: strata[k] for k in strata_names}
+    aligner = Aligner.from_model(model, reference, device=device)
     out: dict = {}
     for i, (name, params) in enumerate(strata.items()):
-        truth = generate_labeled(dataconfig, params, n, seed + i)
-        preds = predict_sequences(model, reference, [r["sequence"] for r in truth],
-                                  device=device, batch_size=batch_size)
+        truth = generate_labeled(dataconfig, params, n, seed + i, stratum=name)
+        preds = aligner.predict([r["sequence"] for r in truth], batch_size=batch_size).records
         out[name] = {"n": len(truth), **score(truth, preds)}
     return out
 
 
 def format_text(results: dict) -> str:
+    """``run_benchmark``'s results as a text table, one row per stratum."""
     metrics = ["v_call_acc", "d_call_acc", "j_call_acc", "junction_nt_exact", "junction_len_mae",
                "v_sequence_start_mae", "v_sequence_end_mae", "j_sequence_start_mae",
                "j_sequence_end_mae", "productive_acc"]

@@ -1,14 +1,10 @@
-"""Backbone transfer: warm-start a model on a NEW reference from another model's weights.
+"""Shape-matched warm starts from another model's weights.
 
-The shared, reference-agnostic backbone — token/position embedding, orientation head, the shared meta
-tower, per-gene segmentation towers + boundary heads, and the mutation/indel/productivity meta-heads —
-has the same shape across references (it depends on ``embed_dim``/``filters``/``block_out``/``max_len``,
-not on the allele counts). It transfers directly. The reference-specific parts — allele classification
-heads, an auto-scaled classification tower, a chain_type head, or a gene absent in the new locus — differ
-in shape and keep their fresh initialization.
-
-Transfer is a shape-matched partial load: copy every parameter/buffer whose NAME **and** SHAPE match the
-source; leave the rest at the target's init. General across any source→target pair.
+Every parameter and buffer whose name and shape match the source's is copied; the rest keep the target's fresh
+initialization. A chip's weights do not depend on its reference (the alleles are an input, the bound bank), so a
+source of the same widths (``embed_dim``, ``trunk_channels``) transfers whole; a part whose shape differs (another
+width, or a gene the target does not have) does not. A match of names and shapes is not a guarantee of architectural
+compatibility.
 """
 from __future__ import annotations
 
@@ -34,11 +30,11 @@ def transfer_compatible_weights(target_model, source_state_dict: dict) -> tuple[
     return transferred, skipped
 
 
-def load_source_state_dict(source_path: str, device: str = "cpu", trust_pickle: bool = False) -> dict:
+def load_source_state_dict(source_path: str, device: str = "cpu") -> dict:
     """State_dict of another AlignAIR model (any reference/architecture), for backbone transfer."""
-    from ..api import load_model
-    src, _ = load_model(source_path, device=device, trust_pickle=trust_pickle)
-    return src.state_dict()
+    from ..model_file import read_model_state
+    state = read_model_state(source_path).model_state
+    return {name: value.to(device) for name, value in state.items()}
 
 
 def summarize(transferred: list, skipped: list, depth: int = 2) -> str:

@@ -6,28 +6,48 @@ import pytest
 from alignair.predict.airr import build_airr
 from alignair.predict.airr.builder import AirrAssemblyError
 from alignair.predict.airr.alignment import build_sequence_alignment
-from alignair.predict.airr.regions import compute_junction
+from alignair.predict.results import Anchors
+from alignair.predict.state import GermlineAlignment
+from tests.support.read_results import make_read
+
+pytestmark = pytest.mark.component
 
 
 class _FakeRef:
     """Minimal reference stub for status/error-handling tests (no germline math needed)."""
     genes = {"V", "J"}
+    loci = []                                       # no locus schema
 
     def gene(self, g):
         return SimpleNamespace(names=["IGHV1-1*01"], sequences=["ACGT"], gapped=None, anchors={})
 
 
+def test_a_model_without_a_d_never_assembles_one_whatever_the_reference_says(monkeypatch):
+    """A model without a D cannot call one: its reads are assembled without a D even when the bound reference gives
+    their locus one (a D-less model bound to an IGH reference)."""
+    from alignair.predict.airr import builder
+    seen = []
+    monkeypatch.setattr(builder, "_build_one", lambda read, light, germlines, has_d: seen.append(has_d) or dict(light))
+    reference = _FakeRef()
+    reference.loci = [SimpleNamespace(locus="IGH", has_d=True)]
+    build_airr([make_read("ACGT", locus="IGH"), make_read("ACGT")], reference, has_d=False)
+    assert seen == [False, False]
+    seen.clear()
+    build_airr([make_read("ACGT", locus="IGH"), make_read("ACGT")], reference, has_d=True)
+    assert seen == [True, True]
+
+
 def test_build_airr_tags_complete_status(monkeypatch):
     from alignair.predict.airr import builder
-    monkeypatch.setattr(builder, "_build_one", lambda rec, *a, **k: dict(rec))
-    out = build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy")
+    monkeypatch.setattr(builder, "_build_one", lambda read, light, *a, **k: dict(light))
+    out = build_airr([make_read("ACGT")], _FakeRef(), has_d=True)
     assert out[0]["airr_assembly_status"] == "complete"
 
 
 def test_build_airr_incomplete_record_is_partial_not_complete():
     """A record that skips assembly (no v_call) is `partial` with a reason code — never a clean
     `complete`/`ok` while germline_alignment/identity are blank."""
-    out = build_airr([{"sequence": "ACGT", "productive": True}], _FakeRef(), chain="heavy")[0]
+    out = build_airr([make_read("ACGT")], _FakeRef(), has_d=True)[0]
     assert out["airr_assembly_status"] == "partial"
     assert out["airr_assembly_reason"] == "missing_calls_or_coordinates"
 
@@ -36,20 +56,20 @@ def test_build_airr_unexpected_exception_raises_with_context(monkeypatch):
     """A non-data (programming) exception must fail loudly with the record identifier, never silent."""
     from alignair.predict.airr import builder
 
-    def boom(rec, *a, **k):
+    def boom(read, light, *a, **k):
         raise TypeError("bug")
     monkeypatch.setattr(builder, "_build_one", boom)
     with pytest.raises(AirrAssemblyError, match="ACGT|record"):
-        build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy")
+        build_airr([make_read("ACGT")], _FakeRef(), has_d=True)
 
 
 def test_build_airr_expected_exception_is_tagged_not_swallowed(monkeypatch):
     from alignair.predict.airr import builder
 
-    def bad_data(rec, *a, **k):
+    def bad_data(read, light, *a, **k):
         raise ValueError("edge-case data")
     monkeypatch.setattr(builder, "_build_one", bad_data)
-    out = build_airr([{"sequence": "ACGT", "v_call": "IGHV1-1*01"}], _FakeRef(), chain="heavy")
+    out = build_airr([make_read("ACGT", calls={"v": "IGHV1-1*01"})], _FakeRef(), has_d=True)
     assert out[0]["airr_assembly_status"] == "failed"
     assert "ValueError" in out[0]["airr_assembly_error"]
     assert out[0]["v_call"] == "IGHV1-1*01"                 # light record preserved
@@ -57,33 +77,23 @@ def test_build_airr_expected_exception_is_tagged_not_swallowed(monkeypatch):
 
 def test_build_airr_strict_raises_on_expected_error(monkeypatch):
     from alignair.predict.airr import builder
-    monkeypatch.setattr(builder, "_build_one", lambda rec, *a, **k: (_ for _ in ()).throw(ValueError("x")))
+    monkeypatch.setattr(builder, "_build_one", lambda read, light, *a, **k: (_ for _ in ()).throw(ValueError("x")))
     with pytest.raises(AirrAssemblyError):
-        build_airr([{"sequence": "ACGT"}], _FakeRef(), chain="heavy", strict=True)
+        build_airr([make_read("ACGT")], _FakeRef(), has_d=True, strict=True)
 
 
-def test_build_airr_productive_blank_when_not_derivable():
-    """A record that skips assembly (no v_call) leaves AIRR `productive` BLANK (unknown), keeping the
-    neural call only in `productive_prediction` — no guess presented as a derived fact."""
-    out = build_airr([{"sequence": "ACGT", "productive": True}], _FakeRef(), chain="heavy")[0]
-    assert out["productive"] is None                    # underivable -> blank/unknown
-    assert out["productive_prediction"] is True         # the neural prediction is preserved separately
+def test_build_airr_productive_blank_without_anchors():
+    """A record without predicted anchors has no junction, frame or productivity: AIRR `productive` is blank
+    (unknown), never a guess presented as a derived fact."""
+    out = build_airr([make_read("ACGT")], _FakeRef(), has_d=True)[0]
+    assert out["productive"] is None and out["productive_prediction"] is None
+    assert "junction" not in out
 
 
 def test_sequence_alignment_inserts_imgt_gaps():
     # gapped V ref has gaps at positions 2 and 5; the query (== ungapped V) is re-gapped to match.
-    aln = build_sequence_alignment("ACGTACGT", "AC.GT.ACGT", 0, 8, 0, 8, j_seq_end=8)
+    aln = build_sequence_alignment("ACGTACGT", "AC.GT.ACGT", GermlineAlignment("V1", 0, 8, 0, 8, ""), 8)
     assert aln == "AC.GT.ACGT"
-
-
-def test_junction_end_from_anchor():
-    seq_alignment = "A" * 400                      # no gaps -> offset 0
-    seq_aa = "K" * 133
-    j = compute_junction(seq_alignment, seq_aa, "J1", {"J1": 30},
-                         j_seq_start=350, v_seq_start=0, j_germ_start=0, j_alignment_end=400)
-    # junc_end = 350 - 0 + 0 + 30 - 0 + 3 = 383 ; junction = [309:383]
-    assert j["junction_length"] == 74
-    assert j["cdr3_start"] == 312 and j["cdr3_end"] == 380
 
 
 @pytest.mark.slow
@@ -95,16 +105,65 @@ def test_build_airr_end_to_end_produces_regions_and_junction():
     v_seq = ref.gene("V").sequences[ref.gene("V").index[v0]]
     j_seq = ref.gene("J").sequences[ref.gene("J").index[j0]]
     read = v_seq + "NNNNN" + j_seq
-    rec = {"sequence_id": "t0", "sequence": read, "v_call": v0, "d_call": "Short-D", "j_call": j0,
-           "v_sequence_start": 0, "v_sequence_end": len(v_seq),
-           "v_germline_start": 0, "v_germline_end": len(v_seq),
-           "d_sequence_start": len(v_seq), "d_sequence_end": len(v_seq) + 5,
-           "d_germline_start": 0, "d_germline_end": 0,
-           "j_sequence_start": len(v_seq) + 5, "j_sequence_end": len(read),
-           "j_germline_start": 0, "j_germline_end": len(j_seq),
-           "productive": True, "indel_count": 0}
-    out = build_airr([rec], ref, chain="heavy")[0]
+    n = len(v_seq)
+    rec = make_read(read, calls={"v": v0, "j": j0}, genes=("v", "d", "j"), d_presence="short", alignments={
+        "v": GermlineAlignment(v0, 0, n, 0, n, ""), "d": GermlineAlignment("", n, n + 5, 0, 0, ""),
+        "j": GermlineAlignment(j0, n + 5, len(read), 0, len(j_seq), "")},
+        anchors=Anchors(ref.gene("V").anchors[v0], n + 5 + ref.gene("J").anchors[j0]))
+    out = build_airr([rec], ref, has_d=True)[0]
     assert out["sequence_alignment"] is not None and "." in out["sequence_alignment"]  # V is IMGT-gapped
     assert out["fwr1"] is not None and out["cdr1"] is not None
     assert out["junction"] is not None and out["junction_length"] > 0
     assert out["v_germline_start"] == 0
+
+
+@pytest.mark.slow
+def test_build_airr_keeps_the_aligners_v_germline_coordinates():
+    """``v_germline_start``/``end`` are positions in the germline, as the aligner gives them: the IMGT gaps of the
+    alignment strings do not move them, and a V cut at its 5' end keeps where its germline starts."""
+    import GenAIRR.data as gd
+    from alignair.reference.reference_set import ReferenceSet
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    v0 = next(name for name in ref.gene("V").names if "." in ref.gene("V").gapped[name])
+    j0 = ref.gene("J").names[0]
+    v_seq = ref.gene("V").sequences[ref.gene("V").index[v0]]
+    j_seq = ref.gene("J").sequences[ref.gene("J").index[j0]]
+    cut = 30
+    read = v_seq[cut:] + "NNNNN" + j_seq
+    v_len = len(v_seq) - cut
+    rec = make_read(read, calls={"v": v0, "j": j0}, genes=("v", "d", "j"), d_presence="short", alignments={
+        "v": GermlineAlignment(v0, 0, v_len, cut, len(v_seq), ""),
+        "d": GermlineAlignment("", v_len, v_len + 5, 0, 0, ""),
+        "j": GermlineAlignment(j0, v_len + 5, len(read), 0, len(j_seq), "")})
+    out = build_airr([rec], ref, has_d=True)[0]
+    assert (out["v_germline_start"], out["v_germline_end"]) == (cut, len(v_seq))
+
+
+@pytest.mark.slow
+def test_a_row_is_its_light_record_plus_the_assembly():
+    """``build_airr`` assembles a read's typed result: the row starts from its light record (every light field as
+    ``light_record`` gives it, ``productive`` aside, which the assembly may fill) and adds the assembly."""
+    import GenAIRR.data as gd
+    from alignair.predict.results import light_record
+    from alignair.predict.state import GermlineAlignment
+    from alignair.reference.reference_set import ReferenceSet
+    from tests.support.read_results import make_read
+    ref = ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    v0, j0 = ref.gene("V").names[0], ref.gene("J").names[0]
+    v_seq = ref.gene("V").sequences[ref.gene("V").index[v0]]
+    j_seq = ref.gene("J").sequences[ref.gene("J").index[j0]]
+    read_seq = v_seq + "NNNNN" + j_seq
+    n = len(v_seq)
+    read = make_read(read_seq, calls={"v": v0, "j": j0}, genes=("v", "d", "j"), d_presence="short", alignments={
+        "v": GermlineAlignment(v0, 0, n, 0, n, f"{n}M"), "d": GermlineAlignment("", n, n + 5, 0, 0, ""),
+        "j": GermlineAlignment(j0, n + 5, len(read_seq), 0, len(j_seq), f"{len(j_seq)}M")})
+    (row,) = build_airr([read], ref, has_d=True)
+    assert all(row[key] == value for key, value in light_record(read).items() if key != "productive")
+    assert row["airr_assembly_status"] == "complete" and row["sequence_alignment"]
+
+
+def test_has_d_and_strict_are_given_by_name():
+    """A positional third argument was the chain ("heavy"/"light") before ``has_d``: taken as ``has_d``, "light" would
+    silently assemble a D."""
+    with pytest.raises(TypeError):
+        build_airr([make_read("ACGT")], _FakeRef(), "light")

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import csv
 
+from ..reference.genes import GENES
+
 _REQUIRED = ("sequence_id", "sequence", "v_call", "j_call")
-_GENES = ("v", "d", "j")
 _QUERY_OPS = set("MIS=X")          # CIGAR ops that consume query bases (D/N/H/P do not)
 
 
@@ -64,16 +65,15 @@ def validate_airr_file(path: str) -> dict:
                 errors.append((sid, "empty sequence"))
                 continue
             L = len(seq)
-            for g in _GENES:
+            for g in GENES:
                 cig = row.get(f"{g}_cigar")
                 if cig:
                     q = cigar_query_length(cig)
                     if q > L:
                         errors.append((sid, f"{g}_cigar consumes {q} query bases > sequence length {L}"))
                 s, e = _int(row.get(f"{g}_sequence_start")), _int(row.get(f"{g}_sequence_end"))
-                if s is not None and e is not None:
-                    if not (1 <= s <= e <= L):
-                        errors.append((sid, f"{g} coordinates out of bounds: start={s} end={e} len={L}"))
+                if s is not None and e is not None and not (1 <= s <= e <= L):
+                    errors.append((sid, f"{g} coordinates out of bounds: start={s} end={e} len={L}"))
             # productivity cross-field invariant: a productive rearrangement must be in-frame and have
             # no stop codon (when those derived fields are present).
             prod, inframe, stop = (_bool(row.get("productive")), _bool(row.get("vj_in_frame")),

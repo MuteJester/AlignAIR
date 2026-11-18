@@ -1,0 +1,6117 @@
+{
+  "status": "ready",
+  "split": "test",
+  "loci": {
+    "IGH": {
+      "reference": "HUMAN_IGH_OGRDB",
+      "suites": [
+        {
+          "name": "S1",
+          "title": "Core repertoire",
+          "cases": 5000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9780948553054662,
+              "alignair": 0.9893488745980707,
+              "delta": 0.011254019292604502,
+              "ci95": [
+                0.007327221703413821,
+                0.015180816881795182
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9939710610932476,
+              "alignair": 0.9967845659163987,
+              "delta": 0.0028135048231511255,
+              "ci95": [
+                0.0003864590933497559,
+                0.005240550552952495
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9764,
+              "alignair": 0.981,
+              "delta": 0.0046,
+              "ci95": [
+                0.0011622973261284637,
+                0.008037702673871536
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.982,
+              "alignair": 0.9942,
+              "delta": 0.0122,
+              "ci95": [
+                0.008517072679752437,
+                0.015882927320247566
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.3037645174209051,
+              "alignair": 0.17502004811547714,
+              "delta": -0.12118780096308186,
+              "ci95": [
+                -0.1409339789322942,
+                -0.10144162299386954
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.8614656237134624,
+              "alignair": 0.9559489501852614,
+              "delta": 0.09448332647179909,
+              "ci95": [
+                0.08573924499752186,
+                0.10322740794607632
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9963826366559485,
+              "alignair": 0.9967845659163987,
+              "delta": 0.00040192926045016077,
+              "ci95": [
+                -0.0017556470815554026,
+                0.002559505602455724
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S2",
+          "title": "V allele siblings",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.997,
+              "alignair": 0.998,
+              "delta": 0.001,
+              "ci95": [
+                -0.0007284434204209923,
+                0.0027284434204209924
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.set_precision",
+              "igblast": 0.9972777777777778,
+              "alignair": 0.9983333333333333,
+              "delta": 0.0010555555555555557,
+              "ci95": [
+                -0.0003257779917001935,
+                0.002436889102811305
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 0.9996666666666667,
+              "delta": -0.0003333333333333333,
+              "ci95": [
+                -0.0009866546615133513,
+                0.00031998799484668456
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.981,
+              "alignair": 0.9916666666666667,
+              "delta": 0.010666666666666666,
+              "ci95": [
+                0.0058801544770728026,
+                0.01545317885626053
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S3",
+          "title": "Junction sweeps",
+          "cases": 3150,
+          "rows": [
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.length_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.start_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.end_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9485714285714286,
+              "alignair": 0.9555555555555556,
+              "delta": 0.006984126984126984,
+              "ci95": [
+                0.001423368723106837,
+                0.01254488524514713
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.seq_start_exact",
+              "igblast": 0.9136507936507936,
+              "alignair": 0.9196825396825397,
+              "delta": 0.006031746031746032,
+              "ci95": [
+                -0.0004619402416118452,
+                0.01252543230510391
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S4",
+          "title": "Read truncation",
+          "cases": 2700,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9884231536926148,
+              "alignair": 0.9940119760479041,
+              "delta": 0.005588822355289421,
+              "ci95": [
+                0.0014536041491101,
+                0.009724040561468743
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v_short.abstain_ok",
+              "igblast": 0.7818181818181819,
+              "alignair": 0.9818181818181818,
+              "delta": 0.2,
+              "ci95": [
+                0.09331307385877091,
+                0.3066869261412291
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.germ_start_err",
+              "igblast": 0.21082390953150243,
+              "alignair": 0.00040160642570281126,
+              "delta": -0.16322397731875254,
+              "ci95": [
+                -0.3112668364544222,
+                -0.015181118183082848
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9262106072252114,
+              "alignair": 0.9911606456571868,
+              "delta": 0.0649500384319754,
+              "ci95": [
+                0.05472980429207692,
+                0.07517027257187389
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.germ_end_err",
+              "igblast": 0.10622406639004149,
+              "alignair": 0.07910042652190771,
+              "delta": -0.03045473508552357,
+              "ci95": [
+                -0.07695533199648476,
+                0.016045861825437616
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.spurious_call",
+              "igblast": 0.8071428571428572,
+              "alignair": 0.0,
+              "delta": -0.8071428571428572,
+              "ci95": [
+                -0.8727322723908785,
+                -0.7415534418948359
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9819932998324958,
+              "alignair": 0.9882747068676717,
+              "delta": 0.00628140703517588,
+              "ci95": [
+                0.0010309506698151418,
+                0.011531863400536618
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S5",
+          "title": "V indels",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "v.indel_found",
+              "igblast": 0.7754307948860478,
+              "alignair": 0.8154530294608116,
+              "delta": 0.040022234574763754,
+              "ci95": [
+                0.02644943854433316,
+                0.05359503060519435
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.indel_false",
+              "igblast": 0.0,
+              "alignair": 0.0033222591362126247,
+              "delta": 0.0033222591362126247,
+              "ci95": [
+                -0.003189249118073268,
+                0.009833767390498517
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9023809523809524,
+              "alignair": 0.9176190476190477,
+              "delta": 0.015238095238095238,
+              "ci95": [
+                0.005468786495247405,
+                0.02500740398094307
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.975,
+              "alignair": 0.9899038461538462,
+              "delta": 0.014903846153846155,
+              "ci95": [
+                0.008203486393264958,
+                0.02160420591442735
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9942857142857143,
+              "alignair": 0.9933333333333333,
+              "delta": -0.0009523809523809524,
+              "ci95": [
+                -0.0053308749969094935,
+                0.003426113092147589
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S6",
+          "title": "D observability",
+          "cases": 2500,
+          "rows": [
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.7408195848855774,
+              "alignair": 0.9233634912187334,
+              "delta": 0.18254390633315593,
+              "ci95": [
+                0.16203472110485614,
+                0.2030530915614557
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d_short.abstain_ok",
+              "igblast": 0.7359098228663447,
+              "alignair": 0.6151368760064412,
+              "delta": -0.12077294685990338,
+              "ci95": [
+                -0.16887860627388301,
+                -0.07266728744592374
+              ],
+              "verdict": "a_better"
+            },
+            {
+              "measure": "d.seq_start_exact",
+              "igblast": 0.7216604576902608,
+              "alignair": 0.8334220329962746,
+              "delta": 0.11176157530601384,
+              "ci95": [
+                0.09031461651113037,
+                0.1332085341008973
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.seq_end_exact",
+              "igblast": 0.7067589143161256,
+              "alignair": 0.8366152208621607,
+              "delta": 0.12985630654603514,
+              "ci95": [
+                0.10898075916436045,
+                0.15073185392770982
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S7",
+          "title": "Novel alleles",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9966666666666667,
+              "alignair": 0.998,
+              "delta": 0.0013333333333333333,
+              "ci95": [
+                2.7344379668940494e-05,
+                0.0026393222869977263
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.18066666666666667,
+              "alignair": 0.146,
+              "delta": -0.034666666666666665,
+              "ci95": [
+                -0.047511095370635414,
+                -0.02182223796269792
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9936155913978495,
+              "alignair": 0.9949596774193549,
+              "delta": 0.0013440860215053765,
+              "ci95": [
+                -0.0005183748383875818,
+                0.0032065468813983347
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9993279569892473,
+              "alignair": 0.9986559139784946,
+              "delta": -0.0006720430107526882,
+              "ci95": [
+                -0.0016032734406991672,
+                0.0002591874191937907
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S8",
+          "title": "Donor genotypes",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.outside_genotype",
+              "igblast": 0.001,
+              "alignair": 0.001,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.deleted_gene_call",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 0.999,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9976580796252927,
+              "alignair": 0.9979926396788223,
+              "delta": 0.00033456005352960856,
+              "ci95": [
+                -0.0014005757779343782,
+                0.002069695884993595
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S9",
+          "title": "Clonal lineages",
+          "cases": 1215,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.988477366255144,
+              "alignair": 0.9983539094650206,
+              "delta": 0.009876543209876543,
+              "ci95": [
+                -0.0024648053799691105,
+                0.022217891799722195
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone.agree_modal",
+              "igblast": 0.988477366255144,
+              "alignair": 0.9975308641975309,
+              "delta": 0.00905349794238683,
+              "ci95": [
+                -0.0030131110427723314,
+                0.02112010692754599
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9975308641975309,
+              "alignair": 0.9991769547325103,
+              "delta": 0.0016460905349794238,
+              "ci95": [
+                -0.0006163679004789172,
+                0.003908548970437764
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S10",
+          "title": "Held-out generative settings",
+          "cases": 2400,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9941250524548888,
+              "alignair": 0.9974821653378095,
+              "delta": 0.003357112882920688,
+              "ci95": [
+                0.00028199163156243526,
+                0.006432234134278941
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9995803608896349,
+              "alignair": 0.9995803608896349,
+              "delta": 0.0,
+              "ci95": [
+                -0.0011634030261231222,
+                0.0011634030261231222
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.99875,
+              "alignair": 0.9979166666666667,
+              "delta": -0.0008333333333333334,
+              "ci95": [
+                -0.002466636653783378,
+                0.0007999699871167112
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9945833333333334,
+              "alignair": 0.9970833333333333,
+              "delta": 0.0025,
+              "ci95": [
+                -0.00032778486282930563,
+                0.005327784862829306
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.16958333333333334,
+              "alignair": 0.13333333333333333,
+              "delta": -0.03625,
+              "ci95": [
+                -0.05126367109566529,
+                -0.021236328904334703
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9066666666666666,
+              "alignair": 0.9686021505376344,
+              "delta": 0.06193548387096774,
+              "ci95": [
+                0.051102016541934664,
+                0.07276895120000082
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9974821653378095,
+              "alignair": 0.9987410826689047,
+              "delta": 0.001258917331095258,
+              "ci95": [
+                -0.0005798895031328801,
+                0.003097724165323396
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S11",
+          "title": "Orientation pairs",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "orientation.correct",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9879275653923542,
+              "alignair": 0.9969818913480886,
+              "delta": 0.009054325955734407,
+              "ci95": [
+                0.0031628182188653863,
+                0.014945833692603428
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9969818913480886,
+              "alignair": 1.0,
+              "delta": 0.0030181086519114686,
+              "ci95": [
+                -0.0003936989849906221,
+                0.006429916288813559
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.974974974974975,
+              "alignair": 0.987987987987988,
+              "delta": 0.013013013013013013,
+              "ci95": [
+                0.005981845161128762,
+                0.020044180864897263
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.994,
+              "alignair": 0.998,
+              "delta": 0.004,
+              "ci95": [
+                -0.001540840020480147,
+                0.009540840020480147
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.19519519519519518,
+              "alignair": 0.13613613613613615,
+              "delta": -0.05905905905905906,
+              "ci95": [
+                -0.0832208226209915,
+                -0.034897295497126626
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9020408163265307,
+              "alignair": 0.9755102040816327,
+              "delta": 0.07346938775510205,
+              "ci95": [
+                0.05688290404542412,
+                0.09005587146477997
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9949698189134809,
+              "alignair": 1.0,
+              "delta": 0.005030181086519115,
+              "ci95": [
+                0.0006300032382420516,
+                0.009430358934796178
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S12",
+          "title": "Sequencing noise",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9899377096310493,
+              "alignair": 0.9956875898418783,
+              "delta": 0.005749880210828941,
+              "ci95": [
+                0.0017721805607314699,
+                0.009727579860926412
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9947292764734068,
+              "alignair": 0.9976042165788213,
+              "delta": 0.0028749401054144704,
+              "ci95": [
+                -9.299786382769605e-05,
+                0.005842878074656637
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9966666666666667,
+              "alignair": 0.9976190476190476,
+              "delta": 0.0009523809523809524,
+              "ci95": [
+                -0.0009142514138476701,
+                0.002819013318609575
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9914285714285714,
+              "alignair": 0.9961904761904762,
+              "delta": 0.004761904761904762,
+              "ci95": [
+                0.001033311756652644,
+                0.008490497767156881
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.15605095541401273,
+              "alignair": 0.12356687898089172,
+              "delta": -0.03248407643312102,
+              "ci95": [
+                -0.05002683956645039,
+                -0.014941313299791648
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.89892578125,
+              "alignair": 0.9765625,
+              "delta": 0.07763671875,
+              "ci95": [
+                0.06527911230605607,
+                0.08999432519394393
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.996166746526114,
+              "alignair": 0.9913751796837565,
+              "delta": -0.004791566842357451,
+              "ci95": [
+                -0.008771604253250385,
+                -0.0008115294314645161
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S13",
+          "title": "Library flanks",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9979869149471565,
+              "alignair": 0.9994967287367891,
+              "delta": 0.001509813789632612,
+              "ci95": [
+                -0.0006953849584911296,
+                0.0037150125377563535
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.998,
+              "alignair": 0.9985,
+              "delta": 0.0005,
+              "ci95": [
+                -0.002093344456796653,
+                0.003093344456796653
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9965,
+              "alignair": 0.9985,
+              "delta": 0.002,
+              "ci95": [
+                -0.0007711142634105324,
+                0.004771114263410533
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.172,
+              "alignair": 0.1585,
+              "delta": -0.0135,
+              "ci95": [
+                -0.030720653774517277,
+                0.0037206537745172793
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9057084607543323,
+              "alignair": 0.981651376146789,
+              "delta": 0.07594291539245668,
+              "ci95": [
+                0.06379988003976352,
+                0.08808595074514984
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9969803724207348,
+              "alignair": 0.9984901862103673,
+              "delta": 0.001509813789632612,
+              "ci95": [
+                -0.0006953849584911296,
+                0.0037150125377563535
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_start_exact",
+              "igblast": 0.9755,
+              "alignair": 0.952,
+              "delta": -0.0235,
+              "ci95": [
+                -0.03458547554390602,
+                -0.012414524456093975
+              ],
+              "verdict": "a_better"
+            },
+            {
+              "measure": "j.seq_end_exact",
+              "igblast": 0.9675,
+              "alignair": 0.9895,
+              "delta": 0.022,
+              "ci95": [
+                0.015422099286833937,
+                0.02857790071316606
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        }
+      ]
+    },
+    "IGK": {
+      "reference": "HUMAN_IGK_OGRDB",
+      "suites": [
+        {
+          "name": "S1",
+          "title": "Core repertoire",
+          "cases": 5000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9627702161729383,
+              "alignair": 0.9889911929543634,
+              "delta": 0.02622097678142514,
+              "ci95": [
+                0.021264900080170342,
+                0.031177053482679937
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9763811048839072,
+              "alignair": 0.9929943955164131,
+              "delta": 0.016613290632506005,
+              "ci95": [
+                0.012358171316685946,
+                0.020868409948326064
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9721944388877776,
+              "alignair": 0.9855971194238847,
+              "delta": 0.013402680536107221,
+              "ci95": [
+                0.009325825190047939,
+                0.017479535882166504
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.974,
+              "alignair": 0.9962,
+              "delta": 0.0222,
+              "ci95": [
+                0.017755390881366226,
+                0.026644609118633776
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.3801486839461523,
+              "alignair": 0.15099657741091202,
+              "delta": -0.20137345990708946,
+              "ci95": [
+                -0.2263762895800281,
+                -0.17637063023415084
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9849879903923139,
+              "alignair": 0.9931945556445156,
+              "delta": 0.008206565252201762,
+              "ci95": [
+                0.004682793709549088,
+                0.011730336794854437
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S2",
+          "title": "V allele siblings",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.997,
+              "alignair": 1.0,
+              "delta": 0.003,
+              "ci95": [
+                0.0010426519178396106,
+                0.00495734808216039
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.set_precision",
+              "igblast": 0.9975555555555555,
+              "alignair": 0.9998333333333334,
+              "delta": 0.002277777777777778,
+              "ci95": [
+                0.0008230099701509474,
+                0.0037325455854046083
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.964,
+              "alignair": 0.9976666666666667,
+              "delta": 0.033666666666666664,
+              "ci95": [
+                0.027080308070168948,
+                0.04025302526316438
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S3",
+          "title": "Junction sweeps",
+          "cases": 1950,
+          "rows": [
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.length_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 0.9994444444444445,
+              "delta": -0.0005555555555555556,
+              "ci95": [
+                -0.0016444244358555854,
+                0.0005333133247444741
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.start_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.end_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9261538461538461,
+              "alignair": 0.9523076923076923,
+              "delta": 0.026153846153846153,
+              "ci95": [
+                0.015529905287755134,
+                0.03677778701993717
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.seq_start_exact",
+              "igblast": 0.9251282051282051,
+              "alignair": 0.8533333333333334,
+              "delta": -0.07179487179487179,
+              "ci95": [
+                -0.08800433771646271,
+                -0.05558540587328086
+              ],
+              "verdict": "a_better"
+            }
+          ]
+        },
+        {
+          "name": "S4",
+          "title": "Read truncation",
+          "cases": 2700,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9967293540474244,
+              "alignair": 0.9991823385118561,
+              "delta": 0.0024529844644317253,
+              "ci95": [
+                0.0004922321110078158,
+                0.004413736817855635
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v_short.abstain_ok",
+              "igblast": 0.68,
+              "alignair": 1.0,
+              "delta": 0.32,
+              "ci95": [
+                0.23789555042395194,
+                0.4021044495760481
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.germ_start_err",
+              "igblast": 0.07670221493027071,
+              "alignair": 0.0004091653027823241,
+              "delta": -0.07629204265791632,
+              "ci95": [
+                -0.0933457134289464,
+                -0.05923837188688624
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.8991246352646937,
+              "alignair": 0.9970821175489787,
+              "delta": 0.09795748228428512,
+              "ci95": [
+                0.08600398572738743,
+                0.10991097884118281
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.germ_end_err",
+              "igblast": 0.2661103384330088,
+              "alignair": 0.0,
+              "delta": -0.2662337662337662,
+              "ci95": [
+                -0.3076355231578833,
+                -0.22483200930964914
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.spurious_call",
+              "igblast": 0.5891472868217055,
+              "alignair": 0.0,
+              "delta": -0.5891472868217055,
+              "ci95": [
+                -0.6743783933601437,
+                -0.5039161802832672
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9976700838769804,
+              "alignair": 0.9990680335507922,
+              "delta": 0.0013979496738117428,
+              "ci95": [
+                -0.0006438934558398034,
+                0.003439792803463289
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S5",
+          "title": "V indels",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "v.indel_found",
+              "igblast": 0.771412680756396,
+              "alignair": 0.8020022246941045,
+              "delta": 0.030589543937708564,
+              "ci95": [
+                0.0172655424364397,
+                0.04391354543897743
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.indel_false",
+              "igblast": 0.0,
+              "alignair": 0.0033112582781456954,
+              "delta": 0.0033112582781456954,
+              "ci95": [
+                -0.003178688690529979,
+                0.00980120524682137
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9080952380952381,
+              "alignair": 0.9195238095238095,
+              "delta": 0.011428571428571429,
+              "ci95": [
+                0.00015918371370611528,
+                0.022697959143436742
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9741007194244604,
+              "alignair": 0.9947242206235012,
+              "delta": 0.02062350119904077,
+              "ci95": [
+                0.013835841965353358,
+                0.02741116043272818
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9857142857142858,
+              "alignair": 0.9952380952380953,
+              "delta": 0.009523809523809525,
+              "ci95": [
+                0.004426866913741897,
+                0.014620752133877153
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S7",
+          "title": "Novel alleles",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9986666666666667,
+              "alignair": 1.0,
+              "delta": 0.0013333333333333333,
+              "ci95": [
+                2.7344379668940494e-05,
+                0.0026393222869977263
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.199,
+              "alignair": 0.16866666666666666,
+              "delta": -0.030333333333333334,
+              "ci95": [
+                -0.04471235743810045,
+                -0.015954309228566214
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9986653319986654,
+              "alignair": 1.0,
+              "delta": 0.001334668001334668,
+              "ci95": [
+                2.7372406815204253e-05,
+                0.002641963595854132
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.998998998998999,
+              "alignair": 1.0,
+              "delta": 0.001001001001001001,
+              "ci95": [
+                -0.00013133931148961108,
+                0.0021333413134916133
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S8",
+          "title": "Donor genotypes",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.outside_genotype",
+              "igblast": 0.0006666666666666666,
+              "alignair": 0.0,
+              "delta": -0.0006666666666666666,
+              "ci95": [
+                -0.0015904484960626046,
+                0.0002571151627292714
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.deleted_gene_call",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.outside_genotype",
+              "igblast": 0.0036666666666666666,
+              "alignair": 0.0,
+              "delta": -0.0036666666666666666,
+              "ci95": [
+                -0.005829872789550123,
+                -0.0015034605437832106
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9993333333333333,
+              "alignair": 1.0,
+              "delta": 0.0006666666666666666,
+              "ci95": [
+                -0.0002571151627292714,
+                0.0015904484960626046
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.997,
+              "alignair": 0.9996666666666667,
+              "delta": 0.0026666666666666666,
+              "ci95": [
+                0.000602544068786117,
+                0.004730789264547217
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S9",
+          "title": "Clonal lineages",
+          "cases": 1214,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone.agree_modal",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S10",
+          "title": "Held-out generative settings",
+          "cases": 2400,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9970784641068448,
+              "alignair": 0.9995826377295493,
+              "delta": 0.0025041736227045075,
+              "ci95": [
+                0.00019216896574645453,
+                0.00481617827966256
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9974958263772955,
+              "alignair": 0.9995826377295493,
+              "delta": 0.002086811352253756,
+              "ci95": [
+                -7.629079579893122e-05,
+                0.004249913500306443
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995833333333334,
+              "alignair": 0.9995833333333334,
+              "delta": 0.0,
+              "ci95": [
+                -0.0011551605371437816,
+                0.0011551605371437816
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9970833333333333,
+              "alignair": 1.0,
+              "delta": 0.002916666666666667,
+              "ci95": [
+                0.000758713104792484,
+                0.00507462022854085
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.22416666666666665,
+              "alignair": 0.15625,
+              "delta": -0.06791666666666667,
+              "ci95": [
+                -0.08703674735653019,
+                -0.04879658597680314
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9979131886477463,
+              "alignair": 0.9995826377295493,
+              "delta": 0.001669449081803005,
+              "ci95": [
+                -0.00033357300596191714,
+                0.0036724711695679275
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S11",
+          "title": "Orientation pairs",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "orientation.correct",
+              "igblast": 0.996,
+              "alignair": 1.0,
+              "delta": 0.004,
+              "ci95": [
+                0.0006126134692864284,
+                0.007387386530713571
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9839679358717435,
+              "alignair": 0.9979959919839679,
+              "delta": 0.014028056112224449,
+              "ci95": [
+                0.006216935303245395,
+                0.021839176921203504
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9879759519038076,
+              "alignair": 0.998997995991984,
+              "delta": 0.011022044088176353,
+              "ci95": [
+                0.0045412997443318465,
+                0.017502788432020862
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9889669007021064,
+              "alignair": 0.9989969909729187,
+              "delta": 0.010030090270812437,
+              "ci95": [
+                0.0032452624265435926,
+                0.016814918115081283
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.979,
+              "alignair": 1.0,
+              "delta": 0.021,
+              "ci95": [
+                0.01210867796657029,
+                0.029891322033429712
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.24269889224572003,
+              "alignair": 0.1424272818455366,
+              "delta": -0.10171198388721048,
+              "ci95": [
+                -0.13322973324451323,
+                -0.07019423452990772
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9919839679358717,
+              "alignair": 0.998997995991984,
+              "delta": 0.0070140280561122245,
+              "ci95": [
+                0.001833717241867025,
+                0.012194338870357424
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S12",
+          "title": "Sequencing noise",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9942857142857143,
+              "alignair": 0.9980952380952381,
+              "delta": 0.0038095238095238095,
+              "ci95": [
+                0.0008619178099917571,
+                0.006757129809055862
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9947619047619047,
+              "alignair": 0.9990476190476191,
+              "delta": 0.004285714285714286,
+              "ci95": [
+                0.0014911066063736152,
+                0.007080321965054957
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995238095238095,
+              "alignair": 0.9995238095238095,
+              "delta": 0.0,
+              "ci95": [
+                -0.0013202227803299645,
+                0.0013202227803299645
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9923809523809524,
+              "alignair": 0.9990476190476191,
+              "delta": 0.006666666666666667,
+              "ci95": [
+                0.0029434199559631334,
+                0.010389913377370202
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.18229166666666666,
+              "alignair": 0.140625,
+              "delta": -0.041666666666666664,
+              "ci95": [
+                -0.06099666804622929,
+                -0.022336665287104044
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9976190476190476,
+              "alignair": 0.9895238095238095,
+              "delta": -0.008095238095238095,
+              "ci95": [
+                -0.011928704597652003,
+                -0.004261771592824187
+              ],
+              "verdict": "a_better"
+            }
+          ]
+        },
+        {
+          "name": "S13",
+          "title": "Library flanks",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9979989994997499,
+              "alignair": 0.9994997498749375,
+              "delta": 0.0015007503751875938,
+              "ci95": [
+                -0.000691213214155568,
+                0.003692713964530756
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9984992496248124,
+              "alignair": 0.9994997498749375,
+              "delta": 0.0010005002501250625,
+              "ci95": [
+                -0.0009604442066433753,
+                0.0029614447068935
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995,
+              "alignair": 0.9995,
+              "delta": 0.0,
+              "ci95": [
+                -0.001386250430288409,
+                0.001386250430288409
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.993,
+              "alignair": 1.0,
+              "delta": 0.007,
+              "ci95": [
+                0.0033451855087015254,
+                0.010654814491298474
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.183,
+              "alignair": 0.1565,
+              "delta": -0.0265,
+              "ci95": [
+                -0.04335293730944551,
+                -0.009647062690554487
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 0.9994997498749375,
+              "delta": -0.0005002501250625312,
+              "ci95": [
+                -0.00148072235344675,
+                0.00048022210332168767
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_start_exact",
+              "igblast": 0.9765,
+              "alignair": 0.981,
+              "delta": 0.0045,
+              "ci95": [
+                -0.0035210790627404004,
+                0.0125210790627404
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.seq_end_exact",
+              "igblast": 0.8645,
+              "alignair": 0.9915,
+              "delta": 0.127,
+              "ci95": [
+                0.11233775560938158,
+                0.14166224439061842
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        }
+      ]
+    },
+    "IGL": {
+      "reference": "HUMAN_IGL_OGRDB",
+      "suites": [
+        {
+          "name": "S1",
+          "title": "Core repertoire",
+          "cases": 5000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9514103355981058,
+              "alignair": 0.9862054766316657,
+              "delta": 0.03479514103355981,
+              "ci95": [
+                0.028633248573106316,
+                0.040957033494013306
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9670578546427836,
+              "alignair": 0.9913526868437307,
+              "delta": 0.024294832200947088,
+              "ci95": [
+                0.019203808584592072,
+                0.029385855817302103
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9842,
+              "alignair": 0.9868,
+              "delta": 0.0026,
+              "ci95": [
+                -0.0006081107184776331,
+                0.005808110718477633
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9583916783356672,
+              "alignair": 0.9925985197039408,
+              "delta": 0.034206841368273656,
+              "ci95": [
+                0.028509075652922142,
+                0.03990460708362517
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.3876651982378855,
+              "alignair": 0.21102393884530277,
+              "delta": -0.16465378421900162,
+              "ci95": [
+                -0.19013044344416447,
+                -0.13917712499383877
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.990117356392835,
+              "alignair": 0.9913526868437307,
+              "delta": 0.0012353304508956147,
+              "ci95": [
+                -0.0019422355785337338,
+                0.004412896480324963
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S2",
+          "title": "V allele siblings",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 0.9993333333333333,
+              "delta": 0.0003333333333333333,
+              "ci95": [
+                -0.0011277324023712281,
+                0.0017943990690378947
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.set_precision",
+              "igblast": 0.9988333333333334,
+              "alignair": 0.9994996664442962,
+              "delta": 0.00066711140760507,
+              "ci95": [
+                -0.00043325028223704465,
+                0.0017674730974471847
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 0.9993333333333333,
+              "delta": -0.0006666666666666666,
+              "ci95": [
+                -0.0015904484960626046,
+                0.0002571151627292714
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9423333333333334,
+              "alignair": 0.9983333333333333,
+              "delta": 0.056,
+              "ci95": [
+                0.047668008515896414,
+                0.0643319914841036
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S3",
+          "title": "Junction sweeps",
+          "cases": 1950,
+          "rows": [
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9988706945228685,
+              "alignair": 0.9994353472614342,
+              "delta": 0.000564652738565782,
+              "ci95": [
+                -0.0013525671688395524,
+                0.0024818726459711164
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.length_exact",
+              "igblast": 0.9988706945228685,
+              "alignair": 0.9994353472614342,
+              "delta": 0.000564652738565782,
+              "ci95": [
+                -0.0013525671688395524,
+                0.0024818726459711164
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9954827780914738,
+              "alignair": 0.9988706945228685,
+              "delta": 0.0033879164313946925,
+              "ci95": [
+                -0.00010920185387523502,
+                0.00688503471666462
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.start_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.end_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9123076923076923,
+              "alignair": 0.9153846153846154,
+              "delta": 0.003076923076923077,
+              "ci95": [
+                -0.009479370621826896,
+                0.01563321677567305
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.seq_start_exact",
+              "igblast": 0.921025641025641,
+              "alignair": 0.9271794871794872,
+              "delta": 0.006153846153846154,
+              "ci95": [
+                -0.007331807882458722,
+                0.01963950019015103
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S4",
+          "title": "Read truncation",
+          "cases": 2700,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9951456310679612,
+              "alignair": 0.9991909385113269,
+              "delta": 0.0040453074433656954,
+              "ci95": [
+                0.0010823654679495412,
+                0.00700824941878185
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v_short.abstain_ok",
+              "igblast": 0.625,
+              "alignair": 1.0,
+              "delta": 0.375,
+              "ci95": [
+                0.28150570283212767,
+                0.46849429716787233
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.germ_start_err",
+              "igblast": 0.07967479674796749,
+              "alignair": 0.0008097165991902834,
+              "delta": -0.07892595606183889,
+              "ci95": [
+                -0.09687846035216373,
+                -0.060973451771514045
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9156223893065998,
+              "alignair": 0.9983291562238931,
+              "delta": 0.08270676691729323,
+              "ci95": [
+                0.07161043442199208,
+                0.09380309941259438
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.germ_end_err",
+              "igblast": 0.21943430656934307,
+              "alignair": 0.0046044370029300966,
+              "delta": -0.2167959835691465,
+              "ci95": [
+                -0.25622644934463884,
+                -0.1773655177936542
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.spurious_call",
+              "igblast": 0.9435483870967742,
+              "alignair": 0.0,
+              "delta": -0.9435483870967742,
+              "ci95": [
+                -0.9843348271876831,
+                -0.9027619470058654
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9975996159385502,
+              "alignair": 0.9961593855016803,
+              "delta": -0.0014402304368698992,
+              "ci95": [
+                -0.004263030222573289,
+                0.0013825693488334907
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S5",
+          "title": "V indels",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "v.indel_found",
+              "igblast": 0.7815453029460812,
+              "alignair": 0.7854363535297387,
+              "delta": 0.0038910505836575876,
+              "ci95": [
+                -0.009499146424661006,
+                0.017281247591976183
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.indel_false",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.8733333333333333,
+              "alignair": 0.8766666666666667,
+              "delta": 0.0033333333333333335,
+              "ci95": [
+                -0.010792947594734275,
+                0.01745961426140094
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9778325123152709,
+              "alignair": 0.9911330049261083,
+              "delta": 0.013300492610837438,
+              "ci95": [
+                0.006293677682622251,
+                0.020307307539052626
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9861904761904762,
+              "alignair": 0.9909523809523809,
+              "delta": 0.004761904761904762,
+              "ci95": [
+                0.00019305823815024374,
+                0.009330751285659281
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S7",
+          "title": "Novel alleles",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9993333333333333,
+              "alignair": 0.9996666666666667,
+              "delta": 0.0003333333333333333,
+              "ci95": [
+                -0.0007983781674266472,
+                0.0014650448340933137
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 0.9996666666666667,
+              "alignair": 0.9996666666666667,
+              "delta": 0.0,
+              "ci95": [
+                -0.0009240899107216268,
+                0.0009240899107216268
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.214,
+              "alignair": 0.17466666666666666,
+              "delta": -0.03933333333333333,
+              "ci95": [
+                -0.057386922326004015,
+                -0.021279744340662647
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9842141386410432,
+              "alignair": 0.997254632807138,
+              "delta": 0.013040494166094716,
+              "ci95": [
+                0.008212624923368505,
+                0.017868363408820927
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9955387783115992,
+              "alignair": 0.9979409746053535,
+              "delta": 0.0024021962937542897,
+              "ci95": [
+                -0.0005288158026368816,
+                0.005333208390145461
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S8",
+          "title": "Donor genotypes",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.outside_genotype",
+              "igblast": 0.0003333333333333333,
+              "alignair": 0.0,
+              "delta": -0.0003333333333333333,
+              "ci95": [
+                -0.0009866546615133513,
+                0.00031998799484668456
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.deleted_gene_call",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.outside_genotype",
+              "igblast": 0.000333555703802535,
+              "alignair": 0.00033344448149383126,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 1.0,
+              "delta": 0.001,
+              "ci95": [
+                -0.0001312083501290159,
+                0.002131208350129016
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9828532235939643,
+              "alignair": 0.9972565157750343,
+              "delta": 0.01440329218106996,
+              "ci95": [
+                0.009583861393972104,
+                0.019222722968167814
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S9",
+          "title": "Clonal lineages",
+          "cases": 1215,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9915966386554622,
+              "alignair": 1.0,
+              "delta": 0.008403361344537815,
+              "ci95": [
+                0.0005591080131457701,
+                0.01624761467592986
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone.agree_modal",
+              "igblast": 0.9831932773109243,
+              "alignair": 0.9991596638655462,
+              "delta": 0.015966386554621848,
+              "ci95": [
+                0.004136953127344812,
+                0.02779581998189888
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9983193277310924,
+              "alignair": 1.0,
+              "delta": 0.0016806722689075631,
+              "ci95": [
+                -0.0006526315681184875,
+                0.004013976105933613
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9975308641975309,
+              "alignair": 1.0,
+              "delta": 0.0024691358024691358,
+              "ci95": [
+                -0.002376932391185077,
+                0.007315203996123348
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S10",
+          "title": "Held-out generative settings",
+          "cases": 2400,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9858914065840103,
+              "alignair": 0.9965797349294571,
+              "delta": 0.010688328345446772,
+              "ci95": [
+                0.005472177678747963,
+                0.015904479012145582
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.993587002992732,
+              "alignair": 0.9978623343309106,
+              "delta": 0.004275331338178709,
+              "ci95": [
+                0.0007236777418766914,
+                0.007826984934480728
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995833333333334,
+              "alignair": 0.9995833333333334,
+              "delta": 0.0,
+              "ci95": [
+                -0.0011551605371437816,
+                0.0011551605371437816
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9754166666666667,
+              "alignair": 0.99875,
+              "delta": 0.023333333333333334,
+              "ci95": [
+                0.01696980706527186,
+                0.029696859601394808
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.20958333333333334,
+              "alignair": 0.16791666666666666,
+              "delta": -0.041666666666666664,
+              "ci95": [
+                -0.059029335418625456,
+                -0.024303997914707876
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9995724668661822,
+              "alignair": 0.9978623343309106,
+              "delta": -0.0017101325352714834,
+              "ci95": [
+                -0.003761949629051696,
+                0.00034168455850872893
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S11",
+          "title": "Orientation pairs",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "orientation.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9814241486068112,
+              "alignair": 0.9958720330237358,
+              "delta": 0.014447884416924664,
+              "ci95": [
+                0.005443454583787184,
+                0.023452314250062146
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9896800825593395,
+              "alignair": 0.9969040247678018,
+              "delta": 0.007223942208462332,
+              "ci95": [
+                0.0005274968834808758,
+                0.013920387533443788
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.995995995995996,
+              "alignair": 0.994994994994995,
+              "delta": -0.001001001001001001,
+              "ci95": [
+                -0.006193997645401227,
+                0.004191995643399225
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.983,
+              "alignair": 1.0,
+              "delta": 0.017,
+              "ci95": [
+                0.008983836501801543,
+                0.02501616349819846
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.2552552552552553,
+              "alignair": 0.19438877755511022,
+              "delta": -0.06012024048096192,
+              "ci95": [
+                -0.09462566271345937,
+                -0.025614818248464462
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9979360165118679,
+              "alignair": 0.9969040247678018,
+              "delta": -0.0010319917440660474,
+              "ci95": [
+                -0.004536559333902726,
+                0.0024725758457706313
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S12",
+          "title": "Sequencing noise",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.975024485798237,
+              "alignair": 0.9970617042115573,
+              "delta": 0.022037218413320275,
+              "ci95": [
+                0.015247998526050112,
+                0.028826438300590437
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9838393731635652,
+              "alignair": 0.9980411361410382,
+              "delta": 0.014201762977473066,
+              "ci95": [
+                0.00872115718209539,
+                0.01968236877285074
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9966666666666667,
+              "alignair": 0.9995238095238095,
+              "delta": 0.002857142857142857,
+              "ci95": [
+                0.00021952786248578045,
+                0.005494757851799934
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9766666666666667,
+              "alignair": 0.9966666666666667,
+              "delta": 0.02,
+              "ci95": [
+                0.013726510275494567,
+                0.026273489724505432
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.2379400260756193,
+              "alignair": 0.20078226857887874,
+              "delta": -0.037157757496740544,
+              "ci95": [
+                -0.05880566829247387,
+                -0.015509846701007215
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9931439764936337,
+              "alignair": 0.9906953966699314,
+              "delta": -0.002448579823702253,
+              "ci95": [
+                -0.005908497764241747,
+                0.0010113381168372414
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S13",
+          "title": "Library flanks",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.98656330749354,
+              "alignair": 0.9974160206718347,
+              "delta": 0.010852713178294573,
+              "ci95": [
+                0.005418144275896955,
+                0.016287282080692193
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9979328165374677,
+              "alignair": 0.9984496124031008,
+              "delta": 0.0005167958656330749,
+              "ci95": [
+                -0.001748588653259689,
+                0.0027821803845258387
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.998,
+              "alignair": 0.9995,
+              "delta": 0.0015,
+              "ci95": [
+                -0.00019652927476580275,
+                0.003196529274765803
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.976,
+              "alignair": 0.9985,
+              "delta": 0.0225,
+              "ci95": [
+                0.015569614309234061,
+                0.029430385690765937
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.2435,
+              "alignair": 0.1985,
+              "delta": -0.045,
+              "ci95": [
+                -0.06606804230958091,
+                -0.02393195769041908
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9979328165374677,
+              "alignair": 0.9979328165374677,
+              "delta": 0.0,
+              "ci95": [
+                -0.00248173266307335,
+                0.00248173266307335
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_start_exact",
+              "igblast": 0.9735,
+              "alignair": 0.9935,
+              "delta": 0.02,
+              "ci95": [
+                0.012331641517408773,
+                0.027668358482591228
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.seq_end_exact",
+              "igblast": 0.893,
+              "alignair": 0.971,
+              "delta": 0.078,
+              "ci95": [
+                0.06414331917210979,
+                0.09185668082789021
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        }
+      ]
+    },
+    "TRA": {
+      "reference": "HUMAN_TCRA_IMGT",
+      "suites": [
+        {
+          "name": "S1",
+          "title": "Core repertoire",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9949944382647385,
+              "alignair": 0.9955506117908788,
+              "delta": 0.0005561735261401557,
+              "ci95": [
+                -0.0018818621435853686,
+                0.0029942091958656803
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9961067853170189,
+              "alignair": 0.9961067853170189,
+              "delta": 0.0,
+              "ci95": [
+                -0.002670882816184285,
+                0.002670882816184285
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9994853319608852,
+              "alignair": 0.9994853319608852,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9925,
+              "alignair": 0.9995,
+              "delta": 0.007,
+              "ci95": [
+                0.0033451855087015254,
+                0.010654814491298474
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.06484817292846114,
+              "alignair": 0.008749356664951106,
+              "delta": -0.056098816263510036,
+              "ci95": [
+                -0.07245832169562308,
+                -0.03973931083139699
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.996662958843159,
+              "alignair": 0.9961067853170189,
+              "delta": -0.0005561735261401557,
+              "ci95": [
+                -0.0029942091958656803,
+                0.0018818621435853686
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S2",
+          "title": "V allele siblings",
+          "cases": 600,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.set_precision",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S3",
+          "title": "Junction sweeps",
+          "cases": 1950,
+          "rows": [
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9994285714285714,
+              "alignair": 1.0,
+              "delta": 0.0005714285714285715,
+              "ci95": [
+                -0.000548550848308602,
+                0.001691407991165745
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.length_exact",
+              "igblast": 0.9994285714285714,
+              "alignair": 1.0,
+              "delta": 0.0005714285714285715,
+              "ci95": [
+                -0.000548550848308602,
+                0.001691407991165745
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9994285714285714,
+              "alignair": 1.0,
+              "delta": 0.0005714285714285715,
+              "ci95": [
+                -0.000548550848308602,
+                0.001691407991165745
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.start_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.end_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9174358974358975,
+              "alignair": 0.9523076923076923,
+              "delta": 0.03487179487179487,
+              "ci95": [
+                0.02624501959557848,
+                0.043498570148011256
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.seq_start_exact",
+              "igblast": 0.9343589743589743,
+              "alignair": 0.9533333333333334,
+              "delta": 0.018974358974358976,
+              "ci95": [
+                0.012282963877145864,
+                0.025665754071572087
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S4",
+          "title": "Read truncation",
+          "cases": 2700,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9983179142136249,
+              "alignair": 1.0,
+              "delta": 0.001682085786375105,
+              "ci95": [
+                3.471256215695304e-05,
+                0.003329459010593257
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v_short.abstain_ok",
+              "igblast": 0.7160493827160493,
+              "alignair": 1.0,
+              "delta": 0.2839506172839506,
+              "ci95": [
+                0.18514173345095877,
+                0.38275950111694246
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.germ_start_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.8988095238095238,
+              "alignair": 0.9955357142857143,
+              "delta": 0.09672619047619048,
+              "ci95": [
+                0.0850837786113757,
+                0.10836860234100526
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.germ_end_err",
+              "igblast": 0.0,
+              "alignair": 0.02696629213483146,
+              "delta": 0.029925187032418952,
+              "ci95": [
+                -0.010419772037029571,
+                0.07027014610186748
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.spurious_call",
+              "igblast": 0.8174273858921162,
+              "alignair": 0.0,
+              "delta": -0.8174273858921162,
+              "ci95": [
+                -0.8663021730264131,
+                -0.7685525987578192
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9994957135653051,
+              "alignair": 0.9989914271306102,
+              "delta": -0.0005042864346949068,
+              "ci95": [
+                -0.0022165043295386626,
+                0.0012079314601488493
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S5",
+          "title": "V indels",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "v.indel_found",
+              "igblast": 0.7636262513904338,
+              "alignair": 0.7814238042269188,
+              "delta": 0.017797552836484983,
+              "ci95": [
+                0.0037730662477438778,
+                0.03182203942522609
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.indel_false",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.8595238095238096,
+              "alignair": 0.9061904761904762,
+              "delta": 0.04666666666666667,
+              "ci95": [
+                0.035802802700040104,
+                0.057530530633293234
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9792221630261055,
+              "alignair": 0.9941395844432606,
+              "delta": 0.014917421417155035,
+              "ci95": [
+                0.008514306655396379,
+                0.02132053617891369
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9957142857142857,
+              "alignair": 0.9976190476190476,
+              "delta": 0.0019047619047619048,
+              "ci95": [
+                -0.0007344260013562517,
+                0.004543949810880061
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S7",
+          "title": "Novel alleles",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.077,
+              "alignair": 0.015666666666666666,
+              "delta": -0.06133333333333333,
+              "ci95": [
+                -0.07476787606515665,
+                -0.047898790601510005
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S8",
+          "title": "Donor genotypes",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.deleted_gene_call",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9996289424860854,
+              "alignair": 0.9996289424860854,
+              "delta": 0.0,
+              "ci95": [
+                -0.0010286909246320826,
+                0.0010286909246320826
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S10",
+          "title": "Held-out generative settings",
+          "cases": 1200,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 0.9990412272291467,
+              "delta": -0.0009587727708533077,
+              "ci95": [
+                -0.0028379328710834645,
+                0.0009203873293768491
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 0.9990412272291467,
+              "delta": -0.0009587727708533077,
+              "ci95": [
+                -0.0028379328710834645,
+                0.0009203873293768491
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.09666666666666666,
+              "alignair": 0.015833333333333335,
+              "delta": -0.08083333333333333,
+              "ci95": [
+                -0.10535176533216363,
+                -0.05631490133450302
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 0.9990412272291467,
+              "delta": -0.0009587727708533077,
+              "ci95": [
+                -0.0028379328710834645,
+                0.0009203873293768491
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S11",
+          "title": "Orientation pairs",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "orientation.correct",
+              "igblast": 0.995,
+              "alignair": 1.0,
+              "delta": 0.005,
+              "ci95": [
+                0.0006261700969317245,
+                0.009373829903068277
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9955056179775281,
+              "alignair": 0.9921348314606742,
+              "delta": -0.0033707865168539327,
+              "ci95": [
+                -0.008292854303179123,
+                0.0015512812694712585
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.996629213483146,
+              "alignair": 0.9921348314606742,
+              "delta": -0.0044943820224719105,
+              "ci95": [
+                -0.008891357671961008,
+                -9.740637298281257e-05
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.989,
+              "alignair": 1.0,
+              "delta": 0.011,
+              "ci95": [
+                0.004532151549865652,
+                0.017467848450134348
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.07804370447450572,
+              "alignair": 0.012486992715920915,
+              "delta": -0.06555671175858481,
+              "ci95": [
+                -0.08960337849476463,
+                -0.041510045022405
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9977528089887641,
+              "alignair": 0.9921348314606742,
+              "delta": -0.0056179775280898875,
+              "ci95": [
+                -0.010531170720247477,
+                -0.0007047843359322976
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S12",
+          "title": "Sequencing noise",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9957739038563127,
+              "alignair": 0.9968304278922345,
+              "delta": 0.0010565240359218173,
+              "ci95": [
+                -0.002218136823466765,
+                0.0043311848953104
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9957739038563127,
+              "alignair": 0.9968304278922345,
+              "delta": 0.0010565240359218173,
+              "ci95": [
+                -0.002218136823466765,
+                0.0043311848953104
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995238095238095,
+              "alignair": 0.9990476190476191,
+              "delta": -0.0004761904761904762,
+              "ci95": [
+                -0.0014095066593047875,
+                0.0004571257069238351
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9995238095238095,
+              "alignair": 0.9995238095238095,
+              "delta": 0.0,
+              "ci95": [
+                -0.0013202227803299645,
+                0.0013202227803299645
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.06125080593165699,
+              "alignair": 0.010315925209542231,
+              "delta": -0.050934880722114766,
+              "ci95": [
+                -0.0678460609148226,
+                -0.034023700529406925
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9931325937665082,
+              "alignair": 0.9735868991019546,
+              "delta": -0.01954569466455362,
+              "ci95": [
+                -0.026279542826333123,
+                -0.012811846502774116
+              ],
+              "verdict": "a_better"
+            }
+          ]
+        },
+        {
+          "name": "S13",
+          "title": "Library flanks",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9994407158836689,
+              "alignair": 0.9994407158836689,
+              "delta": 0.0,
+              "ci95": [
+                -0.0015506616823145383,
+                0.0015506616823145383
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9994407158836689,
+              "alignair": 0.9994407158836689,
+              "delta": 0.0,
+              "ci95": [
+                -0.0015506616823145383,
+                0.0015506616823145383
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 1.0,
+              "delta": 0.001,
+              "ci95": [
+                -0.0003855571317052662,
+                0.0023855571317052664
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.0615,
+              "alignair": 0.0035,
+              "delta": -0.058,
+              "ci95": [
+                -0.073783543263752,
+                -0.042216456736248006
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 0.9994407158836689,
+              "delta": -0.0005592841163310962,
+              "ci95": [
+                -0.0016554608414653543,
+                0.0005368926088031619
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_start_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.seq_end_exact",
+              "igblast": 0.9995,
+              "alignair": 0.9995,
+              "delta": 0.0,
+              "ci95": [
+                -0.001386250430288409,
+                0.001386250430288409
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        }
+      ]
+    },
+    "TRB": {
+      "reference": "HUMAN_TCRB_IMGT",
+      "suites": [
+        {
+          "name": "S1",
+          "title": "Core repertoire",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.07507507507507508,
+              "alignair": 0.009009009009009009,
+              "delta": -0.06606606606606606,
+              "ci95": [
+                -0.08354368120313117,
+                -0.04858845092900095
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9918557300756253,
+              "alignair": 0.9941826643397323,
+              "delta": 0.002326934264107039,
+              "ci95": [
+                -0.003259310529320701,
+                0.007913179057534778
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S2",
+          "title": "V allele siblings",
+          "cases": 600,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.set_precision",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S3",
+          "title": "Junction sweeps",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9992178333985139,
+              "alignair": 0.9996089166992569,
+              "delta": 0.00039108330074305825,
+              "ci95": [
+                -0.00037542588366838226,
+                0.0011575924851544989
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.length_exact",
+              "igblast": 0.9992178333985139,
+              "alignair": 0.9996089166992569,
+              "delta": 0.00039108330074305825,
+              "ci95": [
+                -0.00037542588366838226,
+                0.0011575924851544989
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9992178333985139,
+              "alignair": 0.9996089166992569,
+              "delta": 0.00039108330074305825,
+              "ci95": [
+                -0.00037542588366838226,
+                0.0011575924851544989
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.start_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.end_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9076666666666666,
+              "alignair": 0.9476666666666667,
+              "delta": 0.04,
+              "ci95": [
+                0.03268858567649844,
+                0.04731141432350156
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.seq_start_exact",
+              "igblast": 0.965,
+              "alignair": 0.9683333333333334,
+              "delta": 0.0033333333333333335,
+              "ci95": [
+                -0.0009993904310855498,
+                0.0076660570977522165
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S4",
+          "title": "Read truncation",
+          "cases": 2700,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v_short.abstain_ok",
+              "igblast": 0.6363636363636364,
+              "alignair": 1.0,
+              "delta": 0.36363636363636365,
+              "ci95": [
+                0.28451564023927534,
+                0.44275708703345196
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.germ_start_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.91170750680669,
+              "alignair": 0.9910540645663166,
+              "delta": 0.07934655775962661,
+              "ci95": [
+                0.06768745583786856,
+                0.09100565968138466
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.germ_end_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.spurious_call",
+              "igblast": 0.8726114649681529,
+              "alignair": 0.0,
+              "delta": -0.8726114649681529,
+              "ci95": [
+                -0.9249307042612935,
+                -0.8202922256750123
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9983230855226384,
+              "alignair": 0.9966461710452766,
+              "delta": -0.0016769144773616546,
+              "ci95": [
+                -0.003573425398105923,
+                0.00021959644338261368
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S5",
+          "title": "V indels",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "v.indel_found",
+              "igblast": 0.7854363535297387,
+              "alignair": 0.8093385214007782,
+              "delta": 0.023902167871039465,
+              "ci95": [
+                0.011768284070256816,
+                0.03603605167182211
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.indel_false",
+              "igblast": 0.0,
+              "alignair": 0.0033222591362126247,
+              "delta": 0.0033222591362126247,
+              "ci95": [
+                -0.003189249118073268,
+                0.009833767390498517
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.8666666666666667,
+              "alignair": 0.9085714285714286,
+              "delta": 0.0419047619047619,
+              "ci95": [
+                0.031248004870561216,
+                0.05256151893896259
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9759450171821306,
+              "alignair": 0.9908361970217641,
+              "delta": 0.014891179839633447,
+              "ci95": [
+                0.007475766111679884,
+                0.02230659356758701
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9976190476190476,
+              "alignair": 0.9971428571428571,
+              "delta": -0.0004761904761904762,
+              "ci95": [
+                -0.0029460171232994613,
+                0.0019936361709185094
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S6",
+          "title": "D observability",
+          "cases": 1700,
+          "rows": [
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.6856127886323268,
+              "alignair": 0.9955595026642984,
+              "delta": 0.3099467140319716,
+              "ci95": [
+                0.28281029419967924,
+                0.337083133864264
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d_short.abstain_ok",
+              "igblast": 0.9790940766550522,
+              "alignair": 0.9738675958188153,
+              "delta": -0.005226480836236934,
+              "ci95": [
+                -0.02088181311542009,
+                0.010428851442946219
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "d.seq_start_exact",
+              "igblast": 0.6367673179396093,
+              "alignair": 0.9458259325044405,
+              "delta": 0.30905861456483125,
+              "ci95": [
+                0.28194349142091957,
+                0.3361737377087429
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.seq_end_exact",
+              "igblast": 0.6438721136767318,
+              "alignair": 0.9422735346358793,
+              "delta": 0.2984014209591474,
+              "ci95": [
+                0.27155099773862384,
+                0.32525184417967096
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S7",
+          "title": "Novel alleles",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.069,
+              "alignair": 0.020666666666666667,
+              "delta": -0.04833333333333333,
+              "ci95": [
+                -0.061104370685846135,
+                -0.03556229598082053
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 0.9988381099922541,
+              "delta": -0.0011618900077459333,
+              "ci95": [
+                -0.002476158659862119,
+                0.00015237864437025214
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 0.9988381099922541,
+              "delta": -0.0011618900077459333,
+              "ci95": [
+                -0.002476158659862119,
+                0.00015237864437025214
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S8",
+          "title": "Donor genotypes",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.deleted_gene_call",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S10",
+          "title": "Held-out generative settings",
+          "cases": 1200,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9990167158308751,
+              "alignair": 0.9980334316617503,
+              "delta": -0.0009832841691248771,
+              "ci95": [
+                -0.0029104857271780274,
+                0.0009439173889282731
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9990167158308751,
+              "alignair": 0.9980334316617503,
+              "delta": -0.0009832841691248771,
+              "ci95": [
+                -0.0029104857271780274,
+                0.0009439173889282731
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.08916666666666667,
+              "alignair": 0.008333333333333333,
+              "delta": -0.08083333333333333,
+              "ci95": [
+                -0.10306748097599405,
+                -0.05859918569067261
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9916267942583732,
+              "alignair": 1.0,
+              "delta": 0.008373205741626795,
+              "ci95": [
+                0.0021926879475677365,
+                0.014553723535685853
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9990167158308751,
+              "alignair": 0.9980334316617503,
+              "delta": -0.0009832841691248771,
+              "ci95": [
+                -0.0029104857271780274,
+                0.0009439173889282731
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S11",
+          "title": "Orientation pairs",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "orientation.correct",
+              "igblast": 0.999,
+              "alignair": 1.0,
+              "delta": 0.001,
+              "ci95": [
+                -0.0009599639845400535,
+                0.0029599639845400536
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.998991935483871,
+              "alignair": 1.0,
+              "delta": 0.0010080645161290322,
+              "ci95": [
+                -0.000967705629576667,
+                0.0029838346618347314
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 1.0,
+              "delta": 0.001,
+              "ci95": [
+                -0.0009599639845400535,
+                0.0029599639845400536
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.08064516129032258,
+              "alignair": 0.006048387096774193,
+              "delta": -0.07459677419354839,
+              "ci95": [
+                -0.09916599205684543,
+                -0.05002755633025135
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9868995633187773,
+              "alignair": 0.9956331877729258,
+              "delta": 0.008733624454148471,
+              "ci95": [
+                0.00018887209236183831,
+                0.017278376815935102
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S12",
+          "title": "Sequencing noise",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9949664429530202,
+              "alignair": 0.9977628635346756,
+              "delta": 0.002796420581655481,
+              "ci95": [
+                -0.0011548798878305276,
+                0.00674772105114149
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9949664429530202,
+              "alignair": 0.9977628635346756,
+              "delta": 0.002796420581655481,
+              "ci95": [
+                -0.0011548798878305276,
+                0.00674772105114149
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995238095238095,
+              "alignair": 1.0,
+              "delta": 0.0004761904761904762,
+              "ci95": [
+                -0.0004571257069238351,
+                0.0014095066593047875
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.06881028938906752,
+              "alignair": 0.015434083601286173,
+              "delta": -0.05337620578778135,
+              "ci95": [
+                -0.06993923445119779,
+                -0.03681317712436491
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9912416280267903,
+              "alignair": 0.9933024214322514,
+              "delta": 0.0020607934054611026,
+              "ci95": [
+                -0.0030885549848340276,
+                0.007210141795756233
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9949664429530202,
+              "alignair": 0.9837807606263982,
+              "delta": -0.011185682326621925,
+              "ci95": [
+                -0.01606180281536106,
+                -0.006309561837882789
+              ],
+              "verdict": "a_better"
+            }
+          ]
+        },
+        {
+          "name": "S13",
+          "title": "Library flanks",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 0.9988214496169712,
+              "delta": -0.0011785503830288745,
+              "ci95": [
+                -0.002811426262779016,
+                0.000454325496721267
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 0.9988214496169712,
+              "delta": -0.0011785503830288745,
+              "ci95": [
+                -0.002811426262779016,
+                0.000454325496721267
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.0685,
+              "alignair": 0.0035,
+              "delta": -0.065,
+              "ci95": [
+                -0.08097349127995088,
+                -0.049026508720049135
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9934711643090316,
+              "alignair": 0.999455930359086,
+              "delta": 0.005984766050054407,
+              "ci95": [
+                0.0021486653336860047,
+                0.009820866766422808
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 0.9988214496169712,
+              "delta": -0.0011785503830288745,
+              "ci95": [
+                -0.002811426262779016,
+                0.000454325496721267
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_start_exact",
+              "igblast": 1.0,
+              "alignair": 0.9975,
+              "delta": -0.0025,
+              "ci95": [
+                -0.004689112851040412,
+                -0.00031088714895958786
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.seq_end_exact",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        }
+      ]
+    },
+    "TRD": {
+      "reference": "HUMAN_TCRD_IMGT",
+      "suites": [
+        {
+          "name": "S1",
+          "title": "Core repertoire",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9968387776606955,
+              "alignair": 0.9973656480505796,
+              "delta": 0.0005268703898840885,
+              "ci95": [
+                -0.002898852764660081,
+                0.003952593544428258
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9968387776606955,
+              "alignair": 0.9973656480505796,
+              "delta": 0.0005268703898840885,
+              "ci95": [
+                -0.002898852764660081,
+                0.003952593544428258
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9964982491245623,
+              "alignair": 1.0,
+              "delta": 0.003501750875437719,
+              "ci95": [
+                0.0009115631438676554,
+                0.0060919386070077824
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.07673019057171515,
+              "alignair": 0.003510531594784353,
+              "delta": -0.0732196589769308,
+              "ci95": [
+                -0.09241831918334313,
+                -0.054020998770518455
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9923224568138196,
+              "alignair": 0.9760076775431862,
+              "delta": -0.016314779270633396,
+              "ci95": [
+                -0.027079755919380846,
+                -0.005549802621885943
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9968387776606955,
+              "alignair": 0.9973656480505796,
+              "delta": 0.0005268703898840885,
+              "ci95": [
+                -0.002898852764660081,
+                0.003952593544428258
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S2",
+          "title": "V allele siblings",
+          "cases": 600,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.set_precision",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9983333333333333,
+              "alignair": 1.0,
+              "delta": 0.0016666666666666668,
+              "ci95": [
+                -0.0015999399742334223,
+                0.004933273307566756
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S3",
+          "title": "Junction sweeps",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.995125348189415,
+              "alignair": 0.9996518105849582,
+              "delta": 0.004526462395543176,
+              "ci95": [
+                0.0018881186590297455,
+                0.007164806132056606
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.length_exact",
+              "igblast": 0.995125348189415,
+              "alignair": 0.9996518105849582,
+              "delta": 0.004526462395543176,
+              "ci95": [
+                0.0018881186590297455,
+                0.007164806132056606
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.995125348189415,
+              "alignair": 0.9996518105849582,
+              "delta": 0.004526462395543176,
+              "ci95": [
+                0.0018881186590297455,
+                0.007164806132056606
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.start_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.end_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9173333333333333,
+              "alignair": 0.9556666666666667,
+              "delta": 0.03833333333333333,
+              "ci95": [
+                0.03109848043188946,
+                0.0455681862347772
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.seq_start_exact",
+              "igblast": 0.9436666666666667,
+              "alignair": 0.9576666666666667,
+              "delta": 0.014,
+              "ci95": [
+                0.009500716399426522,
+                0.018499283600573478
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S4",
+          "title": "Read truncation",
+          "cases": 2700,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995826377295493,
+              "alignair": 1.0,
+              "delta": 0.00041736227045075126,
+              "ci95": [
+                -0.00040065274813858666,
+                0.0012353772890400891
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v_short.abstain_ok",
+              "igblast": 0.8048780487804879,
+              "alignair": 1.0,
+              "delta": 0.1951219512195122,
+              "ci95": [
+                0.12480074972549915,
+                0.26544315271352525
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.germ_start_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.8975143403441682,
+              "alignair": 1.0,
+              "delta": 0.10248565965583174,
+              "ci95": [
+                0.09085919841847902,
+                0.11411212089318447
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.germ_end_err",
+              "igblast": 0.0,
+              "alignair": 0.015296367112810707,
+              "delta": 0.017043033659991477,
+              "ci95": [
+                -0.016360698500895672,
+                0.05044676582087863
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.spurious_call",
+              "igblast": 0.3370165745856354,
+              "alignair": 0.0,
+              "delta": -0.3370165745856354,
+              "ci95": [
+                -0.406070568810885,
+                -0.2679625803603858
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9916279069767442,
+              "alignair": 0.9953488372093023,
+              "delta": 0.0037209302325581397,
+              "ci95": [
+                0.0005662020372104639,
+                0.006875658427905816
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S5",
+          "title": "V indels",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "v.indel_found",
+              "igblast": 0.7687604224569206,
+              "alignair": 0.8126737076153419,
+              "delta": 0.04391328515842134,
+              "ci95": [
+                0.032718200432840495,
+                0.05510836988400219
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.indel_false",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.8661904761904762,
+              "alignair": 0.9204761904761904,
+              "delta": 0.054285714285714284,
+              "ci95": [
+                0.04364946055405744,
+                0.06492196801737113
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9752650176678446,
+              "alignair": 0.9949520444220091,
+              "delta": 0.019687026754164564,
+              "ci95": [
+                0.013105258938288358,
+                0.02626879457004077
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9971428571428571,
+              "alignair": 0.9995238095238095,
+              "delta": 0.002380952380952381,
+              "ci95": [
+                0.00029598342565476197,
+                0.00446592133625
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S6",
+          "title": "D observability",
+          "cases": 1300,
+          "rows": [
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.8781954887218045,
+              "alignair": 0.8631578947368421,
+              "delta": -0.015037593984962405,
+              "ci95": [
+                -0.04759616424228671,
+                0.017520976272361898
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "d_short.abstain_ok",
+              "igblast": 0.9480314960629921,
+              "alignair": 0.984251968503937,
+              "delta": 0.03622047244094488,
+              "ci95": [
+                0.018164554477028253,
+                0.05427639040486151
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.seq_start_exact",
+              "igblast": 0.7969924812030075,
+              "alignair": 0.9398496240601504,
+              "delta": 0.14285714285714285,
+              "ci95": [
+                0.11591633389985946,
+                0.16979795181442622
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.seq_end_exact",
+              "igblast": 0.8090225563909774,
+              "alignair": 0.869172932330827,
+              "delta": 0.06015037593984962,
+              "ci95": [
+                0.03071498666863479,
+                0.08958576521106446
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S8",
+          "title": "Donor genotypes",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.deleted_gene_call",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9985663082437276,
+              "alignair": 1.0,
+              "delta": 0.0014336917562724014,
+              "ci95": [
+                2.9455498909955512e-05,
+                0.0028379280136348476
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S10",
+          "title": "Held-out generative settings",
+          "cases": 1200,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9790337283500455,
+              "alignair": 1.0,
+              "delta": 0.020966271649954422,
+              "ci95": [
+                0.012484193977902345,
+                0.029448349322006497
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9790337283500455,
+              "alignair": 1.0,
+              "delta": 0.020966271649954422,
+              "ci95": [
+                0.012484193977902345,
+                0.029448349322006497
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9808333333333333,
+              "alignair": 1.0,
+              "delta": 0.019166666666666665,
+              "ci95": [
+                0.011405814642272185,
+                0.026927518691061143
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.085,
+              "alignair": 0.014166666666666666,
+              "delta": -0.07083333333333333,
+              "ci95": [
+                -0.08895356097579475,
+                -0.05271310569087191
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9955849889624724,
+              "alignair": 1.0,
+              "delta": 0.004415011037527594,
+              "ci95": [
+                -0.0016969973334061833,
+                0.010527019408461371
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9799453053783045,
+              "alignair": 1.0,
+              "delta": 0.020054694621695533,
+              "ci95": [
+                0.011755197877358337,
+                0.02835419136603273
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S11",
+          "title": "Orientation pairs",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "orientation.correct",
+              "igblast": 0.9985,
+              "alignair": 1.0,
+              "delta": 0.0015,
+              "ci95": [
+                -0.0006904287757749251,
+                0.003690428775774925
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9905163329820864,
+              "alignair": 0.9989462592202318,
+              "delta": 0.008429926238145416,
+              "ci95": [
+                0.0019175208396875927,
+                0.014942331636603239
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9905163329820864,
+              "alignair": 0.9989462592202318,
+              "delta": 0.008429926238145416,
+              "ci95": [
+                0.0019175208396875927,
+                0.014942331636603239
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.989,
+              "alignair": 1.0,
+              "delta": 0.011,
+              "ci95": [
+                0.004532151549865652,
+                0.017467848450134348
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.05369807497467072,
+              "alignair": 0.0070921985815602835,
+              "delta": -0.04660587639311044,
+              "ci95": [
+                -0.0681747340701412,
+                -0.025037018716079676
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9807692307692307,
+              "alignair": 0.9730769230769231,
+              "delta": -0.007692307692307693,
+              "ci95": [
+                -0.02616328133643958,
+                0.010778665951824196
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9905163329820864,
+              "alignair": 0.9989462592202318,
+              "delta": 0.008429926238145416,
+              "ci95": [
+                0.0019175208396875927,
+                0.014942331636603239
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S12",
+          "title": "Sequencing noise",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9894789579158316,
+              "alignair": 0.998496993987976,
+              "delta": 0.009018036072144289,
+              "ci95": [
+                0.004222597602664813,
+                0.013813474541623766
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9894789579158316,
+              "alignair": 0.998496993987976,
+              "delta": 0.009018036072144289,
+              "ci95": [
+                0.004222597602664813,
+                0.013813474541623766
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9909523809523809,
+              "alignair": 1.0,
+              "delta": 0.009047619047619047,
+              "ci95": [
+                0.0049968692630366985,
+                0.013098368832201397
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.08740359897172237,
+              "alignair": 0.012210796915167094,
+              "delta": -0.07519280205655526,
+              "ci95": [
+                -0.09551795312428499,
+                -0.05486765098882554
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.9852045256744996,
+              "alignair": 0.9738903394255874,
+              "delta": -0.011314186248912098,
+              "ci95": [
+                -0.022743297812526778,
+                0.00011492531470258006
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9874749498997996,
+              "alignair": 0.9849699398797596,
+              "delta": -0.00250501002004008,
+              "ci95": [
+                -0.00831469618564341,
+                0.0033046761455632493
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S13",
+          "title": "Library flanks",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.0535,
+              "alignair": 0.009,
+              "delta": -0.0445,
+              "ci95": [
+                -0.05731961271745917,
+                -0.03168038728254083
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "d.top1_in_set",
+              "igblast": 0.997250229147571,
+              "alignair": 0.9789184234647113,
+              "delta": -0.01833180568285976,
+              "ci95": [
+                -0.027431467830282965,
+                -0.009232143535436558
+              ],
+              "verdict": "a_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_start_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.seq_end_exact",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        }
+      ]
+    },
+    "TRG": {
+      "reference": "HUMAN_TCRG_IMGT",
+      "suites": [
+        {
+          "name": "S1",
+          "title": "Core repertoire",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 1.0,
+              "delta": 0.001,
+              "ci95": [
+                -0.0003855571317052662,
+                0.0023855571317052664
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.0635,
+              "alignair": 0.0085,
+              "delta": -0.055,
+              "ci95": [
+                -0.0699929889493111,
+                -0.040007011050688907
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S2",
+          "title": "V allele siblings",
+          "cases": 600,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9983333333333333,
+              "alignair": 1.0,
+              "delta": 0.0016666666666666668,
+              "ci95": [
+                -0.0015999399742334223,
+                0.004933273307566756
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.set_precision",
+              "igblast": 0.9983333333333333,
+              "alignair": 1.0,
+              "delta": 0.0016666666666666668,
+              "ci95": [
+                -0.0015999399742334223,
+                0.004933273307566756
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.gene_top1",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S3",
+          "title": "Junction sweeps",
+          "cases": 1950,
+          "rows": [
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.length_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.start_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.end_abs_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.9138461538461539,
+              "alignair": 0.9461538461538461,
+              "delta": 0.03230769230769231,
+              "ci95": [
+                0.023487655094655883,
+                0.04112772952072873
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.seq_start_exact",
+              "igblast": 0.9338461538461539,
+              "alignair": 0.9512820512820512,
+              "delta": 0.017435897435897435,
+              "ci95": [
+                0.010812121251088928,
+                0.02405967362070594
+              ],
+              "verdict": "b_better"
+            }
+          ]
+        },
+        {
+          "name": "S4",
+          "title": "Read truncation",
+          "cases": 2700,
+          "rows": [
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9972222222222222,
+              "alignair": 1.0,
+              "delta": 0.002777777777777778,
+              "ci95": [
+                0.0007224611734683237,
+                0.004833094382087232
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v_short.abstain_ok",
+              "igblast": 0.7777777777777778,
+              "alignair": 1.0,
+              "delta": 0.2222222222222222,
+              "ci95": [
+                0.13112091559382702,
+                0.3133235288506174
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.germ_start_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9401288366805608,
+              "alignair": 1.0,
+              "delta": 0.05987116331943918,
+              "ci95": [
+                0.05081773159379863,
+                0.06892459504507972
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "j.germ_end_err",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.spurious_call",
+              "igblast": 0.7777777777777778,
+              "alignair": 0.0,
+              "delta": -0.7777777777777778,
+              "ci95": [
+                -0.8600885282815274,
+                -0.6954670272740282
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9973136333109469,
+              "alignair": 0.9959704499664204,
+              "delta": -0.001343183344526528,
+              "ci95": [
+                -0.003975774324432578,
+                0.0012894076353795214
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S5",
+          "title": "V indels",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "v.indel_found",
+              "igblast": 0.771841958820256,
+              "alignair": 0.8274902615470228,
+              "delta": 0.05564830272676683,
+              "ci95": [
+                0.043380837538465986,
+                0.06791576791506768
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.indel_false",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_end_exact",
+              "igblast": 0.8561904761904762,
+              "alignair": 0.9161904761904762,
+              "delta": 0.06,
+              "ci95": [
+                0.04901593688605236,
+                0.07098406311394763
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9748603351955307,
+              "alignair": 0.9958100558659218,
+              "delta": 0.02094972067039106,
+              "ci95": [
+                0.013040299833536148,
+                0.028859141507245972
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9971428571428571,
+              "alignair": 0.9980952380952381,
+              "delta": 0.0009523809523809524,
+              "ci95": [
+                -0.0013339489845167057,
+                0.0032387108892786105
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S8",
+          "title": "Donor genotypes",
+          "cases": 3000,
+          "rows": [
+            {
+              "measure": "v.outside_genotype",
+              "igblast": 0.0013333333333333333,
+              "alignair": 0.0,
+              "delta": -0.0013333333333333333,
+              "ci95": [
+                -0.0026393222869977263,
+                -2.7344379668940494e-05
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.deleted_gene_call",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.outside_genotype",
+              "igblast": 0.0,
+              "alignair": 0.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9986666666666667,
+              "alignair": 1.0,
+              "delta": 0.0013333333333333333,
+              "ci95": [
+                2.7344379668940494e-05,
+                0.0026393222869977263
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S10",
+          "title": "Held-out generative settings",
+          "cases": 1200,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9983333333333333,
+              "alignair": 1.0,
+              "delta": 0.0016666666666666668,
+              "ci95": [
+                -0.0006422096037495388,
+                0.0039755429370828725
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9991666666666666,
+              "alignair": 1.0,
+              "delta": 0.0008333333333333334,
+              "ci95": [
+                -0.0007999699871167112,
+                0.002466636653783378
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.10833333333333334,
+              "alignair": 0.010833333333333334,
+              "delta": -0.0975,
+              "ci95": [
+                -0.12171344747084112,
+                -0.07328655252915889
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S11",
+          "title": "Orientation pairs",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "orientation.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9985096870342772,
+              "alignair": 1.0,
+              "delta": 0.0014903129657228018,
+              "ci95": [
+                -0.0014306467727869653,
+                0.004411272704232569
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9985096870342772,
+              "alignair": 1.0,
+              "delta": 0.0014903129657228018,
+              "ci95": [
+                -0.0014306467727869653,
+                0.004411272704232569
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 1.0,
+              "delta": 0.001,
+              "ci95": [
+                -0.0009599639845400535,
+                0.0029599639845400536
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.052,
+              "alignair": 0.003,
+              "delta": -0.049,
+              "ci95": [
+                -0.06593681913487207,
+                -0.03206318086512794
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        },
+        {
+          "name": "S12",
+          "title": "Sequencing noise",
+          "cases": 2100,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9963768115942029,
+              "alignair": 0.9992753623188406,
+              "delta": 0.002898550724637681,
+              "ci95": [
+                6.111466195109824e-05,
+                0.005735986787324264
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9963768115942029,
+              "alignair": 0.9992753623188406,
+              "delta": 0.002898550724637681,
+              "ci95": [
+                6.111466195109824e-05,
+                0.005735986787324264
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.9995238095238095,
+              "alignair": 0.9995238095238095,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9995238095238095,
+              "alignair": 0.9995238095238095,
+              "delta": 0.0,
+              "ci95": [
+                -0.0013202227803299645,
+                0.0013202227803299645
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.06035042180402336,
+              "alignair": 0.011031797534068787,
+              "delta": -0.04931862426995458,
+              "ci95": [
+                -0.0659195477464576,
+                -0.03271770079345156
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 0.9927536231884058,
+              "alignair": 0.981159420289855,
+              "delta": -0.011594202898550725,
+              "ci95": [
+                -0.01759091425484661,
+                -0.005597491542254837
+              ],
+              "verdict": "a_better"
+            }
+          ]
+        },
+        {
+          "name": "S13",
+          "title": "Library flanks",
+          "cases": 2000,
+          "rows": [
+            {
+              "measure": "clone_key.exact",
+              "igblast": 0.9992372234935164,
+              "alignair": 1.0,
+              "delta": 0.0007627765064836003,
+              "ci95": [
+                -0.0007322379744775391,
+                0.0022577909874447397
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "junction.nt_exact",
+              "igblast": 0.9992372234935164,
+              "alignair": 1.0,
+              "delta": 0.0007627765064836003,
+              "ci95": [
+                -0.0007322379744775391,
+                0.0022577909874447397
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.top1_in_set",
+              "igblast": 0.999,
+              "alignair": 1.0,
+              "delta": 0.001,
+              "ci95": [
+                -0.0003855571317052662,
+                0.0023855571317052664
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.top1_in_set",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.mutation_count_err",
+              "igblast": 0.063,
+              "alignair": 0.005,
+              "delta": -0.058,
+              "ci95": [
+                -0.07264683629184762,
+                -0.04335316370815238
+              ],
+              "verdict": "b_better"
+            },
+            {
+              "measure": "productive.correct",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "v.seq_start_exact",
+              "igblast": 1.0,
+              "alignair": 1.0,
+              "delta": 0.0,
+              "ci95": [
+                0.0,
+                0.0
+              ],
+              "verdict": "tie_or_inconclusive"
+            },
+            {
+              "measure": "j.seq_end_exact",
+              "igblast": 0.9995,
+              "alignair": 1.0,
+              "delta": 0.0005,
+              "ci95": [
+                -0.00047998199227002676,
+                0.0014799819922700268
+              ],
+              "verdict": "tie_or_inconclusive"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "real": {
+    "donors": [
+      "SC-13",
+      "SC-17",
+      "W-110",
+      "W-52"
+    ],
+    "scopes": {
+      "multiplex": {
+        "donors": [
+          "W-110",
+          "W-52"
+        ],
+        "measures": {
+          "real.v.known_top1": {
+            "igblast": 0.9819393678778757,
+            "alignair": 0.9823693829284025,
+            "delta": 0.00043001505052676843,
+            "ci95": [
+              -0.0009026835372660689,
+              0.001762713638319606
+            ],
+            "verdict": "tie_or_inconclusive",
+            "paired": 4651,
+            "clonotypes": 4534
+          },
+          "real.v.unsupported": {
+            "igblast": 0.07854550768406439,
+            "alignair": 0.07976326749311966,
+            "delta": 0.001217759809055262,
+            "ci95": [
+              -0.0003764736914564125,
+              0.0028119933095669364
+            ],
+            "verdict": "tie_or_inconclusive",
+            "paired": 41059,
+            "clonotypes": 29723
+          }
+        }
+      },
+      "race": {
+        "donors": [
+          "SC-13",
+          "SC-17"
+        ],
+        "measures": {
+          "real.v.known_top1": {
+            "igblast": 0.9953499295443871,
+            "alignair": 0.9969469234382339,
+            "delta": 0.0015969938938468764,
+            "ci95": [
+              0.0009595459066968061,
+              0.0022344418809969466
+            ],
+            "verdict": "b_better",
+            "paired": 21290,
+            "clonotypes": 20870
+          },
+          "real.v.unsupported": {
+            "igblast": 0.051931401472331745,
+            "alignair": 0.050663100719622815,
+            "delta": -0.001268300752708925,
+            "ci95": [
+              -0.0026494677737466713,
+              0.0001128662683288215
+            ],
+            "verdict": "tie_or_inconclusive",
+            "paired": 72538,
+            "clonotypes": 53701
+          }
+        }
+      },
+      "pooled": {
+        "donors": [
+          "SC-13",
+          "SC-17",
+          "W-110",
+          "W-52"
+        ],
+        "measures": {
+          "real.v.known_top1": {
+            "igblast": 0.9929455302417023,
+            "alignair": 0.9943332947843183,
+            "delta": 0.0013877645426159362,
+            "ci95": [
+              0.0008126057936022849,
+              0.0019629232916295878
+            ],
+            "verdict": "b_better",
+            "paired": 25941,
+            "clonotypes": 25404
+          },
+          "real.v.unsupported": {
+            "igblast": 0.06155092123911723,
+            "alignair": 0.06118119316531247,
+            "delta": -0.00036972807380476595,
+            "ci95": [
+              -0.0014234702594232902,
+              0.0006840141118137584
+            ],
+            "verdict": "tie_or_inconclusive",
+            "paired": 113597,
+            "clonotypes": 83424
+          }
+        }
+      }
+    }
+  }
+}

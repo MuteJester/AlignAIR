@@ -1,0 +1,292 @@
+[
+  {
+    "code": "ALIGNAIR_AIRR_ASSEMBLY_FAILED",
+    "class": "AirrAssemblyError",
+    "category": "inference",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "AIRR assembly failed for one record. Carries the record identifier and the originating error so an unexpected (non-data) failure surfaces with context instead of silently dropping AIRR fields.",
+    "action": "One read's AIRR fields could not be built: the row is tagged; rerun with --debug and report the read if it repeats.",
+    "anchor": "alignair_airr_assembly_failed"
+  },
+  {
+    "code": "ALIGNAIR_ARTIFACT_INTEGRITY_FAILED",
+    "class": "ArtifactIntegrityError",
+    "category": "integrity",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Artifact bytes or bound identities failed verification.",
+    "action": "The file does not match its checksum: download it again from a trusted source.",
+    "anchor": "alignair_artifact_integrity_failed"
+  },
+  {
+    "code": "ALIGNAIR_CONFIG_INVALID",
+    "class": "ConfigurationError",
+    "category": "configuration",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Invalid configuration or incompatible options.",
+    "action": "Change the option or setting the message names; its hint gives the allowed values.",
+    "anchor": "alignair_config_invalid"
+  },
+  {
+    "code": "ALIGNAIR_CONFIG_INVALID",
+    "class": "TrainingConfigError",
+    "category": "configuration",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A training request is invalid (bad hyperparameters / config / reference). Raised *before* the full model is allocated so misuse fails fast with an actionable message. Its code is a configuration error's.",
+    "action": "Change the option or setting the message names; its hint gives the allowed values.",
+    "anchor": "alignair_config_invalid-trainingconfigerror"
+  },
+  {
+    "code": "ALIGNAIR_DATA_INVALID",
+    "class": "DataContractError",
+    "category": "data",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A record, batch, or component violated its declared data contract.",
+    "action": "A record broke an internal contract: rerun with --debug and report it with the traceback.",
+    "anchor": "alignair_data_invalid"
+  },
+  {
+    "code": "ALIGNAIR_DEPENDENCY_MISSING",
+    "class": "MissingDependencyError",
+    "category": "dependency",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A requested feature needs an optional dependency.",
+    "action": "Install the package the message names (the hint gives the pip command).",
+    "anchor": "alignair_dependency_missing"
+  },
+  {
+    "code": "ALIGNAIR_DOWNLOAD_INTEGRITY_FAILED",
+    "class": "DownloadIntegrityError",
+    "category": "integrity",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A downloaded artifact failed SHA256 verification.",
+    "action": "The download does not match its checksum: download it again; never bypass the check.",
+    "anchor": "alignair_download_integrity_failed"
+  },
+  {
+    "code": "ALIGNAIR_ERROR",
+    "class": "AlignAIRError",
+    "category": "operation",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Base for classified AlignAIR failures; built-in compatibility is added by subclasses.",
+    "action": "Read the message; rerun with --debug for the details.",
+    "anchor": "alignair_error"
+  },
+  {
+    "code": "ALIGNAIR_GENOTYPE_ALLELE_NOT_FOUND",
+    "class": "UnknownAlleleError",
+    "category": "input",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A genotype names alleles the reference does not hold; their sequences belong in the reference.",
+    "action": "Name alleles the model's reference holds (OGRDB names for the IG models), or add their sequences with --reference.",
+    "anchor": "alignair_genotype_allele_not_found"
+  },
+  {
+    "code": "ALIGNAIR_INFERENCE_FAILED",
+    "class": "InferenceError",
+    "category": "inference",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Prediction or result assembly failed.",
+    "action": "Rerun with --debug and report it with the traceback.",
+    "anchor": "alignair_inference_failed"
+  },
+  {
+    "code": "ALIGNAIR_INPUT_INVALID",
+    "class": "InputError",
+    "category": "input",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Invalid user input or sequence data.",
+    "action": "Fix the input the message names (file format, sequence column, ids).",
+    "anchor": "alignair_input_invalid"
+  },
+  {
+    "code": "ALIGNAIR_INTERNAL_ERROR",
+    "class": "InternalError",
+    "category": "internal",
+    "exit_code": 70,
+    "retryable": false,
+    "meaning": "Unexpected defect, classified only at an application boundary.",
+    "action": "An unexpected failure: rerun with --debug and report it with the traceback.",
+    "anchor": "alignair_internal_error"
+  },
+  {
+    "code": "ALIGNAIR_INTERRUPTED",
+    "class": "OperationCancelledError",
+    "category": "interrupted",
+    "exit_code": 130,
+    "retryable": false,
+    "meaning": "An application operation was interrupted by the user.",
+    "action": "The run was stopped (Ctrl-C); run it again.",
+    "anchor": "alignair_interrupted"
+  },
+  {
+    "code": "ALIGNAIR_IO_FAILED",
+    "class": "OperationIOError",
+    "category": "io",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "An expected filesystem or operating-system operation failed.",
+    "action": "Check the path, its permissions and the free disk space (errno in the context).",
+    "anchor": "alignair_io_failed"
+  },
+  {
+    "code": "ALIGNAIR_METADATA_ID_INVALID",
+    "class": "DuplicateMetadataIdError",
+    "category": "input",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A metadata join key occurs more than once; neither row may silently win.",
+    "action": "The metadata table repeats an id: choose a unique --metadata-id-column.",
+    "anchor": "alignair_metadata_id_invalid"
+  },
+  {
+    "code": "ALIGNAIR_MODEL_FORMAT_INVALID",
+    "class": "ModelFormatError",
+    "category": "model",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Malformed or unsupported .alignair container.",
+    "action": "The file is not an AlignAIR model, or is damaged or truncated: download it again.",
+    "anchor": "alignair_model_format_invalid"
+  },
+  {
+    "code": "ALIGNAIR_MODEL_INTEGRITY_FAILED",
+    "class": "ModelIntegrityError",
+    "category": "model",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A model section failed verification (also catchable as ValueError).",
+    "action": "A section of the model file is damaged: download the model again.",
+    "anchor": "alignair_model_integrity_failed"
+  },
+  {
+    "code": "ALIGNAIR_MODEL_INVALID",
+    "class": "ModelError",
+    "category": "model",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A model artifact is missing, incompatible, or unusable.",
+    "action": "Use an AlignAIR 4 model file, or check that the path names a model file.",
+    "anchor": "alignair_model_invalid"
+  },
+  {
+    "code": "ALIGNAIR_MODEL_NOT_FOUND",
+    "class": "ModelNotFoundError",
+    "category": "model",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "No such model: a model file that does not exist, an id no registry lists, a hub repo, revision or file that is not there.",
+    "action": "Check the path or model id (alignair models list) and, for a Hugging Face repo, its revision and file name.",
+    "anchor": "alignair_model_not_found"
+  },
+  {
+    "code": "ALIGNAIR_MODEL_SECTION_MISSING",
+    "class": "ModelSectionError",
+    "category": "model",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A required model section is absent (also catchable as KeyError).",
+    "action": "The model file lacks a section this command needs: use a complete model file.",
+    "anchor": "alignair_model_section_missing"
+  },
+  {
+    "code": "ALIGNAIR_MODEL_UNAVAILABLE",
+    "class": "OfflineError",
+    "category": "registry",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A fetch was needed while offline: the model is not available from the cache. Not retryable: the same call fails the same way until offline mode is off.",
+    "action": "You are offline and the model is not cached: run once online (alignair models get ID) or drop --offline.",
+    "anchor": "alignair_model_unavailable"
+  },
+  {
+    "code": "ALIGNAIR_NUMERICS_INVALID",
+    "class": "NumericalError",
+    "category": "numerical",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Non-finite model outputs, losses, or gradients.",
+    "action": "The model produced non-finite values: report it with the model id and the read.",
+    "anchor": "alignair_numerics_invalid"
+  },
+  {
+    "code": "ALIGNAIR_PREDICTION_COUNT_MISMATCH",
+    "class": "PredictionCountMismatchError",
+    "category": "data",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "The writer was given a different number of ids / sequences / predictions — a pipeline or model defect. Raised instead of silently truncating (and losing reads) via ``zip``.",
+    "action": "Report it with the traceback (--debug): ids, reads and predictions disagree.",
+    "anchor": "alignair_prediction_count_mismatch"
+  },
+  {
+    "code": "ALIGNAIR_REGISTRY_FAILED",
+    "class": "RegistryError",
+    "category": "registry",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Model registry lookup or transfer failed; ``retryable`` says whether a retry may succeed.",
+    "action": "Check the registry setting (--registry, ALIGNAIR_REGISTRY) and, for a gated Hugging Face repo, your token.",
+    "anchor": "alignair_registry_failed"
+  },
+  {
+    "code": "ALIGNAIR_REGISTRY_INVALID",
+    "class": "RegistryInvalidError",
+    "category": "registry",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "A registry's catalog cannot be used: not JSON, no models mapping, a malformed entry, a version that fails validation.",
+    "action": "The registry's catalog is malformed: fix registry.json or use another registry.",
+    "anchor": "alignair_registry_invalid"
+  },
+  {
+    "code": "ALIGNAIR_REGISTRY_UNAVAILABLE",
+    "class": "RegistryUnavailableError",
+    "category": "registry",
+    "exit_code": 1,
+    "retryable": true,
+    "meaning": "A registry source or the hub could not be reached or read (the network, a server, a local registry that is not there). Retryable unless the server answered that the request itself is wrong or the source is local.",
+    "action": "Check your network connection and try again; it may be a temporary outage.",
+    "anchor": "alignair_registry_unavailable"
+  },
+  {
+    "code": "ALIGNAIR_TRAINING_DATA_INVALID",
+    "class": "TrainingDataError",
+    "category": "training",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Simulator or training records lack the fields needed to construct targets.",
+    "action": "The training reference or records lack required fields: check the germline FASTA or dataconfig.",
+    "anchor": "alignair_training_data_invalid"
+  },
+  {
+    "code": "ALIGNAIR_TRAINING_FAILED",
+    "class": "TrainingError",
+    "category": "training",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Training failed.",
+    "action": "Read the message; rerun with --debug for the details.",
+    "anchor": "alignair_training_failed"
+  },
+  {
+    "code": "ALIGNAIR_TRAINING_NUMERICS_INVALID",
+    "class": "NonFiniteTrainingError",
+    "category": "training",
+    "exit_code": 1,
+    "retryable": false,
+    "meaning": "Loss or a gradient became NaN/Inf — training is aborted with a per-task diagnostic rather than continuing to corrupt the weights.",
+    "action": "Training diverged: lower --lr or set --grad-clip, then train again.",
+    "anchor": "alignair_training_numerics_invalid"
+  }
+]

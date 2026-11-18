@@ -1,8 +1,11 @@
 """Behavior tests for the new diagnostic/validation/reference commands (no model needed)."""
+import pytest
 import argparse
 
 from alignair.cli import doctor, reference, validate_airr as validate_cmd
 from alignair.io.airr_validate import cigar_query_length, validate_airr_file
+
+pytestmark = pytest.mark.integration
 
 
 def _run(register, argv, **defaults):
@@ -15,11 +18,33 @@ def _run(register, argv, **defaults):
     return args.func(args)
 
 
+def test_doctor_reports_each_kernel_even_when_the_other_cannot_be_imported(monkeypatch):
+    """The two kernels are reported independently: one whose module cannot be imported does not hide the other."""
+    import sys
+    monkeypatch.setitem(sys.modules, "alignair.network.refine.v_rescore", None)      # its import now fails
+    info = doctor.diagnostics()
+    assert "derive_backend" in info and "vband_backend" not in info
+
+
 def test_doctor_reports_core_env_and_exits_zero(capsys):
     info = doctor.diagnostics()
     assert "alignair" in info and "python" in info and "torch" in info
     assert _run(doctor.register, ["doctor"]) == 0
     assert "AlignAIR environment" in capsys.readouterr().out
+
+
+def test_doctor_checks_every_core_dependency_and_both_kernels():
+    info = doctor.diagnostics()
+    for module in ("torch", "numpy", "GenAIRR", "safetensors", "yaml", "platformdirs", "zstandard", "huggingface_hub"):
+        assert module in info
+    assert {"derive_backend", "vband_backend"} <= set(info)
+
+
+def test_a_missing_core_dependency_is_named_with_the_plain_install_hint(monkeypatch, capsys):
+    monkeypatch.setattr(doctor, "_module_version", lambda name: "MISSING" if name == "safetensors" else "1.0")
+    assert _run(doctor.register, ["doctor"]) == 0
+    warning = capsys.readouterr().out.splitlines()[-1]
+    assert "safetensors" in warning and "pip install alignair`" in warning and "[cli]" not in warning
 
 
 def test_reference_list_runs(capsys):

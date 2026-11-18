@@ -1,0 +1,78 @@
+"""Shared exception and diagnostics API. Implementation uses only Python's standard library.
+
+Use domain exceptions at validation/I/O boundaries, ``raise ... from cause`` when
+translating a failure, and ``error_context`` for operation metadata. The library
+never configures logging, installs exception hooks, or retries automatically.
+"""
+from .base import AlignAIRError, ExitCode
+from .context import current_error_context, error_context
+from .exceptions import (
+    AirrAssemblyError,
+    ArtifactIntegrityError,
+    ConfigurationError,
+    DataContractError,
+    DownloadIntegrityError,
+    DuplicateMetadataIdError,
+    InferenceError,
+    InputError,
+    InternalError,
+    MissingDependencyError,
+    ModelError,
+    ModelFormatError,
+    ModelIntegrityError,
+    ModelNotFoundError,
+    ModelSectionError,
+    NonFiniteTrainingError,
+    NumericalError,
+    OfflineError,
+    OperationCancelledError,
+    OperationIOError,
+    PredictionCountMismatchError,
+    RegistryError,
+    RegistryInvalidError,
+    RegistryUnavailableError,
+    TrainingConfigError,
+    TrainingDataError,
+    TrainingError,
+    UnknownAlleleError,
+)
+from .reporting import error_reporting, format_error, log_error, report_error
+
+__all__ = [
+    "AirrAssemblyError",
+    "AlignAIRError",
+    "ArtifactIntegrityError",
+    "ConfigurationError",
+    "DataContractError",
+    "DownloadIntegrityError",
+    "DuplicateMetadataIdError",
+    "ExitCode",
+    "InferenceError",
+    "InputError",
+    "InternalError",
+    "MissingDependencyError",
+    "ModelError",
+    "ModelFormatError",
+    "ModelIntegrityError",
+    "ModelNotFoundError",
+    "ModelSectionError",
+    "NonFiniteTrainingError",
+    "NumericalError",
+    "OfflineError",
+    "OperationCancelledError",
+    "OperationIOError",
+    "PredictionCountMismatchError",
+    "RegistryError",
+    "RegistryInvalidError",
+    "RegistryUnavailableError",
+    "TrainingConfigError",
+    "TrainingDataError",
+    "TrainingError",
+    "UnknownAlleleError",
+    "current_error_context",
+    "error_context",
+    "error_reporting",
+    "format_error",
+    "log_error",
+    "report_error",
+]

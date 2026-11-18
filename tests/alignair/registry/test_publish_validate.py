@@ -1,4 +1,8 @@
 """Publish into a local registry + validator gate."""
+import pytest
+
+from alignair.core import prepare_model
+from alignair.reference.reference_set import ReferenceSet
 import hashlib
 import json
 import shutil
@@ -7,14 +11,15 @@ import GenAIRR.data as gd
 
 from alignair import model_file as mf
 from alignair.core import AlignAIR
-from alignair.core.config import AlignAIRConfig
 from alignair.registry.publish import publish_local
 from alignair.registry.validate import validate_registry
 
+pytestmark = pytest.mark.integration
+
 
 def _save(path, **kw):
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
-    mf.save_model(str(path), AlignAIR(cfg).eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    setup = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576)
+    mf.save_model(str(path), AlignAIR(setup.config).eval(), setup.reference, dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 1, "batch_size": 1}, **kw)
 
 
@@ -82,3 +87,22 @@ def test_validator_flags_sha_size_and_id_mismatch(tmp_path):
     assert any("artifact_sha256 mismatch" in p for p in problems)
     assert any("size" in p for p in problems)
     assert any("model_id" in p for p in problems)          # card=human-igh, registry id=other
+
+
+def test_validator_recomputes_both_reference_fingerprints(tmp_path):
+    """The card's reference_fasta_sha256, like its allele_order_sha256, must recompute from the artifact's own
+    reference_json."""
+    from alignair.model_file import container
+    art = tmp_path / "m.alignair"
+    _save(art, include_trusted_pickle=False, model_id="human-igh", model_version="2.1.0")
+    header = container.read_header(str(art))
+    sections = {name: (container.read_section(str(art), name), s["codec"]) for name, s in header["sections"].items()}
+    tampered = {k: v for k, v in header.items() if not k.startswith("_") and k != "sections"}
+    tampered["reference"] = dict(tampered["reference"], reference_fasta_sha256="0" * 64)
+    tampered["_formats"] = {name: s.get("format", "bytes") for name, s in header["sections"].items()}
+    regdir = tmp_path / "registry"
+    (regdir / "human-igh").mkdir(parents=True)
+    container.write_container(str(regdir / "human-igh" / "2.1.0.alignair"), tampered, sections)
+    reg = {"models": {"human-igh": {"latest": "2.1.0", "versions": {"2.1.0": {"file": "human-igh/2.1.0.alignair"}}}}}
+    problems = validate_registry(reg, lambda r: str(regdir / r))
+    assert any("reference_fasta_sha256 does not match its reference_json" in p for p in problems)

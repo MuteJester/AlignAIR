@@ -1,9 +1,21 @@
 """In-package `alignair benchmark` — score + generate + end-to-end."""
-import math
 
 import pytest
 
+from alignair.core import prepare_model
+from alignair.reference.reference_set import ReferenceSet
+
 from alignair.evaluate import default_strata, format_text, score
+from alignair.errors import DataContractError
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.mark.parametrize('truth,predictions', [([{}], []), ([], [{}]),
+    ([{'sequence_id': 'one'}], [{'sequence_id': 'two'}]), ([None], [{}]), ([{}], [None])])
+def test_scoring_rejects_unpaired_records(truth, predictions):
+    with pytest.raises(DataContractError):
+        score(truth, predictions)
 
 
 def _truth():
@@ -50,6 +62,11 @@ def test_default_strata_are_named_param_dicts():
     assert isinstance(strata["clean"], dict)
 
 
+def test_default_strata_keep_the_historical_uniform_indel_counts():
+    assert {name: params["indel_count"] for name, params in default_strata().items()} == {
+        "clean": (0, 0), "moderate": (0, 3), "high_shm": (0, 2), "short_janchor": (0, 3)}
+
+
 def test_format_text_renders_per_stratum():
     results = {"clean": {"n": 100, "v_call_acc": 0.99, "junction_nt_exact": 0.85},
                "high_shm": {"n": 100, "v_call_acc": 0.80, "junction_nt_exact": 0.60}}
@@ -61,11 +78,12 @@ def test_format_text_renders_per_stratum():
 def test_run_benchmark_end_to_end_small():
     import GenAIRR.data as gd
     from alignair.core import AlignAIR
-    from alignair.core.config import AlignAIRConfig
     from alignair.evaluate import run_benchmark
     from alignair.reference.reference_set import ReferenceSet
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576, embed_dim=4,
+                        trunk_channels=8).config
     model, ref = AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB)
+    model.bind_reference(ref)                              # the chip reads its bank from it
     results = run_benchmark(model, ref, gd.HUMAN_IGH_OGRDB, n=6, seed=0,
                             strata_names=["clean", "high_shm"], device="cpu", batch_size=6)
     assert set(results) == {"clean", "high_shm"}
@@ -81,14 +99,68 @@ def test_cli_benchmark_uses_card_dataconfig(tmp_path):
     from alignair import model_file as mf
     from alignair.cli.main import build_parser
     from alignair.core import AlignAIR
-    from alignair.core.config import AlignAIRConfig
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576).config
     p = str(tmp_path / "m.alignair")
-    mf.save_model(p, AlignAIR(cfg).eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(p, AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 1, "batch_size": 1}, include_trusted_pickle=False,
                   model_id="m", model_version="1.0.0")           # no --dataconfig: read it from the card
     out = str(tmp_path / "bench.json")
     args = build_parser().parse_args(["benchmark", "--model", p, "--n", "4", "--strata", "clean",
-                                      "--device", "cpu", "--format", "json", "--out", out])
+                                      "--device", "cpu", "--json", "--out", out])
     assert args.func(args) == 0
     assert json.load(open(out))["clean"]["n"] == 4
+
+
+def test_an_unknown_stratum_is_refused_before_any_read_is_generated():
+    from alignair.errors import ConfigurationError
+    from alignair.evaluate import run_benchmark
+    with pytest.raises(ConfigurationError, match="nope") as caught:
+        run_benchmark(None, None, None, strata_names=["clean", "nope"])
+    assert "clean" in caught.value.hint
+
+
+def test_the_benchmark_takes_one_dataconfig():
+    from alignair.cli.main import build_parser
+    with pytest.raises(SystemExit) as caught:
+        build_parser().parse_args(["benchmark", "--model", "m.alignair", "--dataconfig", "A", "B"])
+    assert caught.value.code == 2
+
+
+def test_without_a_dataconfig_the_benchmark_says_which_of_the_cards_it_generates_from(monkeypatch, capsys):
+    from types import SimpleNamespace
+
+    from alignair.cli import benchmark
+    monkeypatch.setattr("alignair.model_file.container.is_alignair_file", lambda path: True)
+    monkeypatch.setattr("alignair.model_file.read_metadata",
+                        lambda path: {"reference": {"dataconfigs": [{"name": "A"}, {"name": "B"}]}})
+    assert benchmark.dataconfig_name(SimpleNamespace(dataconfig=None), "m.alignair") == "A"
+    note = capsys.readouterr().err
+    assert "A" in note and "B" in note and "--dataconfig" in note
+
+
+def test_a_stratum_never_holds_an_empty_read():
+    """short_janchor cuts 150-350 nt off the 5' end: on a short locus (TRB) some simulated reads have no bases left,
+    which the aligner refuses, so `alignair benchmark` failed at its defaults. A stratum draws reads with bases."""
+    import GenAIRR.data as gd
+    from alignair.evaluate.benchmark import generate_labeled
+    records = generate_labeled(gd.HUMAN_TCRB_IMGT, default_strata()["short_janchor"], 200, 3)   # the CLI's 4th stratum
+    assert len(records) == 200 and [r for r in records if not r["sequence"]] == []
+
+
+def test_a_stratum_that_leaves_no_read_is_refused_by_name(monkeypatch):
+    import itertools
+
+    import GenAIRR.data as gd
+    from alignair.errors import ConfigurationError
+    from alignair.evaluate.benchmark import generate_labeled
+    from alignair.genairr import experiment
+
+    class Empty:                                   # a stratum whose every simulated read has lost all its bases
+        def stream_records(self, n=None, seed=0):
+            return itertools.repeat({"sequence": ""})
+    monkeypatch.setattr(experiment, "build_experiment", lambda *args, **kwargs: Empty())
+    with pytest.raises(ConfigurationError, match="short_janchor") as refused:
+        generate_labeled(gd.HUMAN_TCRB_IMGT, default_strata()["short_janchor"], 5, 0, stratum="short_janchor")
+    assert refused.value.context["stratum"] == "short_janchor"
+    assert refused.value.context["dataconfig"] == "HUMAN_TCRB_IMGT"

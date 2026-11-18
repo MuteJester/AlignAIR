@@ -1,68 +1,50 @@
-"""``alignair genotype`` — infer an individual's IG genotype from a repertoire (experimental).
-
-Writes an explainable report (`<stem>.genotype.report.{txt,json}`) and an AIRR GenotypeSet
-(`<stem>.genotype.airr.json`). Separate from `predict` so a genotype run is never confused with an
-alignment run.
+"""``alignair genotype`` — a donor's V genotype from an AIRR rearrangement table, by the frequency rule
+``predict --infer-genotype`` uses (``genotype.infer``, TIgGER's rule): per V gene, the most frequent alleles among the
+rows whose ``v_call`` is a single allele, until they explain ``--explain`` of those rows; a gene with fewer than
+``--min-reads`` such rows has no evidence and is left open. Any tool's table works (a ``v_call`` listing several
+alleles is a tie and counts for none). Writes the genotype as an AIRR GenotypeSet and prints it, gene by gene.
 """
 from __future__ import annotations
 
-import json
+import csv
+
+from ..errors import ConfigurationError, InputError, report_error
+from ..genotype.infer import EXPLAIN, MIN_READS
+from ..reference.loci import FALLBACK_LOCUS
 
 
 def register(sub) -> None:
-    p = sub.add_parser("genotype", help="infer an individual's IG genotype from a repertoire (experimental)")
-    p.add_argument("input", help="repertoire reads (FASTA / FASTQ / TSV; .gz ok)")
-    p.add_argument("--model", required=True, help="a .alignair/.pt path or a shipped registry id")
-    p.add_argument("--dataconfig", nargs="+", default=None)
-    p.add_argument("--out", default=None, help="output stem (default: from --input)")
-    p.add_argument("--locus", default="IGH")
-    p.add_argument("--min-support", type=float, default=0.003, help="min per-allele support fraction")
-    p.add_argument("--germline-set-ref", default=None, help="CURIE for the source GermlineSet (AIRR)")
-    p.add_argument("--device", default=None)
-    p.add_argument("--batch-size", type=int, default=64)
-    p.add_argument("--trust-pickle", action="store_true")
-    p.add_argument("--registry", action="append")
-    p.add_argument("--offline", action="store_true")
+    p = sub.add_parser("genotype", help="a donor's V genotype from an AIRR table (the frequency rule of predict "
+                                        "--infer-genotype), written as an AIRR GenotypeSet")
+    p.add_argument("input", help="an AIRR rearrangement TSV with a v_call column (any tool's)")
+    p.add_argument("--out", required=True, help="the AIRR GenotypeSet JSON to write")
+    p.add_argument("--locus", default=FALLBACK_LOCUS, help="the genotype's locus (default %(default)s)")
+    p.add_argument("--explain", type=float, default=EXPLAIN,
+                   help="the share of a gene's single-allele rows its alleles explain (default %(default)s)")
+    p.add_argument("--min-reads", type=int, default=MIN_READS,
+                   help="the single-allele rows a gene needs to be genotyped (default %(default)s)")
     p.set_defaults(func=run)
 
 
 def run(args) -> int:
-    import os
-
-    import torch
-    from ..api import load_model
-    from ..genotype import infer_genotype
-    from ..genotype.report import format_report
-    from ..io.sequence_reader import read_sequences
-    from ..registry import resolve_model, sources as _sources
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    _, seqs, stats = read_sequences(args.input)
-    if not seqs:
-        print(f"no valid reads in {args.input}")
-        return 1
-    try:
-        model_path = str(resolve_model(args.model, sources=_sources.resolve_sources(args.registry),
-                                       offline=args.offline))
-    except Exception as e:
-        print(f"could not resolve model '{args.model}': {e}")
-        return 1
-    try:
-        model, reference = load_model(model_path, dataconfigs=args.dataconfig, device=device,
-                                      trust_pickle=args.trust_pickle)
-    except ValueError as e:
-        print(str(e))
-        return 1
-
-    result = infer_genotype(model, reference, seqs, locus=args.locus, min_support=args.min_support,
-                            germline_set_ref=args.germline_set_ref, device=device, batch_size=args.batch_size)
-    stem = args.out or (args.input.rsplit(".", 1)[0])
-    with open(f"{stem}.genotype.report.json", "w") as f:
-        json.dump(result.report, f, indent=2)
-    with open(f"{stem}.genotype.report.txt", "w") as f:
-        f.write(format_report(result.report) + "\n")
-    with open(f"{stem}.genotype.airr.json", "w") as f:
-        json.dump(result.genotype_set, f, indent=2)
-    for w in result.warnings:
-        print(f"warning: {w}")
-    print(f"genotyped {len(seqs)} reads -> {stem}.genotype.{{report.txt,report.json,airr.json}}")
+    from ..genotype.airr import write_genotype_set
+    from ..genotype.infer import GenotypeEvidence
+    if not (0.0 < args.explain <= 1.0) or args.min_reads < 1:
+        return report_error(ConfigurationError("--explain must be in (0, 1] and --min-reads at least 1",
+                                       context={"explain": args.explain, "min_reads": args.min_reads}))
+    evidence = GenotypeEvidence()
+    with open(args.input, newline="") as handle:
+        reader = csv.DictReader(handle, delimiter="\t")
+        if "v_call" not in (reader.fieldnames or ()):
+            return report_error(InputError(f"{args.input} has no v_call column", context={"path": args.input}))
+        for index, row in enumerate(reader):
+            evidence.observe(index, row["v_call"])
+    genotype = evidence.genotype(explain=args.explain, min_reads=args.min_reads)
+    write_genotype_set(args.out, genotype, args.locus)
+    for gene, counts in sorted(evidence.counts.items()):
+        if gene in genotype:
+            print(f"{gene}: {', '.join(genotype[gene])}")
+        else:
+            print(f"{gene}: open ({sum(counts.values())} single-allele rows, fewer than {args.min_reads})")
+    print(f"genotyped {len(genotype)} of {len(evidence.counts)} V genes -> {args.out}")
     return 0

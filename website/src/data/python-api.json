@@ -1,0 +1,855 @@
+[
+  {
+    "name": "alignair.AirrWriter",
+    "kind": "class",
+    "signature": "(path: str, locus: str = 'IGH', columns: str | Sequence[str] | None = None, extra_columns: Sequence[str] | None = None) -> None",
+    "doc": "Incremental AIRR rearrangement TSV writer for bounded-memory streaming. Open once, call\n`write(ids, sequences, preds)` per chunk, then `close()` (or use as a context manager).\n`path` may be '-' for stdout.",
+    "members": [
+      {
+        "name": "write",
+        "kind": "method",
+        "signature": "(ids: list[str], sequences: list[str], preds: list[dict], metas: list[dict] | None = None) -> None",
+        "doc": "`sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR\norientation convention per record. `metas`, if given, is a per-row dict of extra column values\n(barcode/UMI/sample/cell_id) merged into each output row without overwriting model fields.\n\nThe three lists must be the same length — a mismatch (a pipeline/model defect returning fewer or\nextra predictions) raises :class:`PredictionCountMismatchError` rather than silently truncating via\n``zip`` and losing reads."
+      },
+      {
+        "name": "close",
+        "kind": "method",
+        "signature": "(commit: bool = True) -> None",
+        "doc": "Close the output. For a file target, ``commit=True`` atomically renames the temp file onto\nthe final path; ``commit=False`` discards it (used on an aborted context exit)."
+      }
+    ],
+    "anchor": "alignair.airrwriter"
+  },
+  {
+    "name": "alignair.AlignAIRError",
+    "kind": "class",
+    "signature": "(message: str = '', *, context: Mapping | None = None, hint: str | None = None, retryable: bool = False)",
+    "doc": "Base for classified AlignAIR failures; built-in compatibility is added by subclasses.\n\n``str(error)`` remains the plain message for existing callers. Codes and the v1\n``to_dict`` envelope are the machine interface; callers must not parse messages.\nCause chains use Python's ``raise ... from ...``. Nothing logs automatically.",
+    "members": [
+      {
+        "name": "context",
+        "kind": "property",
+        "signature": "",
+        "doc": "A copy: modifying the returned data cannot alter the captured diagnostic."
+      },
+      {
+        "name": "to_dict",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "Versioned JSON-compatible diagnostic; excludes raw causes and tracebacks."
+      },
+      {
+        "name": "to_json",
+        "kind": "method",
+        "signature": "() -> str",
+        "doc": "The error as JSON (``to_dict``)."
+      }
+    ],
+    "anchor": "alignair.alignairerror"
+  },
+  {
+    "name": "alignair.Aligner",
+    "kind": "class",
+    "signature": "(model: AlignAIR, reference: ReferenceSet, *, device: str = 'auto', model_path: str | None = None, source_commit: str | None = None) -> None",
+    "doc": "A loaded model bound to its germline reference, ready to predict. Construct with :meth:`from_pretrained` (a\nlocal path, a shipped catalog id, or ``id@revision``); ``alignair predict`` loads its model through it.",
+    "members": [
+      {
+        "name": "from_pretrained",
+        "kind": "method",
+        "signature": "(model: str | os.PathLike[str], *, revision: str | None = None, device: str = 'auto', reference: ReferenceSet | None = None, registry: str | Iterable[str] | None = None, offline: bool = False, token: str | None = None) -> Aligner",
+        "doc": "Load a model by local path, a Hugging Face repo (``hf://org/repo`` or ``org/repo`` — pulled\nvia ``huggingface_hub``), or a shipped catalog id (``id`` / ``id@version``), looked up in the registries of\n``registry`` (a string is one registry; default: the configured ones). ``revision`` pins a\nHF branch/tag/commit (or catalog version); ``token`` authenticates a private/gated HF repo (or\n``HF_TOKEN``). ``offline`` uses only local caches. ``device`` accepts ``\"auto\"`` (CUDA→MPS→CPU). A\n``reference`` that holds alleles of a locus the model does not call is refused (ConfigurationError)."
+      },
+      {
+        "name": "save_pretrained",
+        "kind": "method",
+        "signature": "(directory: str, *, filename: str = 'model.alignair') -> str",
+        "doc": "Copy the loaded model artifact into ``directory`` (for local distribution or a later\n``push_to_hub``). Requires an aligner loaded from a **pickle-free** file. Returns the path."
+      },
+      {
+        "name": "push_to_hub",
+        "kind": "method",
+        "signature": "(repo_id: str, *, token: str | None = None, private: bool = True, filename: str = 'model.alignair', create: bool = True, revision: str | None = None) -> CommitInfo",
+        "doc": "Maintainer-only: upload this model's ``.alignair`` to a Hugging Face repo of its own, in one commit with the\nbundle's ``model_card.md`` and ``reference_manifest.json`` when they sit beside the model file (as\n``alignair export`` writes them). Requires ``huggingface_hub`` and a write token (arg or ``$HF_TOKEN``). For\nthe shared catalog repo, use ``alignair.registry.publish``'s ``publish_bundle`` and ``upload_version``.\nReturns the commit."
+      },
+      {
+        "name": "from_model",
+        "kind": "method",
+        "signature": "(model: AlignAIR, reference: ReferenceSet, *, device: str = 'auto') -> Aligner",
+        "doc": "Wrap an already-loaded ``(model, reference)`` pair (e.g. straight from training), the model placed on\n``device``."
+      },
+      {
+        "name": "bound_to",
+        "kind": "method",
+        "signature": "(reference: ReferenceSet) -> Aligner",
+        "doc": "An Aligner that predicts from ``reference`` (the alleles it calls from, e.g. a donor genotype's subset of\nthe reference): a copy of the model bound to it once, so later calls, and the workers a pool starts from it,\nuse those alleles with no per-call binding; the reference is annotated against this Aligner's own\n(``alignair.reference.annotate``), as one given at load is; one that holds alleles of a locus the model does\nnot call is refused (ConfigurationError). This Aligner is unchanged. The copy is not a model file\n(``model_path`` is unset), and its label schema names the reference's alleles."
+      },
+      {
+        "name": "with_genotype",
+        "kind": "method",
+        "signature": "(genotype: Mapping[str, Iterable[str]]) -> Aligner",
+        "doc": "An Aligner whose calls come from a donor's ``genotype`` (``{V|D|J: allele names}``, either case): this\nAligner bound once to the genotype's subset of its reference (``bound_to``); a gene it does not name keeps all\nits alleles. This Aligner is unchanged. UnknownAlleleError for an allele the reference does not hold (give its\nsequence in the reference), InputError for a gene left with no allele, ConfigurationError for a key that is\nnot V, D or J or an entry that is not a list of allele names."
+      },
+      {
+        "name": "label_schema",
+        "kind": "property",
+        "signature": "",
+        "doc": "The identity of ``predict_raw``'s allele columns: each gene's alleles in the bound reference's order."
+      },
+      {
+        "name": "loci",
+        "kind": "property",
+        "signature": "",
+        "doc": "The bound reference's AIRR locus codes, in order (empty if it declares none)."
+      },
+      {
+        "name": "default_locus",
+        "kind": "property",
+        "signature": "",
+        "doc": "The locus written for a record that carries none: the reference's one locus, else IGH."
+      },
+      {
+        "name": "predict",
+        "kind": "method",
+        "signature": "(sequences: Sequence[str], *, ids: Sequence[str] | None = None, batch_size: int | str | None = 'auto', threshold: float | None = None, cap: int | None = None, airr: bool = True) -> PredictionResult",
+        "doc": "Align nucleotide strings, returning a :class:`PredictionResult` of one record per sequence, in order: every\nsequence given is predicted (``read_sequences`` and the CLI drop the reads of a file that are mostly not\nbases; an empty one is refused here).\n\n``ids`` (one string per sequence) fill each record's ``sequence_id`` and the result's ``ids``.\n``batch_size=\"auto\"`` (or None) picks a device-appropriate size. ``threshold`` and ``cap`` set the called\nalleles of each gene (``v_calls``...): those scoring at least ``threshold`` relative to the best (default 0.5),\nat most ``cap`` of them (default 3), never none. ``airr=False`` returns light records without the AIRR\nassembly. To call from a donor's genotype, predict with :meth:`with_genotype`'s Aligner."
+      },
+      {
+        "name": "predict_raw",
+        "kind": "method",
+        "signature": "(sequences: Sequence[str], *, batch_size: int | str | None = 'auto') -> dict",
+        "doc": "The model's raw per-read output arrays; label_schema describes column identity.\n\nThis method does not run the AIRR assembly. Every output uses model semantics (allele scores relative to the\nread's best allele, model-frame positions). The forward is the one ``predict`` runs (``predict.forward.\nrun_model``: reads batched by width bucket), so the arrays are the ones a read's row comes from."
+      },
+      {
+        "name": "predict_iter",
+        "kind": "method",
+        "signature": "(sequences: Iterable[str], *, ids: Iterable[str] | None = None, batch_size: int | str | None = 'auto', chunk_size: int = 20000, threshold: float | None = None, cap: int | None = None, airr: bool = True) -> Iterator[dict]",
+        "doc": "Stream prediction over an iterable of sequences in bounded memory: yields per-read records, predicting\n``chunk_size`` reads at a time (a positive integer). Same options as :meth:`predict`; ``ids`` may be an\niterable too (InputError when it runs out before the sequences, or after)."
+      }
+    ],
+    "anchor": "alignair.aligner"
+  },
+  {
+    "name": "alignair.PredictionResult",
+    "kind": "class",
+    "signature": "(records: list[dict], locus: str = 'IGH', ids: list[str] | None = None) -> None",
+    "doc": "A typed prediction result: the AIRR-convention records plus convenience I/O. Iterable and\n``len()``-able over the per-read records; ``write_airr`` emits the TSV; ``to_dicts`` returns the raw\nlist. The coordinates in each record refer to that record's canonical ``sequence``.",
+    "members": [
+      {
+        "name": "to_dicts",
+        "kind": "method",
+        "signature": "() -> list",
+        "doc": "The records as a list of dicts, one per read."
+      },
+      {
+        "name": "write_airr",
+        "kind": "method",
+        "signature": "(path: str, *, columns: str | Sequence[str] | None = None) -> str",
+        "doc": "Write the records as an AIRR rearrangement TSV; ``columns`` selects the fields to emit (a preset name or\nthe field names; default: all). Returns ``path``."
+      }
+    ],
+    "anchor": "alignair.predictionresult"
+  },
+  {
+    "name": "alignair.ReferenceSet",
+    "kind": "class",
+    "signature": "(genes: dict[str, GeneReference], has_d: bool, loci: list[LocusInfo] | None = None, provenance: Iterable[SourceProvenance] = ())",
+    "doc": "A germline reference: a ``GeneReference`` per gene, its loci and its sources. Build one from GenAIRR\ndataconfigs (``from_dataconfigs``), a FASTA file (``from_fasta``), allele sequences (``from_alleles``) or its\nJSON form (``from_serializable``).",
+    "members": [
+      {
+        "name": "gene",
+        "kind": "method",
+        "signature": "(g: str) -> GeneReference",
+        "doc": "The ``GeneReference`` of gene ``g`` (V, D or J, either case)."
+      },
+      {
+        "name": "validate",
+        "kind": "method",
+        "signature": "(*, genes: Iterable[str] | None = None) -> None",
+        "doc": "Validate selected ordered vocabularies before model construction."
+      },
+      {
+        "name": "locus_names",
+        "kind": "method",
+        "signature": "() -> tuple",
+        "doc": "Ordered AIRR locus codes, in the order the union was built (empty if unknown)."
+      },
+      {
+        "name": "default_locus",
+        "kind": "property",
+        "signature": "",
+        "doc": "The locus a record without its own is labelled with: the reference's one locus, else ``FALLBACK_LOCUS``."
+      },
+      {
+        "name": "locus_mask",
+        "kind": "method",
+        "signature": "(locus: str, gene: str) -> np.ndarray",
+        "doc": "Boolean mask over the model's allele outputs selecting exactly the alleles that belong to ``locus``.\n\nNo schema (single-chain) -> all-True (unconstrained). With a schema, a locus that *has* no\nalleles for this gene (e.g. D on a light chain) -> **all-False** (an explicit no-call), NOT\nall-True — otherwise a light-chain read could be handed every heavy-chain D allele."
+      },
+      {
+        "name": "from_dataconfigs",
+        "kind": "method",
+        "signature": "(*dataconfigs: DataConfig) -> ReferenceSet",
+        "doc": "The annotated union of GenAIRR dataconfigs' alleles (``alignair.genairr.reference_from_dataconfigs``)."
+      },
+      {
+        "name": "to_serializable",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== the model's\noutput index), ungapped ``sequences``, IMGT-``gapped`` V, and junction ``anchors`` — with NO pickle.\nThis is the safe reference the distributed ``.alignair`` embeds and inference rebuilds from."
+      },
+      {
+        "name": "from_serializable",
+        "kind": "method",
+        "signature": "(data: dict) -> ReferenceSet",
+        "doc": "Rebuild from :meth:`to_serializable` (the safe, no-pickle inference load path)."
+      },
+      {
+        "name": "from_alleles",
+        "kind": "method",
+        "signature": "(genes: dict[str, dict[str, str]], anchors: dict[str, dict[str, int]] | None = None, *, locus: str | None = None) -> ReferenceSet",
+        "doc": "Build a reference from allele sequences, ``{gene: {allele_name: dna_seq}}`` (gene V, D or J, either case).\n\nV and J, plus D for a chain that has one (omit D for a light chain). ``anchors`` optionally supplies\n{gene: {allele_name: pos}} so alleles keep their junction anchor.\n\nThe locus schema comes from ``locus`` when given (one locus over every allele), else from the allele names:\nnames that show one locus give it to every allele (those whose name shows none join it); names that show\nseveral, every allele showing one, group each gene's alleles by locus (loci in order of first appearance over\nV, then J, then D; the file's order within a locus); otherwise there is no schema. The alleles otherwise\nkeep the file's order. A model reads its alleles from the bound reference, so the result can be bound to a\nmodel (``predict --reference``), novel alleles included, or trained against."
+      },
+      {
+        "name": "subset",
+        "kind": "method",
+        "signature": "(allowed: dict[str, Iterable[str]]) -> ReferenceSet",
+        "doc": "Return a new ReferenceSet keeping only the named alleles per gene (a donor's\nreduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {V|D|J: allele\nnames}; a segment it does not name keeps all its alleles. The kept alleles are in this reference's order, each\nonce, whatever order (or set) they are named in: the model's scores depend on the alleles' order."
+      },
+      {
+        "name": "membership",
+        "kind": "method",
+        "signature": "() -> dict[str, list]",
+        "doc": "Each gene's per-index locus (None for an allele no locus range holds), from the locus schema."
+      },
+      {
+        "name": "extend",
+        "kind": "method",
+        "signature": "(other: ReferenceSet, *, on_conflict: str = 'error') -> ReferenceSet",
+        "doc": "This reference with ``other``'s alleles added (a donor's novel or undocumented alleles), each at the end of\nits locus's block in its gene; this reference is unchanged.\n\nAn allele of ``other`` this reference holds with the same sequence is skipped; with another sequence,\n``on_conflict=\"error\"`` refuses (InputError naming them) and ``\"keep\"`` keeps this reference's. A new allele's\nlocus is ``other``'s, else its name's, else this reference's only locus; one no locus can hold is refused.\nA locus this reference lacks is added after its loci. Anchors, gapped forms and info come along; the\nprovenance is this reference's followed by ``other``'s new sources."
+      },
+      {
+        "name": "from_fasta",
+        "kind": "method",
+        "signature": "(path: str) -> ReferenceSet",
+        "doc": "Load a genotype FASTA (``>allele_name`` headers + DNA; an IMGT/GENE-DB header, ``>X00369|IGHV3-11*04|Homo\nsapiens|F|...``, names its allele in the field with a ``*``, as Change-O reads it). Each allele's segment\n(V/D/J) is read from its name (``_infer_segment``); an InputError names the alleles it cannot be read from, and\nthose named twice with two sequences.\n\nLike :meth:`from_alleles`, the result can be bound to a model or trained against."
+      }
+    ],
+    "anchor": "alignair.referenceset"
+  },
+  {
+    "name": "alignair.TrainingConfig",
+    "kind": "class",
+    "signature": "(dataconfigs: tuple, steps: int = 100000, batch_size: int = 64, lr: float = 0.0003, device: str = 'auto', short_boost: int = 1, grad_clip: float | None = None, val_every: int = 0, seed: int = 0, init_seed: int | None = None, max_seq_length: int | None = None, has_d: bool | None = None, model_options: Mapping = _HAS_DEFAULT_FACTORY_CLASS(), resume_path: str | os.PathLike[str] | None = None, schedule: CosineSchedule | None = None, init_from: str | os.PathLike[str] | None = None, data_workers: int = 0, flanks: FlankPolicy | None = _HAS_DEFAULT_FACTORY_CLASS(), novel_alleles: NovelAlleles | None = _HAS_DEFAULT_FACTORY_CLASS(), inverted_d: float = 0.0) -> None",
+    "doc": "Reference sources plus training and model settings, every value validated here, at construction\n(ConfigurationError; TrainingConfigError for the run's numbers): ``run_training`` checks only what needs the\nresolved reference.\n\nModel options are copied on construction and checked with ``max_seq_length`` and ``has_d`` as the model\nconfiguration they build (``AlignAIRConfig``); the allele counts come from the bound reference.\n``data_workers`` > 0 generates training data in that many worker processes (one per training-data\nstream at most: 28 for the default mix, 7 components of 4 streams); the batches are those of\n``data_workers=0``, so it is not part of model identity.\n``init_seed`` None seeds the model's initial weights from ``seed``. An int\ndraws them from its own seed instead, and leaves the process generators (torch's CPU one, Python's and\nNumPy's) where ``seed`` left them: replicate runs of one ``seed`` then differ in their initial weights (and an\naccelerator's random draws, such as its dropout) while training on the same batches.\nWorkers are spawned, so a script that trains with them needs an ``if __name__ == \"__main__\":``\nguard. On an accelerator, batches are assembled ahead from the CPU random state, so a CPU random\ndraw in the training step or an ``on_iteration`` callback raises TrainingError;\nuse ``data_workers=0`` there.\n``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant\nregion) around the simulated training reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the\nshipped models' recipe; None trains on the bare reads.\n``novel_alleles`` (``train.records.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and\nputs their rows in each batch's allele set (``data.novel_bank``), so the model does not memorise the training\nalleles: by default ``NovelAlleles()``, the shipped models' recipe; None trains on the dataconfigs' alleles alone,\nas does a run whose reference they cannot be drawn for (a dataconfig with no eligible V, loci of several species,\nor a custom reference, which names no species), which says so. The model and the saved reference stay the\ndataconfigs' either way.\n``inverted_d`` (0 to 1) inverts the D of that share of the training records; 0, the default, trains on forward\nDs alone.\n``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d`` are the run's settings of its record policy\n(``record_policy``), the rest of which is the recipe's.",
+    "members": [
+      {
+        "name": "record_policy",
+        "kind": "method",
+        "signature": "() -> CurriculumStreamPolicy",
+        "doc": "The training-record policy the run draws its records with: the recipe's, with this configuration's\n``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d``."
+      },
+      {
+        "name": "from_genairr",
+        "kind": "method",
+        "signature": "(*dataconfigs: str | DataConfig, preset: str | None = None, **overrides: Any) -> TrainingConfig",
+        "doc": "A configuration training on GenAIRR ``dataconfigs``, from a named ``preset`` and ``overrides``."
+      },
+      {
+        "name": "with_",
+        "kind": "method",
+        "signature": "(**changes: Any) -> TrainingConfig",
+        "doc": "A copy with ``changes``."
+      }
+    ],
+    "anchor": "alignair.trainingconfig"
+  },
+  {
+    "name": "alignair.TrainingRun",
+    "kind": "class",
+    "signature": "(model_path: str, best_model_path: str | None = None, steps: int = 0) -> None",
+    "doc": "A finished run: its last model, its best model (with validation) and its number of updates.",
+    "members": [
+      {
+        "name": "best_aligner",
+        "kind": "method",
+        "signature": "(*, device: str = 'auto') -> Aligner",
+        "doc": "The best (or last) model, loaded as an ``Aligner``."
+      }
+    ],
+    "anchor": "alignair.trainingrun"
+  },
+  {
+    "name": "alignair.__version__",
+    "kind": "constant",
+    "signature": " = '4.0.0'",
+    "doc": "",
+    "members": [],
+    "anchor": "alignair.__version__"
+  },
+  {
+    "name": "alignair.compare_airr",
+    "kind": "function",
+    "signature": "(a: dict[str, dict], b: dict[str, dict], a_name: str = 'model_a', b_name: str = 'model_b', n_examples: int = 10) -> dict",
+    "doc": "Compare two {sequence_id: row} maps. `a` is treated as AlignAIR for set-rescue (the fraction\nof allele disagreements where b's call is inside a's equivalence set).",
+    "members": [],
+    "anchor": "alignair.compare_airr"
+  },
+  {
+    "name": "alignair.iter_sequences",
+    "kind": "function",
+    "signature": "(path: str, chunk_size: int = 20000, seq_column: str | None = None, id_column: str | None = None, rejects: list | None = None) -> Iterator[tuple[list[str], list[str], int]]",
+    "doc": "The reads of ``path`` in chunks of ``chunk_size``: ``(ids, cleaned nucleotide sequences, n_dropped)`` per chunk.\n\nUse ``alignair.io.iter_sequence_batches`` when joining source metadata or retaining original source positions.\nID state spans all chunks and grows with distinct accepted IDs; sequence payloads are chunked.",
+    "members": [],
+    "anchor": "alignair.iter_sequences"
+  },
+  {
+    "name": "alignair.read_sequences",
+    "kind": "function",
+    "signature": "(path: str, seq_column: str | None = None, id_column: str | None = None, collect_rejects: bool = False) -> tuple[list[str], list[str], dict]",
+    "doc": "Read all the reads of ``path`` at once. For large files, read chunk by chunk with ``iter_sequences``.\nReturns (ids, sequences, info) with info.n_read/n_dropped/format; when ``collect_rejects`` is set,\ninfo[\"rejects\"] lists each dropped record ({id, position, reason, sequence}).",
+    "members": [],
+    "anchor": "alignair.read_sequences"
+  },
+  {
+    "name": "alignair.run_training",
+    "kind": "function",
+    "signature": "(config: TrainingConfig, *, output_dir: str | os.PathLike[str] | None = None, out_path: str | os.PathLike[str] | None = None, on_iteration: Callable[[TrainingIteration], object] | None = None, record_source: RecordSource | None = None) -> TrainingRun",
+    "doc": "Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.\n\nWith ``config.data_workers`` > 0, worker processes are spawned: call this under an\n``if __name__ == \"__main__\":`` guard. On an accelerator, the step and ``on_iteration`` must not draw from\nthe CPU random generators: such a draw raises TrainingError, and\n``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``on_iteration`` is called after each update\nwith its ``TrainingIteration`` (``step``, ``result``: the ``StepResult``, and the batch's ``records``).\n``record_source`` (``train.records.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces\nthe GenAIRR provider of the run's simulated training records. ``config`` validated its values when it was built;\nthe run checks its reference before the model is built.",
+    "members": [],
+    "anchor": "alignair.run_training"
+  },
+  {
+    "name": "alignair.write_airr",
+    "kind": "function",
+    "signature": "(path: str, ids: list[str], sequences: list[str], preds: list[dict], locus: str = 'IGH', columns: str | Sequence[str] | None = None, metas: list[dict] | None = None, extra_columns: Sequence[str] | None = None) -> None",
+    "doc": "Write a whole AIRR table at once (atomically). For large inputs, write chunk by chunk with ``AirrWriter``.\n`sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR\norientation convention per record. `columns` selects which fields to emit. `metas` (per-row\ndicts) + `extra_columns` carry preserved input metadata (barcode/UMI/sample/cell_id) into output.",
+    "members": [],
+    "anchor": "alignair.write_airr"
+  },
+  {
+    "name": "alignair.io.MetadataIndex",
+    "kind": "class",
+    "signature": "()",
+    "doc": "Temporary SQLite lookup with atomic batch inserts and bounded lookup parameter counts.\n\nClose explicitly or use a context manager. Missing lookups are omitted; source IDs can repeat\nin a query, but stored keys must be unique. Failed inserts preserve all earlier committed batches.",
+    "members": [
+      {
+        "name": "put_many",
+        "kind": "method",
+        "signature": "(items: Iterable[tuple[str, dict]]) -> None",
+        "doc": "Store ``(source ID, metadata row)`` pairs in one transaction: a DuplicateMetadataIdError (and nothing\nstored) when an ID is already stored or repeats among them."
+      },
+      {
+        "name": "get_many",
+        "kind": "method",
+        "signature": "(ids: Iterable[str]) -> dict[str, dict]",
+        "doc": "The stored rows of ``ids`` by ID; an ID not stored is absent."
+      },
+      {
+        "name": "get",
+        "kind": "method",
+        "signature": "(key: str, default: dict | None = None) -> dict",
+        "doc": "The stored row of ``key``, else ``default`` (an empty row by default)."
+      },
+      {
+        "name": "close",
+        "kind": "method",
+        "signature": "() -> None",
+        "doc": "Close the index and remove its file; closing twice is harmless."
+      }
+    ],
+    "anchor": "alignair.io.metadataindex"
+  },
+  {
+    "name": "alignair.io.SequenceReadBatch",
+    "kind": "class",
+    "signature": "(records: tuple[SequenceRead, ...], n_dropped: int) -> None",
+    "doc": "One chunk of accepted reads, and how many of the chunk's records were dropped.",
+    "members": [
+      {
+        "name": "ids",
+        "kind": "property",
+        "signature": "",
+        "doc": "The reads' ids."
+      },
+      {
+        "name": "sequences",
+        "kind": "property",
+        "signature": "",
+        "doc": "The reads' cleaned sequences."
+      },
+      {
+        "name": "source_ids",
+        "kind": "property",
+        "signature": "",
+        "doc": "The reads' ids as the input file gave them (None when the reader assigned one)."
+      }
+    ],
+    "anchor": "alignair.io.sequencereadbatch"
+  },
+  {
+    "name": "alignair.io.build_metadata_index",
+    "kind": "function",
+    "signature": "(path: str | os.PathLike[str], id_column: str | None = None, keep_columns: Sequence[str] | None = None, normalize_10x: bool = False, rename: Callable[[str], str] = metadata_column) -> tuple[MetadataIndex, list[str]]",
+    "doc": "Return (owned index, output columns); close the index after joining source IDs.\n\n``rename`` names each output column (by default ``io.airr.metadata_column``: a column AlignAIR writes becomes\n``meta_<column>``) and is resolved once per output column. Colliding target columns fail before index\ncreation. Reading and insertion use bounded batches; every failure closes and removes the index.",
+    "members": [],
+    "anchor": "alignair.io.build_metadata_index"
+  },
+  {
+    "name": "alignair.io.iter_sequence_batches",
+    "kind": "function",
+    "signature": "(path: str, chunk_size: int = 20000, seq_column: str | None = None, id_column: str | None = None, rejects: list | None = None) -> Iterator[SequenceReadBatch]",
+    "doc": "Yield nucleotide read batches with source IDs/positions retained across all chunks.\n\nOne allocator reserves every accepted output ID, including generated names. Rejected reads\nkeep their original positions but do not reserve output IDs. Unnamed reads get seq<source_index>.\nSource IDs (possibly None/empty) remain separate from unique output IDs for metadata joins.",
+    "members": [],
+    "anchor": "alignair.io.iter_sequence_batches"
+  },
+  {
+    "name": "alignair.io.lookup_metadata_rows",
+    "kind": "function",
+    "signature": "(metadata: MetadataIndex | None, source_ids: Iterable[str | None]) -> list[dict] | None",
+    "doc": "The metadata row of each original source ID, in order, from ``build_metadata_index``'s index (None: no\nmetadata, so None).\n\nMissing/empty source IDs receive empty rows; generated output names are never inferred as\njoin keys. Duplicate source IDs share their metadata row; the index is queried once per distinct key.",
+    "members": [],
+    "anchor": "alignair.io.lookup_metadata_rows"
+  },
+  {
+    "name": "alignair.genotype.genotype_bank",
+    "kind": "function",
+    "signature": "(reference: ReferenceSet, genotype: Mapping[str, Iterable[str]]) -> ReferenceSet",
+    "doc": "``reference``'s subset of the alleles ``genotype`` names (``{gene letter: allele names}``, any case), in the\nreference's order and with its locus schema (every locus stays, its ranges over the kept alleles); a segment it\ndoes not name keeps all its alleles, and so, for a ``GenesOnly`` genotype (an AIRR GenotypeSet), does every gene\nit does not name. ConfigurationError for a key that is not a segment (V, D, J), gene names\nincluded, or an entry that is not a list of names (one string, say); UnknownAlleleError when it names alleles\nthe reference does not hold (give their sequences in the reference); InputError when it leaves a gene with no\nallele.",
+    "members": [],
+    "anchor": "alignair.genotype.genotype_bank"
+  },
+  {
+    "name": "alignair.genotype.load_genotype",
+    "kind": "function",
+    "signature": "(path: str) -> dict[str, set[str]]",
+    "doc": "Load a genotype from JSON or YAML: ``{segment: [allele names]}`` (a ``{name: sequence}`` mapping per segment\nworks too; the sequences are ignored), or an AIRR GenotypeSet such as ``alignair genotype`` writes. Returns\n``{segment: set(names)}``, segments lower-case; for a GenotypeSet, a ``GenesOnly`` (the genes it does not name keep\nall their alleles). ConfigurationError for a file that is not such a mapping, or one keyed by gene names.\n``genotype_bank`` checks its alleles against a reference.",
+    "members": [],
+    "anchor": "alignair.genotype.load_genotype"
+  },
+  {
+    "name": "alignair.registry.DEFAULT_REGISTRY",
+    "kind": "constant",
+    "signature": " = 'hf://AlignAIR/AlignAIR-pretrained'",
+    "doc": "",
+    "members": [],
+    "anchor": "alignair.registry.default_registry"
+  },
+  {
+    "name": "alignair.registry.download_from_hub",
+    "kind": "function",
+    "signature": "(spec: str, *, revision: str | None = None, filename: str | None = None, token: str | None = None, offline: bool = False) -> Path",
+    "doc": "Download a model's ``.alignair`` from a HF repo and return the local cached path. ``offline`` uses\nthe local cache directly (no network; a cache miss is an OfflineError). A repo, revision or file the hub does not\nhave is a ModelNotFoundError; a hub that cannot be reached a retryable RegistryUnavailableError; a disk error\nwhile the hub writes its cache stays an OSError (``_hub_failure``). Requires ``huggingface_hub``.",
+    "members": [],
+    "anchor": "alignair.registry.download_from_hub"
+  },
+  {
+    "name": "alignair.registry.find_model",
+    "kind": "function",
+    "signature": "(model_id: str, version: str | None, registry: str | Iterable[str], *, offline: bool = False) -> tuple[str, str, dict, dict] | None",
+    "doc": "Search the registries of ``registry`` in order (a string is one registry) for ``model_id`` (``version`` or the\nregistry's ``latest``). Returns ``(source, version, version_entry, model_entry)`` or None. Failed sources are\ntried in order; if no match is found, failures are reported rather than called 'unknown model': an OfflineError\nwhen every source failed for being offline, a RegistryUnavailableError when one could not be reached or read\n(retryable when one of those is), else a RegistryInvalidError.",
+    "members": [],
+    "anchor": "alignair.registry.find_model"
+  },
+  {
+    "name": "alignair.registry.is_hf_repo_spec",
+    "kind": "function",
+    "signature": "(spec: str) -> bool",
+    "doc": "True if ``spec`` names a HF model repo (``hf://org/repo[/file][@rev]`` or a bare ``org/repo[@rev]``) rather\nthan a local path or a catalog id. A bare spec with a file below the repo, or one naming a ``.alignair`` file, is\na path: only the ``hf://`` form reaches a file inside a repo.",
+    "members": [],
+    "anchor": "alignair.registry.is_hf_repo_spec"
+  },
+  {
+    "name": "alignair.registry.load_registry",
+    "kind": "function",
+    "signature": "(source: str, *, offline: bool = False) -> dict",
+    "doc": "The ``registry.json`` catalog of ``source``, checked: RegistryUnavailableError when it cannot be fetched (an\nOSError for a local one that cannot be opened), RegistryInvalidError when it is not a catalog.",
+    "members": [],
+    "anchor": "alignair.registry.load_registry"
+  },
+  {
+    "name": "alignair.registry.maybe_notify_updates",
+    "kind": "function",
+    "signature": "(*, registry: str | Iterable[str] | None = None, offline: bool = False, quiet: bool = False, pinned: bool = False, stream: TextIO | None = None) -> list[tuple[str, str]]",
+    "doc": "Print (to ``stream``, default stderr) one line per installed model that has a newer ``latest`` in the first\nreachable registry of ``registry`` (a string is one registry; default: the configured ones). Returns the\n(id, version) notices. Suppressed and swallows all errors per the conditions above.",
+    "members": [],
+    "anchor": "alignair.registry.maybe_notify_updates"
+  },
+  {
+    "name": "alignair.registry.parse_hf_spec",
+    "kind": "function",
+    "signature": "(spec: str) -> tuple[str, str | None, str | None]",
+    "doc": "Parse ``hf://org/repo[/sub/file.alignair][@rev]`` (or the ``hf://``-less form) into\n``(repo_id, revision, filename)``. ``repo_id`` is the first two path segments; anything after is a\nfile path within the repo (default ``model.alignair``); ``@rev`` pins a branch/tag/commit. An InputError when it\nnames no ``org/repo``.",
+    "members": [],
+    "anchor": "alignair.registry.parse_hf_spec"
+  },
+  {
+    "name": "alignair.registry.resolve_model",
+    "kind": "function",
+    "signature": "(spec: str | os.PathLike[str], *, registry: str | Iterable[str] | None = None, offline: bool = False, token: str | None = None, revision: str | None = None) -> Path",
+    "doc": "Resolve a model spec to a local artifact path:\n\n* a filesystem path -> that path;\n* a Hugging Face repo (``hf://org/repo`` or ``org/repo``) -> the ``.alignair`` pulled straight from\n  that repo via ``huggingface_hub`` (revision/token/offline honored — the one-repo-per-model path);\n* a catalog ``id`` / ``id@version`` -> the verified cached artifact from the first registry of ``registry`` (a\n  string is one registry; default: the configured ones, ``resolve_sources``) that lists it.\n\n``revision`` supplies a catalog version when no inline ``@version`` is present; for Hub repos\nit overrides the inline revision. Local paths ignore it.\nA pinned + already-cached version returns immediately (no network).",
+    "members": [],
+    "anchor": "alignair.registry.resolve_model"
+  },
+  {
+    "name": "alignair.registry.resolve_sources",
+    "kind": "function",
+    "signature": "(registry: str | Iterable[str] | None = None, *, config_path: str | None = None) -> list[str]",
+    "doc": "Registry sources in precedence order (first non-empty wins): ``registry`` (the CLI's ``--registry``; a string\nis one registry), ``ALIGNAIR_REGISTRY``, the config file, then the built-in catalog.",
+    "members": [],
+    "anchor": "alignair.registry.resolve_sources"
+  },
+  {
+    "name": "alignair.registry.validate_registry",
+    "kind": "function",
+    "signature": "(catalog: dict, artifact_path: Callable[[str], str | None]) -> list[str]",
+    "doc": "The problems of a registry's ``catalog`` (its parsed ``registry.json``, as ``load_registry`` returns it);\n``artifact_path(relpath)`` is the local path of one of its artifacts. Returns problem strings.",
+    "members": [],
+    "anchor": "alignair.registry.validate_registry"
+  },
+  {
+    "name": "alignair.reference.AlleleInfo",
+    "kind": "class",
+    "signature": "(functional: str | None = None, species: str | None = None, source_label: str | None = None, anchor_evidence: AnchorEvidence | None = None) -> None",
+    "doc": "What a source tells about one allele: functionality (``FUNCTIONALITIES``), species, label, anchor evidence.",
+    "members": [
+      {
+        "name": "to_dict",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "The fields that are set; the evidence as its own dict."
+      },
+      {
+        "name": "from_dict",
+        "kind": "method",
+        "signature": "(data: dict) -> AlleleInfo",
+        "doc": "Read leniently, as a newer v1 file may carry values this build does not know: an unknown functionality\nreads as None and evidence with an unknown status is dropped."
+      }
+    ],
+    "anchor": "alignair.reference.alleleinfo"
+  },
+  {
+    "name": "alignair.reference.AnchorEvidence",
+    "kind": "class",
+    "signature": "(method: str, status: str, detail: str | None = None, source: str | None = None) -> None",
+    "doc": "How an allele's anchor was found: the method, the status (``ANCHOR_STATUSES``), a detail and its source.",
+    "members": [
+      {
+        "name": "to_dict",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "The fields as a plain dict."
+      },
+      {
+        "name": "from_dict",
+        "kind": "method",
+        "signature": "(data: dict) -> AnchorEvidence",
+        "doc": "From ``to_dict``'s form; unknown keys are ignored."
+      }
+    ],
+    "anchor": "alignair.reference.anchorevidence"
+  },
+  {
+    "name": "alignair.reference.AnchorReport",
+    "kind": "class",
+    "signature": "(anchored: dict, total: dict, missing: dict, noncanonical: dict = _HAS_DEFAULT_FACTORY_CLASS()) -> None",
+    "doc": "V and J: how many alleles have an anchor (``anchored``) of how many (``total``), and the names of those without\nby their status (``missing[gene][status]``: the statuses as they first occur, the names in reference order; no\nevidence counts as unresolved), and the V alleles anchored on a codon that is not Cys (``noncanonical``).",
+    "members": [
+      {
+        "name": "complete",
+        "kind": "method",
+        "signature": "() -> bool",
+        "doc": "Whether every V and J allele has an anchor."
+      },
+      {
+        "name": "summary",
+        "kind": "method",
+        "signature": "() -> str",
+        "doc": "``\"V 2/3, J 1/2 anchored; no anchor: <name> (<status>), ...\"``, at most five names, then how many more."
+      }
+    ],
+    "anchor": "alignair.reference.anchorreport"
+  },
+  {
+    "name": "alignair.reference.GeneReference",
+    "kind": "class",
+    "signature": "(names: list[str], sequences: list[str], index: dict[str, int], anchors: dict[str, int] | None = None, gapped: dict[str, str] | None = None, info: dict[str, AlleleInfo] | None = None) -> None",
+    "doc": "One gene's alleles, in order, with their sequences, anchors, IMGT-gapped forms and source information.",
+    "members": [],
+    "anchor": "alignair.reference.genereference"
+  },
+  {
+    "name": "alignair.reference.LocusInfo",
+    "kind": "class",
+    "signature": "(locus: str, chain_type: str, has_d: bool, ranges: dict[str, tuple] = _HAS_DEFAULT_FACTORY_CLASS(), species: str | None = None, shared: dict[str, tuple] = _HAS_DEFAULT_FACTORY_CLASS()) -> None",
+    "doc": "One locus in a (possibly multi-chain) union: its AIRR code, GenAIRR chain type, whether it has\na D gene, and the per-gene ``[start, end)`` index ranges it occupies in the union's allele order. A read's\nlocus is the network's (``network.refine.locus``: its V, D and J calls are of it; ``predict.stages.record_loci``).\n``shared`` names, per gene, the alleles of another\nlocus's block that this locus lists too (TRAV/DV alleles, which rearrange in TRA and TRD alike): they belong to\nboth loci (``ReferenceSet.locus_mask``).",
+    "members": [],
+    "anchor": "alignair.reference.locusinfo"
+  },
+  {
+    "name": "alignair.reference.LocusMismatchWarning",
+    "kind": "class",
+    "signature": "",
+    "doc": "A reference of another locus was bound to a model of one locus: allowed, but the model never trained on it.",
+    "members": [],
+    "anchor": "alignair.reference.locusmismatchwarning"
+  },
+  {
+    "name": "alignair.reference.NovelAllele",
+    "kind": "class",
+    "signature": "(name: str, base: str, sequence: str, gene: str = 'V') -> None",
+    "doc": "A novel allele: its name, the reference allele it derives from (``base``), its sequence and its gene.",
+    "members": [
+      {
+        "name": "to_dict",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "The fields as a plain dict."
+      },
+      {
+        "name": "from_dict",
+        "kind": "method",
+        "signature": "(data: Mapping[str, object]) -> NovelAllele",
+        "doc": "From ``to_dict``'s form (the gene in either case): a ValueError for a missing name, base or sequence or a\ngene not V, D or J."
+      }
+    ],
+    "anchor": "alignair.reference.novelallele"
+  },
+  {
+    "name": "alignair.reference.ReferenceSet",
+    "kind": "class",
+    "signature": "(genes: dict[str, GeneReference], has_d: bool, loci: list[LocusInfo] | None = None, provenance: Iterable[SourceProvenance] = ())",
+    "doc": "A germline reference: a ``GeneReference`` per gene, its loci and its sources. Build one from GenAIRR\ndataconfigs (``from_dataconfigs``), a FASTA file (``from_fasta``), allele sequences (``from_alleles``) or its\nJSON form (``from_serializable``).",
+    "members": [
+      {
+        "name": "gene",
+        "kind": "method",
+        "signature": "(g: str) -> GeneReference",
+        "doc": "The ``GeneReference`` of gene ``g`` (V, D or J, either case)."
+      },
+      {
+        "name": "validate",
+        "kind": "method",
+        "signature": "(*, genes: Iterable[str] | None = None) -> None",
+        "doc": "Validate selected ordered vocabularies before model construction."
+      },
+      {
+        "name": "locus_names",
+        "kind": "method",
+        "signature": "() -> tuple",
+        "doc": "Ordered AIRR locus codes, in the order the union was built (empty if unknown)."
+      },
+      {
+        "name": "default_locus",
+        "kind": "property",
+        "signature": "",
+        "doc": "The locus a record without its own is labelled with: the reference's one locus, else ``FALLBACK_LOCUS``."
+      },
+      {
+        "name": "locus_mask",
+        "kind": "method",
+        "signature": "(locus: str, gene: str) -> np.ndarray",
+        "doc": "Boolean mask over the model's allele outputs selecting exactly the alleles that belong to ``locus``.\n\nNo schema (single-chain) -> all-True (unconstrained). With a schema, a locus that *has* no\nalleles for this gene (e.g. D on a light chain) -> **all-False** (an explicit no-call), NOT\nall-True — otherwise a light-chain read could be handed every heavy-chain D allele."
+      },
+      {
+        "name": "from_dataconfigs",
+        "kind": "method",
+        "signature": "(*dataconfigs: DataConfig) -> ReferenceSet",
+        "doc": "The annotated union of GenAIRR dataconfigs' alleles (``alignair.genairr.reference_from_dataconfigs``)."
+      },
+      {
+        "name": "to_serializable",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "Plain-JSON-safe dict carrying everything inference needs — ordered ``names`` (== the model's\noutput index), ungapped ``sequences``, IMGT-``gapped`` V, and junction ``anchors`` — with NO pickle.\nThis is the safe reference the distributed ``.alignair`` embeds and inference rebuilds from."
+      },
+      {
+        "name": "from_serializable",
+        "kind": "method",
+        "signature": "(data: dict) -> ReferenceSet",
+        "doc": "Rebuild from :meth:`to_serializable` (the safe, no-pickle inference load path)."
+      },
+      {
+        "name": "from_alleles",
+        "kind": "method",
+        "signature": "(genes: dict[str, dict[str, str]], anchors: dict[str, dict[str, int]] | None = None, *, locus: str | None = None) -> ReferenceSet",
+        "doc": "Build a reference from allele sequences, ``{gene: {allele_name: dna_seq}}`` (gene V, D or J, either case).\n\nV and J, plus D for a chain that has one (omit D for a light chain). ``anchors`` optionally supplies\n{gene: {allele_name: pos}} so alleles keep their junction anchor.\n\nThe locus schema comes from ``locus`` when given (one locus over every allele), else from the allele names:\nnames that show one locus give it to every allele (those whose name shows none join it); names that show\nseveral, every allele showing one, group each gene's alleles by locus (loci in order of first appearance over\nV, then J, then D; the file's order within a locus); otherwise there is no schema. The alleles otherwise\nkeep the file's order. A model reads its alleles from the bound reference, so the result can be bound to a\nmodel (``predict --reference``), novel alleles included, or trained against."
+      },
+      {
+        "name": "subset",
+        "kind": "method",
+        "signature": "(allowed: dict[str, Iterable[str]]) -> ReferenceSet",
+        "doc": "Return a new ReferenceSet keeping only the named alleles per gene (a donor's\nreduced genotype), PRESERVING anchors/junction and the IMGT-gapped forms. ``allowed`` = {V|D|J: allele\nnames}; a segment it does not name keeps all its alleles. The kept alleles are in this reference's order, each\nonce, whatever order (or set) they are named in: the model's scores depend on the alleles' order."
+      },
+      {
+        "name": "membership",
+        "kind": "method",
+        "signature": "() -> dict[str, list]",
+        "doc": "Each gene's per-index locus (None for an allele no locus range holds), from the locus schema."
+      },
+      {
+        "name": "extend",
+        "kind": "method",
+        "signature": "(other: ReferenceSet, *, on_conflict: str = 'error') -> ReferenceSet",
+        "doc": "This reference with ``other``'s alleles added (a donor's novel or undocumented alleles), each at the end of\nits locus's block in its gene; this reference is unchanged.\n\nAn allele of ``other`` this reference holds with the same sequence is skipped; with another sequence,\n``on_conflict=\"error\"`` refuses (InputError naming them) and ``\"keep\"`` keeps this reference's. A new allele's\nlocus is ``other``'s, else its name's, else this reference's only locus; one no locus can hold is refused.\nA locus this reference lacks is added after its loci. Anchors, gapped forms and info come along; the\nprovenance is this reference's followed by ``other``'s new sources."
+      },
+      {
+        "name": "from_fasta",
+        "kind": "method",
+        "signature": "(path: str) -> ReferenceSet",
+        "doc": "Load a genotype FASTA (``>allele_name`` headers + DNA; an IMGT/GENE-DB header, ``>X00369|IGHV3-11*04|Homo\nsapiens|F|...``, names its allele in the field with a ``*``, as Change-O reads it). Each allele's segment\n(V/D/J) is read from its name (``_infer_segment``); an InputError names the alleles it cannot be read from, and\nthose named twice with two sequences.\n\nLike :meth:`from_alleles`, the result can be bound to a model or trained against."
+      }
+    ],
+    "anchor": "alignair.reference.referenceset"
+  },
+  {
+    "name": "alignair.reference.SourceProvenance",
+    "kind": "class",
+    "signature": "(kind: str, locator: str | None = None, sha256: str | None = None, release: str | None = None, retrieved_at: str | None = None, licence: str | None = None, attribution: str | None = None) -> None",
+    "doc": "One source of a reference's alleles (see the module docstring).",
+    "members": [
+      {
+        "name": "to_dict",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "The fields as a plain dict."
+      },
+      {
+        "name": "from_dict",
+        "kind": "method",
+        "signature": "(data: dict) -> SourceProvenance",
+        "doc": "From ``to_dict``'s form; unknown keys are ignored."
+      }
+    ],
+    "anchor": "alignair.reference.sourceprovenance"
+  },
+  {
+    "name": "alignair.reference.anchor_report",
+    "kind": "function",
+    "signature": "(reference: ReferenceSet) -> AnchorReport",
+    "doc": "How many of ``reference``'s V and J alleles have an anchor, and which have none and why.",
+    "members": [],
+    "anchor": "alignair.reference.anchor_report"
+  },
+  {
+    "name": "alignair.reference.annotate",
+    "kind": "function",
+    "signature": "(reference: ReferenceSet, known: ReferenceSet | None = None) -> ReferenceSet",
+    "doc": "``reference`` with every V and J allele's missing anchor and every V's missing gapped form filled (the module\ndocstring's order) and how each anchor was found recorded; ``reference`` itself is unchanged.",
+    "members": [],
+    "anchor": "alignair.reference.annotate"
+  },
+  {
+    "name": "alignair.train.CosineSchedule",
+    "kind": "class",
+    "signature": "(total_steps: int, min_lr: float = 1e-05) -> None",
+    "doc": "Cosine annealing from the initial learning rate to ``min_lr`` over ``total_steps`` updates.",
+    "members": [
+      {
+        "name": "validate",
+        "kind": "method",
+        "signature": "(lr: float) -> None",
+        "doc": "Refuse an initial learning rate below ``min_lr`` or not finite."
+      },
+      {
+        "name": "build",
+        "kind": "method",
+        "signature": "(optimizer: torch.optim.Optimizer) -> torch.optim.lr_scheduler.LRScheduler",
+        "doc": "The torch scheduler of ``optimizer``."
+      },
+      {
+        "name": "to_dict",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "The schedule as a plain dict, with its policy's name (a checkpoint records it)."
+      }
+    ],
+    "anchor": "alignair.train.cosineschedule"
+  },
+  {
+    "name": "alignair.train.NovelAlleles",
+    "kind": "class",
+    "signature": "(gene_fraction: float = 0.4, snps: tuple[int, int] = (1, 6), epoch_records: int = 4096) -> None",
+    "doc": "How novel alleles enter the simulated training data: the share of eligible V genes each epoch makes novel, the\nnumber of SNPs of a variant (``(low, high)``, uniform), and the epoch length in seeds (a power of two, so an epoch\nnever straddles two seed blocks).",
+    "members": [
+      {
+        "name": "to_dict",
+        "kind": "method",
+        "signature": "() -> dict",
+        "doc": "The settings as a plain dict, with the generator they draw with (``train_args`` records it)."
+      },
+      {
+        "name": "from_dict",
+        "kind": "method",
+        "signature": "(data: Mapping[str, object]) -> NovelAlleles",
+        "doc": "From ``to_dict``'s form: a ConfigurationError for settings of another generator."
+      }
+    ],
+    "anchor": "alignair.train.novelalleles"
+  },
+  {
+    "name": "alignair.train.StepResult",
+    "kind": "class",
+    "signature": "(total: ForwardRef('float'), parts: ForwardRef('dict[str, float]'), gradient_norm: ForwardRef('float'))",
+    "doc": "One update's total loss, its terms and the gradient norm before clipping.",
+    "members": [],
+    "anchor": "alignair.train.stepresult"
+  },
+  {
+    "name": "alignair.train.TrainingConfig",
+    "kind": "class",
+    "signature": "(dataconfigs: tuple, steps: int = 100000, batch_size: int = 64, lr: float = 0.0003, device: str = 'auto', short_boost: int = 1, grad_clip: float | None = None, val_every: int = 0, seed: int = 0, init_seed: int | None = None, max_seq_length: int | None = None, has_d: bool | None = None, model_options: Mapping = _HAS_DEFAULT_FACTORY_CLASS(), resume_path: str | os.PathLike[str] | None = None, schedule: CosineSchedule | None = None, init_from: str | os.PathLike[str] | None = None, data_workers: int = 0, flanks: FlankPolicy | None = _HAS_DEFAULT_FACTORY_CLASS(), novel_alleles: NovelAlleles | None = _HAS_DEFAULT_FACTORY_CLASS(), inverted_d: float = 0.0) -> None",
+    "doc": "Reference sources plus training and model settings, every value validated here, at construction\n(ConfigurationError; TrainingConfigError for the run's numbers): ``run_training`` checks only what needs the\nresolved reference.\n\nModel options are copied on construction and checked with ``max_seq_length`` and ``has_d`` as the model\nconfiguration they build (``AlignAIRConfig``); the allele counts come from the bound reference.\n``data_workers`` > 0 generates training data in that many worker processes (one per training-data\nstream at most: 28 for the default mix, 7 components of 4 streams); the batches are those of\n``data_workers=0``, so it is not part of model identity.\n``init_seed`` None seeds the model's initial weights from ``seed``. An int\ndraws them from its own seed instead, and leaves the process generators (torch's CPU one, Python's and\nNumPy's) where ``seed`` left them: replicate runs of one ``seed`` then differ in their initial weights (and an\naccelerator's random draws, such as its dropout) while training on the same batches.\nWorkers are spawned, so a script that trains with them needs an ``if __name__ == \"__main__\":``\nguard. On an accelerator, batches are assembled ahead from the CPU random state, so a CPU random\ndraw in the training step or an ``on_iteration`` callback raises TrainingError;\nuse ``data_workers=0`` there.\n``flanks`` (``data.flanks.FlankPolicy``) puts library flanks (a 5' leader, a masked primer, a 3' constant\nregion) around the simulated training reads, which GenAIRR simulates bare: by default ``FlankPolicy()``, the\nshipped models' recipe; None trains on the bare reads.\n``novel_alleles`` (``train.records.novel.NovelAlleles``) draws part of the reads from synthetic novel V alleles and\nputs their rows in each batch's allele set (``data.novel_bank``), so the model does not memorise the training\nalleles: by default ``NovelAlleles()``, the shipped models' recipe; None trains on the dataconfigs' alleles alone,\nas does a run whose reference they cannot be drawn for (a dataconfig with no eligible V, loci of several species,\nor a custom reference, which names no species), which says so. The model and the saved reference stay the\ndataconfigs' either way.\n``inverted_d`` (0 to 1) inverts the D of that share of the training records; 0, the default, trains on forward\nDs alone.\n``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d`` are the run's settings of its record policy\n(``record_policy``), the rest of which is the recipe's.",
+    "members": [
+      {
+        "name": "record_policy",
+        "kind": "method",
+        "signature": "() -> CurriculumStreamPolicy",
+        "doc": "The training-record policy the run draws its records with: the recipe's, with this configuration's\n``short_boost``, ``flanks``, ``novel_alleles`` and ``inverted_d``."
+      },
+      {
+        "name": "from_genairr",
+        "kind": "method",
+        "signature": "(*dataconfigs: str | DataConfig, preset: str | None = None, **overrides: Any) -> TrainingConfig",
+        "doc": "A configuration training on GenAIRR ``dataconfigs``, from a named ``preset`` and ``overrides``."
+      },
+      {
+        "name": "with_",
+        "kind": "method",
+        "signature": "(**changes: Any) -> TrainingConfig",
+        "doc": "A copy with ``changes``."
+      }
+    ],
+    "anchor": "alignair.train.trainingconfig"
+  },
+  {
+    "name": "alignair.train.TrainingIteration",
+    "kind": "class",
+    "signature": "(step: ForwardRef('int'), result: ForwardRef('StepResult'), records: ForwardRef('tuple'))",
+    "doc": "One successful update, with its detached result and source batch for runner diagnostics.",
+    "members": [],
+    "anchor": "alignair.train.trainingiteration"
+  },
+  {
+    "name": "alignair.train.TrainingRun",
+    "kind": "class",
+    "signature": "(model_path: str, best_model_path: str | None = None, steps: int = 0) -> None",
+    "doc": "A finished run: its last model, its best model (with validation) and its number of updates.",
+    "members": [
+      {
+        "name": "best_aligner",
+        "kind": "method",
+        "signature": "(*, device: str = 'auto') -> Aligner",
+        "doc": "The best (or last) model, loaded as an ``Aligner``."
+      }
+    ],
+    "anchor": "alignair.train.trainingrun"
+  },
+  {
+    "name": "alignair.train.run_training",
+    "kind": "function",
+    "signature": "(config: TrainingConfig, *, output_dir: str | os.PathLike[str] | None = None, out_path: str | os.PathLike[str] | None = None, on_iteration: Callable[[TrainingIteration], object] | None = None, record_source: RecordSource | None = None) -> TrainingRun",
+    "doc": "Build, train and checkpoint a model for ``config`` into ``output_dir`` or ``out_path``.\n\nWith ``config.data_workers`` > 0, worker processes are spawned: call this under an\n``if __name__ == \"__main__\":`` guard. On an accelerator, the step and ``on_iteration`` must not draw from\nthe CPU random generators: such a draw raises TrainingError, and\n``data_workers=0`` is the setting for them (see ``TrainingConfig``). ``on_iteration`` is called after each update\nwith its ``TrainingIteration`` (``step``, ``result``: the ``StepResult``, and the batch's ``records``).\n``record_source`` (``train.records.streams.RecordSource``: ``(reference, parameters, seed) -> records``) replaces\nthe GenAIRR provider of the run's simulated training records. ``config`` validated its values when it was built;\nthe run checks its reference before the model is built.",
+    "members": [],
+    "anchor": "alignair.train.run_training"
+  }
+]

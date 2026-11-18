@@ -11,9 +11,11 @@ import json
 import os
 import sys
 import time
+from collections.abc import Iterable
+from typing import TextIO
 
 from . import sources
-from .cache import _version_key, cache_root, installed_models
+from .cache import cache_root, installed_models, version_key
 
 
 def _registry_cache_path(src: str):
@@ -33,13 +35,14 @@ def cached_registry(src: str, *, ttl: int = 86400, offline: bool = False) -> dic
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(reg))
         return reg
-    except Exception:
+    except Exception:  # noqa: BLE001 - the update check is best effort: fall back to the cached copy
         return json.loads(p.read_text()) if p.exists() else None
 
 
-def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool = False,
-                         quiet: bool = False, pinned: bool = False, stream=None) -> list[tuple[str, str]]:
-    """Print (to stderr) one line per installed model that has a newer registry ``latest``. Returns the
+def maybe_notify_updates(*, registry: str | Iterable[str] | None = None, offline: bool = False, quiet: bool = False,
+                         pinned: bool = False, stream: TextIO | None = None) -> list[tuple[str, str]]:
+    """Print (to ``stream``, default stderr) one line per installed model that has a newer ``latest`` in the first
+    reachable registry of ``registry`` (a string is one registry; default: the configured ones). Returns the
     (id, version) notices. Suppressed and swallows all errors per the conditions above."""
     stream = stream or sys.stderr
     if offline or quiet or pinned or os.environ.get("ALIGNAIR_NO_NETWORK"):
@@ -49,7 +52,7 @@ def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool
         if not installed:
             return []
         notices: list[tuple[str, str]] = []
-        for src in (sources_list or sources.resolve_sources()):
+        for src in sources.resolve_sources(registry):
             reg = cached_registry(src)
             if not reg:
                 continue
@@ -58,7 +61,7 @@ def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool
                 latest = models.get(mid, {}).get("latest")
                 if not latest or latest in vers:
                     continue
-                if _version_key(latest) > _version_key(max(vers, key=_version_key)):
+                if version_key(latest) > version_key(max(vers, key=version_key)):
                     trained = models[mid].get("versions", {}).get(latest, {}).get("trained", "")
                     when = f" ({trained})" if trained else ""
                     print(f"ℹ {mid} {latest}{when} available — run: alignair models update {mid}",
@@ -66,5 +69,5 @@ def maybe_notify_updates(*, sources_list: list[str] | None = None, offline: bool
                     notices.append((mid, latest))
             break                                              # first reachable registry decides
         return notices
-    except Exception:
+    except Exception:  # noqa: BLE001 - the update notice never fails a command
         return []

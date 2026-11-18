@@ -15,6 +15,8 @@ import pytest
 
 from alignair.cli.main import build_parser
 
+pytestmark = pytest.mark.component
+
 _ROOT = Path(__file__).resolve().parents[3]
 
 # public surfaces users copy-paste from (implementation/architecture notes are intentionally excluded)
@@ -107,3 +109,32 @@ def test_guard_rejects_stale_commands(bad):
 def test_guard_accepts_a_valid_command():
     assert not _problems_for(
         "alignair predict --input r.fasta --out o.tsv --model m.alignair", build_parser())
+
+
+# --- the website: every ``alignair …`` command in a code block or CLI tab of a page or component ---------------------
+
+_SITE_FILES = sorted((_ROOT / "website" / "src").rglob("*.tsx"))
+_CODE_STRING = re.compile(r"(?:code|cli)=\{`(.*?)`\}|(?:code|cli)=\"([^\"]*)\"", re.DOTALL)
+_JS_ESCAPE = re.compile(r"\\(.)", re.DOTALL)
+
+
+def _iter_site_commands(text: str):
+    """Yield each ``alignair …`` command of a TSX file's code blocks and CLI tabs (``code=``/``cli=``), with the
+    JavaScript escapes decoded, line continuations joined and a ``$ `` prompt stripped."""
+    for template, plain in _CODE_STRING.findall(text):
+        code = _JS_ESCAPE.sub(lambda m: {"n": "\n", "t": "\t"}.get(m.group(1), m.group(1)), template or plain)
+        yield from _iter_shell_commands(f"```bash\n{code}\n```")
+
+
+@pytest.mark.parametrize("page", _SITE_FILES, ids=lambda path: str(path.relative_to(_ROOT / "website" / "src")))
+def test_site_alignair_commands_parse(page):
+    parser = build_parser()
+    problems = [problem for cmd in _iter_site_commands(page.read_text()) for problem in _problems_for(cmd, parser)]
+    assert not problems, "stale CLI on the website:\n" + "\n".join(problems)
+
+
+def test_the_site_command_reader_finds_template_and_plain_code_strings():
+    text = 'x <CodeBlock code={`$ alignair predict --input r.fa \\\\\\n  --out o.tsv --model m`} /> ' \
+           '<CodeBlock code="alignair models list" />'
+    assert [shlex.split(cmd) for cmd in _iter_site_commands(text)] == [
+        ["alignair", "predict", "--input", "r.fa", "--out", "o.tsv", "--model", "m"], ["alignair", "models", "list"]]

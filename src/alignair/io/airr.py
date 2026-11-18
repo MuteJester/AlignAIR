@@ -1,16 +1,27 @@
-"""Write DNAlignAIR predictions as an AIRR rearrangement TSV (+ optional uncertainty/resolution
-extension columns the AIRR schema does not cover: per-gene equivalence set, resolution level, and
-set confidence). Only the equivalence set (``*_call_set``) is populated by default; the resolution
-level and set confidence are reserved for the optional (separate) calibration step."""
+"""Write AlignAIR predictions as an AIRR rearrangement TSV, with extension columns the AIRR schema does not cover: each
+gene's equivalence set (``*_call_set``), the read's orientation and input, and the assembly's outcome.
+
+The records hold 0-based, end-exclusive positions; the table holds the AIRR schema's 1-based closed ones. Positions in
+the read (``*_sequence_start``/``_end``, the FWR/CDR ``_start``/``_end``) are positions in ``sequence`` (in its reverse
+complement for a ``rev_comp`` row), ``*_alignment_start``/``_end`` positions in ``sequence_alignment`` and
+``germline_alignment``, and a CIGAR spans the whole query (leading S, the germline's skipped 5' bases as N, the
+alignment, trailing S). Where the schema leaves room the table counts as Change-O's MakeDb does, so its CreateGermlines
+reads the table as written: the V germline positions count in the IMGT-gapped V germline, from its first position, as
+``sequence_alignment`` lays the V; the D and J germline positions, and every CIGAR, count ungapped bases."""
 from __future__ import annotations
 
 import csv
 import os
-from typing import List
+import re
+from collections.abc import Sequence
 
-GENES = ("v", "d", "j")
+from alignair.core.orientation import FORWARD, NUM_ORIENTATIONS, ORIENTATIONS
+from alignair.errors import PredictionCountMismatchError
+from alignair.reference.genes import GENES
+from alignair.reference.loci import FALLBACK_LOCUS
+
 # The full AIRR rearrangement schema we emit (a superset of what predict()+build_airr produce), then
-# our optional uncertainty/resolution extensions (only `*_call_set` is populated by default). Per the
+# our extensions (each gene's equivalence set, orientation, input read, assembly outcome). Per the
 # AIRR `rev_comp` contract: a reverse-complement row (id 1) emits the ORIGINAL post-crop query as
 # `sequence` with `rev_comp=T`, and its coordinates/alignments are on `RC(sequence)` (the model's
 # forward frame); forward/complement/reverse rows emit the forward frame with `rev_comp=F`.
@@ -26,23 +37,20 @@ _JUNCTION = ["junction", "junction_aa", "junction_length", "junction_aa_length",
 _CIGAR = [f"{g}_cigar" for g in GENES]
 _COORDS = [f"{g}_{k}" for g in GENES
            for k in ("sequence_start", "sequence_end", "germline_start", "germline_end")]
-_REGIONS = [f"{r}{suf}" for r in ("fwr1", "cdr1", "fwr2", "cdr2", "fwr3", "cdr3", "fwr4")
-            for suf in ("", "_aa", "_start", "_end")]
+_REGION_NAMES = ("fwr1", "cdr1", "fwr2", "cdr2", "fwr3", "cdr3", "fwr4")
+_REGIONS = [f"{r}{suf}" for r in _REGION_NAMES for suf in ("", "_aa", "_start", "_end")]
 _PERGENE_ALN = [f"{g}_{k}" for g in GENES
                 for k in ("sequence_alignment", "germline_alignment",
                           "sequence_alignment_aa", "germline_alignment_aa",
                           "alignment_start", "alignment_end")]
-_EXT = [f"{g}_{k}" for g in GENES for k in ("call_set", "resolved_call", "call_level", "set_confidence")]
+_EXT = [f"{g}_call_set" for g in GENES]
 # extension fields: full-transform orientation label + original (pre-orientation) input read +
 # per-read segmentation quality flag. `orientation`/`input_sequence` keep the AIRR standard `rev_comp`
 # boolean honest (it is set only for a true reverse-complement) without losing the actual transform.
-_MISC = ["mutation_rate", "is_contaminant", "orientation", "input_sequence", "segmentation_low_quality",
+_MISC = ["mutation_rate", "orientation", "input_sequence", "segmentation_low_quality",
          "length_cropped", "airr_assembly_status", "airr_assembly_reason", "airr_assembly_error"]
 COLUMNS = (_IDENT + _CALLS + _QUALITY + _ALN + _JUNCTION + _CIGAR + _COORDS
            + _REGIONS + _PERGENE_ALN + _EXT + _MISC)
-
-# orientation id -> AIRR-honest label (only id 1 is a reverse-complement; see _build_row)
-_ORIENT_LABEL = {0: "forward", 1: "reverse_complement", 2: "complement", 3: "reverse"}
 
 # model/scientific fields that per-read metadata must never overwrite: every produced
 # AIRR column. Metadata may only add new columns or fill blanks; a collision keeps the model's value.
@@ -54,9 +62,14 @@ _PROTECTED_FIELDS = frozenset(COLUMNS)
 _METADATA_FILL_ONLY = frozenset({"c_call"})
 
 
-class PredictionCountMismatch(RuntimeError):
-    """The writer was given a different number of ids / sequences / predictions — a pipeline or model
-    defect. Raised instead of silently truncating (and losing reads) via ``zip``."""
+def metadata_column(column: str) -> str:
+    """The name a metadata table's ``column`` is joined under: a column AlignAIR writes is namespaced
+    ``meta_<column>``, so metadata never overwrites a model field; an AIRR field metadata may fill (``c_call``) keeps
+    its name, and the writer fills it only where the record's value is blank."""
+    if column in _METADATA_FILL_ONLY:
+        return column
+    return f"meta_{column}" if column in _PROTECTED_FIELDS else column
+
 
 # Named column presets users can pick from (or pass their own list / comma-string). `full` is the
 # default; `airr` is the MiAIRR-minimal required rearrangement set; `core`/`minimal` are compact.
@@ -71,7 +84,7 @@ COLUMN_PRESETS = {
 }
 
 
-def resolve_columns(columns) -> list:
+def resolve_columns(columns: str | Sequence[str] | None) -> list[str]:
     """Resolve a column selection to an ordered list of field names. ``columns`` may be:
     ``None`` (the full schema), a preset name (``full``/``core``/``minimal``/``airr``), a
     comma-separated string, or an explicit list of field names. Unknown names are allowed (emitted
@@ -85,17 +98,19 @@ def resolve_columns(columns) -> list:
     return list(columns)
 
 
-# fields that come straight from the light predict() record (no build_airr assembly needed)
+# fields that come straight from the light predict() record (no build_airr assembly needed); the V germline positions
+# count in the IMGT-gapped V germline, which only the assembly lays the read on
+_V_GERMLINE = ("v_germline_start", "v_germline_end")
 _LIGHT_FIELDS = frozenset(_IDENT + _CALLS + ["productive", "productive_prediction", "mutation_rate",
                           "orientation", "input_sequence", "segmentation_low_quality", "length_cropped",
                           "airr_assembly_status", "airr_assembly_reason", "airr_assembly_error"]
-                          + _CIGAR + _COORDS + _EXT)
+                          + _CIGAR + [c for c in _COORDS if c not in _V_GERMLINE] + _EXT)
 
 
 def needs_assembly(columns) -> bool:
     """True if the selection includes any field only ``build_airr`` produces (junction / regions /
-    alignments / identity); False when every selected field is a light-record field (calls / coords /
-    cigar), so the caller can skip the AIRR assembly for speed."""
+    alignments / identity / the V germline positions); False when every selected field is a light-record field
+    (calls / sequence coords / D and J germline coords / cigar), so the caller can skip the AIRR assembly for speed."""
     return any(c not in _LIGHT_FIELDS for c in resolve_columns(columns))
 
 
@@ -112,6 +127,9 @@ def _airr_bool(v):
         s = v.strip().upper()
         return "T" if s in ("T", "TRUE", "1", "YES") else ("F" if s in ("F", "FALSE", "0", "NO") else v)
     return "T" if v else "F"
+
+
+_CIGAR_OP = re.compile(r"(\d+)([MIDNSHP=X])")
 
 
 def _cigar(seq_len, ss, se, gs, ge):
@@ -143,6 +161,29 @@ def _cigar(seq_len, ss, se, gs, ge):
     return "".join(ops)
 
 
+def _airr_cigar(seq_len: int, ss: int, se: int, gs: int | None, cigar: str) -> str:
+    """The AIRR CIGAR of a segment the record places at read ``[ss, se)`` and germline ``gs`` (0-based) with the
+    alignment ``cigar``: the whole query, as the AIRR schema reads a CIGAR. S for the read before the segment, N for
+    the germline before it (ungapped bases: a CIGAR counts no IMGT gap), the alignment's M/I/D, S for the read after
+    it. Any S or N the given CIGAR opens or closes with is replaced by the coordinates' own."""
+    ops = _CIGAR_OP.findall(cigar)
+    while ops and ops[0][1] in "SNH":
+        ops.pop(0)
+    while ops and ops[-1][1] in "SNH":
+        ops.pop()
+    head = (f"{ss}S" if ss > 0 else "") + (f"{int(gs)}N" if gs else "")
+    tail = f"{seq_len - se}S" if seq_len > se else ""
+    return head + "".join(n + op for n, op in ops) + tail
+
+
+def _airr_span(start, end):
+    """A 0-based, end-exclusive span as AIRR's 1-based closed ``(start, end)``: an end-exclusive end is already the
+    closed end; an empty or unknown span has neither (AIRR cannot write an empty interval)."""
+    if start is None or end is None or int(end) <= int(start):
+        return None, None
+    return int(start) + 1, int(end)
+
+
 def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     """Build one AIRR rearrangement row from a predict()/build_airr record.
 
@@ -158,9 +199,11 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
     pre-orientation read the pipeline stores) so it is crop-consistent and identical for the Python API
     and the CLI; the ``seq`` argument is only a fallback for records that predate that field.
 
-    Applies the AIRR conventions: 1-based sequence/germline starts, ``rev_comp`` set only for a true
-    reverse-complement (id 1), and
-    coordinate-derived CIGAR / sequence_alignment fallbacks for records that skipped ``build_airr``."""
+    Applies the AIRR conventions (the module's docstring): 1-based closed positions from the record's 0-based,
+    end-exclusive ones (an end-exclusive end is already AIRR's closed end; an empty span has none), CIGARs over the
+    whole query, the V germline positions in the IMGT-gapped germline, ``rev_comp`` set only for a true
+    reverse-complement (id 1), and coordinate-derived CIGAR / sequence_alignment fallbacks for records that skipped
+    ``build_airr``."""
     row = dict(p)                                  # pass through all AIRR fields (junction/regions/...)
     # `canonical` is the frame every coordinate / alignment / CIGAR is computed in (the model's forward
     # frame). It is what all the slicing below uses. The emitted `sequence` field, however, follows the
@@ -191,37 +234,50 @@ def _build_row(sid: str, seq: str, p: dict, locus: str) -> dict:
         row["rev_comp"] = "F"
         if original != canonical:                  # complement/reverse (or cropped): keep the original read
             row["input_sequence"] = original
-    row["orientation"] = _ORIENT_LABEL.get(oid, "forward")
+    row["orientation"] = ORIENTATIONS[oid if oid in range(NUM_ORIENTATIONS) else FORWARD]
     # normalize AIRR logical fields to T/F (standards-compliant; passes official `airr` validation).
     # None/blank stays empty (unknown); the extensions are normalized too.
     for _lf in ("productive", "vj_in_frame", "stop_codon", "productive_prediction",
                 "segmentation_low_quality", "length_cropped"):
         if row.get(_lf) is not None and row.get(_lf) != "":
             row[_lf] = _airr_bool(row[_lf])
-    isc = p.get("is_contaminant")
-    row["is_contaminant"] = ("T" if isc else "F") if isc is not None else None
     if not row.get("sequence_alignment"):          # fallback when build_airr was not run
         starts = [p.get(f"{g}_sequence_start") for g in GENES if p.get(f"{g}_sequence_start") is not None]
         ends = [p.get(f"{g}_sequence_end") for g in GENES if p.get(f"{g}_sequence_end")]
         row["sequence_alignment"] = canonical[min(starts):max(ends)] if starts and ends else ""
     for g in GENES:
         ss, se = p.get(f"{g}_sequence_start"), p.get(f"{g}_sequence_end")
-        # An absent / zero-length segment (e.g. Short-D) has no span; AIRR 1-based-inclusive coords
-        # cannot encode an empty interval (start would exceed end), so blank its coords + CIGAR.
+        # An absent / zero-length segment (one the segment correction collapsed) has no span; AIRR 1-based-inclusive
+        # coords cannot encode an empty interval (start would exceed end), so blank its coords + CIGAR.
         if ss is not None and se is not None and se <= ss:
             row[f"{g}_cigar"] = ""
             row[f"{g}_sequence_start"] = row[f"{g}_sequence_end"] = None
             row[f"{g}_germline_start"] = row[f"{g}_germline_end"] = None
         else:
-            row[f"{g}_cigar"] = p.get(f"{g}_cigar") or _cigar(
-                seq_len, ss, se, p.get(f"{g}_germline_start"), p.get(f"{g}_germline_end"))
+            gs = p.get(f"{g}_germline_start")
+            cigar = p.get(f"{g}_cigar")
+            row[f"{g}_cigar"] = (_airr_cigar(seq_len, int(ss), int(se), gs, cigar) if cigar and ss is not None
+                                 and se is not None else _cigar(seq_len, ss, se, gs, p.get(f"{g}_germline_end")))
             row[f"{g}_sequence_start"] = _airr_start(ss)                # 0-based -> 1-based
-            row[f"{g}_germline_start"] = _airr_start(p.get(f"{g}_germline_start"))
+            row[f"{g}_germline_start"] = _airr_start(gs)
+        row[f"{g}_alignment_start"], row[f"{g}_alignment_end"] = _airr_span(p.get(f"{g}_alignment_start"),
+                                                                            p.get(f"{g}_alignment_end"))
         cset = (p.get(f"{g}_call_set") or p.get(f"{g}_calls")
                 or ([p.get(f"{g}_call")] if p.get(f"{g}_call") else []))
         row[f"{g}_call_set"] = ",".join(c for c in cset if c)
-        conf = p.get(f"{g}_set_confidence")
-        row[f"{g}_set_confidence"] = f"{conf:.4f}" if conf is not None else None
+    # The V germline positions count in the IMGT-gapped V germline, as Change-O's MakeDb writes them and its
+    # CreateGermlines reads them: the V part of the assembled alignment spans that germline from its first position
+    # (dots where the read does not reach), so its alignment positions are its germline positions. A row without the
+    # assembled alignment (the record's own; the fallback above is not one) has none; its v_cigar still gives where
+    # the read's V lies in the (ungapped) germline.
+    if (row.get("v_sequence_start") is not None and p.get("sequence_alignment")
+            and p.get("v_alignment_end") is not None):
+        row["v_germline_start"], row["v_germline_end"] = row["v_alignment_start"], row["v_alignment_end"]
+    else:
+        row["v_germline_start"] = row["v_germline_end"] = None
+    # FWR/CDR positions: read positions, 0-based end-exclusive in the record, 1-based closed here
+    for region in _REGION_NAMES:
+        row[f"{region}_start"], row[f"{region}_end"] = _airr_span(p.get(f"{region}_start"), p.get(f"{region}_end"))
     return row
 
 
@@ -230,7 +286,8 @@ class AirrWriter:
     `write(ids, sequences, preds)` per chunk, then `close()` (or use as a context manager).
     `path` may be '-' for stdout."""
 
-    def __init__(self, path: str, locus: str = "IGH", columns=None, extra_columns=None):
+    def __init__(self, path: str, locus: str = FALLBACK_LOCUS, columns: str | Sequence[str] | None = None,
+                 extra_columns: Sequence[str] | None = None) -> None:
         """``columns``: which fields to emit (a preset name, comma-string, or list; default = the full
         schema). ``extra_columns``: extra per-row metadata columns (barcode/UMI/sample) appended after.
 
@@ -243,28 +300,32 @@ class AirrWriter:
         self._to_stdout = path == "-"
         self._final_path = None if self._to_stdout else path
         self._tmp_path = None if self._to_stdout else f"{path}.tmp.{os.getpid()}"
-        self._f = sys.stdout if self._to_stdout else open(self._tmp_path, "w", newline="")
+        # a streaming writer: ``close`` closes the file, then publishes or removes it
+        self._f = sys.stdout if self._to_stdout else open(self._tmp_path, "w", newline="")  # noqa: SIM115
         base = resolve_columns(columns)
         fields = base + [c for c in self.extra_columns if c not in base]
-        self._w = csv.DictWriter(self._f, fieldnames=fields, delimiter="\t", extrasaction="ignore")
+        # lines end in a newline alone, as IgBLAST's, MakeDb's and the airr library's AIRR TSVs do (csv's default is
+        # CRLF, which awk and the other Unix tools keep as part of the last field)
+        self._w = csv.DictWriter(self._f, fieldnames=fields, delimiter="\t", extrasaction="ignore",
+                                 lineterminator="\n")
         self._w.writeheader()
 
-    def write(self, ids: List[str], sequences: List[str], preds: List[dict],
-              metas: List[dict] | None = None) -> None:
+    def write(self, ids: list[str], sequences: list[str], preds: list[dict],
+              metas: list[dict] | None = None) -> None:
         """`sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
         orientation convention per record. `metas`, if given, is a per-row dict of extra column values
         (barcode/UMI/sample/cell_id) merged into each output row without overwriting model fields.
 
         The three lists must be the same length — a mismatch (a pipeline/model defect returning fewer or
-        extra predictions) raises :class:`PredictionCountMismatch` rather than silently truncating via
+        extra predictions) raises :class:`PredictionCountMismatchError` rather than silently truncating via
         ``zip`` and losing reads."""
         if not (len(ids) == len(sequences) == len(preds)):
-            raise PredictionCountMismatch(
+            raise PredictionCountMismatchError(
                 f"cardinality mismatch: ids={len(ids)}, sequences={len(sequences)}, "
                 f"predictions={len(preds)} — refusing to write (would silently drop reads)")
         if metas is not None and len(metas) != len(ids):
-            raise PredictionCountMismatch(f"metas={len(metas)} != records={len(ids)}")
-        for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds)):
+            raise PredictionCountMismatchError(f"metas={len(metas)} != records={len(ids)}")
+        for i, (sid, seq, p) in enumerate(zip(ids, sequences, preds, strict=True)):
             row = _build_row(sid, seq, p, self.locus)
             if metas and metas[i]:
                 for k, v in metas[i].items():      # metadata may NOT clobber a populated model field
@@ -295,10 +356,10 @@ class AirrWriter:
         self.close(commit=exc[0] is None)          # never commit a partial file on an exception
 
 
-def write_airr(path: str, ids: List[str], sequences: List[str], preds: List[dict],
-               locus: str = "IGH", columns=None, metas: List[dict] | None = None,
-               extra_columns=None) -> None:
-    """Eager one-shot write (back-compat). For large inputs use AirrWriter incrementally.
+def write_airr(path: str, ids: list[str], sequences: list[str], preds: list[dict],
+               locus: str = FALLBACK_LOCUS, columns: str | Sequence[str] | None = None, metas: list[dict] | None = None,
+               extra_columns: Sequence[str] | None = None) -> None:
+    """Write a whole AIRR table at once (atomically). For large inputs, write chunk by chunk with ``AirrWriter``.
     `sequences` are the ORIGINAL input reads; the emitted `sequence`/`rev_comp` follow the AIRR
     orientation convention per record. `columns` selects which fields to emit. `metas` (per-row
     dicts) + `extra_columns` carry preserved input metadata (barcode/UMI/sample/cell_id) into output."""

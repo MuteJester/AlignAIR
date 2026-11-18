@@ -6,11 +6,14 @@ import os
 import GenAIRR.data as gd
 import pytest
 
+from alignair.core import prepare_model
+
 from alignair import model_file as mf
-from alignair.cli.main import build_parser
+from alignair.cli.main import build_parser, main
 from alignair.core import AlignAIR
-from alignair.core.config import AlignAIRConfig
 from alignair.reference.reference_set import ReferenceSet
+
+pytestmark = pytest.mark.integration
 
 
 def _run(argv):
@@ -21,11 +24,12 @@ def _run(argv):
 @pytest.fixture(scope="module")
 def reg(tmp_path_factory):
     tp = tmp_path_factory.mktemp("reg")
-    cfg = AlignAIRConfig.from_dataconfigs(gd.HUMAN_IGH_OGRDB, max_seq_length=576)
+    cfg = prepare_model(ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB), max_seq_length=576).config
     d = tp / "registry"
     (d / "human-igh").mkdir(parents=True)
     art = d / "human-igh" / "1.0.0.alignair"
-    mf.save_model(str(art), AlignAIR(cfg).eval(), dataconfigs=["HUMAN_IGH_OGRDB"],
+    mf.save_model(str(art), AlignAIR(cfg).eval(), ReferenceSet.from_dataconfigs(gd.HUMAN_IGH_OGRDB),
+                  dataconfigs=["HUMAN_IGH_OGRDB"],
                   training={"steps": 1, "batch_size": 1}, include_trusted_pickle=False,
                   model_id="human-igh", model_version="1.0.0", card={"species": "homo_sapiens", "locus": "IGH"})
     sha = hashlib.sha256(art.read_bytes()).hexdigest()
@@ -63,6 +67,6 @@ def test_predict_offline_uncached_id_errors(reg, tmp_path, monkeypatch):
     monkeypatch.setenv("ALIGNAIR_CACHE_DIR", str(tmp_path / "cache_empty"))
     _, fasta, _ = reg
     out = str(tmp_path / "o.tsv")
-    assert _run(["predict", "--model", "human-igh@1.0.0", "--registry", "hf://unreachable/x",
+    assert main(["predict", "--model", "human-igh@1.0.0", "--registry", "hf://unreachable/x",
                  "--input", fasta, "--out", out, "--offline", "--device", "cpu"]) == 1
     assert not os.path.exists(out)

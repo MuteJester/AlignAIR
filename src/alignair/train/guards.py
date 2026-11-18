@@ -5,50 +5,71 @@ from __future__ import annotations
 
 import math
 
-
-class TrainingConfigError(ValueError):
-    """A training request is invalid (bad hyperparameters / config / reference). Raised *before* the
-    full model is allocated so misuse fails fast with an actionable message."""
+from alignair.errors import ConfigurationError, NonFiniteTrainingError, TrainingConfigError
 
 
-class NonFiniteLossError(RuntimeError):
-    """Loss or a gradient became NaN/Inf — training is aborted with a per-task diagnostic rather than
-    continuing to corrupt the weights."""
+def validate_grad_clip(grad_clip) -> None:
+    """ConfigurationError unless ``grad_clip`` is a positive finite number or None, before any training state."""
+    if grad_clip is not None and (isinstance(grad_clip, bool) or not isinstance(grad_clip, (int, float))
+                                  or not math.isfinite(grad_clip) or grad_clip <= 0):
+        raise ConfigurationError("grad_clip must be a positive finite number or None",
+                                 context={"field": "grad_clip"})
 
 
-def validate_training_request(*, steps, batch_size, lr, max_seq_length, reference, progresses=(0.3,),
-                              heavy_shm=0.0, short_boost=1, grad_clip=None) -> None:
-    """Validate hyperparameters/config/reference up front. Raises :class:`TrainingConfigError` on the
-    first problem. Call before building the model/optimizer so a typo doesn't waste a long allocation."""
+def validate_data_workers(data_workers) -> None:
+    """The training-data worker count: a non-negative integer, where 0 keeps data in the training process."""
+    if isinstance(data_workers, bool) or not isinstance(data_workers, int) or data_workers < 0:
+        raise ConfigurationError("data_workers must be a non-negative integer", context={"field": "data_workers"})
+
+
+def validate_training_request(*, steps, batch_size, lr, grad_clip=None) -> None:
+    """Validate the run's numbers (``TrainingConfig`` does, at construction): :class:`TrainingConfigError` listing
+    every problem, so a typo fails before anything is built."""
     problems = []
-    if not (isinstance(steps, int) and steps > 0):
+    if not (isinstance(steps, int) and not isinstance(steps, bool) and steps > 0):
         problems.append(f"steps must be a positive int (got {steps!r})")
-    if not (isinstance(batch_size, int) and batch_size > 0):
+    if not (isinstance(batch_size, int) and not isinstance(batch_size, bool) and batch_size > 0):
         problems.append(f"batch_size must be a positive int (got {batch_size!r})")
-    if not (isinstance(lr, (int, float)) and lr > 0 and math.isfinite(lr)):
+    if not (isinstance(lr, (int, float)) and not isinstance(lr, bool) and lr > 0 and math.isfinite(lr)):
         problems.append(f"lr must be a positive finite number (got {lr!r})")
-    if not (isinstance(max_seq_length, int) and max_seq_length > 0):
-        problems.append(f"max_seq_length must be a positive int (got {max_seq_length!r})")
-    if not progresses or any(not (0.0 <= float(p) <= 1.0) for p in progresses):
-        problems.append(f"progresses must be non-empty and each in [0, 1] (got {progresses!r})")
-    if not (0.0 <= float(heavy_shm) <= 1.0):
-        problems.append(f"heavy_shm must be in [0, 1] (got {heavy_shm!r})")
-    if not (isinstance(short_boost, int) and short_boost >= 1):
-        problems.append(f"short_boost must be an int >= 1 (got {short_boost!r})")
-    if grad_clip is not None and not (isinstance(grad_clip, (int, float)) and grad_clip > 0
-                                      and math.isfinite(grad_clip)):
+    try:
+        validate_grad_clip(grad_clip)
+    except ConfigurationError:
         problems.append(f"grad_clip must be a positive finite number or None (got {grad_clip!r})")
-    # reference must be non-empty for the genes the model will train (V and J are always required)
+    _refuse(problems)
+
+
+def validate_training_reference(*, reference, max_seq_length) -> None:
+    """Validate what the run trains on, once its reference is resolved and before the model is built:
+    :class:`TrainingConfigError` for an unusable or empty reference or a bad window."""
+    problems = []
+    if not (isinstance(max_seq_length, int) and not isinstance(max_seq_length, bool) and max_seq_length > 0):
+        problems.append(f"max_seq_length must be a positive int (got {max_seq_length!r})")
+    reference_problem, reference_error = _reference_problem(reference)
+    if reference_problem is not None:
+        problems.append(reference_problem)
+    _refuse(problems, cause=reference_error)
+
+
+def _refuse(problems: list[str], cause: Exception | None = None) -> None:
+    if problems:
+        raise TrainingConfigError("invalid training request:\n  - " + "\n  - ".join(problems),
+                                  context={"stage": "training_preflight", "problems": problems},
+                                  hint="Correct the listed configuration problems before starting training."
+                                  ) from cause
+
+
+def _reference_problem(reference) -> tuple[str | None, Exception | None]:
+    """What is wrong with ``reference`` for training (V and J are always required, and must not be empty), and the
+    error that showed it; ``(None, None)`` for a usable one."""
     try:
         n_v = len(reference.gene("V"))
         n_j = len(reference.gene("J"))
     except Exception as e:                              # noqa: BLE001 - any malformed reference
-        problems.append(f"reference is unusable: {e}")
-    else:
-        if n_v == 0 or n_j == 0:
-            problems.append(f"reference has empty V ({n_v}) or J ({n_j}) allele set")
-    if problems:
-        raise TrainingConfigError("invalid training request:\n  - " + "\n  - ".join(problems))
+        return f"reference is unusable: {e}", e
+    if n_v == 0 or n_j == 0:
+        return f"reference has empty V ({n_v}) or J ({n_j}) allele set", None
+    return None, None
 
 
 def check_finite_loss(step: int, total: float, parts: dict) -> None:
@@ -56,6 +77,8 @@ def check_finite_loss(step: int, total: float, parts: dict) -> None:
     if math.isfinite(float(total)):
         return
     diag = ", ".join(f"{k}={v:.3g}" for k, v in parts.items())
-    raise NonFiniteLossError(f"non-finite loss {total!r} at step {step}; per-task: {diag}. "
-                             f"Lower the learning rate, add gradient clipping (--grad-clip), or check "
-                             f"the data/targets.")
+    raise NonFiniteTrainingError(f"non-finite loss {total!r} at step {step}; per-task: {diag}. "
+                                 f"Lower the learning rate, add gradient clipping (--grad-clip), or check "
+                                 f"the data/targets.", context={"stage": "training_loss", "step": step,
+                                                               "total": total, "parts": parts},
+                                 hint="Lower the learning rate or check the training data and targets.")

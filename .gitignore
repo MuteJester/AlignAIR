@@ -115,14 +115,19 @@ model/*
 /tmp_run/
 /checkpoints/
 /experiments/
-
+# Local plans, AI notes, and research artifacts; public documentation lives in website/
+/Notes and Plans/
 # Python caches
+.pytest_cache/
+.coverage*
+/test-results/
 __pycache__/
 *.pyc
 
 # Cython build artifacts
 build/
-src/alignair/predict/_derive_cy.c
+src/alignair/predict/germline/_derive_cy.c
+src/alignair/network/refine/_vband_cy.c
 *.so
 
 # Agent / AI dev tooling — private to development, never pushed or distributed
@@ -131,3 +136,6 @@ CLAUDE.md
 AGENTS.md
 .cursor/
 .aider*
+
+# Gate-3 applicability cohort hydration (raw sequences — never committed)
+.private/aa-gate3-hydration/

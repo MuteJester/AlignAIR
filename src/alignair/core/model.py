@@ -1,105 +1,90 @@
-"""The one AlignAIR model — SingleChain and MultiChain unified into a single class.
+"""The AlignAIR model: the embedding, the orientation correction and the architecture's core.
 
-Single vs multi chain is not two classes here, it is data: ``cfg.gene_specs`` says which genes exist
-and ``cfg.num_chain_types`` says whether a chain_type/locus head is present. Build the config from one
-GenAIRR dataconfig for the old single-chain behavior, or several for the old multi-chain behavior.
-
-Flow (unchanged from the TF model): token+position embedding -> in-model orientation detect/correct
-/re-embed -> shared meta tower -> per-gene :class:`GeneBranch` segmentation -> meta :class:`MetaHead`
-predictions -> per-gene soft-cutout classification.
+The configuration's architecture name selects the components (``core.components``). The model embeds the read,
+predicts and corrects its orientation (re-embedding the corrected read), and hands the corrected embedding to the
+core, which does the rest (the chip: ``network.chip.ChipCore``).
 """
 from __future__ import annotations
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from collections.abc import Mapping
+from copy import deepcopy
+from typing import TYPE_CHECKING
 
-from .config import _SEG_KERNELS, AlignAIRConfig
-from ..nn.heads.orientation import apply_orientation
-from ..nn.heads.state import PerPositionStateBranch
-from .gene_branch import GeneBranch, MetaHead, build_tower
-from .layers import EmbeddingOrientationHead, TokenAndPositionEmbedding
+import torch
+from torch import nn
+
+from ..errors import ConfigurationError
+from .boundaries import boundary_masks
+from .components import architecture_components, build_component
+from .config import AlignAIRConfig
+from .orientation import BankOrientation, apply_orientation
+from .runtime import restore_model_state
+
+if TYPE_CHECKING:
+    from ..reference.reference_set import ReferenceSet
 
 
 class AlignAIR(nn.Module):
+    """The AlignAIR network (see the module docstring); bind a reference before predicting (``bind_reference``)."""
+
     def __init__(self, cfg: AlignAIRConfig):
         super().__init__()
-        self.cfg = cfg
-        C = cfg.embed_dim
+        if not isinstance(cfg, AlignAIRConfig):
+            raise ConfigurationError("model construction requires an AlignAIRConfig", context={"field": "config"})
+        cfg = self.cfg = deepcopy(cfg)
+        components = architecture_components(cfg.architecture)
+        self.embedding = build_component(components.embedding, cfg, component="embedding")
+        self.orientation_head = build_component(components.orientation_head, cfg, component="orientation_head")
+        self.bank_orientation = BankOrientation() if cfg.bank_orientation else None
+        self.core = build_component(components.core, cfg, component="core")
 
-        self.embedding = TokenAndPositionEmbedding(cfg.vocab_size, C, cfg.max_seq_length)
-        self.orientation_head = EmbeddingOrientationHead(C)
-        self.meta_tower = build_tower(cfg, _SEG_KERNELS)
-        self.branches = nn.ModuleDict({s.name: GeneBranch(s, cfg) for s in cfg.gene_specs})
-        self.meta_heads = nn.ModuleDict(self._build_meta_heads(cfg))
-        # optional per-position edit-state head (germline/sub/insertion/deletion); off by default so
-        # legacy checkpoints (no such weights) still load strict.
-        self.state_branch = PerPositionStateBranch(C) if getattr(cfg, "state_head", False) else None
+    @classmethod
+    def from_state_dict(cls, cfg: AlignAIRConfig, state_dict: Mapping[str, object], *,
+                        device: str | torch.device = "cpu", source=None) -> AlignAIR:
+        """Restore decoded weights strictly, then place the model in evaluation mode.
 
-    @staticmethod
-    def _build_meta_heads(cfg: AlignAIRConfig) -> dict:
-        L = cfg.max_seq_length
-        heads = {
-            "mutation_rate": MetaHead(cfg.block_out, 1, mid_dim=L, out_act=F.relu, clamp=(0.0, 1.0)),
-            "indel_count": MetaHead(cfg.block_out, 1, mid_dim=L, out_act=F.relu, clamp=(0.0, 50.0)),
-            "productive": MetaHead(cfg.block_out, 1, out_act=torch.sigmoid),
-        }
-        if cfg.num_chain_types > 1:                        # multi-chain: chain_type (locus) head
-            heads["chain_type_logits"] = MetaHead(cfg.block_out, cfg.num_chain_types, mid_dim=L)
-        return heads
+        Construction uses the configured architecture on CPU before device placement. The model file's reader checks
+        the configuration and the reference; this factory neither reads files nor relaxes key or shape matching.
+        ``source`` supplies a diagnostic path only. Parameters retain gradients for subsequent fine-tuning.
+        """
+        with torch.device("cpu"):
+            model = cls(cfg)
+        restore_model_state(model, state_dict, source=source)
+        return model.to(device).eval()
 
     def forward(self, batch: dict) -> dict:
         tokens = batch["tokenized_sequence"]
-        mask = tokens != 0                                 # non-pad
+        mask, end_mask = boundary_masks(tokens)
         out: dict = {}
 
         # orientation: predict from the shared initial embeddings, correct the input via an
-        # involution transform, then re-embed the canonicalized read for the rest of the model.
-        emb0 = self.embedding(tokens)
-        orient_logits = self.orientation_head(emb0, mask)
+        # involution transform, then re-embed the canonicalized read for the core.
+        orient_logits = self.orientation_head(self.embedding(tokens), mask)
         out["orientation_logits"] = orient_logits
-        out["orientation"] = orient_logits.argmax(-1)
+        called = orient_logits.argmax(-1)
+        if self.bank_orientation is not None and "orientation" not in batch:
+            voted, won = self.bank_orientation.vote(tokens, mask)        # the reference's reading, where it wins
+            called = torch.where(won, voted, called)
+        out["orientation"] = called
         correct = (batch["orientation"] if "orientation" in batch   # teacher-forced during training
-                   else orient_logits.argmax(-1).detach())          # self-corrected at inference
-        emb = self.embedding(apply_orientation(tokens, mask, correct))
+                   else called.detach())                            # self-corrected at inference
+        corrected = apply_orientation(tokens, mask, correct)
+        emb = self.embedding(corrected)
 
-        meta = self.meta_tower(emb)
-        out["position_mask"] = mask                            # valid read positions (for pad-masked seg loss)
-
-        # per-position edit states, from the canonicalized embedding -> forward-frame, aligns with the
-        # forward-frame `state_labels` target (indel positions the postprocessing can consume directly)
-        if self.state_branch is not None:
-            out["state_logits"] = self.state_branch(emb)
-
-        # per-gene segmentation (soft-argmax boundary expectations; masked to the read, not the pad)
-        exp: dict = {}
-        for name, branch in self.branches.items():
-            s_log, e_log, s_exp, e_exp = branch.segment(emb, mask)
-            out[f"{name}_start_logits"], out[f"{name}_end_logits"] = s_log, e_log
-            out[f"{name}_start"], out[f"{name}_end"] = s_exp, e_exp
-            exp[name] = (s_exp, e_exp)
-
-        # meta-tower heads (mutation / indel / productivity / chain_type)
-        for key, head in self.meta_heads.items():
-            out[key] = head(meta)
-
-        # per-gene soft-cutout classification (multi-label allele probs)
-        for name, branch in self.branches.items():
-            out[f"{name}_allele"] = branch.classify(emb, *exp[name])
+        out["start_mask"], out["end_mask"] = mask, end_mask
+        out.update(self.core(emb, mask, end_mask, tokens=corrected, batch=batch))
         return out
 
-    @torch.no_grad()
-    def clamp_params(self) -> None:
-        """TF MinMaxValueConstraint on the analysis-head kernels (applied after each optimizer step)."""
-        for head in self.meta_heads.values():
-            head.clamp_()
+    def component_modules(self) -> dict[str, nn.Module]:
+        """Named inspection points shared by profilers and model diagnostics: the registered modules themselves."""
+        return {"embedding": self.embedding, "orientation_head": self.orientation_head, "core": self.core}
 
-    # ------------------------------------------------------------------ constructors
-    @classmethod
-    def from_config(cls, cfg: AlignAIRConfig) -> "AlignAIR":
-        return cls(cfg)
+    def bind_reference(self, reference: ReferenceSet) -> None:
+        """Give the parts that read the reference their bank (an input, not weights): the bank orientation's k-mer
+        index and the core's bank. The model's allele outputs are then the bound reference's alleles, in its order."""
+        if self.bank_orientation is not None:
+            self.bank_orientation.bind(reference)
+        bind = getattr(self.core, "bind_reference", None)
+        if bind is not None:
+            bind(reference)
 
-    @classmethod
-    def from_dataconfigs(cls, *dataconfigs, **kwargs) -> "AlignAIR":
-        """One GenAIRR dataconfig -> single-chain model; several -> multi-chain model."""
-        return cls(AlignAIRConfig.from_dataconfigs(*dataconfigs, **kwargs))

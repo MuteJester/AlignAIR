@@ -1,0 +1,2493 @@
+{
+  "predict": {
+    "help": "align reads with a trained model -> AIRR TSV",
+    "groups": [
+      {
+        "title": "model",
+        "options": [
+          {
+            "flags": [
+              "--model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "a model file (.alignair), a registry id or id@version, or hf://org/repo",
+            "anchor": "predict-model"
+          },
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "predict-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "predict-offline"
+          },
+          {
+            "flags": [
+              "--revision"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+            "anchor": "predict-revision"
+          },
+          {
+            "flags": [
+              "--hf-token"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+            "anchor": "predict-hf-token"
+          }
+        ]
+      },
+      {
+        "title": "input and output",
+        "options": [
+          {
+            "flags": [
+              "--input"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "reads to align (FASTA / FASTQ / TSV; .gz ok; '-' = stdin)",
+            "anchor": "predict-input"
+          },
+          {
+            "flags": [
+              "--out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "output AIRR TSV path",
+            "anchor": "predict-out"
+          },
+          {
+            "flags": [
+              "--sequence-column"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "sequence column name (CSV/TSV input)",
+            "anchor": "predict-sequence-column"
+          },
+          {
+            "flags": [
+              "--id-column"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "id column name (CSV/TSV input)",
+            "anchor": "predict-id-column"
+          },
+          {
+            "flags": [
+              "--rejects-out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "write dropped/invalid input records here (id, position, reason, sequence)",
+            "anchor": "predict-rejects-out"
+          },
+          {
+            "flags": [
+              "--locus"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "locus label for records the model can't attribute (default: the model's locus if it declares exactly one; else IGH). With several loci, each record carries its called V's locus (blank without a V call).",
+            "anchor": "predict-locus"
+          },
+          {
+            "flags": [
+              "--no-run-metadata"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "do not write the <out>.run.json sidecar",
+            "anchor": "predict-no-run-metadata"
+          }
+        ]
+      },
+      {
+        "title": "output columns",
+        "options": [
+          {
+            "flags": [
+              "--columns"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "output columns: a preset (full/core/minimal/airr) or a comma-separated field list (default: full). Light selections skip the AIRR assembly for speed.",
+            "anchor": "predict-columns"
+          }
+        ]
+      },
+      {
+        "title": "metadata join",
+        "options": [
+          {
+            "flags": [
+              "--metadata"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "per-read metadata table (e.g. 10x filtered_contig_annotations.csv / an AIRR TSV) to join by id and carry into output (cell_id/barcode/umi_count/…)",
+            "anchor": "predict-metadata"
+          },
+          {
+            "flags": [
+              "--metadata-id-column"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "id column in the --metadata table",
+            "anchor": "predict-metadata-id-column"
+          },
+          {
+            "flags": [
+              "--keep-columns"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "comma-separated metadata columns to carry through (default: known 10x/AIRR set)",
+            "anchor": "predict-keep-columns"
+          }
+        ]
+      },
+      {
+        "title": "genotype and reference",
+        "options": [
+          {
+            "flags": [
+              "--genotype"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "a donor's genotype: JSON/YAML {V|D|J: [allele names]} (calls come only from the alleles of each segment it names) or the AIRR GenotypeSet `alignair genotype` writes (genes it does not name keep all their alleles); a subset of the reference (--reference may add novel alleles)",
+            "anchor": "predict-genotype"
+          },
+          {
+            "flags": [
+              "--reference"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "germline FASTA (V, D and J alleles) to call from, novel alleles included. A missing IMGT gap or anchor is taken from the same allele in the model's own reference, for a V also from a close same-length variant, else found from the sequence",
+            "anchor": "predict-reference"
+          },
+          {
+            "flags": [
+              "--infer-genotype"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "infer the donor's V genotype from the reads' own calls (TIgGER's frequency rule on the reads whose V call is a single allele) and re-call the reads whose call it excludes while they tie an allele it allows; writes the genotype to --genotype-out. Reads the input twice",
+            "anchor": "predict-infer-genotype"
+          },
+          {
+            "flags": [
+              "--genotype-out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "where --infer-genotype writes the genotype, an AIRR GenotypeSet (default: <out>.genotype.json)",
+            "anchor": "predict-genotype-out"
+          },
+          {
+            "flags": [
+              "--genotype-explain"
+            ],
+            "metavar": null,
+            "kind": "float",
+            "default": 0.875,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "--infer-genotype: the share of a gene's single-allele reads its alleles explain (default 0.875)",
+            "anchor": "predict-genotype-explain"
+          },
+          {
+            "flags": [
+              "--genotype-min-reads"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 10,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "--infer-genotype: the single-allele reads a gene needs to be genotyped; a gene with fewer keeps every allele (default 10)",
+            "anchor": "predict-genotype-min-reads"
+          }
+        ]
+      },
+      {
+        "title": "performance",
+        "options": [
+          {
+            "flags": [
+              "--device"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "auto",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+            "anchor": "predict-device"
+          },
+          {
+            "flags": [
+              "--batch-size"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "reads per batch (default: 256 on a GPU, 16 per worker with --threads on the CPU, else 64)",
+            "anchor": "predict-batch-size"
+          },
+          {
+            "flags": [
+              "--threads"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "CPU threads: on the CPU, N worker processes of one thread each (torch's threads scale poorly on read batches); on a GPU, torch's CPU threads (default: one process on torch's own thread count)",
+            "anchor": "predict-threads"
+          },
+          {
+            "flags": [
+              "--chunk-size"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 20000,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "stream the input in chunks of this many reads (default 20000)",
+            "anchor": "predict-chunk-size"
+          }
+        ]
+      },
+      {
+        "title": "quality gates",
+        "options": [
+          {
+            "flags": [
+              "--max-assembly-failures"
+            ],
+            "metavar": null,
+            "kind": "float",
+            "default": 0.01,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "fail the job if the AIRR-assembly FAILURE rate exceeds this fraction (default 0.01); failures are always tagged per row regardless",
+            "anchor": "predict-max-assembly-failures"
+          },
+          {
+            "flags": [
+              "--max-partial-assemblies"
+            ],
+            "metavar": null,
+            "kind": "float",
+            "default": 1.0,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "fail the job if the PARTIAL-assembly rate exceeds this fraction (default 1.0 = never; partial rows are always tagged with a reason)",
+            "anchor": "predict-max-partial-assemblies"
+          },
+          {
+            "flags": [
+              "--permissive"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never fail on assembly failure/partial rates (dirty repertoires); still tags rows",
+            "anchor": "predict-permissive"
+          }
+        ]
+      },
+      {
+        "title": "messages",
+        "options": [
+          {
+            "flags": [
+              "--quiet"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "suppress the update-available notice",
+            "anchor": "predict-quiet"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "predict-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "predict-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "train": {
+    "help": "train a model on a built-in dataconfig or custom V/D/J FASTAs",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--dataconfig"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "built-in GenAIRR dataconfig(s) (1 => single-chain, N => multi-chain); or use --v-fasta/--j-fasta/--chain-type for a custom reference",
+            "anchor": "train-dataconfig"
+          },
+          {
+            "flags": [
+              "--v-fasta"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "custom V germline FASTA (with --j-fasta [--d-fasta])",
+            "anchor": "train-v-fasta"
+          },
+          {
+            "flags": [
+              "--d-fasta"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "custom D germline FASTA (heavy / D-bearing loci)",
+            "anchor": "train-d-fasta"
+          },
+          {
+            "flags": [
+              "--j-fasta"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "custom J germline FASTA",
+            "anchor": "train-j-fasta"
+          },
+          {
+            "flags": [
+              "--chain-type"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "BCR_HEAVY",
+              "BCR_LIGHT_KAPPA",
+              "BCR_LIGHT_LAMBDA",
+              "TCR_ALPHA",
+              "TCR_BETA",
+              "TCR_GAMMA",
+              "TCR_DELTA"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "GenAIRR chain type for a custom reference",
+            "anchor": "train-chain-type"
+          },
+          {
+            "flags": [
+              "--out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "output run directory (checkpoints + bundle/)",
+            "anchor": "train-out"
+          },
+          {
+            "flags": [
+              "--overwrite"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "replace an existing bundle/ in --out (default: refuse, to protect a published bundle)",
+            "anchor": "train-overwrite"
+          },
+          {
+            "flags": [
+              "--preset"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "desktop",
+            "choices": [
+              "quick",
+              "desktop",
+              "full"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "resource-tuned defaults for steps/batch/validation (default: desktop)",
+            "anchor": "train-preset"
+          },
+          {
+            "flags": [
+              "--steps"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "override the preset's step count",
+            "anchor": "train-steps"
+          },
+          {
+            "flags": [
+              "--lr"
+            ],
+            "metavar": null,
+            "kind": "float",
+            "default": 0.0003,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "initial learning rate (default 3e-4)",
+            "anchor": "train-lr"
+          },
+          {
+            "flags": [
+              "--batch-size"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "override the preset's batch size",
+            "anchor": "train-batch-size"
+          },
+          {
+            "flags": [
+              "--grad-clip"
+            ],
+            "metavar": null,
+            "kind": "float",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "clip the global gradient norm",
+            "anchor": "train-grad-clip"
+          },
+          {
+            "flags": [
+              "--val-every"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "override the preset's validation interval",
+            "anchor": "train-val-every"
+          },
+          {
+            "flags": [
+              "--seed"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 0,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "seed of the training data and initial weights (default 0)",
+            "anchor": "train-seed"
+          },
+          {
+            "flags": [
+              "--data-workers"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 0,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "generate training data in this many worker processes (at most 28 are used); the batches are identical to --data-workers 0 (default: 0)",
+            "anchor": "train-data-workers"
+          },
+          {
+            "flags": [
+              "--init-from"
+            ],
+            "metavar": "MODEL",
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "start from this model's weights (a model file, a registry id or hf://org/repo) to fine-tune it: the weights whose shapes match are copied, the rest start fresh",
+            "anchor": "train-init-from"
+          },
+          {
+            "flags": [
+              "--plan"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "validate the reference/config and print the plan WITHOUT training",
+            "anchor": "train-plan"
+          },
+          {
+            "flags": [
+              "--device"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "auto",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+            "anchor": "train-device"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "train-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "train-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "demo": {
+    "help": "tiny end-to-end train -> predict -> donor-compare (no network)",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "-o",
+              "--out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "output directory for the demo artifacts (default: a fresh temp directory)",
+            "anchor": "demo-o"
+          },
+          {
+            "flags": [
+              "--dataconfig"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "HUMAN_IGH_OGRDB",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "GenAIRR dataconfig to demo on",
+            "anchor": "demo-dataconfig"
+          },
+          {
+            "flags": [
+              "--steps"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 5,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "training steps (tiny; 1 in the smoke test)",
+            "anchor": "demo-steps"
+          },
+          {
+            "flags": [
+              "--reads"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 8,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "number of simulated reads to predict",
+            "anchor": "demo-reads"
+          },
+          {
+            "flags": [
+              "--device"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "auto",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+            "anchor": "demo-device"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "demo-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "demo-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "doctor": {
+    "help": "print environment diagnostics (python/torch/cuda/deps)",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--json"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "emit the diagnostics as JSON",
+            "anchor": "doctor-json"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "doctor-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "doctor-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "info": {
+    "help": "print a model's metadata / model card",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "a model file (.alignair), a registry id or id@version, or hf://org/repo",
+            "anchor": "info-model"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--json"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "print the raw metadata JSON",
+            "anchor": "info-json"
+          },
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "info-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "info-offline"
+          },
+          {
+            "flags": [
+              "--revision"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+            "anchor": "info-revision"
+          },
+          {
+            "flags": [
+              "--hf-token"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+            "anchor": "info-hf-token"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "info-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "info-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "models": {
+    "help": "download / manage shipped AlignAIR models",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "models-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "models-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "models list": {
+    "help": "list available models + install/update status",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "models-list-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "models-list-offline"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "models-list-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "models-list-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "models get": {
+    "help": "download a model (id[@version]) into the cache",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "a model file (.alignair), a registry id or id@version, or hf://org/repo",
+            "anchor": "models-get-model"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "models-get-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "models-get-offline"
+          },
+          {
+            "flags": [
+              "--revision"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+            "anchor": "models-get-revision"
+          },
+          {
+            "flags": [
+              "--hf-token"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+            "anchor": "models-get-hf-token"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "models-get-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "models-get-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "models path": {
+    "help": "print a model's local path (id[@version])",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "a model file (.alignair), a registry id or id@version, or hf://org/repo",
+            "anchor": "models-path-model"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "models-path-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "models-path-offline"
+          },
+          {
+            "flags": [
+              "--revision"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+            "anchor": "models-path-revision"
+          },
+          {
+            "flags": [
+              "--hf-token"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+            "anchor": "models-path-hf-token"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "models-path-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "models-path-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "models update": {
+    "help": "update installed models to the latest version",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "model id (default: all installed)",
+            "anchor": "models-update-model"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "models-update-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "models-update-offline"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "models-update-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "models-update-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "models verify": {
+    "help": "re-hash installed models against the registry",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "model id (default: all installed)",
+            "anchor": "models-verify-model"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "models-verify-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "models-verify-offline"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "models-verify-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "models-verify-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "models prune": {
+    "help": "remove old cached model versions",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--keep"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 1,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "the newest versions to keep per model (default 1)",
+            "anchor": "models-prune-keep"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "models-prune-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "models-prune-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "reference": {
+    "help": "list built-in germline references, or export a model's reference",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "reference-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "reference-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "reference list": {
+    "help": "list the built-in GenAIRR dataconfigs (train/predict references)",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--species"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "filter by species substring (e.g. Human)",
+            "anchor": "reference-list-species"
+          },
+          {
+            "flags": [
+              "--chain"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "filter by a chain type, locus, or a whole token of either or of the name, case-insensitive (e.g. IGH, TRB, TCR, BCR_LIGHT_KAPPA, light)",
+            "anchor": "reference-list-chain"
+          },
+          {
+            "flags": [
+              "--json"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "emit JSON instead of a table",
+            "anchor": "reference-list-json"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "reference-list-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "reference-list-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "reference export": {
+    "help": "write a model file's germline FASTA",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "a model file (.alignair)",
+            "anchor": "reference-export-model"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--fasta"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "write the germline V/D/J FASTA here",
+            "anchor": "reference-export-fasta"
+          },
+          {
+            "flags": [
+              "--gapped"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "write each V allele IMGT-gapped, as Change-O's CreateGermlines.py needs (D, J as they are)",
+            "anchor": "reference-export-gapped"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "reference-export-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "reference-export-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "export": {
+    "help": "export a training checkpoint as a pickle-free, distributable bundle",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "checkpoint"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "a resumable training checkpoint (.alignair with dataconfig/train_state sections)",
+            "anchor": "export-checkpoint"
+          },
+          {
+            "flags": [
+              "out_dir"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "the bundle directory to write (refused if it exists, unless --overwrite)",
+            "anchor": "export-out_dir"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--model-id"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "the model id recorded in the card (the catalog id)",
+            "anchor": "export-model-id"
+          },
+          {
+            "flags": [
+              "--model-version"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "the model version recorded in the card",
+            "anchor": "export-model-version"
+          },
+          {
+            "flags": [
+              "--description"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "a one-line description recorded in the card",
+            "anchor": "export-description"
+          },
+          {
+            "flags": [
+              "--validate",
+              "--no-validate"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": true,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "score the model on a fixed held-out stream and write validation_report.json (default: on)",
+            "anchor": "export-validate"
+          },
+          {
+            "flags": [
+              "--overwrite"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "replace an existing OUT_DIR",
+            "anchor": "export-overwrite"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "export-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "export-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "validate-airr": {
+    "help": "validate an AIRR TSV (columns + coordinate/CIGAR bounds)",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "input"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "AIRR rearrangement TSV to validate",
+            "anchor": "validate-airr-input"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--max-show"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 20,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "max individual errors to print",
+            "anchor": "validate-airr-max-show"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "validate-airr-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "validate-airr-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "compare": {
+    "help": "compare two AIRR TSVs (per-gene agreement + set rescue)",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--a"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "first AIRR rearrangement TSV",
+            "anchor": "compare-a"
+          },
+          {
+            "flags": [
+              "--b"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "second AIRR rearrangement TSV",
+            "anchor": "compare-b"
+          },
+          {
+            "flags": [
+              "--a-name"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "model_a",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "label for the first file",
+            "anchor": "compare-a-name"
+          },
+          {
+            "flags": [
+              "--b-name"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "model_b",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "label for the second file",
+            "anchor": "compare-b-name"
+          },
+          {
+            "flags": [
+              "--out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "write the report here (default: stdout)",
+            "anchor": "compare-out"
+          },
+          {
+            "flags": [
+              "--json"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "emit the raw comparison JSON instead of markdown",
+            "anchor": "compare-json"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "compare-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "compare-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "analyze": {
+    "help": "summarize an AIRR TSV (repertoire + QC + validation)",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "input"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "AIRR rearrangement TSV (e.g. from `alignair predict`)",
+            "anchor": "analyze-input"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "write the report here (default: stdout)",
+            "anchor": "analyze-out"
+          },
+          {
+            "flags": [
+              "--json"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "emit the report as JSON instead of text",
+            "anchor": "analyze-json"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "analyze-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "analyze-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "benchmark": {
+    "help": "evaluate a model on generated GenAIRR reads (per stratum)",
+    "groups": [
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--model"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "a model file (.alignair), a registry id or id@version, or hf://org/repo",
+            "anchor": "benchmark-model"
+          },
+          {
+            "flags": [
+              "--dataconfig"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "the GenAIRR dataconfig to generate reads from (default: the model card's first)",
+            "anchor": "benchmark-dataconfig"
+          },
+          {
+            "flags": [
+              "--n"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 200,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "reads per stratum",
+            "anchor": "benchmark-n"
+          },
+          {
+            "flags": [
+              "--strata"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "comma-list subset (default: all)",
+            "anchor": "benchmark-strata"
+          },
+          {
+            "flags": [
+              "--seed"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 0,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "seed of the generated reads (default 0)",
+            "anchor": "benchmark-seed"
+          },
+          {
+            "flags": [
+              "--device"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "auto",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "cpu / cuda / mps / auto (default: auto: CUDA, then Apple MPS, then CPU)",
+            "anchor": "benchmark-device"
+          },
+          {
+            "flags": [
+              "--batch-size"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 64,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "reads per batch (default 64)",
+            "anchor": "benchmark-batch-size"
+          },
+          {
+            "flags": [
+              "--out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "write the report here (default: stdout)",
+            "anchor": "benchmark-out"
+          },
+          {
+            "flags": [
+              "--json"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "emit the report as JSON instead of text",
+            "anchor": "benchmark-json"
+          },
+          {
+            "flags": [
+              "--registry"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": true,
+            "help": "a registry url to look model ids up in (repeatable)",
+            "anchor": "benchmark-registry"
+          },
+          {
+            "flags": [
+              "--offline"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "never touch the network",
+            "anchor": "benchmark-offline"
+          },
+          {
+            "flags": [
+              "--revision"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "pin a Hugging Face branch/tag/commit (for hf://org/repo) or a catalog version",
+            "anchor": "benchmark-revision"
+          },
+          {
+            "flags": [
+              "--hf-token"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "Hugging Face token for a private/gated repo (falls back to $HF_TOKEN, then $HUGGING_FACE_HUB_TOKEN)",
+            "anchor": "benchmark-hf-token"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "benchmark-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "benchmark-error-format"
+          }
+        ]
+      }
+    ]
+  },
+  "genotype": {
+    "help": "a donor's V genotype from an AIRR table (the frequency rule of predict --infer-genotype), written as an AIRR GenotypeSet",
+    "groups": [
+      {
+        "title": "positional arguments",
+        "options": [
+          {
+            "flags": [
+              "input"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "an AIRR rearrangement TSV with a v_call column (any tool's)",
+            "anchor": "genotype-input"
+          }
+        ]
+      },
+      {
+        "title": "options",
+        "options": [
+          {
+            "flags": [
+              "--out"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": null,
+            "required": true,
+            "repeatable": false,
+            "help": "the AIRR GenotypeSet JSON to write",
+            "anchor": "genotype-out"
+          },
+          {
+            "flags": [
+              "--locus"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": "IGH",
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "the genotype's locus (default IGH)",
+            "anchor": "genotype-locus"
+          },
+          {
+            "flags": [
+              "--explain"
+            ],
+            "metavar": null,
+            "kind": "float",
+            "default": 0.875,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "the share of a gene's single-allele rows its alleles explain (default 0.875)",
+            "anchor": "genotype-explain"
+          },
+          {
+            "flags": [
+              "--min-reads"
+            ],
+            "metavar": null,
+            "kind": "int",
+            "default": 10,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "the single-allele rows a gene needs to be genotyped (default 10)",
+            "anchor": "genotype-min-reads"
+          },
+          {
+            "flags": [
+              "--debug"
+            ],
+            "metavar": null,
+            "kind": "flag",
+            "default": null,
+            "choices": null,
+            "required": false,
+            "repeatable": false,
+            "help": "include the full exception traceback on errors",
+            "anchor": "genotype-debug"
+          },
+          {
+            "flags": [
+              "--error-format"
+            ],
+            "metavar": null,
+            "kind": "text",
+            "default": null,
+            "choices": [
+              "text",
+              "json"
+            ],
+            "required": false,
+            "repeatable": false,
+            "help": "runtime error format on stderr (default: text)",
+            "anchor": "genotype-error-format"
+          }
+        ]
+      }
+    ]
+  }
+}

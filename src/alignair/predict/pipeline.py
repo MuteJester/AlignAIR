@@ -1,185 +1,84 @@
-"""The prediction pipeline orchestrator: model + reference + config -> AIRR-contract records.
+"""The prediction pipeline: model + reference + config -> AIRR-contract records, as an ordered list of named stages.
 
-Reads top-to-bottom as the full flow. Each call is a pure stage from :mod:`alignair.predict`.
-It emits the calls + equivalence set + read/germline coordinates + CIGAR, and the full ``airr/``
-assembly (sequence_alignment, junction, regions, quality).
+``PIPELINE`` is the stages in their order, each a function of ``predict.stages`` over one ``PredictionState`` that sets
+the fields it names. ``run_stages`` runs them with hooks: a hook wraps every stage call, ``hook(stage, state, run)``,
+the first hook outermost, and may replace what the stage returns. ``Trace`` is a hook that captures each stage's output
+state and its seconds. ``predict`` is the pipeline run without hooks.
 """
 from __future__ import annotations
 
-import numpy as np
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
-from .clean import clean
+from ..errors import InferenceError
+from . import stages
 from .config import PredictConfig
-from .forward import run_model
-from .germline import align_germline
-from .segment import correct_segments
-from .threshold import select_alleles
+from .state import PredictionState
 
 
-def _genes(cfg: PredictConfig):
-    return ("v", "d", "j") if cfg.has_d else ("v", "j")
+@dataclass(frozen=True)
+class Stage:
+    """A named step of the pipeline: ``run`` and the state fields it sets."""
+    name: str
+    run: Callable[[PredictionState], PredictionState]
+    sets: tuple[str, ...]
 
 
-def _assert_finite(allele: dict, stage: str) -> None:
-    """Fail loudly if any post-transform allele probability is non-finite (NaN/Inf) — a silently
-    NaN'd probability would otherwise propagate into calls/confidence."""
-    for g, a in allele.items():
-        if not np.all(np.isfinite(a)):
-            raise ValueError(f"non-finite allele probabilities after {stage} (gene {g!r})")
+StageHook = Callable[[Stage, PredictionState, Callable[[PredictionState], PredictionState]], PredictionState]
+
+PIPELINE: tuple[Stage, ...] = (
+    Stage("input_policy", stages.prepare_reads, ("reads", "cropped")),
+    Stage("forward", stages.run_forward, ("batches",)),
+    Stage("clean", stages.decode_outputs, ("predictions",)),
+    Stage("canonicalize", stages.canonicalize_reads, ("canonical",)),
+    Stage("segments", stages.correct_spans, ("segments",)),
+    Stage("alleles", stages.select_calls, ("calls",)),
+    Stage("germline", stages.align_reads, ("alignments",)),
+    Stage("better_v", stages.promote_better_v, ("alignments",)),
+    Stage("v_presence", stages.find_absent_v, ("no_v",)),
+    Stage("ties", stages.list_v_ties, ("v_ties",)),
+    Stage("records", stages.build_records, ("results",)),
+    Stage("airr", stages.build_rows, ("rows",)),
+)
+STAGE_NAMES: tuple[str, ...] = tuple(stage.name for stage in PIPELINE)
 
 
-def _validate_predictions(preds, stage: str = "model forward") -> None:
-    """Fail loudly if ANY raw model output is non-finite: a damaged checkpoint emitting NaN
-    would otherwise be silently turned into a plausible call (argmax fallback) and clipped coordinates."""
-    _assert_finite(preds.allele, stage)
-    for name, d in (("start", preds.start), ("end", preds.end)):
-        for g, a in d.items():
-            if not np.all(np.isfinite(a)):
-                raise ValueError(f"non-finite {name} coordinates after {stage} (gene {g!r})")
-    for name in ("mutation_rate", "indel_count"):
-        a = getattr(preds, name)
-        if a is not None and not np.all(np.isfinite(a)):
-            raise ValueError(f"non-finite {name} after {stage}")
+def _wrapped(stage: Stage, hook: StageHook, run):
+    return lambda state: hook(stage, state, run)
 
 
-def _locus_allowed(chain_type, reference, genes, genotype_allowed=None) -> dict:
-    """Per-read allele masks restricting each read to its predicted locus. Returns
-    ``{gene: (N, C) bool}``: row ``i`` is the locus mask for the locus at ``chain_type[i]``. When a
-    genotype constraint is also active, the per-read locus mask is AND-ed with the (broadcast) genotype
-    mask so both hold. A read's predicted locus with no ``gene`` (e.g. D on a light chain) yields an
-    all-False row -> an explicit no-call downstream."""
-    loci = reference.locus_names()
-    out: dict = {}
-    for g in genes:
-        rows = []
-        for c in chain_type:
-            ci = int(c)
-            locus = loci[ci] if 0 <= ci < len(loci) else (loci[0] if loci else "")
-            rows.append(reference.locus_mask(locus, g))
-        mask = np.stack(rows) if rows else np.zeros((0, 0), dtype=bool)
-        if genotype_allowed and genotype_allowed.get(g) is not None:
-            mask = mask & np.asarray(genotype_allowed[g], dtype=bool)[None, :]
-        out[g] = mask
-    return out
+def run_stages(state: PredictionState, stages: Sequence[Stage] = PIPELINE,
+               hooks: Sequence[StageHook] = ()) -> PredictionState:
+    """Run ``stages`` in order on ``state``, each call wrapped by ``hooks`` (the first outermost). InferenceError when
+    a stage leaves a field it sets unset."""
+    for stage in stages:
+        run = stage.run
+        for hook in reversed(hooks):
+            run = _wrapped(stage, hook, run)
+        state = run(state)
+        for field in stage.sets:
+            if getattr(state, field) is None:
+                raise InferenceError(f"stage {stage.name} left {field} unset",
+                                     context={"stage": stage.name, "field": field})
+    return state
 
 
-def apply_input_policy(sequences, max_len: int) -> tuple[list, list]:
-    """The single input-length/content gate for prediction: uppercase, reject empty reads, and
-    crop over-length reads to the model window **consistently** — the cropped string is what the
-    tokenizer, coordinates, germline reader, and AIRR assembly all see, so an over-length read is never
-    *silently* truncated with mismatched downstream coordinates. Returns ``(sequences, was_cropped)``."""
-    sequences = [str(s).upper() for s in sequences]
-    empties = [i for i, s in enumerate(sequences) if not s.strip()]
-    if empties:
-        shown = empties[:10]
-        raise ValueError(f"empty input sequence(s) at index {shown}"
-                         f"{'...' if len(empties) > 10 else ''}; every read must be non-empty")
-    was_cropped = [len(s) > max_len for s in sequences]
-    sequences = [s[:max_len] for s in sequences]
-    return sequences, was_cropped
+class Trace:
+    """A hook that keeps each stage's output state (``states``) and its seconds (``seconds``), in run order."""
+
+    def __init__(self):
+        self.states: dict[str, PredictionState] = {}
+        self.seconds: dict[str, float] = {}
+
+    def __call__(self, stage: Stage, state: PredictionState, run) -> PredictionState:
+        start = time.perf_counter()
+        out = run(state)
+        self.seconds[stage.name] = time.perf_counter() - start
+        self.states[stage.name] = out
+        return out
 
 
-_COMPLEMENT = str.maketrans("ACGTNacgtn", "TGCANtgcan")
-
-
-def _canonicalize(seq: str, orientation_id: int) -> str:
-    """Re-orient a read into the model's forward frame using the predicted orientation (the transforms
-    are involutions, so re-applying recovers forward): 0=identity, 1=revcomp, 2=complement, 3=reverse.
-    The model predicts coordinates in the forward frame, so the germline reader, coords, and AIRR
-    assembly must all operate on this canonical sequence."""
-    if orientation_id == 1:
-        return seq.translate(_COMPLEMENT)[::-1]
-    if orientation_id == 2:
-        return seq.translate(_COMPLEMENT)
-    if orientation_id == 3:
-        return seq[::-1]
-    return seq
-
-
-def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu", aligner=None):
-    genes = _genes(cfg)
-    # single input gate: uppercase once (GenAIRR/FASTA mark bases with case; the germline reader
-    # + AIRR assembly consume the raw string and case-mixed input mis-anchors the junction — DNA
-    # alignment is case-insensitive), reject empty reads, and crop over-length reads to the model window
-    # CONSISTENTLY so coords/AIRR refer to the same string (never a silent truncation).
-    sequences, was_cropped = apply_input_policy(sequences, cfg.max_seq_length)
-    preds = clean(run_model(model, sequences, cfg, device), genes)
-    _validate_predictions(preds)  # raw outputs must be finite before any use
-    allowed = None
-    if cfg.allele_temperatures:                    # post-hoc allele-confidence calibration
-        from .calibrate import apply_temperature
-        for g, T in cfg.allele_temperatures.items():
-            if g in preds.allele:
-                preds.allele[g] = apply_temperature(preds.allele[g], T)
-        _assert_finite(preds.allele, "temperature calibration")
-    if cfg.genotype:
-        from ..genotype.constraint import adjust_for_genotype, genotype_allowed_mask
-        allowed = genotype_allowed_mask(cfg.genotype, reference, genes=set(preds.allele))  # validates
-        preds = adjust_for_genotype(preds, cfg.genotype, reference, method=cfg.genotype_method)
-        _assert_finite(preds.allele, "genotype constraint")
-    # multi-chain locus masking: each read's predicted locus restricts its callable alleles to
-    # that locus's index range, so a cross-locus call (e.g. an IGKV allele on an IGL read, or any D on a
-    # light-chain read) is impossible by construction. Produces a per-read (N, C) mask per gene, AND-ed
-    # with any genotype constraint.
-    if preds.chain_type is not None and getattr(reference, "loci", None):
-        allowed = _locus_allowed(preds.chain_type, reference, genes, allowed)
-    # canonicalize each read to the model's forward frame so coords / germline / AIRR all agree
-    orient = preds.orientation
-    seqs = [_canonicalize(s, int(orient[i]) if orient is not None else 0)
-            for i, s in enumerate(sequences)]
-    seq_lens = np.array([len(s) for s in seqs])
-    segs = correct_segments(preds.start, preds.end, seq_lens, cfg.max_seq_length, cfg.pad_mode)
-    names = {g: list(reference.gene(g.upper()).names) for g in genes}
-    calls = select_alleles(preds.allele, names, cfg.threshold, cfg.cap, cfg.selector, allowed=allowed)
-    alignments = align_germline(seqs, segs, calls, reference, aligner,
-                                reader=cfg.germline_reader, indel_counts=preds.indel_count)
-    # `sequences` here is the post-crop, PRE-orientation read; `seqs` is its canonical (forward) frame.
-    # The record must OWN the pre-orientation read (not a parallel external list) so the AIRR writer emits
-    # the correct `sequence`/`rev_comp` identically for the Python API and the CLI, and crop-consistently.
-    records = _to_records(seqs, calls, alignments, genes, preds, cfg.chain_types, segs.low_quality,
-                          was_cropped, input_sequences=sequences)
-    if cfg.airr:
-        from .airr import build_airr
-        records = build_airr(records, reference, chain=("heavy" if cfg.has_d else "light"))
-    return records
-
-
-def _to_records(sequences, calls, alignments, genes, preds, chain_types=None, low_quality=None,
-                was_cropped=None, input_sequences=None) -> list:
-    orientation = preds.orientation
-    records = []
-    for i, seq in enumerate(sequences):
-        oid = int(orientation[i]) if orientation is not None else 0
-        rec = {"sequence": seq, "orientation_id": oid,
-               "mutation_rate": float(preds.mutation_rate[i]),
-               "indel_count": float(preds.indel_count[i]),
-               "productive": bool(preds.productive[i])}
-        if input_sequences is not None:
-            # the post-crop, pre-orientation read (== `seq` when the read was already forward). The AIRR
-            # writer uses THIS as the emitted `sequence` for a reverse-complement read, so `RC(sequence)`
-            # equals the coordinate frame (`seq`) — regardless of any external sequence list.
-            rec["input_sequence"] = input_sequences[i]
-        if low_quality is not None:
-            rec["segmentation_low_quality"] = bool(low_quality[i])
-        if was_cropped is not None and was_cropped[i]:
-            rec["length_cropped"] = True
-        if preds.chain_type is not None:                       # multi-chain: predicted locus
-            ct = int(preds.chain_type[i])
-            rec["chain_type_id"] = ct
-            if chain_types is not None and 0 <= ct < len(chain_types):
-                rec["locus"] = chain_types[ct]
-        elif chain_types is not None and len(chain_types) == 1:  # single-chain: the model's one locus
-            rec["locus"] = chain_types[0]
-        for g in genes:
-            call, aln = calls[g][i], alignments[g][i]
-            rec[f"{g}_call"] = call.names[0] if call.names else ""
-            rec[f"{g}_calls"] = list(call.names)
-            rec[f"{g}_likelihoods"] = list(call.likelihoods)
-            if aln is not None:
-                rec[f"{g}_sequence_start"] = aln.seq_start
-                rec[f"{g}_sequence_end"] = aln.seq_end
-                rec[f"{g}_germline_start"] = aln.germ_start
-                rec[f"{g}_germline_end"] = aln.germ_end
-                rec[f"{g}_cigar"] = aln.cigar
-        records.append(rec)
-    return records
+def predict(model, sequences, reference, cfg: PredictConfig, device: str = "cpu"):
+    """The AIRR-contract records of ``sequences``: the pipeline run without hooks."""
+    return run_stages(PredictionState.start(model, reference, cfg, device, sequences)).rows

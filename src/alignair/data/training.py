@@ -1,0 +1,21 @@
+"""The batch adapters of one reference-bound model setup."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from ..core.setup import ModelSetup
+from .adapters import NucleotideBatchAdapter
+
+
+@dataclass(frozen=True)
+class TrainingDataSetup:
+    """The training batch adapter (orientation augmented) and the validation one (reads as given)."""
+    batch_adapter: NucleotideBatchAdapter
+    validation_adapter: NucleotideBatchAdapter
+
+
+def prepare_training_data(setup: ModelSetup, *, device='cpu') -> TrainingDataSetup:
+    """The training and validation batch adapters of ``setup`` (a binding checked when it was made)."""
+    config = setup.config
+    return TrainingDataSetup(NucleotideBatchAdapter(setup.reference, config, device),
+                             NucleotideBatchAdapter(setup.reference, config, device, augment_orientation=False))

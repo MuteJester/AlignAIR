@@ -1,60 +1,40 @@
 import type { DocPage } from "./doc-kit";
-import { getStartedPages, conceptsPages } from "./pages-getstarted";
-import { migratePages } from "./pages-migrate";
-import { tutorialPages } from "./pages-tutorial";
-import { guidesPages, trainingPages } from "./pages-guides";
-import { guides2Pages } from "./pages-guides2";
-import { airrFieldsPages } from "./pages-airrfields";
+import { adjacent, sectionsFor } from "./nav";
+import { startPages } from "./pages-start";
+import { comingFromPages } from "./pages-coming-from";
+import { usePages } from "./pages-use";
+import { resultsPages } from "./pages-results";
 import { referencePages } from "./pages-reference";
-import { evalPages } from "./pages-eval";
-import { maintainerPages } from "./pages-maintainer";
-import { communityPages } from "./pages-community";
+import { trainPages } from "./pages-train";
+import { projectPages } from "./pages-project";
+import { developerPages } from "./pages-developers";
 
 /**
- * All reference pages in section-grouped reading order, so the sidebar order and the
- * Previous/Next flow agree. The primary journey lives in "Get started": install and predict
- * (getting-started) -> migrate an existing pipeline -> the concepts behind the output. "Using
- * AlignAIR" is everyday usage; Training and Evaluation are deliberately separate activities.
+ * Every docs page. The sidebar and Previous/Next order them by section (nav.ts): the user's journey (Get started,
+ * Coming from…, Use on your data, Understand the results, Reference, Train or fine-tune, Project), then, apart, the
+ * developers'.
  */
 export const DOCS: DocPage[] = [
-  ...getStartedPages, // getting-started
-  ...migratePages, // migrating-from-igblast
-  ...tutorialPages, // worked-example
-  ...conceptsPages, // concepts
-  ...guidesPages, // models  [Using AlignAIR]
-  ...guides2Pages, // cli, python-api, integrations  [Using AlignAIR]
-  ...airrFieldsPages, // airr-fields  [Reference]
-  ...referencePages, // model-contract, known-failure-modes, troubleshooting
-  ...trainingPages, // training  [Training]
-  ...evalPages, // benchmarks, performance  [Evaluation]; design  [Design]
-  ...maintainerPages, // publishing  [Maintainer]
-  ...communityPages, // citation-support  [Community]
+  ...startPages, // install, first-alignment, concepts, how-alignair-works  [Get started]
+  ...comingFromPages, // from-igblast, from-mixcr, from-immcantation  [Coming from…]
+  ...usePages, // choose-a-model … fix-common-problems  [Use on your data]
+  ...resultsPages, // output-columns, trust-the-calls, comparison  [Understand the results]
+  ...referencePages, // cli, python-api, column-dictionary, model-cards, error-codes, cache-and-environment  [Reference]
+  ...trainPages, // do-i-need-to-train, train, fine-tune, evaluate, share  [Train or fine-tune]
+  ...projectPages, // cite, support, changelog  [Project]
+  ...developerPages, // architecture, testing, publishing, contributing  [Developers]
 ];
 
-const SECTION_ORDER = ["Get started", "Using AlignAIR", "Reference", "Training", "Evaluation", "Design", "Maintainer", "Community"];
-
-export interface DocSection {
-  title: string;
-  pages: DocPage[];
-}
-
-export const DOC_SECTIONS: DocSection[] = SECTION_ORDER.map((title) => ({
-  title,
-  pages: DOCS.filter((p) => p.section === title),
-})).filter((s) => s.pages.length > 0);
+export { audienceOf, sectionsFor } from "./nav";
 
 export function getDoc(slug: string | undefined): DocPage | undefined {
   return DOCS.find((p) => p.slug === slug);
 }
 
 export function firstDocSlug(): string {
-  return DOCS[0].slug;
+  return sectionsFor(DOCS, "user")[0].pages[0].slug;
 }
 
 export function adjacentDocs(slug: string): { prev?: DocPage; next?: DocPage } {
-  const i = DOCS.findIndex((p) => p.slug === slug);
-  return {
-    prev: i > 0 ? DOCS[i - 1] : undefined,
-    next: i >= 0 && i + 1 < DOCS.length ? DOCS[i + 1] : undefined,
-  };
+  return adjacent(DOCS, slug);
 }

@@ -8,6 +8,8 @@ import pytest
 
 from alignair.io.airr import AirrWriter, COLUMN_PRESETS, COLUMNS, needs_assembly, resolve_columns, write_airr
 
+pytestmark = pytest.mark.component
+
 
 def _read_rows(path):
     with open(path) as f:
@@ -20,8 +22,10 @@ def test_writer_full_airr_roundtrip():
         "v_call": "IGHV1-1*01", "d_call": "IGHD1-1*01", "j_call": "IGHJ1*01",
         "v_calls": ["IGHV1-1*01", "IGHV1-1*02"],
         "v_sequence_start": 0, "v_sequence_end": 8, "v_germline_start": 2, "v_germline_end": 10,
+        "v_alignment_start": 0, "v_alignment_end": 11,
         "v_cigar": "8M", "junction": "TGTGCG", "junction_aa": "CA", "junction_length": 6,
-        "fwr1": "ACGT", "cdr3": "GCG", "v_identity": 0.99, "sequence_alignment": "ACGTACGT",
+        "fwr1": "..ACG.T", "fwr1_start": 0, "fwr1_end": 4, "cdr3": "GCG", "v_identity": 0.99,
+        "sequence_alignment": "..ACG.TACGT",
     }
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
@@ -32,12 +36,53 @@ def test_writer_full_airr_roundtrip():
         assert row["sequence_id"] == "read1"
         assert row["rev_comp"] == "T"                 # orientation_id 1 -> reoriented
         assert row["v_sequence_start"] == "1"         # 0-based 0 -> 1-based 1
-        assert row["v_germline_start"] == "3"         # 0-based 2 -> 1-based 3
         assert row["v_sequence_end"] == "8"           # AIRR end (inclusive) == our end-exclusive
-        assert row["v_cigar"] == "8M"
+        # the V germline positions are the V part's in the IMGT-gapped germline, from its first position (Change-O's)
+        assert (row["v_germline_start"], row["v_germline_end"]) == ("1", "11")
+        assert (row["v_alignment_start"], row["v_alignment_end"]) == ("1", "11")
+        assert (row["fwr1_start"], row["fwr1_end"]) == ("1", "4")
+        assert row["v_cigar"] == "2N8M4S"             # the whole query: 2 germline bases skipped, 4 read bases after
         assert row["junction"] == "TGTGCG"            # assembled AIRR biology passes through
-        assert row["cdr3"] == "GCG" and row["fwr1"] == "ACGT"
+        assert row["cdr3"] == "GCG" and row["fwr1"] == "..ACG.T"
         assert row["v_call_set"] == "IGHV1-1*01,IGHV1-1*02"
+    finally:
+        os.remove(tmp)
+
+
+def test_a_cigar_spans_the_whole_query_whatever_clips_the_record_gives():
+    """A CIGAR opens with S for the read before the segment and N for the germline before it, and closes with S for
+    the read after it; S or N the record's CIGAR already carries are the coordinates' own, so they are not doubled."""
+    rec = {"sequence": "ACGTACGTACGTACGTACGTACGTACGTAC", "orientation_id": 0, "v_call": "IGHV1-1*01",
+           "d_call": "IGHD1-1*01", "j_call": "IGHJ1*01",
+           "v_sequence_start": 0, "v_sequence_end": 20, "v_germline_start": 0, "v_germline_end": 20, "v_cigar": "20M",
+           "d_sequence_start": 20, "d_sequence_end": 24, "d_germline_start": 3, "d_germline_end": 7,
+           "d_cigar": "20S3N4M6S",
+           "j_sequence_start": 24, "j_sequence_end": 30, "j_germline_start": 5, "j_germline_end": 12,
+           "j_cigar": "3M1D3M"}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["r"], [rec["sequence"]], [rec])
+        row = _read_rows(tmp)[0]
+        assert (row["v_cigar"], row["d_cigar"], row["j_cigar"]) == ("20M10S", "20S3N4M6S", "24S5N3M1D3M")
+        assert (row["d_germline_start"], row["d_germline_end"], row["j_germline_start"]) == ("4", "7", "6")
+        # a record without the assembled alignment has no IMGT-gapped V germline positions
+        assert (row["v_germline_start"], row["v_germline_end"]) == ("", "")
+    finally:
+        os.remove(tmp)
+
+
+def test_an_empty_region_has_no_positions():
+    """AIRR's closed intervals cannot hold an empty region: an FWR4 the J ends at, or a region the read does not
+    reach, is written without positions."""
+    rec = {"sequence": "ACGTACGTAC", "orientation_id": 0, "v_call": "IGHV1-1*01", "v_sequence_start": 0,
+           "v_sequence_end": 10, "fwr4": "", "fwr4_start": 10, "fwr4_end": 10, "fwr1": "...", "fwr1_start": None,
+           "fwr1_end": None, "cdr3": "GTA", "cdr3_start": 2, "cdr3_end": 5}
+    tmp = tempfile.mktemp(suffix=".tsv")
+    try:
+        write_airr(tmp, ["r"], [rec["sequence"]], [rec])
+        row = _read_rows(tmp)[0]
+        assert [row[k] for k in ("fwr4_start", "fwr4_end", "fwr1_start", "fwr1_end")] == ["", "", "", ""]
+        assert (row["cdr3_start"], row["cdr3_end"]) == ("3", "5")
     finally:
         os.remove(tmp)
 
@@ -201,15 +246,17 @@ def test_needs_assembly_skips_for_light_selections():
     assert needs_assembly("minimal") is False                    # calls + productive only
     assert needs_assembly("v_call,j_call") is False
     assert needs_assembly("v_call,cdr3") is True                 # a region field needs assembly
+    assert needs_assembly("v_cigar,j_germline_start") is False
+    assert needs_assembly("v_germline_end") is True              # counted in the IMGT-gapped germline
 
 
 def test_writer_rejects_prediction_count_mismatch():
     """Fewer/extra predictions than inputs must RAISE (never zip-truncate + silently drop reads);
     the atomic output is discarded."""
-    from alignair.io.airr import AirrWriter, PredictionCountMismatch
+    from alignair.io.airr import AirrWriter, PredictionCountMismatchError
     tmp = tempfile.mktemp(suffix=".tsv")
     try:
-        with pytest.raises(PredictionCountMismatch):
+        with pytest.raises(PredictionCountMismatchError):
             with AirrWriter(tmp) as w:
                 w.write(["r1", "r2", "r3"], ["A", "C", "G"], [{"sequence": "A"}, {"sequence": "C"}])
         assert not os.path.exists(tmp)                 # discarded, not a truncated partial file
@@ -270,23 +317,6 @@ def test_metadata_does_not_overwrite_populated_c_call():
         os.remove(tmp)
 
 
-def test_metadata_dangerous_call_column_is_namespaced():
-    """A metadata column colliding with a produced call (v_call) is namespaced to meta_v_call by the
-    CLI's rename policy, so it can never masquerade as the model's call. c_call is the sole exception."""
-    from alignair.io.airr import _METADATA_FILL_ONLY, COLUMNS
-    protected = frozenset(COLUMNS)
-
-    def _safe(col):                                 # mirrors cli.predict._load_metadata_table
-        if col in _METADATA_FILL_ONLY:
-            return col
-        return f"meta_{col}" if col in protected else col
-
-    assert _safe("v_call") == "meta_v_call"         # dangerous call -> namespaced
-    assert _safe("sequence") == "meta_sequence"
-    assert _safe("c_call") == "c_call"              # fill-only exception keeps its AIRR name
-    assert _safe("cell_id") == "cell_id"            # non-protected passes through
-
-
 def test_writer_is_atomic_on_interrupt():
     """An interrupted write must not leave the final path (only a discarded temp), so a crashed job is
     never mistaken for a complete one."""
@@ -311,3 +341,27 @@ def test_writer_emits_only_selected_columns():
         assert "junction" not in header and "v_cigar" not in header
     finally:
         os.remove(tmp)
+
+
+def test_the_table_has_no_extension_column_alignair_never_fills():
+    """The equivalence set is AlignAIR's one per-gene extension; the resolution, set confidence and contaminant
+    columns, which nothing in AlignAIR 4 fills, are not written."""
+    from alignair.io.airr import COLUMNS
+    never = {f"{g}_{k}" for g in "vdj" for k in ("resolved_call", "call_level", "set_confidence")} | {"is_contaminant"}
+    assert not never & set(COLUMNS)
+    assert {"v_call_set", "d_call_set", "j_call_set", "orientation", "input_sequence"} <= set(COLUMNS)
+
+
+def test_a_written_table_ends_its_lines_with_a_newline_alone(tmp_path, capsys):
+    """IgBLAST, Change-O's MakeDb and the airr library end an AIRR TSV's lines with a newline alone, as awk and the
+    other Unix tools read them: so does a written table, to a file or to standard output."""
+    rec = {"sequence": "ACGT", "orientation_id": 0, "v_call": "IGHV1-1*01", "v_sequence_start": 0,
+           "v_sequence_end": 4}
+    path = tmp_path / "t.tsv"
+    write_airr(str(path), ["r1", "r2"], ["ACGT", "ACGT"], [rec, dict(rec)])
+    data = path.read_bytes()
+    assert b"\r" not in data and data.count(b"\n") == 3
+    with AirrWriter("-", columns="minimal") as writer:
+        writer.write(["r1"], ["ACGT"], [rec])
+    out = capsys.readouterr().out
+    assert "\r" not in out and out.count("\n") == 2

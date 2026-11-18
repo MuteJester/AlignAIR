@@ -1,28 +1,24 @@
-"""FWR/CDR region extraction + junction/CDR3 via the J anchor.
+"""FWR/CDR region extraction and the junction of the predicted anchors.
 
-Two junction derivations live here. :func:`compute_junction` slices the fixed IMGT column 309 out of
-the (indel-blind) gapped ``sequence_alignment`` — exact on reads without a V/J-region indel.
-:func:`compute_junction_cigar` re-derives the junction in *read* coordinates by mapping the conserved
-2nd-Cys (column 309) and the J anchor through the reader's CIGAR, so a V/J indel between the V start
-and the junction no longer shifts the anchor. The builder uses the CIGAR path only when the read
-carries an indel (see :func:`cigar_has_indel`), leaving indel-free reads byte-identical.
+A model's V and J anchors give its junction in read coordinates (``predict.junction.derive_junction``);
+:func:`anchor_junction_fields` gives the AIRR fields of it. Every region's positions (FWR1-FWR4, CDR1-CDR3) are read
+coordinates, 0-based and end-exclusive in the record; the AIRR writer emits them 1-based and closed.
 """
 from __future__ import annotations
 
-import re
-from typing import Dict, Optional
-
-from GenAIRR.utilities import translate
-
 from .constants import IMGT_REGIONS
-
-_CIGAR = re.compile(r"(\d+)([MIDNS=X])")
-_JUNCTION_COL = IMGT_REGIONS["junction"][0]    # gapped IMGT column of the conserved 2nd-Cys (309)
+from .translate import translate_nt
 
 _FWR_CDR = ("fwr1", "cdr1", "fwr2", "cdr2", "fwr3")
 
 
-def extract_regions(seq_alignment: Optional[str], seq_alignment_aa: Optional[str]) -> dict:
+def extract_regions(seq_alignment: str | None, seq_alignment_aa: str | None,
+                    read_positions: list[int | None] | None) -> dict:
+    """The FWR1-FWR3 and CDR1-CDR2 fields cut from the IMGT-gapped read alignment at the IMGT region columns: the
+    region's bases and amino acids as the alignment holds them (gaps included), and its start and end in the read
+    (0-based, end-exclusive): from the first to the last read base in its columns (``read_positions``, one per
+    alignment column, ``alignment.sequence_alignment_columns``), so a base the alignment leaves out (a V insertion)
+    stays inside them. A region with no read base has no start or end; all None without an alignment."""
     result: dict = {}
     if seq_alignment is None:
         for region in _FWR_CDR:
@@ -32,102 +28,30 @@ def extract_regions(seq_alignment: Optional[str], seq_alignment_aa: Optional[str
     for region in _FWR_CDR:
         start, end = IMGT_REGIONS[region]
         result[region] = seq_alignment[start:end]
-        result[f"{region}_start"], result[f"{region}_end"] = start, end
+        covered = [p for p in (read_positions or [])[start:end] if p is not None]
+        span = (min(covered), max(covered) + 1) if covered else (None, None)
+        result[f"{region}_start"], result[f"{region}_end"] = span
         result[f"{region}_aa"] = (seq_alignment_aa[start // 3:end // 3]
                                   if seq_alignment_aa is not None else None)
     return result
 
 
-def compute_junction(seq_alignment, seq_alignment_aa, j_call, j_anchor_dict,
-                     j_seq_start, v_seq_start, j_germ_start, j_alignment_end) -> dict:
-    """Junction end from the conserved J anchor:
-    ``junc_end = j_seq_start - v_seq_start + gap_count + j_anchor - j_germ_start + 3``."""
-    keys = ("junction", "junction_aa", "junction_length", "junction_aa_length",
-            "cdr3", "cdr3_aa", "cdr3_start", "cdr3_end", "fwr4", "fwr4_aa", "fwr4_start", "fwr4_end")
-    if seq_alignment is None or seq_alignment_aa is None:
-        return {k: None for k in keys}
-
-    j_anchor = (j_anchor_dict or {}).get(j_call.split(",")[0], 0)
-    offset = seq_alignment.count(".")
-    junction_start = IMGT_REGIONS["junction"][0]
-    junc_end = j_seq_start - v_seq_start + offset + j_anchor - j_germ_start + 3
-
-    junction_nt = seq_alignment[junction_start:junc_end]
-    junction_aa = seq_alignment_aa[junction_start // 3:junc_end // 3]
-    cdr3_start, cdr3_end = junction_start + 3, junc_end - 3
-    fwr4_start = cdr3_end + 1
-    return {
-        "junction": junction_nt, "junction_aa": junction_aa,
-        "junction_length": len(junction_nt), "junction_aa_length": len(junction_aa),
-        "cdr3": seq_alignment[cdr3_start:cdr3_end],
-        "cdr3_aa": junction_aa[1:-1] if len(junction_aa) > 2 else "",
-        "cdr3_start": cdr3_start, "cdr3_end": cdr3_end,
-        "fwr4": seq_alignment[fwr4_start:j_alignment_end] if j_alignment_end is not None else None,
-        "fwr4_aa": (seq_alignment_aa[fwr4_start // 3:j_alignment_end // 3]
-                    if j_alignment_end is not None else None),
-        "fwr4_start": fwr4_start, "fwr4_end": j_alignment_end,
-    }
+# The fields a read-coordinate junction sets (``read_junction_fields``).
+READ_JUNCTION_KEYS = ("junction", "junction_aa", "junction_length", "junction_aa_length", "junction_start",
+                      "junction_end", "cdr3", "cdr3_aa", "cdr3_start", "cdr3_end", "fwr4", "fwr4_aa", "fwr4_start",
+                      "fwr4_end")
 
 
-def cigar_has_indel(cigar: Optional[str]) -> bool:
-    """True iff the CIGAR contains an insertion or deletion op (I/D)."""
-    return any(op in "ID" for _, op in _CIGAR.findall(cigar or ""))
-
-
-def cys_position(v_ref_gapped: str) -> Optional[int]:
-    """Ungapped V-germline position of the conserved 2nd-Cys (IMGT gapped column 309).
-
-    The gapped reference places the Cys at column 309; subtracting the IMGT gap dots before that
-    column converts it to an ungapped germline coordinate. Returns None when the allele's gapped
-    reference does not reach the column (e.g. a partial/absent reference)."""
-    if not v_ref_gapped or len(v_ref_gapped) <= _JUNCTION_COL:
-        return None
-    return _JUNCTION_COL - v_ref_gapped[:_JUNCTION_COL].count(".")
-
-
-def map_germline_to_read(g_target: int, germ_start: int, seq_start: int, seq_end: int,
-                         cigar: Optional[str]) -> int:
-    """Read position aligned to ungapped-germline position ``g_target``, walking the CIGAR (which
-    describes ``read[seq_start:seq_end]`` against ``germline[germ_start:germ_end]``). Insertions
-    advance only the read, deletions only the germline. A ``g_target`` past the aligned germline
-    (e.g. a 3'-trimmed V whose Cys is gone) clamps to ``seq_end``."""
-    if g_target < germ_start:
-        return seq_start
-    r, g = seq_start, germ_start
-    for count, op in _CIGAR.findall(cigar or ""):
-        for _ in range(int(count)):
-            if g == g_target:
-                return r
-            if op in "M=X":
-                r += 1
-                g += 1
-            elif op == "D":
-                g += 1
-            elif op in "IS":
-                r += 1
-            if g > g_target:
-                return r
-    return seq_end
-
-
-def compute_junction_cigar(seq, v_ref_gapped, v_germ_start, v_seq_start, v_seq_end, v_cigar,
-                           j_anchor, j_germ_start, j_seq_start, j_seq_end, j_cigar) -> Optional[dict]:
-    """Indel-robust junction in *read* coordinates: the 5' bound is the conserved 2nd-Cys mapped
-    through the V CIGAR, the 3' bound is the J anchor (Trp/Phe) mapped through the J CIGAR, ``+3``.
-    Returns the same keys as :func:`compute_junction` (plus read-coordinate ``junction_start`` /
-    ``junction_end``), or None if the anchors cannot be placed (caller falls back to the column path).
-    """
-    cys = cys_position(v_ref_gapped)
-    if cys is None or v_seq_start is None or j_seq_start is None:
-        return None
-    js = map_germline_to_read(cys, v_germ_start or 0, v_seq_start, v_seq_end, v_cigar)
-    je = map_germline_to_read(j_anchor, j_germ_start or 0, j_seq_start, j_seq_end, j_cigar) + 3
-    if je <= js or je > len(seq):
-        return None
+def read_junction_fields(seq: str, js: int, je: int, j_seq_end: int | None, translate_fn) -> dict:
+    """The junction ``seq[js:je]`` (read coordinates, 0-based, end-exclusive) and what follows from it: its
+    translation (``translate_fn``), the CDR3 (the junction without its two anchor codons) and FWR4, IMGT's FR4: from
+    the junction's last codon (the J Trp or Phe, IMGT position 118) to the J end ``j_seq_end``, as IgBLAST and
+    Change-O's MakeDb cut it; none when the J ends inside that codon. All in read coordinates."""
     junction_nt = seq[js:je].upper()
-    junction_aa = translate(junction_nt)
+    junction_aa = translate_fn(junction_nt)
     cdr3_start, cdr3_end = js + 3, je - 3
-    fwr4 = seq[je:j_seq_end].upper() if (j_seq_end is not None and j_seq_end >= je) else ""
+    fwr4 = seq[je - 3:j_seq_end].upper() if (j_seq_end is not None and j_seq_end >= je) else ""
+    fwr4_start, fwr4_end = (je - 3, j_seq_end) if fwr4 else (None, None)
     return {
         "junction": junction_nt, "junction_aa": junction_aa,
         "junction_length": len(junction_nt), "junction_aa_length": len(junction_aa),
@@ -135,6 +59,17 @@ def compute_junction_cigar(seq, v_ref_gapped, v_germ_start, v_seq_start, v_seq_e
         "cdr3": seq[cdr3_start:cdr3_end].upper(),
         "cdr3_aa": junction_aa[1:-1] if len(junction_aa) > 2 else "",
         "cdr3_start": cdr3_start, "cdr3_end": cdr3_end,
-        "fwr4": fwr4, "fwr4_aa": translate(fwr4) if fwr4 else "",
-        "fwr4_start": je, "fwr4_end": j_seq_end,
+        "fwr4": fwr4, "fwr4_aa": translate_fn(fwr4) if fwr4 else "",
+        "fwr4_start": fwr4_start, "fwr4_end": fwr4_end,
     }
+
+
+def anchor_junction_fields(seq: str, call, j_seq_end: int | None) -> dict:
+    """The AIRR junction fields of a junction derived from the predicted anchors (``predict.junction.JunctionCall``):
+    ``read_junction_fields`` with GenAIRR's translation convention (full codons from the junction's start, a partial
+    last codon dropped, X for a codon with an N), and the frame, stop codon and productivity of the call. Every field
+    is None when the junction is unknown."""
+    flags = {"vj_in_frame": call.vj_in_frame, "stop_codon": call.stop_codon, "productive": call.productive}
+    if call.junction_start is None:
+        return {**dict.fromkeys(READ_JUNCTION_KEYS), **flags}
+    return {**read_junction_fields(seq, call.junction_start, call.junction_end, j_seq_end, translate_nt), **flags}

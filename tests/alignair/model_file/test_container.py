@@ -1,6 +1,8 @@
 import pytest
 from alignair.model_file import container as C
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.parametrize("codec", ["none", "zlib"])
 def test_codec_roundtrip(codec):
@@ -56,3 +58,30 @@ def test_corrupt_section_fails_checksum(tmp_path):
     p.write_bytes(raw)
     with pytest.raises(ValueError, match="checksum|corrupt"):
         C.read_section(str(p), "a")
+
+
+@pytest.mark.parametrize("payload, message", [(None, "no such model file"), (b"", "not an AlignAIR model file"),
+                                              (b"PK\x03\x04rest", "AlignAIR 3 checkpoint"),
+                                              (b">read\nACGT\n", "not an AlignAIR model file")])
+def test_the_header_reader_names_what_a_file_that_is_no_model_file_is(tmp_path, payload, message):
+    from alignair.errors import ModelError
+    path = tmp_path / "model.alignair"
+    if payload is not None:
+        path.write_bytes(payload)
+    with pytest.raises(ModelError, match=message):
+        C.read_header(str(path))
+
+
+def test_a_missing_model_file_is_model_not_found_on_every_path_that_reads_one(tmp_path):
+    """As ``Aligner.from_pretrained`` and ``alignair info`` say: the container reader is what ``model_file.load_model``,
+    ``read_metadata``, ``alignair export``, ``reference export`` and ``init_from`` reach."""
+    from alignair import model_file
+    from alignair.errors import ModelError, ModelNotFoundError
+    missing = tmp_path / "missing.alignair"
+    for read in (C.read_header, model_file.read_metadata, model_file.load_model):
+        with pytest.raises(ModelNotFoundError) as caught:
+            read(str(missing))
+        assert caught.value.code == "ALIGNAIR_MODEL_NOT_FOUND" and "by its id" not in (caught.value.hint or "")
+    with pytest.raises(ModelError) as caught:                     # a directory is there: not "not found"
+        C.read_header(str(tmp_path))
+    assert not isinstance(caught.value, ModelNotFoundError)

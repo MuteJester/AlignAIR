@@ -1,0 +1,26 @@
+{
+ "batch_sha256": [
+  "d05dc2c379b35cff103603fe4ac0266521f46beab14258c98a25289bf60dbe53",
+  "f8ed6e8dc9c029ce71615a26a195cee23fa86f3408bc5e53542591d7f2594326"
+ ],
+ "commit": "6eaddf45",
+ "genairr_freeze": "c4c73b62",
+ "records_sha256": "f8eeadb9057005f550363f19252656e75431e9c7232afeaf07a87d0aa7d40b2b",
+ "schema": "alignair.training-pin.v1",
+ "step": {
+  "gradient_norm": 132.39395141601562,
+  "parts": {
+   "coord": 1.0971484184265137,
+   "d_presence": 0.7697956562042236,
+   "j_anchor": 1.748764991760254,
+   "orientation": 1.0224857330322266,
+   "parse": 4.10007381439209,
+   "scan_d": 0.734718382358551,
+   "scan_j": 0.7115176916122437,
+   "scan_v": 0.5473669171333313,
+   "shm": 1.5667855739593506,
+   "v_anchor": 1.7264245748519897
+  },
+  "total": 14.0250825881958
+ }
+}
