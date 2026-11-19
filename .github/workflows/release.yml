@@ -73,34 +73,10 @@ jobs:
           name: release-test-results
           path: test-results/
 
-  # The heavy training tests (minutes each), as CI runs them: their own job, a 30-minute per-test limit.
-  test-heavy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    env:
-      OMP_NUM_THREADS: "2"
-      MKL_NUM_THREADS: "2"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install and run the heavy training tests
-        run: |
-          python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[dev]"
-          python -m pytest tests -q -n auto -m heavy --timeout=1800 --junitxml=test-results/release-heavy-tests.xml
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: release-heavy-test-results
-          path: test-results/
-
   # 1. Build the authoritative artifact set ONCE (only after guard + test pass).
   build-wheels:
     name: wheels on ${{ matrix.os }}
-    needs: [guard, test, test-heavy, model-validation]
+    needs: [guard, test, model-validation]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -116,7 +92,7 @@ jobs:
           path: ./wheelhouse/*.whl
 
   build-sdist:
-    needs: [guard, test, test-heavy, model-validation]
+    needs: [guard, test, model-validation]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
