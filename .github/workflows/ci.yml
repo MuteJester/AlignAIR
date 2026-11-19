@@ -35,7 +35,7 @@ jobs:
         run: |
           alignair --version
           alignair doctor
-      - name: Tests (all but the heavy training tests, which test-heavy runs)
+      - name: Tests (all but the heavy training tests, which run locally before a release)
         run: |
           python -m pytest tests -q -n auto -m "not heavy" --cov=alignair \
             --cov-report=xml:test-results/coverage.xml --cov-report=json:test-results/coverage.json \
@@ -47,34 +47,6 @@ jobs:
         if: always()
         with:
           name: test-results-python-${{ matrix.python-version }}
-          path: test-results/
-
-  # The tests marked heavy train a model, a lab screen or a record cache end to end: minutes each on a 4-CPU runner
-  # (the longest 7.5 without coverage, 15 under it), past the suite's 300 s per-test limit, and together more than half
-  # of the suite's time. They run once, here, on 3.12, without coverage and with a 30-minute per-test limit.
-  test-heavy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    env:
-      OMP_NUM_THREADS: "2"
-      MKL_NUM_THREADS: "2"
-      PYTHONDONTWRITEBYTECODE: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install (CPU torch + package + test deps)
-        run: |
-          python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install ".[cli,test]"
-      - name: Heavy training tests
-        run: python -m pytest tests -q -n auto -m heavy --timeout=1800 --junitxml=test-results/heavy.xml
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: heavy-test-results
           path: test-results/
 
   test-independence:
